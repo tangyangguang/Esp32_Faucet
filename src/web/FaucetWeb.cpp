@@ -47,9 +47,20 @@ void sendFmt(const char* fmt, ...) {
 }
 
 void sendAppLinks() {
-    Esp32BaseWeb::sendChunk("<p><a href='/faucet'>Status</a><a href='/faucet/config'>Config</a>"
-                            "<a href='/faucet/stats'>Stats</a><a href='/faucet/logs'>Logs</a>"
-                            "<a href='/faucet/filters'>Filters</a><a href='/faucet/calibration'>Calibration</a></p>");
+    Esp32BaseWeb::sendChunk("<style>"
+                            "body>nav{display:none}"
+                            ".faucet-nav{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 14px;padding-bottom:10px;border-bottom:1px solid #eee}"
+                            ".faucet-nav a{display:inline-flex;align-items:center;min-height:34px;line-height:1.2;margin:0;white-space:nowrap}"
+                            ".faucet-actions{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 14px}"
+                            ".faucet-actions a{display:inline-flex;align-items:center;min-height:34px;line-height:1.2;margin:0;white-space:nowrap}"
+                            ".info{display:none}"
+                            "select{width:100%;padding:7px;margin:4px 0 12px;border:1px solid #ccc;border-radius:3px;box-sizing:border-box}"
+                            "table{width:100%;border-collapse:collapse;margin-bottom:14px}"
+                            "td,th{padding:6px 4px;border-bottom:1px solid #eee;text-align:left}"
+                            "</style>"
+                            "<nav class='faucet-nav'><a href='/faucet'>状态</a><a href='/faucet/config'>配置</a>"
+                            "<a href='/faucet/stats'>统计</a><a href='/faucet/logs'>记录</a>"
+                            "<a href='/faucet/filters'>滤芯</a><a href='/faucet/calibration'>校准</a></nav>");
 }
 
 bool sendPageStart(const char* title) {
@@ -68,45 +79,45 @@ void sendPageEnd() {
 const char* stateText(WaterState state) {
     switch (state) {
         case WaterState::Idle:
-            return "Idle";
+            return "待机";
         case WaterState::Confirm:
-            return "Confirm";
+            return "确认";
         case WaterState::Running:
-            return "Running";
+            return "出水中";
         case WaterState::Paused:
-            return "Paused";
+            return "暂停";
         case WaterState::Error:
-            return "Error";
+            return "异常";
     }
-    return "Unknown";
+    return "未知";
 }
 
 const char* modeText(WaterMode mode) {
     switch (mode) {
         case WaterMode::Volume:
-            return "Volume";
+            return "容量";
         case WaterMode::Time:
-            return "Time";
+            return "时间";
         case WaterMode::Calibration:
-            return "Calibration";
+            return "校准";
     }
-    return "Unknown";
+    return "未知";
 }
 
 const char* resultText(WaterResult result) {
     switch (result) {
         case WaterResult::Completed:
-            return "Completed";
+            return "完成";
         case WaterResult::StoppedByUser:
-            return "Stopped";
+            return "手动停止";
         case WaterResult::SafetyStopped:
-            return "Safety";
+            return "安全停止";
         case WaterResult::FlowError:
-            return "Flow error";
+            return "流量异常";
         case WaterResult::PauseTimeout:
-            return "Pause timeout";
+            return "暂停超时";
     }
-    return "Unknown";
+    return "未知";
 }
 
 void sendTextInput(const char* label, const char* name, unsigned long value) {
@@ -121,7 +132,7 @@ void sendCheckbox(const char* label, const char* name, bool checked) {
 }
 
 void handleFaucetPage() {
-    if (!sendPageStart("Faucet")) {
+    if (!sendPageStart("出水龙头")) {
         return;
     }
     if (!requireContext()) {
@@ -129,24 +140,24 @@ void handleFaucetPage() {
         return;
     }
     const AppSnapshot snapshot = g_context.app->snapshot();
-    Esp32BaseWeb::sendChunk("<h2>Status</h2><table>");
-    sendFmt("<tr><td>State</td><td>%s</td></tr>", stateText(snapshot.water.state));
-    sendFmt("<tr><td>Preset</td><td>%u</td></tr>", static_cast<unsigned>(snapshot.water.selectedPreset + 1));
-    sendFmt("<tr><td>Mode</td><td>%s</td></tr>", modeText(snapshot.water.mode));
-    sendFmt("<tr><td>Volume</td><td>%lu ml</td></tr>", static_cast<unsigned long>(snapshot.water.volumeMl));
-    sendFmt("<tr><td>Target</td><td>%lu</td></tr>", static_cast<unsigned long>(snapshot.water.targetValue));
-    sendFmt("<tr><td>Valve</td><td>%s</td></tr>", snapshot.water.valveOpen ? "Open" : "Closed");
-    Esp32BaseWeb::sendChunk("</table><h2>Stats</h2><table>");
-    sendFmt("<tr><td>Today</td><td>%lu ml</td></tr>", static_cast<unsigned long>(snapshot.statistics.todayMl));
-    sendFmt("<tr><td>Week</td><td>%lu ml</td></tr>", static_cast<unsigned long>(snapshot.statistics.weekMl));
-    sendFmt("<tr><td>Month</td><td>%lu ml</td></tr>", static_cast<unsigned long>(snapshot.statistics.monthMl));
-    sendFmt("<tr><td>Total</td><td>%lu ml</td></tr>", static_cast<unsigned long>(snapshot.statistics.totalMl));
+    Esp32BaseWeb::sendChunk("<h2>状态</h2><table>");
+    sendFmt("<tr><td>运行状态</td><td>%s</td></tr>", stateText(snapshot.water.state));
+    sendFmt("<tr><td>当前预设</td><td>%u</td></tr>", static_cast<unsigned>(snapshot.water.selectedPreset + 1));
+    sendFmt("<tr><td>出水模式</td><td>%s</td></tr>", modeText(snapshot.water.mode));
+    sendFmt("<tr><td>已出水量</td><td>%lu ml</td></tr>", static_cast<unsigned long>(snapshot.water.volumeMl));
+    sendFmt("<tr><td>目标值</td><td>%lu</td></tr>", static_cast<unsigned long>(snapshot.water.targetValue));
+    sendFmt("<tr><td>电磁阀</td><td>%s</td></tr>", snapshot.water.valveOpen ? "开启" : "关闭");
+    Esp32BaseWeb::sendChunk("</table><h2>统计</h2><table>");
+    sendFmt("<tr><td>今日</td><td>%lu ml</td></tr>", static_cast<unsigned long>(snapshot.statistics.todayMl));
+    sendFmt("<tr><td>本周</td><td>%lu ml</td></tr>", static_cast<unsigned long>(snapshot.statistics.weekMl));
+    sendFmt("<tr><td>本月</td><td>%lu ml</td></tr>", static_cast<unsigned long>(snapshot.statistics.monthMl));
+    sendFmt("<tr><td>总累计</td><td>%lu ml</td></tr>", static_cast<unsigned long>(snapshot.statistics.totalMl));
     Esp32BaseWeb::sendChunk("</table>");
     sendPageEnd();
 }
 
 void handleConfigPage() {
-    if (!sendPageStart("Faucet Config")) {
+    if (!sendPageStart("出水配置")) {
         return;
     }
     if (!requireContext()) {
@@ -154,52 +165,53 @@ void handleConfigPage() {
         return;
     }
     const SystemConfig& config = *g_context.config;
-    Esp32BaseWeb::sendChunk("<h2>Config</h2><form method='post' action='/api/faucet/config' onsubmit='return once(this)'>");
-    sendTextInput("Confirm timeout sec", "confirmTimeoutSec", config.confirmTimeoutSec);
-    sendTextInput("Max out time sec", "maxOutTimeSec", config.maxOutTimeSec);
-    sendTextInput("Max out volume ml", "maxOutVolumeMl", config.maxOutVolumeMl);
-    sendTextInput("Overflow percent", "overflowPercent", config.overflowPercent);
-    sendTextInput("No flow timeout sec", "noFlowTimeoutSec", config.noFlowTimeoutSec);
-    sendTextInput("High flow ml/min", "highFlowMlPerMin", config.highFlowMlPerMin);
-    sendTextInput("High flow duration sec", "highFlowDurationSec", config.highFlowDurationSec);
-    sendTextInput("Pause timeout sec", "pauseTimeoutSec", config.pauseTimeoutSec);
-    sendTextInput("Valve full power sec", "valveFullPowerSec", config.valveFullPowerSec);
-    sendTextInput("Valve hold duty percent", "valveHoldDutyPercent", config.valveHoldDutyPercent);
-    sendTextInput("OLED sleep sec", "oledSleepSec", config.oledSleepSec);
-    sendCheckbox("Beep enabled", "beepEnabled", config.beepEnabled);
-    Esp32BaseWeb::sendChunk("<input type='submit' value='Save'></form>");
+    Esp32BaseWeb::sendChunk("<h2>配置</h2><form method='post' action='/api/faucet/config' onsubmit='return once(this)'>");
+    sendTextInput("二次确认超时（秒）", "confirmTimeoutSec", config.confirmTimeoutSec);
+    sendTextInput("最长出水时间（秒）", "maxOutTimeSec", config.maxOutTimeSec);
+    sendTextInput("最大出水量（ml）", "maxOutVolumeMl", config.maxOutVolumeMl);
+    sendTextInput("超量保护比例（%）", "overflowPercent", config.overflowPercent);
+    sendTextInput("无流量超时（秒）", "noFlowTimeoutSec", config.noFlowTimeoutSec);
+    sendTextInput("高流量阈值（ml/min）", "highFlowMlPerMin", config.highFlowMlPerMin);
+    sendTextInput("高流量持续时间（秒）", "highFlowDurationSec", config.highFlowDurationSec);
+    sendTextInput("暂停超时（秒）", "pauseTimeoutSec", config.pauseTimeoutSec);
+    sendTextInput("电磁阀全功率时间（秒）", "valveFullPowerSec", config.valveFullPowerSec);
+    sendTextInput("电磁阀保持占空比（%）", "valveHoldDutyPercent", config.valveHoldDutyPercent);
+    sendTextInput("OLED 熄屏时间（秒）", "oledSleepSec", config.oledSleepSec);
+    sendCheckbox("启用蜂鸣器", "beepEnabled", config.beepEnabled);
+    Esp32BaseWeb::sendChunk("<input type='submit' value='保存'></form>");
     sendPageEnd();
 }
 
 void handlePresetsPage() {
-    if (!sendPageStart("Faucet Presets")) {
+    if (!sendPageStart("出水预设")) {
         return;
     }
     if (!requireContext()) {
         sendPageEnd();
         return;
     }
-    Esp32BaseWeb::sendChunk("<h2>Presets</h2>");
+    Esp32BaseWeb::sendChunk("<h2>预设</h2>");
     for (std::size_t i = 0; i < kPresetCount; ++i) {
         const PresetConfig& preset = g_context.config->presets[i];
-        sendFmt("<h3>Preset %u</h3><form method='post' action='/api/faucet/presets' onsubmit='return once(this)'>"
+        sendFmt("<h3>预设 %u</h3><form method='post' action='/api/faucet/presets' onsubmit='return once(this)'>"
                 "<input type='hidden' name='index' value='%u'>",
                 static_cast<unsigned>(i + 1),
                 static_cast<unsigned>(i));
-        sendCheckbox("Enabled", "enabled", preset.enabled);
-        Esp32BaseWeb::sendChunk("Name<input name='name' maxlength='15' value='");
+        sendCheckbox("启用", "enabled", preset.enabled);
+        Esp32BaseWeb::sendChunk("名称<input name='name' maxlength='15' value='");
         Esp32BaseWeb::writeHtmlEscaped(preset.name);
-        Esp32BaseWeb::sendChunk("'>Type<input name='type' value='");
-        Esp32BaseWeb::sendChunk(preset.type == PresetType::Time ? "time" : "volume");
-        Esp32BaseWeb::sendChunk("'>");
-        sendTextInput("Value", "value", preset.value);
-        Esp32BaseWeb::sendChunk("<input type='submit' value='Save'></form>");
+        Esp32BaseWeb::sendChunk("'>类型<select name='type'>");
+        sendFmt("<option value='volume'%s>容量</option>", preset.type == PresetType::Volume ? " selected" : "");
+        sendFmt("<option value='time'%s>时间</option>", preset.type == PresetType::Time ? " selected" : "");
+        Esp32BaseWeb::sendChunk("</select>");
+        sendTextInput("数值", "value", preset.value);
+        Esp32BaseWeb::sendChunk("<input type='submit' value='保存'></form>");
     }
     sendPageEnd();
 }
 
 void handleStatsPage() {
-    if (!sendPageStart("Faucet Stats")) {
+    if (!sendPageStart("用水统计")) {
         return;
     }
     if (!requireContext()) {
@@ -207,17 +219,17 @@ void handleStatsPage() {
         return;
     }
     const StatisticsRecord& stats = g_context.app->snapshot().statistics;
-    Esp32BaseWeb::sendChunk("<h2>Stats</h2><table>");
-    sendFmt("<tr><td>Today</td><td>%lu ml</td></tr>", static_cast<unsigned long>(stats.todayMl));
-    sendFmt("<tr><td>Week</td><td>%lu ml</td></tr>", static_cast<unsigned long>(stats.weekMl));
-    sendFmt("<tr><td>Month</td><td>%lu ml</td></tr>", static_cast<unsigned long>(stats.monthMl));
-    sendFmt("<tr><td>Total</td><td>%lu ml</td></tr>", static_cast<unsigned long>(stats.totalMl));
+    Esp32BaseWeb::sendChunk("<h2>统计</h2><table>");
+    sendFmt("<tr><td>今日</td><td>%lu ml</td></tr>", static_cast<unsigned long>(stats.todayMl));
+    sendFmt("<tr><td>本周</td><td>%lu ml</td></tr>", static_cast<unsigned long>(stats.weekMl));
+    sendFmt("<tr><td>本月</td><td>%lu ml</td></tr>", static_cast<unsigned long>(stats.monthMl));
+    sendFmt("<tr><td>总累计</td><td>%lu ml</td></tr>", static_cast<unsigned long>(stats.totalMl));
     Esp32BaseWeb::sendChunk("</table>");
     sendPageEnd();
 }
 
 void handleLogsPage() {
-    if (!sendPageStart("Faucet Logs")) {
+    if (!sendPageStart("出水记录")) {
         return;
     }
     if (!requireContext()) {
@@ -233,9 +245,9 @@ void handleLogsPage() {
     WaterLogRecord records[pageSize]{};
     const bool ready = g_context.logs->ready();
     const std::size_t count = ready ? g_context.logs->readPage(page, pageSize, records, pageSize) : 0;
-    Esp32BaseWeb::sendChunk("<h2>Logs</h2><form method='get' action='/faucet/logs'>Page<input name='page' value='");
+    Esp32BaseWeb::sendChunk("<h2>记录</h2><form method='get' action='/faucet/logs'>页码<input name='page' value='");
     sendFmt("%lu", static_cast<unsigned long>(page));
-    Esp32BaseWeb::sendChunk("'><input type='submit' value='Go'></form><table><tr><th>Time</th><th>Volume</th><th>Duration</th><th>Mode</th><th>Result</th></tr>");
+    Esp32BaseWeb::sendChunk("'><input type='submit' value='查看'></form><table><tr><th>时间</th><th>出水量</th><th>时长</th><th>模式</th><th>结果</th></tr>");
     for (std::size_t i = 0; i < count; ++i) {
         sendFmt("<tr><td>%lu</td><td>%lu ml</td><td>%u s</td><td>%s</td><td>%s</td></tr>",
                 static_cast<unsigned long>(records[i].startTime),
@@ -246,13 +258,13 @@ void handleLogsPage() {
     }
     Esp32BaseWeb::sendChunk("</table>");
     if (!ready) {
-        Esp32BaseWeb::sendChunk("<p>Log storage unavailable.</p>");
+        Esp32BaseWeb::sendChunk("<p>记录存储不可用。</p>");
     }
     sendPageEnd();
 }
 
 void handleFiltersPage() {
-    if (!sendPageStart("Faucet Filters")) {
+    if (!sendPageStart("滤芯状态")) {
         return;
     }
     if (!requireContext()) {
@@ -260,14 +272,14 @@ void handleFiltersPage() {
         return;
     }
     const std::uint32_t now = g_context.nowSeconds();
-    Esp32BaseWeb::sendChunk("<h2>Filters</h2><table><tr><th>Name</th><th>Days</th><th>Flow</th><th>Reset</th></tr>");
+    Esp32BaseWeb::sendChunk("<h2>滤芯</h2><table><tr><th>名称</th><th>已用天数</th><th>已用流量</th><th>重置</th></tr>");
     for (std::size_t i = 0; i < kFilterCount; ++i) {
         const FilterRecord& filter = g_context.filters->record(i);
         Esp32BaseWeb::sendChunk("<tr><td>");
         Esp32BaseWeb::writeHtmlEscaped(filter.name);
         sendFmt("</td><td>%lu</td><td>%lu ml</td><td>"
-                "<form method='post' action='/api/faucet/filters/reset' onsubmit=\"return confirm('Reset filter?')&&once(this)\">"
-                "<input type='hidden' name='index' value='%u'><input type='submit' value='Reset'></form></td></tr>",
+                "<form method='post' action='/api/faucet/filters/reset' onsubmit=\"return confirm('确认重置滤芯？')&&once(this)\">"
+                "<input type='hidden' name='index' value='%u'><input type='submit' value='重置'></form></td></tr>",
                 static_cast<unsigned long>(g_context.filters->usedDays(i, now)),
                 static_cast<unsigned long>(filter.usedMl),
                 static_cast<unsigned>(i));
@@ -277,7 +289,7 @@ void handleFiltersPage() {
 }
 
 void handleCalibrationPage() {
-    if (!sendPageStart("Faucet Calibration")) {
+    if (!sendPageStart("流量校准")) {
         return;
     }
     if (!requireContext()) {
@@ -285,12 +297,12 @@ void handleCalibrationPage() {
         return;
     }
     const SystemConfig& config = *g_context.config;
-    Esp32BaseWeb::sendChunk("<h2>Calibration</h2><form method='post' action='/api/faucet/calibration' onsubmit='return once(this)'>");
-    Esp32BaseWeb::sendChunk("Pulse per ml<input name='pulsePerMl' value='");
+    Esp32BaseWeb::sendChunk("<h2>校准</h2><form method='post' action='/api/faucet/calibration' onsubmit='return once(this)'>");
+    Esp32BaseWeb::sendChunk("每 ml 脉冲数<input name='pulsePerMl' value='");
     sendFmt("%.3f", static_cast<double>(config.pulsePerMl));
     Esp32BaseWeb::sendChunk("'>");
-    sendTextInput("Target ml", "targetMl", config.calibrationTargetMl);
-    Esp32BaseWeb::sendChunk("<input type='submit' value='Save'></form>");
+    sendTextInput("校准目标（ml）", "targetMl", config.calibrationTargetMl);
+    Esp32BaseWeb::sendChunk("<input type='submit' value='保存'></form>");
     sendPageEnd();
 }
 

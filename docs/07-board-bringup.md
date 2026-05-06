@@ -106,3 +106,27 @@ pio device monitor -e esp32dev --port <端口> --baud 115200
 - OLED 页面肉眼确认。
 - 蜂鸣器提示音。
 - 72 小时连续运行。
+
+## 2026-05-06 裸板复测
+
+连接状态：只连接 ESP32 核心板，串口为 `/dev/cu.usbserial-130`，未接业务外设。
+
+本次已验证：
+
+- `pio device list` 可识别 CH340 串口。
+- `pio test -e native` 通过，94 个 native 用例全部成功。
+- `pio run -e esp32dev` 通过，主固件 RAM 约 28.6%，Flash 约 68.1%。
+- `pio run -e esp32dev_smoke` 通过。
+- 主固件串口启动正常：进入 `setup()`，`rtc=absent`、`oled=absent`、`log=file`，WiFi 已连接，Web 服务就绪，NTP 已同步。
+- Web 首页 `http://192.168.2.112/faucet` 返回 200。
+- 未授权访问 `/faucet` 返回 401。
+- 状态 API 返回 `idle`、`valveOpen=false`、`waterControl=false`。
+- 远程出水控制路径 `/api/faucet/start` 返回 404。
+- `/api/faucet/stats`、`/api/faucet/presets`、`/api/faucet/filters`、`/api/faucet/calibration`、`/api/faucet/logs?page=0&pageSize=10` 均可访问。
+- 日志 API 返回 `storage=file`。
+- 校准 API 返回 `webCanStartCalibration=false`。
+
+观察到但不影响本次裸板验证：
+
+- 启动早期仍有 ESP-IDF core dump 分区提示，随后应用正常启动。
+- 本机访问 `water-65e4.local` 解析超时，IP 访问正常；后续可在网络环境或 mDNS 客户端侧继续确认。

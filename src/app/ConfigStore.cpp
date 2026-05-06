@@ -11,7 +11,7 @@ namespace {
 constexpr const char* kConfigNs = "faucet_cfg";
 constexpr const char* kStatNs = "faucet_stat";
 constexpr const char* kRunNs = "faucet_run";
-constexpr std::int32_t kConfigVersion = 1;
+constexpr std::int32_t kConfigVersion = 2;
 constexpr std::int32_t kRuntimeVersion = 1;
 
 std::int32_t toInt(std::uint32_t value) {
@@ -117,9 +117,12 @@ SystemConfig ConfigStore::loadSystemConfig() {
         config.filters[i].enabled = backend_.getBool(kConfigNs, key, config.filters[i].enabled);
         filterKey(key, sizeof(key), i, "name");
         backend_.getStr(kConfigNs, key, config.filters[i].name, sizeof(config.filters[i].name), config.filters[i].name);
-        filterKey(key, sizeof(key), i, "life_d");
-        config.filters[i].lifeDays =
-            static_cast<std::uint32_t>(backend_.getInt(kConfigNs, key, toInt(config.filters[i].lifeDays)));
+        filterKey(key, sizeof(key), i, "life_min");
+        config.filters[i].recommendDays =
+            static_cast<std::uint32_t>(backend_.getInt(kConfigNs, key, toInt(config.filters[i].recommendDays)));
+        filterKey(key, sizeof(key), i, "life_max");
+        config.filters[i].maxDays =
+            static_cast<std::uint32_t>(backend_.getInt(kConfigNs, key, toInt(config.filters[i].maxDays)));
         filterKey(key, sizeof(key), i, "life_ml");
         config.filters[i].lifeMl =
             static_cast<std::uint32_t>(backend_.getInt(kConfigNs, key, toInt(config.filters[i].lifeMl)));
@@ -173,8 +176,10 @@ bool ConfigStore::saveSystemConfig(const SystemConfig& config) {
         ok = okAll(ok, backend_.setBool(kConfigNs, key, safe.filters[i].enabled));
         filterKey(key, sizeof(key), i, "name");
         ok = okAll(ok, backend_.setStr(kConfigNs, key, safe.filters[i].name));
-        filterKey(key, sizeof(key), i, "life_d");
-        ok = okAll(ok, backend_.setInt(kConfigNs, key, toInt(safe.filters[i].lifeDays)));
+        filterKey(key, sizeof(key), i, "life_min");
+        ok = okAll(ok, backend_.setInt(kConfigNs, key, toInt(safe.filters[i].recommendDays)));
+        filterKey(key, sizeof(key), i, "life_max");
+        ok = okAll(ok, backend_.setInt(kConfigNs, key, toInt(safe.filters[i].maxDays)));
         filterKey(key, sizeof(key), i, "life_ml");
         ok = okAll(ok, backend_.setInt(kConfigNs, key, toInt(safe.filters[i].lifeMl)));
         filterKey(key, sizeof(key), i, "start");

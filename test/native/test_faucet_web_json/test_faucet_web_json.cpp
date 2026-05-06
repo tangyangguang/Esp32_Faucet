@@ -73,7 +73,8 @@ void test_presets_json_escapes_names_and_lists_nine_presets() {
 void test_filters_json_contains_runtime_fields() {
     char json[1024]{};
     SystemConfig config = makeDefaultConfig();
-    config.filters[0].lifeDays = 365;
+    config.filters[0].recommendDays = 180;
+    config.filters[0].maxDays = 365;
     config.filters[0].lifeMl = 2000000;
     config.filters[0].startTime = 1714502400;
     config.filters[0].usedMl = 123456;
@@ -82,7 +83,8 @@ void test_filters_json_contains_runtime_fields() {
 
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"filters\""));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"index\":5"));
-    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"lifeDays\":365"));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"recommendDays\":180"));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"maxDays\":365"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"lifeMl\":2000000"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"startTime\":1714502400"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"usedMl\":123456"));

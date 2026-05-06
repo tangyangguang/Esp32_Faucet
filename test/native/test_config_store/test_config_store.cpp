@@ -113,7 +113,8 @@ void test_config_save_and_load_round_trips_system_config() {
     config.presets[2].value = 120;
     std::strncpy(config.presets[2].name, "Tea", sizeof(config.presets[2].name) - 1);
     config.filters[1].enabled = true;
-    config.filters[1].lifeDays = 365;
+    config.filters[1].recommendDays = 180;
+    config.filters[1].maxDays = 365;
     config.filters[1].lifeMl = 2000000;
     config.filters[1].startTime = 1714502400;
     config.filters[1].usedMl = 123456;
@@ -129,7 +130,8 @@ void test_config_save_and_load_round_trips_system_config() {
     TEST_ASSERT_EQUAL_UINT32(120, loaded.presets[2].value);
     TEST_ASSERT_EQUAL_STRING("Tea", loaded.presets[2].name);
     TEST_ASSERT_TRUE(loaded.filters[1].enabled);
-    TEST_ASSERT_EQUAL_UINT32(365, loaded.filters[1].lifeDays);
+    TEST_ASSERT_EQUAL_UINT32(180, loaded.filters[1].recommendDays);
+    TEST_ASSERT_EQUAL_UINT32(365, loaded.filters[1].maxDays);
     TEST_ASSERT_EQUAL_UINT32(2000000, loaded.filters[1].lifeMl);
     TEST_ASSERT_EQUAL_UINT32(1714502400, loaded.filters[1].startTime);
     TEST_ASSERT_EQUAL_UINT32(123456, loaded.filters[1].usedMl);
@@ -236,7 +238,8 @@ void test_filter_runtime_round_trips_start_and_used_only() {
     TEST_ASSERT_EQUAL_UINT32(222, loaded.filters[1].startTime);
     TEST_ASSERT_EQUAL_UINT32(333, loaded.filters[1].usedMl);
     TEST_ASSERT_EQUAL_STRING("Filter 1", loaded.filters[0].name);
-    TEST_ASSERT_EQUAL_UINT32(180, loaded.filters[0].lifeDays);
+    TEST_ASSERT_EQUAL_UINT32(180, loaded.filters[0].recommendDays);
+    TEST_ASSERT_EQUAL_UINT32(180, loaded.filters[0].maxDays);
     TEST_ASSERT_EQUAL_UINT32(0, loaded.filters[0].lifeMl);
 }
 

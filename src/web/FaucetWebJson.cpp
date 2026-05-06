@@ -183,8 +183,9 @@ bool writeFiltersJson(const FilterRecord (&filters)[kFilterCount], char* out, st
                       static_cast<unsigned>(i),
                       filters[i].enabled ? "true" : "false");
         appendEscaped(writer, filters[i].name);
-        writer.append(",\"lifeDays\":%lu,\"lifeMl\":%lu,\"startTime\":%lu,\"usedMl\":%lu}",
-                      static_cast<unsigned long>(filters[i].lifeDays),
+        writer.append(",\"recommendDays\":%lu,\"maxDays\":%lu,\"lifeMl\":%lu,\"startTime\":%lu,\"usedMl\":%lu}",
+                      static_cast<unsigned long>(filters[i].recommendDays),
+                      static_cast<unsigned long>(filters[i].maxDays),
                       static_cast<unsigned long>(filters[i].lifeMl),
                       static_cast<unsigned long>(filters[i].startTime),
                       static_cast<unsigned long>(filters[i].usedMl));

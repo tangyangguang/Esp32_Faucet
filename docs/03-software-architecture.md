@@ -97,7 +97,7 @@
 - 日志放 LittleFS，分页读取，单次最多 200 条。
 - 统计放 NVS，出水完成后立即更新，周期性数据按日期变化重置。
 - 运行快照默认只用于安全恢复判断，重启后默认不继续出水。
-- 滤芯数据放 NVS，记录每个滤芯的启用状态、名称、寿命天数、寿命流量、开始时间和累计流量。
+- 滤芯数据放 NVS，记录每个滤芯的启用状态、名称、建议更换天数、最长使用天数、寿命流量、开始时间和累计流量。
 - 校准系数放 NVS，校准采样过程仅在本地操作期间存在，保存前需要用户确认。
 
 ## Web 草案
@@ -113,12 +113,12 @@
 
 | 页面 | 路径 | 功能 |
 | --- | --- | --- |
-| 首页 | `/faucet` | 状态、当前预设、基础统计 |
+| 首页 | `/faucet` | 状态、当前预设、基础统计、启用滤芯寿命概览 |
 | 配置 | `/faucet/config` | 预设、安全阈值、显示、蜂鸣器、电磁阀参数 |
 | 日志 | `/faucet/logs` | 分页查看出水记录 |
 | 统计 | `/faucet/stats` | 今日、本周、本月、总累计 |
-| 滤芯 | `/faucet/filters` | 最多 6 个滤芯的已用天数、已用流量、寿命设置、设置入口和重置 |
-| 滤芯设置 | `/faucet/filters/edit?index=N` | 单个滤芯的启用状态、名称、寿命和上次更换日期配置；隐藏路由，不进入导航 |
+| 滤芯 | `/faucet/filters` | 最多 6 个滤芯的已用天数、已用流量、寿命范围、状态、设置入口和重置 |
+| 滤芯设置 | `/faucet/filters/edit?index=N` | 单个滤芯的启用状态、名称、建议更换周期、最长使用周期、寿命流量和上次更换日期配置；隐藏路由，不进入导航 |
 | 校准 | `/faucet/calibration` | 查看当前系数、手动录入系数；不出水 |
 
 ### Web API
@@ -158,7 +158,8 @@ struct PresetConfig {
 struct FilterRecord {
     bool enabled;
     char name[16];
-    uint32_t lifeDays;   // 0 when disabled
+    uint32_t recommendDays; // suggested replacement point, 0 when disabled
+    uint32_t maxDays;       // maximum usage point, 0 when disabled
     uint32_t lifeMl;     // 0 when disabled
     uint32_t startTime;  // seconds since 2000-01-01, 0 when unknown
     uint32_t usedMl;

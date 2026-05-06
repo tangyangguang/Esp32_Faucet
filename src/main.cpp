@@ -87,7 +87,7 @@ void configureBase() {
 
 #if ESP32BASE_ENABLE_WEB
     Esp32BaseWeb::setAuth(kDefaultWebUser, kDefaultWebPassword);
-    Esp32BaseWeb::setDeviceName("智能出水龙头");
+    Esp32BaseWeb::setDeviceName("智能出水");
     Esp32BaseWeb::setHomePath("/faucet");
     Esp32BaseWeb::setHomeMode(Esp32BaseWeb::HOME_COMBINED);
     Esp32BaseWeb::setSystemNavMode(Esp32BaseWeb::SYSTEM_NAV_SECTION);

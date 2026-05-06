@@ -111,7 +111,8 @@ void test_filter_update_replaces_config_fields() {
     FilterStore store(config.filters);
     FilterRecord record = store.record(0);
     record.enabled = false;
-    record.lifeDays = 365;
+    record.recommendDays = 180;
+    record.maxDays = 365;
     record.lifeMl = 2000000;
     record.startTime = 1714502400;
     record.usedMl = 123456;
@@ -119,7 +120,8 @@ void test_filter_update_replaces_config_fields() {
     TEST_ASSERT_TRUE(store.updateFilter(0, record));
 
     TEST_ASSERT_FALSE(store.record(0).enabled);
-    TEST_ASSERT_EQUAL_UINT32(365, store.record(0).lifeDays);
+    TEST_ASSERT_EQUAL_UINT32(180, store.record(0).recommendDays);
+    TEST_ASSERT_EQUAL_UINT32(365, store.record(0).maxDays);
     TEST_ASSERT_EQUAL_UINT32(2000000, store.record(0).lifeMl);
     TEST_ASSERT_EQUAL_UINT32(1714502400, store.record(0).startTime);
     TEST_ASSERT_EQUAL_UINT32(123456, store.record(0).usedMl);

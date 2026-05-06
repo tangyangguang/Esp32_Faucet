@@ -33,10 +33,17 @@ constexpr std::uint8_t kMinValveHoldDutyPercent = 20;
 constexpr std::uint8_t kMaxValveHoldDutyPercent = 100;
 
 constexpr std::uint32_t kDefaultOledSleepSec = 30;
-constexpr std::uint16_t kDefaultLogPageSize = 50;
+constexpr std::uint16_t kDefaultLogPageSize = 20;
 constexpr std::uint16_t kMaxLogPageSize = 200;
+constexpr std::uint32_t kDaysPerLifeMonth = 30;
 constexpr std::uint32_t kMaxFilterLifeDays = 3650;
 constexpr std::uint32_t kMaxFilterLifeMl = 10000000;
+
+enum class FilterLifeStatus : std::uint8_t {
+    Normal = 0,
+    RecommendReplace = 1,
+    Expired = 2,
+};
 
 struct SystemConfig {
     std::uint32_t confirmTimeoutSec;
@@ -62,5 +69,6 @@ void sanitizeConfig(SystemConfig& config);
 
 bool isValidCalibrationTarget(std::uint32_t targetMl);
 std::uint16_t sanitizeLogPageSize(std::uint16_t pageSize);
+FilterLifeStatus filterLifeStatus(const FilterRecord& filter, std::uint32_t usedDays);
 
 }  // namespace faucet

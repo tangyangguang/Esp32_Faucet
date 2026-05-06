@@ -26,7 +26,8 @@ void setPreset(PresetConfig& preset, bool enabled, PresetType type, std::uint32_
 
 void setFilter(FilterRecord& filter, bool enabled, const char* name) {
     filter.enabled = enabled;
-    filter.lifeDays = 180;
+    filter.recommendDays = 180;
+    filter.maxDays = 180;
     filter.lifeMl = 0;
     filter.startTime = 0;
     filter.usedMl = 0;
@@ -97,7 +98,13 @@ void sanitizeConfig(SystemConfig& config) {
 
     for (auto& filter : config.filters) {
         filter.name[kNameLength - 1] = '\0';
-        filter.lifeDays = clampValue<std::uint32_t>(filter.lifeDays, 0, kMaxFilterLifeDays);
+        filter.recommendDays = clampValue<std::uint32_t>(filter.recommendDays, 0, kMaxFilterLifeDays);
+        filter.maxDays = clampValue<std::uint32_t>(filter.maxDays, 0, kMaxFilterLifeDays);
+        if (filter.recommendDays == 0) {
+            filter.maxDays = 0;
+        } else if (filter.maxDays == 0 || filter.maxDays < filter.recommendDays) {
+            filter.maxDays = filter.recommendDays;
+        }
         filter.lifeMl = clampValue<std::uint32_t>(filter.lifeMl, 0, kMaxFilterLifeMl);
     }
 }
@@ -111,6 +118,25 @@ std::uint16_t sanitizeLogPageSize(std::uint16_t pageSize) {
         return kDefaultLogPageSize;
     }
     return clampValue<std::uint16_t>(pageSize, 1, kMaxLogPageSize);
+}
+
+FilterLifeStatus filterLifeStatus(const FilterRecord& filter, std::uint32_t usedDays) {
+    if (!filter.enabled) {
+        return FilterLifeStatus::Normal;
+    }
+    if (filter.lifeMl > 0 && filter.usedMl >= filter.lifeMl) {
+        return FilterLifeStatus::Expired;
+    }
+    if (filter.recommendDays == 0) {
+        return FilterLifeStatus::Normal;
+    }
+    if (filter.maxDays > 0 && usedDays >= filter.maxDays) {
+        return FilterLifeStatus::Expired;
+    }
+    if (usedDays >= filter.recommendDays) {
+        return FilterLifeStatus::RecommendReplace;
+    }
+    return FilterLifeStatus::Normal;
 }
 
 }  // namespace faucet

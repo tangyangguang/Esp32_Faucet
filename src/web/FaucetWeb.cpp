@@ -55,6 +55,48 @@ void formatLiters(std::uint32_t ml, char* out, std::size_t len) {
                   static_cast<unsigned long>(centiliters % 100UL));
 }
 
+std::uint32_t daysToMonths(std::uint32_t days) {
+    return (days + kDaysPerLifeMonth - 1UL) / kDaysPerLifeMonth;
+}
+
+std::uint32_t monthsToDays(std::uint32_t months) {
+    const std::uint32_t maxMonths = kMaxFilterLifeDays / kDaysPerLifeMonth;
+    if (months > maxMonths) {
+        months = maxMonths;
+    }
+    return months * kDaysPerLifeMonth;
+}
+
+void formatLifeRange(const FilterRecord& filter, char* out, std::size_t len) {
+    if (!out || len == 0) {
+        return;
+    }
+    if (filter.recommendDays == 0) {
+        std::snprintf(out, len, "未设置天数");
+        return;
+    }
+    const std::uint32_t minMonths = daysToMonths(filter.recommendDays);
+    const std::uint32_t maxMonths = daysToMonths(filter.maxDays);
+    if (maxMonths > minMonths) {
+        std::snprintf(out, len, "%lu～%lu 个月", static_cast<unsigned long>(minMonths),
+                      static_cast<unsigned long>(maxMonths));
+    } else {
+        std::snprintf(out, len, "%lu 个月", static_cast<unsigned long>(minMonths));
+    }
+}
+
+const char* filterStatusText(FilterLifeStatus status) {
+    switch (status) {
+        case FilterLifeStatus::RecommendReplace:
+            return "建议更换";
+        case FilterLifeStatus::Expired:
+            return "已超期";
+        case FilterLifeStatus::Normal:
+        default:
+            return "正常";
+    }
+}
+
 void sendLiters(std::uint32_t ml) {
     char text[24]{};
     formatLiters(ml, text, sizeof(text));
@@ -79,6 +121,8 @@ void sendAppStyles() {
                             ".field span{display:block;font-size:.84em;color:#3f4b5a;margin-bottom:4px}"
                             ".field input{margin:0}"
                             ".hint{display:block;color:#687386;font-size:.78em;margin:3px 0 0}"
+                            ".status-pill{display:inline-block;padding:2px 7px;border-radius:999px;background:#eef2f7;color:#1f2933;font-size:.78rem;line-height:1.2;white-space:nowrap}"
+                            ".muted{color:#687386}"
                             ".check-field{display:block;margin:0}"
                             ".check-title{display:block;font-size:.84em;color:#3f4b5a;margin-bottom:4px}"
                             ".check-line{display:flex;align-items:center;gap:7px;height:34px;padding:0 10px;border:1px solid #d1d5db;border-radius:6px;background:#fff;box-sizing:border-box;color:#1f2933;font-size:.95rem;white-space:nowrap}"
@@ -163,6 +207,13 @@ void sendVolumeInput(const char* label, const char* name, std::uint32_t value) {
             liters);
 }
 
+void sendMonthInput(const char* label, const char* name, std::uint32_t days) {
+    sendFmt("<label class='field'><span>%s</span><input name='%s' value='%lu'><small class='hint'>按 30 天/月计算</small></label>",
+            label,
+            name,
+            static_cast<unsigned long>(daysToMonths(days)));
+}
+
 void sendDateInput(const char* label, const char* name, std::uint32_t seconds) {
     char date[16]{};
     formatDate(seconds >= kMinFilterDateSeconds ? seconds : 0, date, sizeof(date));
@@ -213,6 +264,31 @@ void handleFaucetPage() {
     Esp32BaseWeb::sendChunk("</td></tr><tr><td>总累计</td><td>");
     sendLiters(snapshot.statistics.totalMl);
     Esp32BaseWeb::sendChunk("</td></tr>");
+    Esp32BaseWeb::sendChunk("</table>");
+    Esp32BaseWeb::sendChunk("<h2>滤芯</h2><table><tr><th>名称</th><th>状态</th><th>已用</th><th>寿命</th><th>流量</th></tr>");
+    bool anyFilter = false;
+    for (std::size_t i = 0; i < kFilterCount; ++i) {
+        const FilterRecord& filter = g_context.filters->record(i);
+        if (!filter.enabled) {
+            continue;
+        }
+        anyFilter = true;
+        const std::uint32_t usedDays =
+            filter.startTime >= kMinFilterDateSeconds ? g_context.filters->usedDays(i, g_context.nowSeconds()) : 0;
+        char life[32]{};
+        formatLifeRange(filter, life, sizeof(life));
+        Esp32BaseWeb::sendChunk("<tr><td>");
+        Esp32BaseWeb::writeHtmlEscaped(filter.name);
+        sendFmt("</td><td><span class='status-pill'>%s</span></td><td>%lu 天</td><td>%s</td><td>",
+                filterStatusText(filterLifeStatus(filter, usedDays)),
+                static_cast<unsigned long>(usedDays),
+                life);
+        sendLiters(filter.usedMl);
+        Esp32BaseWeb::sendChunk("</td></tr>");
+    }
+    if (!anyFilter) {
+        Esp32BaseWeb::sendChunk("<tr><td colspan='5' class='muted'>当前没有启用的滤芯。</td></tr>");
+    }
     Esp32BaseWeb::sendChunk("</table>");
     sendPageEnd();
 }
@@ -315,13 +391,47 @@ void handleLogsPage() {
     if (getParam("page", text, sizeof(text))) {
         parseU32(text, page);
     }
-    constexpr std::uint16_t pageSize = 50;
-    WaterLogRecord records[pageSize]{};
+    std::uint32_t requestedPageSize = kDefaultLogPageSize;
+    if (getParam("pageSize", text, sizeof(text))) {
+        parseU32(text, requestedPageSize);
+    }
+    const std::uint16_t pageSize = sanitizeLogPageSize(static_cast<std::uint16_t>(requestedPageSize));
+    WaterLogRecord records[kMaxLogPageSize]{};
     const bool ready = g_context.logs->ready();
+    const std::size_t total = ready ? g_context.logs->count() : 0;
+    const std::uint32_t maxPage = total == 0 ? 0 : static_cast<std::uint32_t>((total - 1) / pageSize);
+    if (page > maxPage) {
+        page = maxPage;
+    }
     const std::size_t count = ready ? g_context.logs->readPage(page, pageSize, records, pageSize) : 0;
-    Esp32BaseWeb::sendChunk("<h2>记录</h2><form method='get' action='/faucet/logs'>页码<input name='page' value='");
-    sendFmt("%lu", static_cast<unsigned long>(page));
-    Esp32BaseWeb::sendChunk("'><input type='submit' value='查看'></form><table><tr><th>时间</th><th>出水量</th><th>时长</th><th>模式</th><th>结果</th></tr>");
+    Esp32BaseWeb::sendChunk("<h2>记录</h2><form method='get' action='/faucet/logs'><div class='grid'>");
+    sendFmt("<label class='field'><span>页码</span><input name='page' value='%lu'></label>",
+            static_cast<unsigned long>(page));
+    Esp32BaseWeb::sendChunk("<label class='field'><span>每页条数</span><select name='pageSize'>");
+    constexpr std::uint16_t sizes[] = {20, 30, 50, 100, 200};
+    for (std::uint16_t size : sizes) {
+        sendFmt("<option value='%u'%s>%u</option>",
+                static_cast<unsigned>(size),
+                pageSize == size ? " selected" : "",
+                static_cast<unsigned>(size));
+    }
+    Esp32BaseWeb::sendChunk("</select></label></div><div class='form-actions'><input type='submit' value='查看'>");
+    sendFmt("<a href='/faucet/logs?page=0&pageSize=%u'>首页</a>", static_cast<unsigned>(pageSize));
+    if (page > 0) {
+        sendFmt("<a href='/faucet/logs?page=%lu&pageSize=%u'>上一页</a>",
+                static_cast<unsigned long>(page - 1),
+                static_cast<unsigned>(pageSize));
+    }
+    if (page < maxPage) {
+        sendFmt("<a href='/faucet/logs?page=%lu&pageSize=%u'>下一页</a>",
+                static_cast<unsigned long>(page + 1),
+                static_cast<unsigned>(pageSize));
+    }
+    sendFmt("</div><small class='hint'>第 %lu / %lu 页，共 %lu 条</small></form>"
+            "<table><tr><th>时间</th><th>出水量</th><th>时长</th><th>模式</th><th>结果</th></tr>",
+            static_cast<unsigned long>(page + 1),
+            static_cast<unsigned long>(maxPage + 1),
+            static_cast<unsigned long>(total));
     for (std::size_t i = 0; i < count; ++i) {
         sendFmt("<tr><td>%lu</td><td>", static_cast<unsigned long>(records[i].startTime));
         sendLiters(records[i].volumeMl);
@@ -346,29 +456,28 @@ void handleFiltersPage() {
         return;
     }
     const std::uint32_t now = g_context.nowSeconds();
-    Esp32BaseWeb::sendChunk("<h2>滤芯</h2><table><tr><th>名称</th><th>状态</th><th>已用天数</th><th>已用流量</th><th>寿命</th><th>设置</th><th>重置</th></tr>");
+    Esp32BaseWeb::sendChunk("<h2>滤芯</h2><table><tr><th>名称</th><th>启用</th><th>已用天数</th><th>已用流量</th><th>寿命</th><th>状态</th><th>设置</th><th>重置</th></tr>");
     for (std::size_t i = 0; i < kFilterCount; ++i) {
         const FilterRecord& filter = g_context.filters->record(i);
         const std::uint32_t usedDays = filter.startTime >= kMinFilterDateSeconds ? g_context.filters->usedDays(i, now) : 0;
+        char life[32]{};
+        formatLifeRange(filter, life, sizeof(life));
         Esp32BaseWeb::sendChunk("<tr><td>");
         Esp32BaseWeb::writeHtmlEscaped(filter.name);
         sendFmt("</td><td>%s</td><td>%lu</td><td>",
                 filter.enabled ? "启用" : "停用",
                 static_cast<unsigned long>(usedDays));
         sendLiters(filter.usedMl);
-        Esp32BaseWeb::sendChunk("</td><td>");
-        if (filter.lifeDays > 0) {
-            sendFmt("%lu 天", static_cast<unsigned long>(filter.lifeDays));
-        } else {
-            Esp32BaseWeb::sendChunk("未设置天数");
-        }
+        sendFmt("</td><td>%s", life);
         Esp32BaseWeb::sendChunk(" / ");
         if (filter.lifeMl > 0) {
             sendLiters(filter.lifeMl);
         } else {
             Esp32BaseWeb::sendChunk("未设置流量");
         }
-        sendFmt("</td><td><a href='/faucet/filters/edit?index=%u'>设置</a></td><td>", static_cast<unsigned>(i));
+        sendFmt("</td><td>%s</td><td><a href='/faucet/filters/edit?index=%u'>设置</a></td><td>",
+                filterStatusText(filterLifeStatus(filter, usedDays)),
+                static_cast<unsigned>(i));
         Esp32BaseWeb::sendChunk("<form method='post' action='/api/faucet/filters/reset' "
                                 "onsubmit=\"return confirm('确认重置滤芯？')&&once(this)\">");
         sendFmt("<input type='hidden' name='index' value='%u'>", static_cast<unsigned>(i));
@@ -406,7 +515,8 @@ void handleFilterEditPage() {
     Esp32BaseWeb::sendChunk("<label class='field'><span>名称</span><input name='name' maxlength='15' value='");
     Esp32BaseWeb::writeHtmlEscaped(filter.name);
     Esp32BaseWeb::sendChunk("'></label>");
-    sendTextInput("寿命天数（天）", "lifeDays", filter.lifeDays);
+    sendMonthInput("建议更换周期（月）", "recommendMonths", filter.recommendDays);
+    sendMonthInput("最长使用周期（月）", "maxMonths", filter.maxDays);
     sendVolumeInput("寿命流量（ml）", "lifeMl", filter.lifeMl);
     sendDateInput("上次更换日期", "startDate", filter.startTime);
     Esp32BaseWeb::sendChunk("</div><div class='form-actions'><input type='submit' value='保存'>"
@@ -423,7 +533,10 @@ void handleCalibrationPage() {
         return;
     }
     const SystemConfig& config = *g_context.config;
-    Esp32BaseWeb::sendChunk("<h2>校准</h2><form method='post' action='/api/faucet/calibration' onsubmit='return once(this)'>");
+    Esp32BaseWeb::sendChunk("<h2>校准</h2><section class='panel'><h3>本地校准步骤</h3>"
+                            "<p>长按 OK 进入校准，NEXT 选择目标容量，OK 开始出水；水到容器刻度后按 OK 停止采样，至少两次一致后按 OK 保存。</p>"
+                            "<p class='hint'>Web 端只允许查看和手动修改参数，不能远程启动出水校准。</p></section>"
+                            "<form method='post' action='/api/faucet/calibration' onsubmit='return once(this)'>");
     Esp32BaseWeb::sendChunk("每 ml 脉冲数<input name='pulsePerMl' value='");
     sendFmt("%.3f", static_cast<double>(config.pulsePerMl));
     Esp32BaseWeb::sendChunk("'>");
@@ -728,7 +841,13 @@ void handleFiltersApi() {
         FilterRecord record = g_context.filters->record(index);
         record.enabled = Esp32BaseWeb::hasParam("enabled");
         Esp32BaseWeb::getParam("name", record.name, sizeof(record.name));
-        applyU32Param("lifeDays", record.lifeDays);
+        std::uint32_t months = 0;
+        if (getParam("recommendMonths", text, sizeof(text)) && parseU32(text, months)) {
+            record.recommendDays = monthsToDays(months);
+        }
+        if (getParam("maxMonths", text, sizeof(text)) && parseU32(text, months)) {
+            record.maxDays = monthsToDays(months);
+        }
         applyU32Param("lifeMl", record.lifeMl);
         if (getParam("startDate", text, sizeof(text)) && !parseDate(text, record.startTime)) {
             Esp32BaseWeb::sendJson(400, "{\"error\":\"invalid_date\"}");

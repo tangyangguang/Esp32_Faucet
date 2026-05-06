@@ -38,7 +38,8 @@ struct PresetConfig {
 struct FilterRecord {
     bool enabled;
     char name[kNameLength];
-    std::uint32_t lifeDays;
+    std::uint32_t recommendDays;
+    std::uint32_t maxDays;
     std::uint32_t lifeMl;
     std::uint32_t startTime;
     std::uint32_t usedMl;

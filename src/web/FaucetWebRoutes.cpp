@@ -8,6 +8,7 @@ namespace {
 constexpr FaucetWebRoute kRoutes[] = {
     {"/faucet", FaucetWebMethod::Get, FaucetWebRouteKind::Page, "状态"},
     {"/faucet/config", FaucetWebMethod::Get, FaucetWebRouteKind::Page, "配置"},
+    {"/faucet/presets", FaucetWebMethod::Get, FaucetWebRouteKind::Page, "预设"},
     {"/faucet/logs", FaucetWebMethod::Get, FaucetWebRouteKind::Page, "记录"},
     {"/faucet/stats", FaucetWebMethod::Get, FaucetWebRouteKind::Page, "统计"},
     {"/faucet/filters", FaucetWebMethod::Get, FaucetWebRouteKind::Page, "滤芯"},

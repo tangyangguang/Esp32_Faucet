@@ -11,6 +11,7 @@
 #include "web/FaucetWebRoutes.h"
 
 #include <Esp32Base.h>
+#include <cmath>
 #include <cstdarg>
 #include <cstdio>
 #include <cstdlib>
@@ -149,6 +150,8 @@ void sendAppStyles() {
                             "select{margin:3px 0 8px}"
                             ".panel{border:1px solid #e1e5ea;border-radius:8px;padding:10px 12px;margin:0 0 10px;background:#fff}"
                             ".panel h3{padding-bottom:7px;margin-bottom:9px;border-bottom:1px solid #edf0f3}"
+                            ".panel-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:9px;padding-bottom:7px;border-bottom:1px solid #edf0f3}"
+                            ".panel-head h3{padding:0;margin:0;border:0}"
                             ".grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:9px 12px}"
                             ".field{display:block;margin:0}"
                             ".field span{display:block;font-size:.84em;color:#3f4b5a;margin-bottom:4px}"
@@ -404,23 +407,25 @@ void handlePresetsPage() {
     Esp32BaseWeb::sendChunk("<h2>预设</h2>");
     for (std::size_t i = 0; i < kPresetCount; ++i) {
         const PresetConfig& preset = g_context.config->presets[i];
-        sendFmt("<h3>预设 %u</h3><form method='post' action='/api/faucet/presets' onsubmit='return once(this)'>"
-                "<input type='hidden' name='index' value='%u'>",
+        sendFmt("<section class='panel'><div class='panel-head'><h3>预设 %u</h3><span class='status-pill'>%s</span></div>"
+                "<form method='post' action='/api/faucet/presets' onsubmit='return once(this)'>"
+                "<input type='hidden' name='index' value='%u'><div class='grid'>",
                 static_cast<unsigned>(i + 1),
+                preset.enabled ? "启用" : "停用",
                 static_cast<unsigned>(i));
         sendCheckbox("启用", "enabled", preset.enabled);
-        Esp32BaseWeb::sendChunk("名称<input name='name' maxlength='15' value='");
+        Esp32BaseWeb::sendChunk("<label class='field'><span>名称</span><input name='name' maxlength='15' value='");
         Esp32BaseWeb::writeHtmlEscaped(preset.name);
-        Esp32BaseWeb::sendChunk("'><small class='hint'>最多 15 个字符</small>类型<select name='type'>");
+        Esp32BaseWeb::sendChunk("'><small class='hint'>最多 15 个字符</small></label><label class='field'><span>类型</span><select name='type'>");
         sendFmt("<option value='volume'%s>容量</option>", preset.type == PresetType::Volume ? " selected" : "");
         sendFmt("<option value='time'%s>时间</option>", preset.type == PresetType::Time ? " selected" : "");
-        Esp32BaseWeb::sendChunk("</select>");
+        Esp32BaseWeb::sendChunk("</select></label>");
         if (preset.type == PresetType::Volume) {
             sendVolumeInput("数值（ml）", "value", preset.value);
         } else {
             sendTextInput("数值（秒）", "value", preset.value);
         }
-        Esp32BaseWeb::sendChunk("<input type='submit' value='保存'></form>");
+        Esp32BaseWeb::sendChunk("</div><div class='form-actions'><input type='submit' value='保存'></div></form></section>");
     }
     sendPageEnd();
 }
@@ -745,7 +750,7 @@ bool parseFloat(const char* text, float& value) {
     }
     char* end = nullptr;
     const float parsed = std::strtof(text, &end);
-    if (!end || *end != '\0') {
+    if (!end || *end != '\0' || !std::isfinite(parsed)) {
         return false;
     }
     value = parsed;
@@ -1014,6 +1019,9 @@ Esp32BaseWeb::Handler handlerFor(const FaucetWebRoute& route) {
         }
         if (std::strcmp(route.path, "/faucet/config") == 0) {
             return handleConfigPage;
+        }
+        if (std::strcmp(route.path, "/faucet/presets") == 0) {
+            return handlePresetsPage;
         }
         if (std::strcmp(route.path, "/faucet/logs") == 0) {
             return handleLogsPage;

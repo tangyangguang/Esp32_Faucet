@@ -2,6 +2,8 @@
 
 #include "app/AppConfig.h"
 
+#include <cmath>
+#include <cstdio>
 #include <cstring>
 
 using namespace faucet;
@@ -45,6 +47,7 @@ void test_default_presets_use_two_enabled_volume_presets() {
         TEST_ASSERT_FALSE(config.presets[i].enabled);
         TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(PresetType::Volume), static_cast<unsigned>(config.presets[i].type));
         TEST_ASSERT_EQUAL_UINT32(1000, config.presets[i].value);
+        TEST_ASSERT_EQUAL_STRING("预设", config.presets[i].name);
     }
 }
 
@@ -52,7 +55,7 @@ void test_default_filters_support_six_lightweight_records() {
     const SystemConfig config = makeDefaultConfig();
 
     TEST_ASSERT_TRUE(config.filters[0].enabled);
-    TEST_ASSERT_EQUAL_STRING("Filter 1", config.filters[0].name);
+    TEST_ASSERT_EQUAL_STRING("第1级滤芯", config.filters[0].name);
     TEST_ASSERT_EQUAL_UINT32(180, config.filters[0].recommendDays);
     TEST_ASSERT_EQUAL_UINT32(180, config.filters[0].maxDays);
     TEST_ASSERT_EQUAL_UINT32(0, config.filters[0].lifeMl);
@@ -60,7 +63,10 @@ void test_default_filters_support_six_lightweight_records() {
     TEST_ASSERT_EQUAL_UINT32(0, config.filters[0].usedMl);
 
     for (std::size_t i = 1; i < kFilterCount; ++i) {
+        char name[kNameLength]{};
+        std::snprintf(name, sizeof(name), "第%u级滤芯", static_cast<unsigned>(i + 1));
         TEST_ASSERT_FALSE(config.filters[i].enabled);
+        TEST_ASSERT_EQUAL_STRING(name, config.filters[i].name);
         TEST_ASSERT_EQUAL_UINT32(180, config.filters[i].recommendDays);
         TEST_ASSERT_EQUAL_UINT32(180, config.filters[i].maxDays);
         TEST_ASSERT_EQUAL_UINT32(0, config.filters[i].lifeMl);
@@ -106,6 +112,17 @@ void test_sanitize_config_clamps_scalar_ranges() {
     TEST_ASSERT_EQUAL_UINT32(1, config.valveFullPowerSec);
     TEST_ASSERT_EQUAL_UINT8(kMinValveHoldDutyPercent, config.valveHoldDutyPercent);
     TEST_ASSERT_EQUAL_UINT32(300, config.oledSleepSec);
+}
+
+void test_sanitize_config_replaces_non_finite_pulse_factor() {
+    SystemConfig config = makeDefaultConfig();
+    config.pulsePerMl = NAN;
+    sanitizeConfig(config);
+    TEST_ASSERT_FLOAT_WITHIN(0.0001f, kDefaultPulsePerMl, config.pulsePerMl);
+
+    config.pulsePerMl = INFINITY;
+    sanitizeConfig(config);
+    TEST_ASSERT_FLOAT_WITHIN(0.0001f, kDefaultPulsePerMl, config.pulsePerMl);
 }
 
 void test_sanitize_config_clamps_preset_values_by_type() {
@@ -190,6 +207,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_default_presets_use_two_enabled_volume_presets);
     RUN_TEST(test_default_filters_support_six_lightweight_records);
     RUN_TEST(test_sanitize_config_clamps_scalar_ranges);
+    RUN_TEST(test_sanitize_config_replaces_non_finite_pulse_factor);
     RUN_TEST(test_sanitize_config_clamps_preset_values_by_type);
     RUN_TEST(test_calibration_target_and_page_size_helpers);
     return UNITY_END();

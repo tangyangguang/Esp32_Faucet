@@ -1,6 +1,7 @@
 #include "app/AppConfig.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 
@@ -58,13 +59,13 @@ SystemConfig makeDefaultConfig() {
     setPreset(config.presets[0], true, PresetType::Volume, 1500, "1.5L");
     setPreset(config.presets[1], true, PresetType::Volume, 7500, "7.5L");
     for (std::size_t i = 2; i < kPresetCount; ++i) {
-        setPreset(config.presets[i], false, PresetType::Volume, 1000, "Preset");
+        setPreset(config.presets[i], false, PresetType::Volume, 1000, "预设");
     }
 
-    setFilter(config.filters[0], true, "Filter 1");
+    setFilter(config.filters[0], true, "第1级滤芯");
     for (std::size_t i = 1; i < kFilterCount; ++i) {
         char name[kNameLength]{};
-        std::snprintf(name, sizeof(name), "Filter %u", static_cast<unsigned>(i + 1));
+        std::snprintf(name, sizeof(name), "第%u级滤芯", static_cast<unsigned>(i + 1));
         setFilter(config.filters[i], false, name);
     }
 
@@ -80,7 +81,9 @@ void sanitizeConfig(SystemConfig& config) {
     config.highFlowMlPerMin = clampValue<std::uint32_t>(config.highFlowMlPerMin, 1000, 100000);
     config.highFlowDurationSec = clampValue<std::uint32_t>(config.highFlowDurationSec, 1, 30);
     config.pauseTimeoutSec = clampValue<std::uint32_t>(config.pauseTimeoutSec, 10, 3600);
-    config.pulsePerMl = clampValue<float>(config.pulsePerMl, kMinPulsePerMl, kMaxPulsePerMl);
+    config.pulsePerMl = std::isfinite(config.pulsePerMl)
+                            ? clampValue<float>(config.pulsePerMl, kMinPulsePerMl, kMaxPulsePerMl)
+                            : kDefaultPulsePerMl;
     bool anyCalibrationTarget = false;
     for (auto& target : config.calibrationTargetsMl) {
         if (target == kDisabledCalibrationTargetMl) {

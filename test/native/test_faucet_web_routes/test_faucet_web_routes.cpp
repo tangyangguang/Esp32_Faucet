@@ -9,7 +9,7 @@ using namespace faucet;
 void test_routes_fit_esp32base_default_route_capacity() {
     TEST_ASSERT_TRUE(faucetWebRoutesFitEsp32Base());
     TEST_ASSERT_LESS_OR_EQUAL_size_t(kFaucetWebMaxRoutes, faucetWebRouteCount());
-    TEST_ASSERT_EQUAL_size_t(15, faucetWebRouteCount());
+    TEST_ASSERT_EQUAL_size_t(16, faucetWebRouteCount());
 }
 
 void test_routes_do_not_register_remote_water_control_paths() {
@@ -70,6 +70,18 @@ void test_filter_edit_route_is_hidden_from_navigation() {
     TEST_ASSERT_TRUE(found);
 }
 
+void test_presets_page_is_available_in_navigation() {
+    const FaucetWebRoute* routes = faucetWebRoutes();
+    bool found = false;
+    for (std::size_t i = 0; i < faucetWebRouteCount(); ++i) {
+        if (std::strcmp(routes[i].path, "/faucet/presets") == 0) {
+            found = routes[i].method == FaucetWebMethod::Get && routes[i].kind == FaucetWebRouteKind::Page &&
+                    std::strcmp(routes[i].title, "预设") == 0;
+        }
+    }
+    TEST_ASSERT_TRUE(found);
+}
+
 int main(int argc, char** argv) {
     (void)argc;
     (void)argv;
@@ -80,5 +92,6 @@ int main(int argc, char** argv) {
     RUN_TEST(test_route_blacklist_rejects_dangerous_control_aliases);
     RUN_TEST(test_dual_method_routes_are_merged_to_any);
     RUN_TEST(test_filter_edit_route_is_hidden_from_navigation);
+    RUN_TEST(test_presets_page_is_available_in_navigation);
     return UNITY_END();
 }

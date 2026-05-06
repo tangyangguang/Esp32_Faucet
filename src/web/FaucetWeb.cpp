@@ -61,32 +61,52 @@ void sendLiters(std::uint32_t ml) {
 void sendAppLinks() {
     Esp32BaseWeb::sendChunk("<style>"
                             "body>nav{display:none}"
-                            ".faucet-nav{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 14px;padding-bottom:10px;border-bottom:1px solid #eee}"
-                            ".faucet-nav a{display:inline-flex;align-items:center;min-height:34px;line-height:1.2;margin:0;white-space:nowrap}"
-                            ".base-links{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 18px;padding-bottom:10px;border-bottom:1px solid #eee}"
-                            ".base-links span{display:inline-flex;align-items:center;color:#666;font-size:.88em;margin-right:2px}"
-                            ".base-links a{background:#666;display:inline-flex;align-items:center;min-height:30px;line-height:1.2;margin:0;white-space:nowrap;font-size:.86em}"
-                            ".faucet-actions{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 14px}"
+                            "body{background:#f6f7f9;color:#1f2933;max-width:880px;padding:16px}"
+                            "h1{display:none}"
+                            "h2{font-size:1.35rem;margin:0 0 16px;color:#111827}"
+                            "h3{font-size:1.02rem;margin:0;color:#111827}"
+                            "a,button,input[type=submit],input[type=button]{border-radius:6px;box-shadow:none}"
+                            ".app-head{margin:0 0 18px}"
+                            ".app-title{font-size:1.15rem;font-weight:700;margin:0 0 10px;color:#111827}"
+                            ".faucet-nav{display:flex;flex-wrap:wrap;gap:4px;margin:0;padding:3px;background:#fff;border:1px solid #e5e7eb;border-radius:8px}"
+                            ".faucet-nav a{background:transparent;color:#374151;display:inline-flex;align-items:center;min-height:34px;line-height:1.2;margin:0;padding:7px 10px;white-space:nowrap}"
+                            ".faucet-nav a:hover{background:#eef2f7;color:#111827}"
+                            ".faucet-actions{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 16px}"
                             ".faucet-actions a{display:inline-flex;align-items:center;min-height:34px;line-height:1.2;margin:0;white-space:nowrap}"
                             ".info{display:none}"
-                            "select{width:100%;padding:7px;margin:4px 0 12px;border:1px solid #ccc;border-radius:3px;box-sizing:border-box}"
-                            ".panel{border:1px solid #ddd;border-radius:6px;padding:12px;margin:0 0 14px;background:#fafafa}"
-                            ".panel h3{margin:0 0 10px}"
-                            ".grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px 12px}"
+                            "input:not([type=submit]):not([type=button]),select{width:100%;padding:9px 10px;margin:0;border:1px solid #d1d5db;border-radius:6px;box-sizing:border-box;background:#fff;font-size:1rem}"
+                            "select{margin:4px 0 12px}"
+                            ".panel{border:1px solid #e5e7eb;border-radius:8px;padding:14px;margin:0 0 14px;background:#fff}"
+                            ".panel h3{padding-bottom:10px;margin-bottom:12px;border-bottom:1px solid #eef0f3}"
+                            ".grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px 16px}"
                             ".field{display:block;margin:0}"
-                            ".field span{display:block;font-size:.9em;color:#444;margin-bottom:4px}"
+                            ".field span{display:block;font-size:.9em;color:#374151;margin-bottom:6px}"
                             ".field input{margin:0}"
-                            ".hint{display:block;color:#777;font-size:.82em;margin:4px 0 0}"
-                            ".check{display:block;margin:6px 0 0}"
-                            "table{width:100%;border-collapse:collapse;margin-bottom:14px}"
-                            "td,th{padding:6px 4px;border-bottom:1px solid #eee;text-align:left}"
+                            ".hint{display:block;color:#6b7280;font-size:.82em;margin:5px 0 0}"
+                            ".check{display:flex;align-items:center;gap:6px;min-height:38px;margin:0}"
+                            ".check input{width:auto}"
+                            "form input[type=submit]{margin-top:4px;min-height:38px;padding:8px 18px}"
+                            "table{width:100%;border-collapse:collapse;margin:0 0 16px;background:#fff;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden}"
+                            "td,th{padding:9px 10px;border-bottom:1px solid #eef0f3;text-align:left}"
+                            "tr:last-child td{border-bottom:0}"
+                            ".base-tools{margin:22px 0 0;padding-top:14px;border-top:1px solid #e5e7eb;color:#6b7280}"
+                            ".base-tools details{background:transparent}"
+                            ".base-tools summary{cursor:pointer;font-size:.9rem;line-height:1.8}"
+                            ".base-tools div{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}"
+                            ".base-tools a{background:transparent;color:#4b5563;border:1px solid #d1d5db;display:inline-flex;align-items:center;min-height:30px;line-height:1.2;margin:0;padding:5px 9px;white-space:nowrap;font-size:.86em}"
+                            "@media(max-width:520px){body{padding:12px}.faucet-nav{gap:2px}.faucet-nav a{padding:7px 9px}.grid{grid-template-columns:1fr}.panel{padding:12px}}"
                             "</style>"
+                            "<header class='app-head'><div class='app-title'>智能出水龙头</div>"
                             "<nav class='faucet-nav'><a href='/faucet'>状态</a><a href='/faucet/config'>配置</a>"
                             "<a href='/faucet/stats'>统计</a><a href='/faucet/logs'>记录</a>"
-                            "<a href='/faucet/filters'>滤芯</a><a href='/faucet/calibration'>校准</a></nav>"
-                            "<div class='base-links'><span>基础功能</span><a href='/esp32base'>首页</a>"
-                            "<a href='/esp32base/wifi'>WiFi</a><a href='/esp32base/ota'>OTA</a>"
-                            "<a href='/esp32base/logs'>系统日志</a><a href='/esp32base/reboot'>重启</a></div>");
+                            "<a href='/faucet/filters'>滤芯</a><a href='/faucet/calibration'>校准</a></nav></header>");
+}
+
+void sendBaseLinks() {
+    Esp32BaseWeb::sendChunk("<section class='base-tools'><details><summary>基础功能</summary><div>"
+                            "<a href='/esp32base'>首页</a><a href='/esp32base/wifi'>WiFi</a>"
+                            "<a href='/esp32base/ota'>OTA</a><a href='/esp32base/logs'>系统日志</a>"
+                            "<a href='/esp32base/reboot'>重启</a></div></details></section>");
 }
 
 bool sendPageStart(const char* title) {
@@ -99,6 +119,7 @@ bool sendPageStart(const char* title) {
 }
 
 void sendPageEnd() {
+    sendBaseLinks();
     Esp32BaseWeb::sendFooter();
 }
 

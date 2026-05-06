@@ -60,29 +60,32 @@ void sendLiters(std::uint32_t ml) {
 
 void sendAppStyles() {
     Esp32BaseWeb::sendChunk("<style>"
-                            "body{background:#f6f7f9;color:#1f2933;max-width:880px;padding:16px}"
+                            "body{background:#f5f7f8;color:#1f2933;max-width:1120px;padding:12px 14px}"
                             "h1{color:#111827}"
-                            "h2{font-size:1.3rem;margin:0 0 16px;color:#111827}"
-                            "h3{font-size:1.02rem;margin:0;color:#111827}"
+                            "h2{font-size:1.22rem;margin:0 0 10px;color:#111827}"
+                            "h3{font-size:1rem;margin:0;color:#111827}"
                             "a,button,input[type=submit],input[type=button]{border-radius:6px;box-shadow:none}"
-                            ".faucet-actions{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 16px}"
-                            ".faucet-actions a{display:inline-flex;align-items:center;min-height:34px;line-height:1.2;margin:0;white-space:nowrap}"
-                            "input:not([type=submit]):not([type=button]),select{width:100%;padding:9px 10px;margin:0;border:1px solid #d1d5db;border-radius:6px;box-sizing:border-box;background:#fff;font-size:1rem}"
-                            "select{margin:4px 0 12px}"
-                            ".panel{border:1px solid #e5e7eb;border-radius:8px;padding:14px;margin:0 0 14px;background:#fff}"
-                            ".panel h3{padding-bottom:10px;margin-bottom:12px;border-bottom:1px solid #eef0f3}"
-                            ".grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px 16px}"
+                            ".faucet-actions{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 10px}"
+                            ".faucet-actions a{display:inline-flex;align-items:center;min-height:32px;line-height:1.2;margin:0;white-space:nowrap}"
+                            "input:not([type=submit]):not([type=button]):not([type=checkbox]),select{width:100%;height:34px;padding:6px 9px;margin:0;border:1px solid #d1d5db;border-radius:6px;box-sizing:border-box;background:#fff;font-size:.96rem}"
+                            "select{margin:3px 0 8px}"
+                            ".panel{border:1px solid #e1e5ea;border-radius:8px;padding:10px 12px;margin:0 0 10px;background:#fff}"
+                            ".panel h3{padding-bottom:7px;margin-bottom:9px;border-bottom:1px solid #edf0f3}"
+                            ".grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:9px 12px}"
                             ".field{display:block;margin:0}"
-                            ".field span{display:block;font-size:.9em;color:#374151;margin-bottom:6px}"
+                            ".field span{display:block;font-size:.84em;color:#3f4b5a;margin-bottom:4px}"
                             ".field input{margin:0}"
-                            ".hint{display:block;color:#6b7280;font-size:.82em;margin:5px 0 0}"
-                            ".check{display:flex;align-items:center;gap:6px;min-height:38px;margin:0}"
-                            ".check input{width:auto}"
-                            "form input[type=submit]{margin-top:4px;min-height:38px;padding:8px 18px}"
-                            "table{width:100%;border-collapse:collapse;margin:0 0 16px;background:#fff;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden}"
-                            "td,th{padding:9px 10px;border-bottom:1px solid #eef0f3;text-align:left}"
+                            ".hint{display:block;color:#687386;font-size:.78em;margin:3px 0 0}"
+                            ".check-field{display:block;margin:0}"
+                            ".check-title{display:block;font-size:.84em;color:#3f4b5a;margin-bottom:4px}"
+                            ".check-line{display:flex;align-items:center;gap:7px;height:34px;padding:0 10px;border:1px solid #d1d5db;border-radius:6px;background:#fff;box-sizing:border-box;color:#1f2933;font-size:.95rem;white-space:nowrap}"
+                            ".check-line input[type=checkbox]{width:15px;height:15px;margin:0;padding:0;flex:0 0 auto}"
+                            ".form-actions{display:flex;justify-content:flex-start;margin-top:4px}"
+                            "form input[type=submit]{min-height:34px;padding:7px 18px;margin:0}"
+                            "table{width:100%;border-collapse:collapse;margin:0 0 12px;background:#fff;border:1px solid #e1e5ea;border-radius:8px;overflow:hidden}"
+                            "td,th{padding:7px 9px;border-bottom:1px solid #edf0f3;text-align:left}"
                             "tr:last-child td{border-bottom:0}"
-                            "@media(max-width:520px){body{padding:12px}.grid{grid-template-columns:1fr}.panel{padding:12px}}"
+                            "@media(max-width:520px){body{padding:10px}.grid{grid-template-columns:1fr}.panel{padding:10px}}"
                             "</style>");
 }
 
@@ -158,10 +161,10 @@ void sendVolumeInput(const char* label, const char* name, std::uint32_t value) {
 }
 
 void sendCheckbox(const char* label, const char* name, bool checked) {
-    sendFmt("<label class='check'><input type='checkbox' name='%s' value='1'%s> %s</label>",
+    sendFmt("<label class='check-field'><span class='check-title'>%s</span><span class='check-line'><input type='checkbox' name='%s' value='1'%s>启用</span></label>",
+            label,
             name,
-            checked ? " checked" : "",
-            label);
+            checked ? " checked" : "");
 }
 
 void handleFaucetPage() {
@@ -227,9 +230,8 @@ void handleConfigPage() {
     sendTextInput("电磁阀保持占空比（%）", "valveHoldDutyPercent", config.valveHoldDutyPercent);
     Esp32BaseWeb::sendChunk("</div></section><section class='panel'><h3>本地交互</h3><div class='grid'>");
     sendTextInput("OLED 熄屏时间（秒）", "oledSleepSec", config.oledSleepSec);
-    Esp32BaseWeb::sendChunk("<div>");
-    sendCheckbox("启用蜂鸣器", "beepEnabled", config.beepEnabled);
-    Esp32BaseWeb::sendChunk("</div></div></section><input type='submit' value='保存'></form>");
+    sendCheckbox("蜂鸣器", "beepEnabled", config.beepEnabled);
+    Esp32BaseWeb::sendChunk("</div></section><div class='form-actions'><input type='submit' value='保存'></div></form>");
     sendPageEnd();
 }
 

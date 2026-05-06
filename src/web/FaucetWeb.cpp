@@ -96,10 +96,10 @@ void formatLifeRange(const FilterRecord& filter, char* out, std::size_t len) {
     const std::uint32_t minMonths = daysToMonths(filter.recommendDays);
     const std::uint32_t maxMonths = daysToMonths(filter.maxDays);
     if (maxMonths > minMonths) {
-        std::snprintf(out, len, "%lu～%lu 个月", static_cast<unsigned long>(minMonths),
+        std::snprintf(out, len, "%lu～%lu个月", static_cast<unsigned long>(minMonths),
                       static_cast<unsigned long>(maxMonths));
     } else {
-        std::snprintf(out, len, "%lu 个月", static_cast<unsigned long>(minMonths));
+        std::snprintf(out, len, "%lu个月", static_cast<unsigned long>(minMonths));
     }
 }
 
@@ -113,6 +113,13 @@ const char* filterStatusText(FilterLifeStatus status) {
         default:
             return "正常";
     }
+}
+
+const char* filterDisplayStatusText(const FilterRecord& filter, std::uint32_t usedDays) {
+    if (!filter.enabled) {
+        return "停用";
+    }
+    return filterStatusText(filterLifeStatus(filter, usedDays));
 }
 
 void sendLiters(std::uint32_t ml) {
@@ -332,7 +339,7 @@ void handleFaucetPage() {
         Esp32BaseWeb::sendChunk("<section class='filter-card'><div class='filter-head'><strong>");
         Esp32BaseWeb::writeHtmlEscaped(filter.name);
         sendFmt("</strong><span class='status-pill'>%s</span></div>",
-                filterStatusText(filterLifeStatus(filter, usedDays)));
+                filterDisplayStatusText(filter, usedDays));
         if (filter.recommendDays > 0) {
             sendFmt("<div class='progress'><span style='width:%lu%%'></span></div>",
                     static_cast<unsigned long>(progress));
@@ -519,7 +526,7 @@ void handleFiltersPage() {
         return;
     }
     const std::uint32_t now = g_context.nowSeconds();
-    Esp32BaseWeb::sendChunk("<h2>滤芯</h2><table><tr><th>名称</th><th>启用</th><th>已用天数</th><th>已用流量</th><th>寿命</th><th>状态</th><th>设置</th><th>重置</th></tr>");
+    Esp32BaseWeb::sendChunk("<h2>滤芯</h2><table><tr><th>名称</th><th>启用</th><th>已用天数</th><th>已用流量</th><th>寿命</th><th>状态</th><th>操作</th></tr>");
     for (std::size_t i = 0; i < kFilterCount; ++i) {
         const FilterRecord& filter = g_context.filters->record(i);
         const std::uint32_t usedDays = filter.startTime >= kMinFilterDateSeconds ? g_context.filters->usedDays(i, now) : 0;
@@ -538,13 +545,13 @@ void handleFiltersPage() {
         } else {
             Esp32BaseWeb::sendChunk("未设置流量");
         }
-        sendFmt("</td><td>%s</td><td><a href='/faucet/filters/edit?index=%u'>设置</a></td><td>",
-                filterStatusText(filterLifeStatus(filter, usedDays)),
+        sendFmt("</td><td>%s</td><td><div class='form-actions'><a href='/faucet/filters/edit?index=%u'>设置</a>",
+                filterDisplayStatusText(filter, usedDays),
                 static_cast<unsigned>(i));
         Esp32BaseWeb::sendChunk("<form method='post' action='/api/faucet/filters/reset' "
                                 "onsubmit=\"return confirm('确认重置滤芯？')&&once(this)\">");
         sendFmt("<input type='hidden' name='index' value='%u'>", static_cast<unsigned>(i));
-        Esp32BaseWeb::sendChunk("<input type='submit' value='重置'></form></td></tr>");
+        Esp32BaseWeb::sendChunk("<input type='submit' value='重置'></form></div></td></tr>");
     }
     Esp32BaseWeb::sendChunk("</table>");
     sendPageEnd();

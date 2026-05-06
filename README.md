@@ -1,0 +1,47 @@
+# Esp32 Faucet
+
+基于 ESP32 的智能定量出水龙头固件。
+
+## 当前状态
+
+- 使用 `/Users/tyg/dir/claude_dir/Esp32Base` 作为 ESP32 基础库。
+- 主固件已接入 Esp32Base FULL profile、三键业务核心、流量计、电磁阀 PWM、OLED、蜂鸣器、RTC、LittleFS 日志、统计、滤芯和 Web 查看/配置页面。
+- Web 不提供任何远程出水控制能力。
+- 裸板验证已通过：未接外设时 `rtc=absent`、`oled=absent`、`log=file`，WiFi/Web/mDNS/NTP 正常。
+
+## 环境
+
+- PlatformIO
+- ESP32 Arduino framework
+- 本地基础库：`/Users/tyg/dir/claude_dir/Esp32Base`
+
+## 常用命令
+
+```sh
+pio test -e native
+pio run -e esp32dev
+pio run -e esp32dev_smoke
+pio run -e esp32dev -t upload --upload-port /dev/cu.usbserial-130
+pio run -e esp32dev -t uploadfs --upload-port /dev/cu.usbserial-130
+```
+
+## 文档
+
+- 产品需求：[docs/01-product-requirements.md](docs/01-product-requirements.md)
+- 硬件设计：[docs/02-hardware-design.md](docs/02-hardware-design.md)
+- 软件架构：[docs/03-software-architecture.md](docs/03-software-architecture.md)
+- 交互设计：[docs/04-ui-interaction.md](docs/04-ui-interaction.md)
+- 测试计划：[docs/05-test-plan.md](docs/05-test-plan.md)
+- 实现任务书：[docs/06-implementation-plan.md](docs/06-implementation-plan.md)
+- 上板记录：[docs/07-board-bringup.md](docs/07-board-bringup.md)
+
+## 上板顺序
+
+1. OLED
+2. 三个按键：`STOP`、`OK`、`NEXT`
+3. 蜂鸣器
+4. DS3231
+5. 流量计
+6. 电磁阀
+7. 完整水路验证
+

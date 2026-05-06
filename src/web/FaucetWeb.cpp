@@ -19,6 +19,7 @@
 namespace faucet {
 namespace {
 
+constexpr std::uint32_t kMinFilterDateSeconds = 631152000UL;  // 2020-01-01 in seconds since 2000-01-01.
 FaucetWebContext g_context{};
 
 bool requireContext();
@@ -164,8 +165,8 @@ void sendVolumeInput(const char* label, const char* name, std::uint32_t value) {
 
 void sendDateInput(const char* label, const char* name, std::uint32_t seconds) {
     char date[16]{};
-    formatDate(seconds, date, sizeof(date));
-    sendFmt("<label class='field'><span>%s</span><input name='%s' value='%s' placeholder='YYYY-MM-DD'></label>",
+    formatDate(seconds >= kMinFilterDateSeconds ? seconds : 0, date, sizeof(date));
+    sendFmt("<label class='field'><span>%s</span><input type='date' name='%s' value='%s'></label>",
             label,
             name,
             date);
@@ -348,11 +349,12 @@ void handleFiltersPage() {
     Esp32BaseWeb::sendChunk("<h2>滤芯</h2><table><tr><th>名称</th><th>状态</th><th>已用天数</th><th>已用流量</th><th>寿命</th><th>设置</th><th>重置</th></tr>");
     for (std::size_t i = 0; i < kFilterCount; ++i) {
         const FilterRecord& filter = g_context.filters->record(i);
+        const std::uint32_t usedDays = filter.startTime >= kMinFilterDateSeconds ? g_context.filters->usedDays(i, now) : 0;
         Esp32BaseWeb::sendChunk("<tr><td>");
         Esp32BaseWeb::writeHtmlEscaped(filter.name);
         sendFmt("</td><td>%s</td><td>%lu</td><td>",
                 filter.enabled ? "启用" : "停用",
-                static_cast<unsigned long>(g_context.filters->usedDays(i, now)));
+                static_cast<unsigned long>(usedDays));
         sendLiters(filter.usedMl);
         Esp32BaseWeb::sendChunk("</td><td>");
         if (filter.lifeDays > 0) {
@@ -505,7 +507,7 @@ bool parseDate(const char* text, std::uint32_t& seconds) {
     unsigned year = 0;
     unsigned month = 0;
     unsigned day = 0;
-    if (std::sscanf(text, "%u-%u-%u", &year, &month, &day) != 3 || year < 2000 || year > 2099 || month < 1 ||
+    if (std::sscanf(text, "%u-%u-%u", &year, &month, &day) != 3 || year < 2020 || year > 2099 || month < 1 ||
         month > 12) {
         return false;
     }
@@ -760,7 +762,8 @@ void handleFiltersResetApi() {
         return;
     }
 
-    if (!g_context.filters->resetFilter(index, g_context.nowSeconds())) {
+    const std::uint32_t now = g_context.nowSeconds();
+    if (!g_context.filters->resetFilter(index, now >= kMinFilterDateSeconds ? now : 0)) {
         Esp32BaseWeb::sendJson(500, "{\"error\":\"reset_failed\"}");
         return;
     }

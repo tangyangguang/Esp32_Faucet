@@ -28,6 +28,7 @@ constexpr const char* kDefaultWebPassword = "admin";
 constexpr std::size_t kRamLogCapacity = 128;
 constexpr std::size_t kWaterLogCapacity = 20000;
 constexpr const char* kWaterLogPath = "/faucet_water.bin";
+constexpr std::uint32_t kUnixSecondsAt2000 = 946684800UL;
 
 char g_hostname[17] = "water-0000";
 
@@ -131,6 +132,14 @@ faucet::PeriodKeys makeFallbackPeriodKeys(std::uint32_t nowSeconds) {
 std::uint32_t currentSeconds() {
     const faucet::RtcDateTime now = g_rtc.readNow();
     if (!now.valid) {
+#if ESP32BASE_ENABLE_NTP
+        if (Esp32BaseNtp::isTimeSynced()) {
+            const std::uint32_t timestamp = Esp32BaseNtp::timestamp();
+            if (timestamp >= kUnixSecondsAt2000) {
+                return timestamp - kUnixSecondsAt2000;
+            }
+        }
+#endif
         return millis() / 1000UL;
     }
 

@@ -1,5 +1,7 @@
 # Esp32Base 请求：修正 Web 全局 input 样式误作用到 checkbox
 
+状态：Esp32Base 已修正。`sendHeader()` 的基础 CSS 已改为只作用于文本类 input，checkbox/radio 等非文本控件保持原生尺寸。本项目不再需要为基础库 input 污染写高优先级尺寸覆盖，仅保留业务表单自身布局样式。
+
 请在 Esp32Base 项目中修正内置 Web 基础样式的 input 作用范围。当前 Esp32_Faucet 在配置页使用 checkbox 字段时发现，Esp32Base 的全局样式会把 checkbox 当成普通文本输入框处理，导致 checkbox 被设置为宽度 100%、padding、margin、border 等文本输入框样式，破坏业务页面表单排版。
 
 ## 背景

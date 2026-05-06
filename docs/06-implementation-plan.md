@@ -1,0 +1,128 @@
+# 实现任务书
+
+## 目标
+
+按 `docs/01-product-requirements.md` 到 `docs/05-test-plan.md` 实现固件。实现顺序必须先保证本地控水安全闭环，再补 Web 查看和配置能力。Web 端不得出现任何出水控制入口。
+
+## 前置状态
+
+- `ESP32BASE_PROFILE_FULL` 下 LittleFS 依赖问题已在 Esp32Base 修复，并在本项目验证通过。
+- 本项目通过 `symlink:///Users/tyg/dir/claude_dir/Esp32Base` 引用基础库，后续基础库修改可直接在本项目验证。
+
+## 目录结构
+
+```text
+include/
+  app/
+    AppConfig.h
+    AppTypes.h
+    AppController.h
+    WaterController.h
+    CalibrationController.h
+    ConfigStore.h
+    WaterLogStore.h
+    StatisticsStore.h
+    FilterStore.h
+  drivers/
+    ButtonInput.h
+    ValveDriver.h
+    FlowMeter.h
+    DisplayPresenter.h
+    BeepDriver.h
+    RtcClock.h
+  web/
+    FaucetWeb.h
+src/
+  app/
+  drivers/
+  web/
+  main.cpp
+test/native/
+```
+
+模块命名可以在实现中微调，但分层边界必须保持：业务不直接操作 GPIO，Web 不直接操作硬件。
+
+## 实现顺序
+
+1. 纯 C++ 类型和默认配置
+   - 定义预设、滤芯、日志、统计、运行状态、校准结果等定长数据结构。
+   - 写默认配置和钳位函数。
+   - Native 测试默认值、范围钳位、9 组预设、最多 6 个滤芯。
+
+2. 硬件抽象桩和业务核心
+   - 先定义 `ValveDriver`、`FlowMeter`、`ButtonInput` 的接口和 native fake。
+   - 实现 `WaterController` 状态机。
+   - 覆盖待机、确认、运行、暂停、错误、`STOP` 软件停止、安全兜底。
+
+3. 本地流量校准
+   - 实现 `CalibrationController`。
+   - 支持 500/1000/1500/2000ml 目标容量、至少 2 次采样、5% 偏差检查、确认保存。
+   - 校准采样不写出水日志，不更新统计和滤芯。
+
+4. 存储与统计
+   - `ConfigStore` 使用应用 namespace：`faucet_cfg`、`faucet_stat`、`faucet_run`。
+   - `StatisticsStore` 支持今日、本周、本月、总累计。
+   - `FilterStore` 支持最多 6 个滤芯的已用天数、已用流量和重置。
+   - `WaterLogStore` 使用 LittleFS 二进制定长记录，分页最大 200 条。
+
+5. 设备驱动
+   - `ValveDriver`：GPIO16，全压吸合 3s 后 PWM 保持。业务逻辑、GPIO16 LEDC 适配和主循环接入已完成，待上板验证。
+   - `FlowMeter`：GPIO32 中断计数，软件过滤，单一流量系数。业务逻辑、GPIO32 ISR 缓冲适配和主循环接入已完成，待上板验证。
+   - `ButtonInput`：GPIO36/33/35，外部 10K 上拉，低电平有效。业务逻辑、GPIO 低电平读取和主循环接入已完成，待上板验证。
+   - `OledDisplay` / `DisplayPresenter`：OLED 128x32 双行页面和 SSD1306 I2C 驱动已完成，按键/运行唤醒和空闲熄屏已接入，待上板验证显示方向和地址。
+   - `BeepDriver`：短提示、完成提示、异常提示，可关闭。业务逻辑、GPIO17 LEDC 适配和主循环接入已完成，待上板验证。
+   - `RtcClock`：DS3231 自动检测，有则使用，无则降级。I2C 探测、读取和时间策略已接入，待上板验证。
+
+6. Web 页面和 API
+   - 注册 `/faucet`、`/faucet/config`、`/faucet/logs`、`/faucet/stats`、`/faucet/filters`、`/faucet/calibration`。
+   - 注册只读和配置 API：状态、配置、预设、日志、统计、滤芯、校准参数。
+   - 禁止注册 `/api/faucet/water/*`、`/api/faucet/start`、`/api/faucet/stop` 或同义出水控制接口。
+   - Web 校准只允许查看和手动录入系数，不允许打开电磁阀。
+
+7. 上板验证
+   - 先验证 `STOP` 软件停止、电磁阀 PWM、流量计计数。
+   - 再验证 OLED、本地校准、日志、统计、滤芯、Web 页面。
+   - 最后做 72 小时连续运行测试。
+
+## 关键实现规则
+
+- `STOP` 响应必须小于 50ms；自动关阀动作必须小于 100ms。
+- 出水过程中的异常优先关阀，后记录日志和更新统计。
+- Web 请求不得阻塞控制 tick；日志和统计响应必须分页或小响应。
+- 重启后默认不继续未完成出水任务。
+- Web 默认账号密码为 `admin/admin`，配置页提示修改但不强制。
+- 硬件电源开关不在软件中检测、控制或建模。
+
+## 当前接入状态
+
+- `main.cpp` 已接入本地控水主循环：配置加载、三键读取、流量 ISR 缓冲、业务 tick、电磁阀 PWM 输出、蜂鸣器 PWM 输出、RTC 自动检测。
+- 本地流量校准已接入：长按 `OK` 进入，`NEXT` 选择 500/1000/1500/2000ml，`OK` 二次确认启动采样，达到容器刻度后 `OK` 结束采样，至少两次一致后 `OK` 保存；校准不写入出水日志、统计或滤芯用量。
+- 恢复出厂已接入本地二次确认：`STOP + OK` 长按只进入 OLED 确认页，释放组合键不会立即误取消，确认后清理系统配置、运行统计、滤芯运行数据和出水日志并重启。
+- 统计和滤芯运行数据已接入 NVS 持久化：出水任务完成后保存 `faucet_stat` 和 `faucet_run`，避免每个 tick 写入。
+- 出水日志已接入 LittleFS 文件环形存储：通过 Esp32Base Fs 按偏移读写 API 实现 20000 条目标容量的二进制定长日志，文件不可用时保留 RAM 环形降级写入。文件启动时只创建头部，记录按需追加，满容量后再环形覆盖，避免裸板首次启动预分配大文件触发 watchdog。
+- OLED 页面模型、SSD1306 I2C 驱动、刷新节流、按键/运行唤醒和空闲熄屏已接入。
+- Web 路由壳已接入 Esp32Base：14 条页面/API 路由，合并 GET/POST 路径以适配 16 条应用路由上限；已用 native 测试禁止远程出水控制路径。
+- Web API 已接入真实状态、配置、预设、日志分页、统计、滤芯和校准 JSON 输出；滤芯重置 POST 已接入，重置后写入当前时间并保存运行数据。
+- Web 写配置类 API 已通过 Esp32BaseWeb 当前请求方法能力接入 POST 保存：支持配置、单个预设、校准参数保存；保存后提示建议重启以让运行中控制器重新加载配置。
+- Web 页面已从安全占位升级为轻量可用页面：状态、配置、预设、日志、统计、滤芯、校准页面已接入；页面仍不提供任何远程出水控制入口。
+
+## Native 测试优先级
+
+1. `ConfigStore` 默认值和钳位。
+2. `WaterController` 状态机和安全兜底。
+3. `ButtonInput` 三键事件和组合键。
+4. `CalibrationController` 采样一致性。
+5. `StatisticsStore` 周期累计。
+6. `FilterStore` 已用天数和流量。
+7. `WaterLogStore` 分页和滚动。
+8. `FaucetWeb` 路由黑名单：不存在远程出水控制路径。
+9. `AppController` 本地流量校准保存不写入出水日志、统计或滤芯用量。
+10. `AppController` 恢复出厂必须经过组合键和 `OK` 二次确认。
+
+## 完成定义
+
+- `pio test -e native` 通过。
+- `pio run -e esp32dev` 通过。
+- 上板验证满足 `docs/05-test-plan.md` 验收标准。
+- 裸板和逐步接线验证记录见 `docs/07-board-bringup.md`。
+- 文档、代码和默认参数保持一致。

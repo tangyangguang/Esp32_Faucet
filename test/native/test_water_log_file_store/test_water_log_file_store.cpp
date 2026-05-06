@@ -1,0 +1,220 @@
+#include <unity.h>
+
+#include "app/WaterLogFileStore.h"
+
+#include <algorithm>
+#include <cstring>
+#include <map>
+#include <string>
+#include <vector>
+
+using namespace faucet;
+
+namespace {
+
+class MemoryFileBackend : public WaterLogFileBackend {
+public:
+    bool failWrite = false;
+    bool failRead = false;
+
+    bool exists(const char* path) override {
+        return files.find(path ? path : "") != files.end();
+    }
+
+    std::int64_t fileSize(const char* path) override {
+        const auto it = files.find(path ? path : "");
+        return it == files.end() ? -1 : static_cast<std::int64_t>(it->second.size());
+    }
+
+    bool createSized(const char* path, std::size_t size) override {
+        if (failWrite || !path) {
+            return false;
+        }
+        files[path] = std::vector<std::uint8_t>(size, 0);
+        return true;
+    }
+
+    bool appendBytes(const char* path, const std::uint8_t* data, std::size_t len) override {
+        if (failWrite || !path || (!data && len > 0)) {
+            return false;
+        }
+        std::vector<std::uint8_t>& file = files[path];
+        const std::size_t oldSize = file.size();
+        file.resize(oldSize + len, 0);
+        if (len > 0) {
+            std::memcpy(file.data() + oldSize, data, len);
+        }
+        return true;
+    }
+
+    bool readAt(const char* path, std::size_t offset, std::uint8_t* out, std::size_t len) override {
+        if (failRead || !out) {
+            return false;
+        }
+        const auto it = files.find(path ? path : "");
+        if (it == files.end() || offset + len > it->second.size()) {
+            return false;
+        }
+        std::memcpy(out, it->second.data() + offset, len);
+        return true;
+    }
+
+    bool writeAt(const char* path, std::size_t offset, const std::uint8_t* data, std::size_t len) override {
+        if (failWrite || !path) {
+            return false;
+        }
+        std::vector<std::uint8_t>& file = files[path];
+        if (offset + len > file.size()) {
+            file.resize(offset + len, 0);
+        }
+        if (data && len > 0) {
+            std::memcpy(file.data() + offset, data, len);
+        }
+        return true;
+    }
+
+    bool removeFile(const char* path) override {
+        files.erase(path ? path : "");
+        return true;
+    }
+
+private:
+    std::map<std::string, std::vector<std::uint8_t>> files;
+};
+
+WaterLogRecord makeRecord(std::uint32_t startTime, std::uint32_t volumeMl) {
+    return WaterLogRecord{
+        startTime,
+        volumeMl,
+        10,
+        WaterMode::Volume,
+        WaterResult::Completed,
+        {0, 0},
+    };
+}
+
+}  // namespace
+
+void test_file_log_initializes_empty_file() {
+    MemoryFileBackend backend;
+    WaterLogFileStore store(backend, "/water.bin", 10);
+
+    TEST_ASSERT_TRUE(store.begin());
+    TEST_ASSERT_TRUE(store.ready());
+    TEST_ASSERT_EQUAL_size_t(0, store.count());
+    TEST_ASSERT_EQUAL_size_t(10, store.capacity());
+    TEST_ASSERT_TRUE(backend.exists("/water.bin"));
+    TEST_ASSERT_EQUAL_INT64(24, backend.fileSize("/water.bin"));
+}
+
+void test_file_log_appends_and_reads_newest_first() {
+    MemoryFileBackend backend;
+    WaterLogFileStore store(backend, "/water.bin", 4);
+    TEST_ASSERT_TRUE(store.begin());
+
+    TEST_ASSERT_TRUE(store.append(makeRecord(100, 1000)));
+    TEST_ASSERT_TRUE(store.append(makeRecord(200, 2000)));
+    TEST_ASSERT_TRUE(store.append(makeRecord(300, 3000)));
+
+    WaterLogRecord page[3]{};
+    TEST_ASSERT_EQUAL_size_t(3, store.readPage(0, 3, page, 3));
+    TEST_ASSERT_EQUAL_UINT32(300, page[0].startTime);
+    TEST_ASSERT_EQUAL_UINT32(200, page[1].startTime);
+    TEST_ASSERT_EQUAL_UINT32(100, page[2].startTime);
+}
+
+void test_file_log_rolls_after_capacity() {
+    MemoryFileBackend backend;
+    WaterLogFileStore store(backend, "/water.bin", 3);
+    TEST_ASSERT_TRUE(store.begin());
+
+    for (std::uint32_t i = 1; i <= 5; ++i) {
+        TEST_ASSERT_TRUE(store.append(makeRecord(i * 100, i * 1000)));
+    }
+
+    WaterLogRecord page[3]{};
+    TEST_ASSERT_EQUAL_size_t(3, store.readPage(0, 3, page, 3));
+    TEST_ASSERT_EQUAL_UINT32(500, page[0].startTime);
+    TEST_ASSERT_EQUAL_UINT32(400, page[1].startTime);
+    TEST_ASSERT_EQUAL_UINT32(300, page[2].startTime);
+}
+
+void test_file_log_persists_header_and_records_across_instances() {
+    MemoryFileBackend backend;
+    {
+        WaterLogFileStore store(backend, "/water.bin", 5);
+        TEST_ASSERT_TRUE(store.begin());
+        TEST_ASSERT_TRUE(store.append(makeRecord(100, 1000)));
+        TEST_ASSERT_TRUE(store.append(makeRecord(200, 2000)));
+    }
+
+    WaterLogFileStore loaded(backend, "/water.bin", 5);
+    TEST_ASSERT_TRUE(loaded.begin());
+    TEST_ASSERT_EQUAL_size_t(2, loaded.count());
+
+    WaterLogRecord page[2]{};
+    TEST_ASSERT_EQUAL_size_t(2, loaded.readPage(0, 2, page, 2));
+    TEST_ASSERT_EQUAL_UINT32(200, page[0].startTime);
+    TEST_ASSERT_EQUAL_UINT32(100, page[1].startTime);
+}
+
+void test_file_log_reinitializes_corrupt_header() {
+    MemoryFileBackend backend;
+    const std::uint8_t bad[4] = {1, 2, 3, 4};
+    TEST_ASSERT_TRUE(backend.writeAt("/water.bin", 0, bad, sizeof(bad)));
+
+    WaterLogFileStore store(backend, "/water.bin", 3);
+    TEST_ASSERT_TRUE(store.begin());
+    TEST_ASSERT_EQUAL_size_t(0, store.count());
+    TEST_ASSERT_EQUAL_size_t(3, store.capacity());
+}
+
+void test_file_log_clear_keeps_file_ready() {
+    MemoryFileBackend backend;
+    WaterLogFileStore store(backend, "/water.bin", 3);
+    TEST_ASSERT_TRUE(store.begin());
+    TEST_ASSERT_TRUE(store.append(makeRecord(100, 1000)));
+
+    TEST_ASSERT_TRUE(store.clear());
+
+    WaterLogRecord page[1]{};
+    TEST_ASSERT_EQUAL_size_t(0, store.count());
+    TEST_ASSERT_EQUAL_size_t(0, store.readPage(0, 1, page, 1));
+}
+
+void test_file_log_grows_records_on_demand() {
+    MemoryFileBackend backend;
+    WaterLogFileStore store(backend, "/water.bin", 3);
+    TEST_ASSERT_TRUE(store.begin());
+
+    TEST_ASSERT_TRUE(store.append(makeRecord(100, 1000)));
+    TEST_ASSERT_EQUAL_INT64(24 + static_cast<int>(sizeof(WaterLogRecord)), backend.fileSize("/water.bin"));
+
+    TEST_ASSERT_TRUE(store.append(makeRecord(200, 2000)));
+    TEST_ASSERT_EQUAL_INT64(24 + static_cast<int>(sizeof(WaterLogRecord) * 2), backend.fileSize("/water.bin"));
+}
+
+void test_file_log_reports_backend_failures() {
+    MemoryFileBackend backend;
+    backend.failWrite = true;
+    WaterLogFileStore store(backend, "/water.bin", 3);
+
+    TEST_ASSERT_FALSE(store.begin());
+    TEST_ASSERT_FALSE(store.ready());
+}
+
+int main(int argc, char** argv) {
+    (void)argc;
+    (void)argv;
+
+    UNITY_BEGIN();
+    RUN_TEST(test_file_log_initializes_empty_file);
+    RUN_TEST(test_file_log_appends_and_reads_newest_first);
+    RUN_TEST(test_file_log_rolls_after_capacity);
+    RUN_TEST(test_file_log_persists_header_and_records_across_instances);
+    RUN_TEST(test_file_log_reinitializes_corrupt_header);
+    RUN_TEST(test_file_log_clear_keeps_file_ready);
+    RUN_TEST(test_file_log_grows_records_on_demand);
+    RUN_TEST(test_file_log_reports_backend_failures);
+    return UNITY_END();
+}

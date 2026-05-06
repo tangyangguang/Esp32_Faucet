@@ -74,7 +74,7 @@ test/native/
    - `RtcClock`：DS3231 自动检测，有则使用，无则降级。I2C 探测、读取和时间策略已接入，待上板验证。
 
 6. Web 页面和 API
-   - 注册 `/faucet`、`/faucet/config`、`/faucet/logs`、`/faucet/stats`、`/faucet/filters`、`/faucet/calibration`。
+   - 注册 `/faucet`、`/faucet/config`、`/faucet/logs`、`/faucet/stats`、`/faucet/filters`、`/faucet/filters/edit`、`/faucet/calibration`。
    - 注册只读和配置 API：状态、配置、预设、日志、统计、滤芯、校准参数。
    - 禁止注册 `/api/faucet/water/*`、`/api/faucet/start`、`/api/faucet/stop` 或同义出水控制接口。
    - Web 校准只允许查看和手动录入系数，不允许打开电磁阀。
@@ -101,10 +101,10 @@ test/native/
 - 统计和滤芯运行数据已接入 NVS 持久化：出水任务完成后保存 `faucet_stat` 和 `faucet_run`，避免每个 tick 写入。
 - 出水日志已接入 LittleFS 文件环形存储：通过 Esp32Base Fs 按偏移读写 API 实现 20000 条目标容量的二进制定长日志，文件不可用时保留 RAM 环形降级写入。文件启动时只创建头部，记录按需追加，满容量后再环形覆盖，避免裸板首次启动预分配大文件触发 watchdog。
 - OLED 页面模型、SSD1306 I2C 驱动、刷新节流、按键/运行唤醒和空闲熄屏已接入。
-- Web 路由壳已接入 Esp32Base：14 条页面/API 路由，合并 GET/POST 路径以适配 16 条应用路由上限；已用 native 测试禁止远程出水控制路径。
+- Web 路由壳已接入 Esp32Base：15 条页面/API 路由，合并 GET/POST 路径以适配 16 条应用路由上限；滤芯编辑页作为隐藏 HTML 路由注册，不进入导航；已用 native 测试禁止远程出水控制路径。
 - Web API 已接入真实状态、配置、预设、日志分页、统计、滤芯和校准 JSON 输出；滤芯配置 POST 与重置 POST 已接入，重置后写入当前时间、清零累计流量并返回滤芯列表。
 - Web 写配置类 API 已通过 Esp32BaseWeb 当前请求方法能力接入 POST 保存：支持配置、单个预设、校准参数保存；保存后提示建议重启以让运行中控制器重新加载配置。
-- Web 页面已从安全占位升级为轻量可用页面：状态、配置、预设、日志、统计、滤芯、校准页面已接入；滤芯页支持每级滤芯名称、启用、寿命和上次更换日期配置；页面仍不提供任何远程出水控制入口。
+- Web 页面已从安全占位升级为轻量可用页面：状态、配置、预设、日志、统计、滤芯、校准页面已接入；滤芯列表页只显示查看、设置入口和重置，单个滤芯配置放在独立编辑页；页面仍不提供任何远程出水控制入口。
 
 ## Native 测试优先级
 

@@ -82,7 +82,7 @@ void sendAppStyles() {
                             ".check-title{display:block;font-size:.84em;color:#3f4b5a;margin-bottom:4px}"
                             ".check-line{display:flex;align-items:center;gap:7px;height:34px;padding:0 10px;border:1px solid #d1d5db;border-radius:6px;background:#fff;box-sizing:border-box;color:#1f2933;font-size:.95rem;white-space:nowrap}"
                             ".check-line input[type=checkbox]{margin:0;flex:0 0 auto}"
-                            ".form-actions{display:flex;justify-content:flex-start;margin-top:4px}"
+                            ".form-actions{display:flex;align-items:center;justify-content:flex-start;gap:8px;margin-top:4px}"
                             "form input[type=submit]{min-height:34px;padding:7px 18px;margin:0}"
                             "table{width:100%;border-collapse:collapse;margin:0 0 12px;background:#fff;border:1px solid #e1e5ea;border-radius:8px;overflow:hidden}"
                             "td,th{padding:7px 9px;border-bottom:1px solid #edf0f3;text-align:left}"
@@ -345,7 +345,7 @@ void handleFiltersPage() {
         return;
     }
     const std::uint32_t now = g_context.nowSeconds();
-    Esp32BaseWeb::sendChunk("<h2>滤芯</h2><table><tr><th>名称</th><th>状态</th><th>已用天数</th><th>已用流量</th><th>寿命</th><th>重置</th></tr>");
+    Esp32BaseWeb::sendChunk("<h2>滤芯</h2><table><tr><th>名称</th><th>状态</th><th>已用天数</th><th>已用流量</th><th>寿命</th><th>设置</th><th>重置</th></tr>");
     for (std::size_t i = 0; i < kFilterCount; ++i) {
         const FilterRecord& filter = g_context.filters->record(i);
         Esp32BaseWeb::sendChunk("<tr><td>");
@@ -366,29 +366,49 @@ void handleFiltersPage() {
         } else {
             Esp32BaseWeb::sendChunk("未设置流量");
         }
-        sendFmt("</td><td>"
-                "<form method='post' action='/api/faucet/filters/reset' onsubmit=\"return confirm('确认重置滤芯？')&&once(this)\">"
-                "<input type='hidden' name='index' value='%u'><input type='submit' value='重置'></form></td></tr>",
-                static_cast<unsigned>(i));
+        sendFmt("</td><td><a href='/faucet/filters/edit?index=%u'>设置</a></td><td>", static_cast<unsigned>(i));
+        Esp32BaseWeb::sendChunk("<form method='post' action='/api/faucet/filters/reset' "
+                                "onsubmit=\"return confirm('确认重置滤芯？')&&once(this)\">");
+        sendFmt("<input type='hidden' name='index' value='%u'>", static_cast<unsigned>(i));
+        Esp32BaseWeb::sendChunk("<input type='submit' value='重置'></form></td></tr>");
     }
     Esp32BaseWeb::sendChunk("</table>");
-    Esp32BaseWeb::sendChunk("<h2>滤芯配置</h2>");
-    for (std::size_t i = 0; i < kFilterCount; ++i) {
-        const FilterRecord& filter = g_context.filters->record(i);
-        sendFmt("<section class='panel'><h3>第 %u 级滤芯</h3>"
-                "<form method='post' action='/api/faucet/filters' onsubmit='return once(this)'>"
-                "<input type='hidden' name='index' value='%u'><div class='grid'>",
-                static_cast<unsigned>(i + 1),
-                static_cast<unsigned>(i));
-        sendCheckbox("启用", "enabled", filter.enabled);
-        Esp32BaseWeb::sendChunk("<label class='field'><span>名称</span><input name='name' maxlength='15' value='");
-        Esp32BaseWeb::writeHtmlEscaped(filter.name);
-        Esp32BaseWeb::sendChunk("'></label>");
-        sendTextInput("寿命天数（天）", "lifeDays", filter.lifeDays);
-        sendVolumeInput("寿命流量（ml）", "lifeMl", filter.lifeMl);
-        sendDateInput("上次更换日期", "startDate", filter.startTime);
-        Esp32BaseWeb::sendChunk("</div><div class='form-actions'><input type='submit' value='保存'></div></form></section>");
+    sendPageEnd();
+}
+
+void handleFilterEditPage() {
+    if (!sendPageStart("滤芯设置")) {
+        return;
     }
+    if (!requireContext()) {
+        sendPageEnd();
+        return;
+    }
+
+    char text[24]{};
+    std::uint32_t index = 0;
+    if (!getParam("index", text, sizeof(text)) || !parseU32(text, index) || index >= kFilterCount) {
+        Esp32BaseWeb::sendChunk("<h2>滤芯设置</h2><section class='panel'><p>滤芯编号无效。</p>"
+                                "<p><a href='/faucet/filters'>返回滤芯列表</a></p></section>");
+        sendPageEnd();
+        return;
+    }
+
+    const FilterRecord& filter = g_context.filters->record(index);
+    sendFmt("<h2>第 %u 级滤芯设置</h2>"
+            "<section class='panel'><form method='post' action='/api/faucet/filters' onsubmit='return once(this)'>"
+            "<input type='hidden' name='index' value='%u'><div class='grid'>",
+            static_cast<unsigned>(index + 1),
+            static_cast<unsigned>(index));
+    sendCheckbox("启用", "enabled", filter.enabled);
+    Esp32BaseWeb::sendChunk("<label class='field'><span>名称</span><input name='name' maxlength='15' value='");
+    Esp32BaseWeb::writeHtmlEscaped(filter.name);
+    Esp32BaseWeb::sendChunk("'></label>");
+    sendTextInput("寿命天数（天）", "lifeDays", filter.lifeDays);
+    sendVolumeInput("寿命流量（ml）", "lifeMl", filter.lifeMl);
+    sendDateInput("上次更换日期", "startDate", filter.startTime);
+    Esp32BaseWeb::sendChunk("</div><div class='form-actions'><input type='submit' value='保存'>"
+                            "<a href='/faucet/filters'>取消</a></div></form></section>");
     sendPageEnd();
 }
 
@@ -793,6 +813,9 @@ Esp32BaseWeb::Handler handlerFor(const FaucetWebRoute& route) {
     }
     if (std::strcmp(route.path, "/api/faucet/status") == 0) {
         return handleStatusApi;
+    }
+    if (std::strcmp(route.path, "/faucet/filters/edit") == 0) {
+        return handleFilterEditPage;
     }
     if (std::strcmp(route.path, "/api/faucet/config") == 0) {
         return handleConfigApi;

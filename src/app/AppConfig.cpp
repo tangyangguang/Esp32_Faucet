@@ -26,6 +26,8 @@ void setPreset(PresetConfig& preset, bool enabled, PresetType type, std::uint32_
 
 void setFilter(FilterRecord& filter, bool enabled, const char* name) {
     filter.enabled = enabled;
+    filter.lifeDays = 180;
+    filter.lifeMl = 0;
     filter.startTime = 0;
     filter.usedMl = 0;
     copyName(filter.name, name);
@@ -95,6 +97,8 @@ void sanitizeConfig(SystemConfig& config) {
 
     for (auto& filter : config.filters) {
         filter.name[kNameLength - 1] = '\0';
+        filter.lifeDays = clampValue<std::uint32_t>(filter.lifeDays, 0, kMaxFilterLifeDays);
+        filter.lifeMl = clampValue<std::uint32_t>(filter.lifeMl, 0, kMaxFilterLifeMl);
     }
 }
 

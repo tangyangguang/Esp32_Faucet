@@ -35,6 +35,7 @@ void test_dual_method_routes_are_merged_to_any() {
     const FaucetWebRoute* routes = faucetWebRoutes();
     bool foundConfig = false;
     bool foundPresets = false;
+    bool foundFilters = false;
     bool foundCalibration = false;
     for (std::size_t i = 0; i < faucetWebRouteCount(); ++i) {
         if (std::strcmp(routes[i].path, "/api/faucet/config") == 0) {
@@ -43,6 +44,9 @@ void test_dual_method_routes_are_merged_to_any() {
         if (std::strcmp(routes[i].path, "/api/faucet/presets") == 0) {
             foundPresets = routes[i].method == FaucetWebMethod::Any;
         }
+        if (std::strcmp(routes[i].path, "/api/faucet/filters") == 0) {
+            foundFilters = routes[i].method == FaucetWebMethod::Any;
+        }
         if (std::strcmp(routes[i].path, "/api/faucet/calibration") == 0) {
             foundCalibration = routes[i].method == FaucetWebMethod::Any;
         }
@@ -50,6 +54,7 @@ void test_dual_method_routes_are_merged_to_any() {
 
     TEST_ASSERT_TRUE(foundConfig);
     TEST_ASSERT_TRUE(foundPresets);
+    TEST_ASSERT_TRUE(foundFilters);
     TEST_ASSERT_TRUE(foundCalibration);
 }
 

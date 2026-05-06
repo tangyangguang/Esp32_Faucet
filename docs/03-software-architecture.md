@@ -37,7 +37,7 @@
 | `BeepDriver` | 操作、完成、异常提示 |
 | `WaterLogStore` | 出水日志写入、滚动、分页 |
 | `StatisticsStore` | 今日、本周、本月、总累计 |
-| `FilterStore` | 最多 6 个滤芯的已用天数、已用流量和重置 |
+| `FilterStore` | 最多 6 个滤芯的配置、已用天数、已用流量和重置 |
 | `CalibrationController` | 本地流量校准向导、采样一致性检查、系数保存 |
 | `FaucetWeb` | 业务页面和 `/api/faucet/...` API |
 
@@ -97,7 +97,7 @@
 - 日志放 LittleFS，分页读取，单次最多 200 条。
 - 统计放 NVS，出水完成后立即更新，周期性数据按日期变化重置。
 - 运行快照默认只用于安全恢复判断，重启后默认不继续出水。
-- 滤芯数据放 NVS，记录每个滤芯的启用状态、名称、开始时间和累计流量。
+- 滤芯数据放 NVS，记录每个滤芯的启用状态、名称、寿命天数、寿命流量、开始时间和累计流量。
 - 校准系数放 NVS，校准采样过程仅在本地操作期间存在，保存前需要用户确认。
 
 ## Web 草案
@@ -117,7 +117,7 @@
 | 配置 | `/faucet/config` | 预设、安全阈值、显示、蜂鸣器、电磁阀参数 |
 | 日志 | `/faucet/logs` | 分页查看出水记录 |
 | 统计 | `/faucet/stats` | 今日、本周、本月、总累计 |
-| 滤芯 | `/faucet/filters` | 最多 6 个滤芯的已用天数、已用流量、重置更换时间 |
+| 滤芯 | `/faucet/filters` | 最多 6 个滤芯的已用天数、已用流量、寿命设置、配置和重置 |
 | 校准 | `/faucet/calibration` | 查看当前系数、手动录入系数；不出水 |
 
 ### Web API
@@ -132,6 +132,7 @@
 | GET | `/api/faucet/logs` | 分页查询日志 |
 | GET | `/api/faucet/stats` | 查询统计 |
 | GET | `/api/faucet/filters` | 查询滤芯 |
+| POST | `/api/faucet/filters` | 保存指定滤芯的启用状态、名称、寿命和上次更换日期 |
 | POST | `/api/faucet/filters/reset` | 重置指定滤芯更换时间和累计流量 |
 | GET | `/api/faucet/calibration` | 查询流量系数 |
 | POST | `/api/faucet/calibration` | 手动保存流量系数 |
@@ -156,7 +157,9 @@ struct PresetConfig {
 struct FilterRecord {
     bool enabled;
     char name[16];
-    uint32_t startTime;  // UTC seconds, 0 when unknown
+    uint32_t lifeDays;   // 0 when disabled
+    uint32_t lifeMl;     // 0 when disabled
+    uint32_t startTime;  // seconds since 2000-01-01, 0 when unknown
     uint32_t usedMl;
 };
 

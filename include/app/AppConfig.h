@@ -35,6 +35,8 @@ constexpr std::uint8_t kMaxValveHoldDutyPercent = 100;
 constexpr std::uint32_t kDefaultOledSleepSec = 30;
 constexpr std::uint16_t kDefaultLogPageSize = 50;
 constexpr std::uint16_t kMaxLogPageSize = 200;
+constexpr std::uint32_t kMaxFilterLifeDays = 3650;
+constexpr std::uint32_t kMaxFilterLifeMl = 10000000;
 
 struct SystemConfig {
     std::uint32_t confirmTimeoutSec;

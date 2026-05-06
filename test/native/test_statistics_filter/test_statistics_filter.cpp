@@ -106,6 +106,25 @@ void test_filter_rejects_invalid_index() {
     TEST_ASSERT_EQUAL_UINT32(0, store.usedDays(kFilterCount, 9999));
 }
 
+void test_filter_update_replaces_config_fields() {
+    SystemConfig config = makeDefaultConfig();
+    FilterStore store(config.filters);
+    FilterRecord record = store.record(0);
+    record.enabled = false;
+    record.lifeDays = 365;
+    record.lifeMl = 2000000;
+    record.startTime = 1714502400;
+    record.usedMl = 123456;
+
+    TEST_ASSERT_TRUE(store.updateFilter(0, record));
+
+    TEST_ASSERT_FALSE(store.record(0).enabled);
+    TEST_ASSERT_EQUAL_UINT32(365, store.record(0).lifeDays);
+    TEST_ASSERT_EQUAL_UINT32(2000000, store.record(0).lifeMl);
+    TEST_ASSERT_EQUAL_UINT32(1714502400, store.record(0).startTime);
+    TEST_ASSERT_EQUAL_UINT32(123456, store.record(0).usedMl);
+}
+
 int main(int argc, char** argv) {
     (void)argc;
     (void)argv;
@@ -118,5 +137,6 @@ int main(int argc, char** argv) {
     RUN_TEST(test_filter_reset_sets_start_time_and_clears_flow);
     RUN_TEST(test_filter_used_days_are_whole_days);
     RUN_TEST(test_filter_rejects_invalid_index);
+    RUN_TEST(test_filter_update_replaces_config_fields);
     return UNITY_END();
 }

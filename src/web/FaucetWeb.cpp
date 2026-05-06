@@ -24,6 +24,8 @@ FaucetWebContext g_context{};
 bool requireContext();
 bool getParam(const char* name, char* out, std::size_t len);
 bool parseU32(const char* text, std::uint32_t& value);
+bool parseDate(const char* text, std::uint32_t& seconds);
+void formatDate(std::uint32_t seconds, char* out, std::size_t len);
 
 Esp32BaseWeb::Method toBaseMethod(FaucetWebMethod method) {
     switch (method) {
@@ -158,6 +160,15 @@ void sendVolumeInput(const char* label, const char* name, std::uint32_t value) {
             name,
             static_cast<unsigned long>(value),
             liters);
+}
+
+void sendDateInput(const char* label, const char* name, std::uint32_t seconds) {
+    char date[16]{};
+    formatDate(seconds, date, sizeof(date));
+    sendFmt("<label class='field'><span>%s</span><input name='%s' value='%s' placeholder='YYYY-MM-DD'></label>",
+            label,
+            name,
+            date);
 }
 
 void sendCheckbox(const char* label, const char* name, bool checked) {
@@ -334,19 +345,50 @@ void handleFiltersPage() {
         return;
     }
     const std::uint32_t now = g_context.nowSeconds();
-    Esp32BaseWeb::sendChunk("<h2>滤芯</h2><table><tr><th>名称</th><th>已用天数</th><th>已用流量</th><th>重置</th></tr>");
+    Esp32BaseWeb::sendChunk("<h2>滤芯</h2><table><tr><th>名称</th><th>状态</th><th>已用天数</th><th>已用流量</th><th>寿命</th><th>重置</th></tr>");
     for (std::size_t i = 0; i < kFilterCount; ++i) {
         const FilterRecord& filter = g_context.filters->record(i);
         Esp32BaseWeb::sendChunk("<tr><td>");
         Esp32BaseWeb::writeHtmlEscaped(filter.name);
-        sendFmt("</td><td>%lu</td><td>", static_cast<unsigned long>(g_context.filters->usedDays(i, now)));
+        sendFmt("</td><td>%s</td><td>%lu</td><td>",
+                filter.enabled ? "启用" : "停用",
+                static_cast<unsigned long>(g_context.filters->usedDays(i, now)));
         sendLiters(filter.usedMl);
+        Esp32BaseWeb::sendChunk("</td><td>");
+        if (filter.lifeDays > 0) {
+            sendFmt("%lu 天", static_cast<unsigned long>(filter.lifeDays));
+        } else {
+            Esp32BaseWeb::sendChunk("未设置天数");
+        }
+        Esp32BaseWeb::sendChunk(" / ");
+        if (filter.lifeMl > 0) {
+            sendLiters(filter.lifeMl);
+        } else {
+            Esp32BaseWeb::sendChunk("未设置流量");
+        }
         sendFmt("</td><td>"
                 "<form method='post' action='/api/faucet/filters/reset' onsubmit=\"return confirm('确认重置滤芯？')&&once(this)\">"
                 "<input type='hidden' name='index' value='%u'><input type='submit' value='重置'></form></td></tr>",
                 static_cast<unsigned>(i));
     }
     Esp32BaseWeb::sendChunk("</table>");
+    Esp32BaseWeb::sendChunk("<h2>滤芯配置</h2>");
+    for (std::size_t i = 0; i < kFilterCount; ++i) {
+        const FilterRecord& filter = g_context.filters->record(i);
+        sendFmt("<section class='panel'><h3>第 %u 级滤芯</h3>"
+                "<form method='post' action='/api/faucet/filters' onsubmit='return once(this)'>"
+                "<input type='hidden' name='index' value='%u'><div class='grid'>",
+                static_cast<unsigned>(i + 1),
+                static_cast<unsigned>(i));
+        sendCheckbox("启用", "enabled", filter.enabled);
+        Esp32BaseWeb::sendChunk("<label class='field'><span>名称</span><input name='name' maxlength='15' value='");
+        Esp32BaseWeb::writeHtmlEscaped(filter.name);
+        Esp32BaseWeb::sendChunk("'></label>");
+        sendTextInput("寿命天数（天）", "lifeDays", filter.lifeDays);
+        sendVolumeInput("寿命流量（ml）", "lifeMl", filter.lifeMl);
+        sendDateInput("上次更换日期", "startDate", filter.startTime);
+        Esp32BaseWeb::sendChunk("</div><div class='form-actions'><input type='submit' value='保存'></div></form></section>");
+    }
     sendPageEnd();
 }
 
@@ -408,6 +450,83 @@ bool parseU32(const char* text, std::uint32_t& value) {
     }
     value = static_cast<std::uint32_t>(parsed);
     return true;
+}
+
+bool isLeapYear(std::uint16_t year) {
+    return (year % 4U == 0 && year % 100U != 0) || year % 400U == 0;
+}
+
+std::uint8_t daysInMonth(std::uint16_t year, std::uint8_t month) {
+    static constexpr std::uint8_t days[] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+    if (month == 2 && isLeapYear(year)) {
+        return 29;
+    }
+    return month >= 1 && month <= 12 ? days[month - 1] : 0;
+}
+
+std::uint32_t daysSince2000(std::uint16_t year, std::uint8_t month, std::uint8_t day) {
+    static constexpr std::uint16_t kDaysBeforeMonth[] = {0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334};
+    std::uint32_t days = 0;
+    for (std::uint16_t y = 2000; y < year; ++y) {
+        days += isLeapYear(y) ? 366UL : 365UL;
+    }
+    std::uint32_t value = days + kDaysBeforeMonth[month - 1] + day - 1U;
+    if (month > 2 && isLeapYear(year)) {
+        ++value;
+    }
+    return value;
+}
+
+bool parseDate(const char* text, std::uint32_t& seconds) {
+    if (!text || !*text) {
+        seconds = 0;
+        return true;
+    }
+    unsigned year = 0;
+    unsigned month = 0;
+    unsigned day = 0;
+    if (std::sscanf(text, "%u-%u-%u", &year, &month, &day) != 3 || year < 2000 || year > 2099 || month < 1 ||
+        month > 12) {
+        return false;
+    }
+    const std::uint8_t maxDay = daysInMonth(static_cast<std::uint16_t>(year), static_cast<std::uint8_t>(month));
+    if (day < 1 || day > maxDay) {
+        return false;
+    }
+    seconds = daysSince2000(static_cast<std::uint16_t>(year), static_cast<std::uint8_t>(month), static_cast<std::uint8_t>(day)) *
+              86400UL;
+    return true;
+}
+
+void formatDate(std::uint32_t seconds, char* out, std::size_t len) {
+    if (!out || len == 0) {
+        return;
+    }
+    out[0] = '\0';
+    if (seconds == 0) {
+        return;
+    }
+    std::uint32_t day = seconds / 86400UL;
+    std::uint16_t year = 2000;
+    while (true) {
+        const std::uint16_t yearDays = isLeapYear(year) ? 366 : 365;
+        if (day < yearDays) {
+            break;
+        }
+        day -= yearDays;
+        ++year;
+    }
+    std::uint8_t month = 1;
+    while (month <= 12) {
+        const std::uint8_t monthDays = daysInMonth(year, month);
+        if (day < monthDays) {
+            break;
+        }
+        day -= monthDays;
+        ++month;
+    }
+    std::snprintf(out, len, "%04u-%02u-%02u", static_cast<unsigned>(year), static_cast<unsigned>(month),
+                  static_cast<unsigned>(day + 1));
 }
 
 bool parseFloat(const char* text, float& value) {
@@ -576,6 +695,36 @@ void handleFiltersApi() {
     if (!Esp32BaseWeb::checkAuth() || !requireContext()) {
         return;
     }
+    if (Esp32BaseWeb::isMethod(Esp32BaseWeb::METHOD_POST)) {
+        char text[24]{};
+        std::uint32_t index = 0;
+        if (!getParam("index", text, sizeof(text)) || !parseU32(text, index) || index >= kFilterCount) {
+            Esp32BaseWeb::sendJson(400, "{\"error\":\"invalid_index\"}");
+            return;
+        }
+
+        FilterRecord record = g_context.filters->record(index);
+        record.enabled = Esp32BaseWeb::hasParam("enabled");
+        Esp32BaseWeb::getParam("name", record.name, sizeof(record.name));
+        applyU32Param("lifeDays", record.lifeDays);
+        applyU32Param("lifeMl", record.lifeMl);
+        if (getParam("startDate", text, sizeof(text)) && !parseDate(text, record.startTime)) {
+            Esp32BaseWeb::sendJson(400, "{\"error\":\"invalid_date\"}");
+            return;
+        }
+        record.name[kNameLength - 1] = '\0';
+
+        g_context.config->filters[index] = record;
+        sanitizeConfig(*g_context.config);
+        if (!g_context.filters->updateFilter(index, g_context.config->filters[index])) {
+            Esp32BaseWeb::sendJson(500, "{\"error\":\"update_failed\"}");
+            return;
+        }
+        const bool ok = g_context.configStore->saveSystemConfig(*g_context.config) &&
+                        g_context.configStore->saveFilterRuntime(g_context.filters->records());
+        Esp32BaseWeb::redirectSeeOther(ok ? "/faucet/filters?saved=1" : "/faucet/filters?error=save_failed");
+        return;
+    }
     char json[1024]{};
     sendJsonBuffer(writeFiltersJson(g_context.filters->records(), json, sizeof(json)), json);
 }
@@ -596,7 +745,7 @@ void handleFiltersResetApi() {
         return;
     }
     const bool ok = g_context.configStore->saveFilterRuntime(g_context.filters->records());
-    Esp32BaseWeb::sendJson(ok ? 200 : 500, ok ? "{\"ok\":true}" : "{\"error\":\"save_failed\"}");
+    Esp32BaseWeb::redirectSeeOther(ok ? "/faucet/filters?reset=1" : "/faucet/filters?error=save_failed");
 }
 
 void handleCalibrationApi() {

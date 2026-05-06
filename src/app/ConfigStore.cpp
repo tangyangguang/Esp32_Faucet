@@ -117,6 +117,12 @@ SystemConfig ConfigStore::loadSystemConfig() {
         config.filters[i].enabled = backend_.getBool(kConfigNs, key, config.filters[i].enabled);
         filterKey(key, sizeof(key), i, "name");
         backend_.getStr(kConfigNs, key, config.filters[i].name, sizeof(config.filters[i].name), config.filters[i].name);
+        filterKey(key, sizeof(key), i, "life_d");
+        config.filters[i].lifeDays =
+            static_cast<std::uint32_t>(backend_.getInt(kConfigNs, key, toInt(config.filters[i].lifeDays)));
+        filterKey(key, sizeof(key), i, "life_ml");
+        config.filters[i].lifeMl =
+            static_cast<std::uint32_t>(backend_.getInt(kConfigNs, key, toInt(config.filters[i].lifeMl)));
         filterKey(key, sizeof(key), i, "start");
         config.filters[i].startTime =
             static_cast<std::uint32_t>(backend_.getInt(kConfigNs, key, toInt(config.filters[i].startTime)));
@@ -167,6 +173,10 @@ bool ConfigStore::saveSystemConfig(const SystemConfig& config) {
         ok = okAll(ok, backend_.setBool(kConfigNs, key, safe.filters[i].enabled));
         filterKey(key, sizeof(key), i, "name");
         ok = okAll(ok, backend_.setStr(kConfigNs, key, safe.filters[i].name));
+        filterKey(key, sizeof(key), i, "life_d");
+        ok = okAll(ok, backend_.setInt(kConfigNs, key, toInt(safe.filters[i].lifeDays)));
+        filterKey(key, sizeof(key), i, "life_ml");
+        ok = okAll(ok, backend_.setInt(kConfigNs, key, toInt(safe.filters[i].lifeMl)));
         filterKey(key, sizeof(key), i, "start");
         ok = okAll(ok, backend_.setInt(kConfigNs, key, toInt(safe.filters[i].startTime)));
         filterKey(key, sizeof(key), i, "used");

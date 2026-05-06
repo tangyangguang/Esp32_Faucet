@@ -28,6 +28,14 @@ const FilterRecord& FilterStore::record(std::size_t index) const {
     return records_[index];
 }
 
+bool FilterStore::updateFilter(std::size_t index, const FilterRecord& record) {
+    if (index >= kFilterCount) {
+        return false;
+    }
+    records_[index] = record;
+    return true;
+}
+
 bool FilterStore::resetFilter(std::size_t index, std::uint32_t nowSeconds) {
     if (index >= kFilterCount) {
         return false;

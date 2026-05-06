@@ -50,11 +50,15 @@ void test_default_filters_support_six_lightweight_records() {
 
     TEST_ASSERT_TRUE(config.filters[0].enabled);
     TEST_ASSERT_EQUAL_STRING("Filter 1", config.filters[0].name);
+    TEST_ASSERT_EQUAL_UINT32(180, config.filters[0].lifeDays);
+    TEST_ASSERT_EQUAL_UINT32(0, config.filters[0].lifeMl);
     TEST_ASSERT_EQUAL_UINT32(0, config.filters[0].startTime);
     TEST_ASSERT_EQUAL_UINT32(0, config.filters[0].usedMl);
 
     for (std::size_t i = 1; i < kFilterCount; ++i) {
         TEST_ASSERT_FALSE(config.filters[i].enabled);
+        TEST_ASSERT_EQUAL_UINT32(180, config.filters[i].lifeDays);
+        TEST_ASSERT_EQUAL_UINT32(0, config.filters[i].lifeMl);
         TEST_ASSERT_EQUAL_UINT32(0, config.filters[i].startTime);
         TEST_ASSERT_EQUAL_UINT32(0, config.filters[i].usedMl);
     }
@@ -104,6 +108,9 @@ void test_sanitize_config_clamps_preset_values_by_type() {
     config.presets[3].type = PresetType::Time;
     config.presets[3].value = 999999;
     std::memset(config.presets[4].name, 'x', sizeof(config.presets[4].name));
+    std::memset(config.filters[0].name, 'y', sizeof(config.filters[0].name));
+    config.filters[0].lifeDays = 999999;
+    config.filters[0].lifeMl = 99999999;
 
     sanitizeConfig(config);
 
@@ -112,6 +119,9 @@ void test_sanitize_config_clamps_preset_values_by_type() {
     TEST_ASSERT_EQUAL_UINT32(kMinTimePresetSec, config.presets[2].value);
     TEST_ASSERT_EQUAL_UINT32(kMaxTimePresetSec, config.presets[3].value);
     TEST_ASSERT_EQUAL_CHAR('\0', config.presets[4].name[kNameLength - 1]);
+    TEST_ASSERT_EQUAL_CHAR('\0', config.filters[0].name[kNameLength - 1]);
+    TEST_ASSERT_EQUAL_UINT32(kMaxFilterLifeDays, config.filters[0].lifeDays);
+    TEST_ASSERT_EQUAL_UINT32(kMaxFilterLifeMl, config.filters[0].lifeMl);
 }
 
 void test_calibration_target_and_page_size_helpers() {

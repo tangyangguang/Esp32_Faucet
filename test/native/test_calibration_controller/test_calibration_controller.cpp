@@ -9,7 +9,7 @@ void test_controller_starts_ready_with_default_target() {
     const CalibrationSnapshot snapshot = controller.snapshot();
 
     TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationState::Ready), static_cast<unsigned>(snapshot.state));
-    TEST_ASSERT_EQUAL_UINT32(kDefaultCalibrationTargetMl, snapshot.targetMl);
+    TEST_ASSERT_EQUAL_UINT32(1500, snapshot.targetMl);
     TEST_ASSERT_EQUAL_UINT8(0, snapshot.sampleCount);
     TEST_ASSERT_FLOAT_WITHIN(0.0001f, 0.42f, snapshot.oldPulsePerMl);
     TEST_ASSERT_FLOAT_WITHIN(0.0001f, 0.42f, snapshot.proposedPulsePerMl);
@@ -19,23 +19,21 @@ void test_controller_starts_ready_with_default_target() {
 void test_target_selection_accepts_only_supported_targets() {
     CalibrationController controller;
 
-    TEST_ASSERT_TRUE(controller.setTargetMl(500));
-    TEST_ASSERT_EQUAL_UINT32(500, controller.snapshot().targetMl);
-    TEST_ASSERT_TRUE(controller.setTargetMl(1000));
     TEST_ASSERT_TRUE(controller.setTargetMl(1500));
-    TEST_ASSERT_TRUE(controller.setTargetMl(2000));
+    TEST_ASSERT_EQUAL_UINT32(1500, controller.snapshot().targetMl);
+    TEST_ASSERT_TRUE(controller.setTargetMl(7500));
     TEST_ASSERT_FALSE(controller.setTargetMl(750));
-    TEST_ASSERT_EQUAL_UINT32(2000, controller.snapshot().targetMl);
+    TEST_ASSERT_EQUAL_UINT32(7500, controller.snapshot().targetMl);
 }
 
 void test_two_consistent_samples_produce_average_and_can_save() {
     CalibrationController controller(0.45f);
 
-    TEST_ASSERT_TRUE(controller.setTargetMl(1000));
+    TEST_ASSERT_TRUE(controller.setTargetMl(1500));
     TEST_ASSERT_TRUE(controller.beginSampling());
     TEST_ASSERT_EQUAL_UINT8(
         static_cast<unsigned>(CalibrationSampleResult::Accepted),
-        static_cast<unsigned>(controller.finishSample(450)));
+        static_cast<unsigned>(controller.finishSample(675)));
     TEST_ASSERT_EQUAL_UINT8(
         static_cast<unsigned>(CalibrationState::NeedsMoreSamples),
         static_cast<unsigned>(controller.snapshot().state));
@@ -44,7 +42,7 @@ void test_two_consistent_samples_produce_average_and_can_save() {
     TEST_ASSERT_TRUE(controller.beginSampling());
     TEST_ASSERT_EQUAL_UINT8(
         static_cast<unsigned>(CalibrationSampleResult::Accepted),
-        static_cast<unsigned>(controller.finishSample(460)));
+        static_cast<unsigned>(controller.finishSample(690)));
 
     const CalibrationSnapshot snapshot = controller.snapshot();
     TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationState::ReadyToSave), static_cast<unsigned>(snapshot.state));
@@ -88,8 +86,19 @@ void test_cannot_change_target_while_sampling() {
     CalibrationController controller;
 
     TEST_ASSERT_TRUE(controller.beginSampling());
-    TEST_ASSERT_FALSE(controller.setTargetMl(500));
-    TEST_ASSERT_EQUAL_UINT32(kDefaultCalibrationTargetMl, controller.snapshot().targetMl);
+    TEST_ASSERT_FALSE(controller.setTargetMl(7500));
+    TEST_ASSERT_EQUAL_UINT32(1500, controller.snapshot().targetMl);
+}
+
+void test_controller_uses_configured_enabled_targets() {
+    CalibrationController controller;
+    const std::uint32_t targets[kCalibrationTargetCount] = {0, 7500, 0, 0};
+
+    controller.reset(0.42f, targets);
+
+    TEST_ASSERT_EQUAL_UINT32(7500, controller.snapshot().targetMl);
+    TEST_ASSERT_FALSE(controller.setTargetMl(1500));
+    TEST_ASSERT_TRUE(controller.setTargetMl(7500));
 }
 
 int main(int argc, char** argv) {
@@ -103,5 +112,6 @@ int main(int argc, char** argv) {
     RUN_TEST(test_inconsistent_second_sample_is_rejected);
     RUN_TEST(test_invalid_pulse_count_is_rejected);
     RUN_TEST(test_cannot_change_target_while_sampling);
+    RUN_TEST(test_controller_uses_configured_enabled_targets);
     return UNITY_END();
 }

@@ -11,7 +11,7 @@ namespace {
 constexpr const char* kConfigNs = "faucet_cfg";
 constexpr const char* kStatNs = "faucet_stat";
 constexpr const char* kRunNs = "faucet_run";
-constexpr std::int32_t kConfigVersion = 2;
+constexpr std::int32_t kConfigVersion = 3;
 constexpr std::int32_t kRuntimeVersion = 1;
 
 std::int32_t toInt(std::uint32_t value) {
@@ -86,8 +86,12 @@ SystemConfig ConfigStore::loadSystemConfig() {
     config.pauseTimeoutSec =
         static_cast<std::uint32_t>(backend_.getInt(kConfigNs, "pause_s", toInt(config.pauseTimeoutSec)));
     config.pulsePerMl = pulseFromMilli(backend_.getInt(kConfigNs, "pulse_m", pulseToMilli(config.pulsePerMl)));
-    config.calibrationTargetMl =
-        static_cast<std::uint32_t>(backend_.getInt(kConfigNs, "cal_ml", toInt(config.calibrationTargetMl)));
+    for (std::size_t i = 0; i < kCalibrationTargetCount; ++i) {
+        char key[12]{};
+        std::snprintf(key, sizeof(key), "cal%u_ml", static_cast<unsigned>(i));
+        config.calibrationTargetsMl[i] =
+            static_cast<std::uint32_t>(backend_.getInt(kConfigNs, key, toInt(config.calibrationTargetsMl[i])));
+    }
     config.valveFullPowerSec =
         static_cast<std::uint32_t>(backend_.getInt(kConfigNs, "valve_s", toInt(config.valveFullPowerSec)));
     config.valveHoldDutyPercent =
@@ -152,7 +156,11 @@ bool ConfigStore::saveSystemConfig(const SystemConfig& config) {
     ok = okAll(ok, backend_.setInt(kConfigNs, "high_s", toInt(safe.highFlowDurationSec)));
     ok = okAll(ok, backend_.setInt(kConfigNs, "pause_s", toInt(safe.pauseTimeoutSec)));
     ok = okAll(ok, backend_.setInt(kConfigNs, "pulse_m", pulseToMilli(safe.pulsePerMl)));
-    ok = okAll(ok, backend_.setInt(kConfigNs, "cal_ml", toInt(safe.calibrationTargetMl)));
+    for (std::size_t i = 0; i < kCalibrationTargetCount; ++i) {
+        char key[12]{};
+        std::snprintf(key, sizeof(key), "cal%u_ml", static_cast<unsigned>(i));
+        ok = okAll(ok, backend_.setInt(kConfigNs, key, toInt(safe.calibrationTargetsMl[i])));
+    }
     ok = okAll(ok, backend_.setInt(kConfigNs, "valve_s", toInt(safe.valveFullPowerSec)));
     ok = okAll(ok, backend_.setInt(kConfigNs, "hold_pct", safe.valveHoldDutyPercent));
     ok = okAll(ok, backend_.setInt(kConfigNs, "oled_s", toInt(safe.oledSleepSec)));

@@ -23,7 +23,11 @@ constexpr std::uint32_t kDefaultPauseTimeoutSec = 300;
 constexpr float kDefaultPulsePerMl = 0.45f;
 constexpr float kMinPulsePerMl = 0.05f;
 constexpr float kMaxPulsePerMl = 5.0f;
-constexpr std::uint32_t kDefaultCalibrationTargetMl = 1000;
+constexpr std::size_t kCalibrationTargetCount = 4;
+constexpr std::uint32_t kDisabledCalibrationTargetMl = 0;
+constexpr std::uint32_t kMinCalibrationTargetMl = 100;
+constexpr std::uint32_t kMaxCalibrationTargetMl = 20000;
+constexpr std::uint32_t kDefaultCalibrationTargetsMl[kCalibrationTargetCount] = {1500, 7500, 0, 0};
 constexpr std::uint8_t kMinCalibrationSamples = 2;
 constexpr std::uint8_t kCalibrationTolerancePercent = 5;
 
@@ -55,7 +59,7 @@ struct SystemConfig {
     std::uint32_t highFlowDurationSec;
     std::uint32_t pauseTimeoutSec;
     float pulsePerMl;
-    std::uint32_t calibrationTargetMl;
+    std::uint32_t calibrationTargetsMl[kCalibrationTargetCount];
     std::uint32_t valveFullPowerSec;
     std::uint8_t valveHoldDutyPercent;
     std::uint32_t oledSleepSec;
@@ -68,6 +72,10 @@ SystemConfig makeDefaultConfig();
 void sanitizeConfig(SystemConfig& config);
 
 bool isValidCalibrationTarget(std::uint32_t targetMl);
+bool hasEnabledCalibrationTarget(const std::uint32_t (&targets)[kCalibrationTargetCount]);
+bool isEnabledCalibrationTarget(const std::uint32_t (&targets)[kCalibrationTargetCount], std::uint32_t targetMl);
+std::uint32_t firstEnabledCalibrationTarget(const std::uint32_t (&targets)[kCalibrationTargetCount]);
+std::uint32_t nextEnabledCalibrationTarget(const std::uint32_t (&targets)[kCalibrationTargetCount], std::uint32_t currentMl);
 std::uint16_t sanitizeLogPageSize(std::uint16_t pageSize);
 FilterLifeStatus filterLifeStatus(const FilterRecord& filter, std::uint32_t usedDays);
 

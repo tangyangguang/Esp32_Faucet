@@ -97,7 +97,8 @@ void test_calibration_json_forbids_remote_calibration_start() {
     TEST_ASSERT_TRUE(writeCalibrationJson(config, json, sizeof(json)));
 
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"pulsePerMl\":0.450"));
-    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"supportedTargetsMl\":[500,1000,1500,2000]"));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"pulsePerLiter\":450.0"));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"targetsMl\":[1500,7500,0,0]"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"webCanStartCalibration\":false"));
 }
 

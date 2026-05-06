@@ -185,7 +185,7 @@ void test_app_controller_local_calibration_saves_without_water_log_or_stats() {
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(LocalUiMode::CalibrationSampling),
                             static_cast<std::uint8_t>(app.snapshot().localMode));
     TEST_ASSERT_TRUE(app.snapshot().valve.enabled);
-    for (std::uint32_t i = 0; i < 500; ++i) {
+    for (std::uint32_t i = 0; i < 750; ++i) {
         app.onFlowPulse(2000000UL + i * 2000UL);
     }
     pressAndReleaseOk(app, 3000);
@@ -194,7 +194,7 @@ void test_app_controller_local_calibration_saves_without_water_log_or_stats() {
 
     pressAndReleaseOk(app, 3300);
     pressAndReleaseOk(app, 3500);
-    for (std::uint32_t i = 0; i < 500; ++i) {
+    for (std::uint32_t i = 0; i < 750; ++i) {
         app.onFlowPulse(5000000UL + i * 2000UL);
     }
     pressAndReleaseOk(app, 6200);

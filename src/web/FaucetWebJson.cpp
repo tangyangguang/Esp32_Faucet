@@ -138,7 +138,7 @@ bool writeConfigJson(const SystemConfig& config, char* out, std::size_t len) {
     writer.append("{\"confirmTimeoutSec\":%lu,\"maxOutTimeSec\":%lu,\"maxOutVolumeMl\":%lu,"
                   "\"overflowPercent\":%u,\"noFlowTimeoutSec\":%lu,\"highFlowMlPerMin\":%lu,"
                   "\"highFlowDurationSec\":%lu,\"pauseTimeoutSec\":%lu,\"pulsePerMl\":%.3f,"
-                  "\"calibrationTargetMl\":%lu,\"valveFullPowerSec\":%lu,"
+                  "\"calibrationTargetsMl\":[%lu,%lu,%lu,%lu],\"valveFullPowerSec\":%lu,"
                   "\"valveHoldDutyPercent\":%u,\"oledSleepSec\":%lu,\"beepEnabled\":%s}",
                   static_cast<unsigned long>(config.confirmTimeoutSec),
                   static_cast<unsigned long>(config.maxOutTimeSec),
@@ -149,7 +149,10 @@ bool writeConfigJson(const SystemConfig& config, char* out, std::size_t len) {
                   static_cast<unsigned long>(config.highFlowDurationSec),
                   static_cast<unsigned long>(config.pauseTimeoutSec),
                   static_cast<double>(config.pulsePerMl),
-                  static_cast<unsigned long>(config.calibrationTargetMl),
+                  static_cast<unsigned long>(config.calibrationTargetsMl[0]),
+                  static_cast<unsigned long>(config.calibrationTargetsMl[1]),
+                  static_cast<unsigned long>(config.calibrationTargetsMl[2]),
+                  static_cast<unsigned long>(config.calibrationTargetsMl[3]),
                   static_cast<unsigned long>(config.valveFullPowerSec),
                   static_cast<unsigned>(config.valveHoldDutyPercent),
                   static_cast<unsigned long>(config.oledSleepSec),
@@ -196,10 +199,14 @@ bool writeFiltersJson(const FilterRecord (&filters)[kFilterCount], char* out, st
 
 bool writeCalibrationJson(const SystemConfig& config, char* out, std::size_t len) {
     JsonWriter writer(out, len);
-    writer.append("{\"pulsePerMl\":%.3f,\"targetMl\":%lu,\"supportedTargetsMl\":[500,1000,1500,2000],"
+    writer.append("{\"pulsePerMl\":%.3f,\"pulsePerLiter\":%.1f,\"targetsMl\":[%lu,%lu,%lu,%lu],"
                   "\"webCanStartCalibration\":false}",
                   static_cast<double>(config.pulsePerMl),
-                  static_cast<unsigned long>(config.calibrationTargetMl));
+                  static_cast<double>(config.pulsePerMl * 1000.0f),
+                  static_cast<unsigned long>(config.calibrationTargetsMl[0]),
+                  static_cast<unsigned long>(config.calibrationTargetsMl[1]),
+                  static_cast<unsigned long>(config.calibrationTargetsMl[2]),
+                  static_cast<unsigned long>(config.calibrationTargetsMl[3]));
     return writer.ok();
 }
 

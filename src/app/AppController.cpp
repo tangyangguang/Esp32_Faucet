@@ -151,7 +151,7 @@ void AppController::handleCalibrationEvent(ButtonEvent event, std::uint32_t nowM
         case ButtonEventType::StopLong:
             calibrationValveOpen_ = false;
             localMode_ = LocalUiMode::Normal;
-            calibration_.reset(config_.pulsePerMl);
+            calibration_.reset(config_.pulsePerMl, config_.calibrationTargetsMl);
             flow_.reset();
             lastFlowVolumeMl_ = 0;
             break;
@@ -187,13 +187,13 @@ void AppController::handleCalibrationEvent(ButtonEvent event, std::uint32_t nowM
 }
 
 void AppController::enterCalibration() {
-    calibration_.reset(config_.pulsePerMl);
+    calibration_.reset(config_.pulsePerMl, config_.calibrationTargetsMl);
     localMode_ = LocalUiMode::CalibrationSelect;
 }
 
 void AppController::cycleCalibrationTarget() {
     const std::uint32_t current = calibration_.snapshot().targetMl;
-    const std::uint32_t next = current == 500 ? 1000 : current == 1000 ? 1500 : current == 1500 ? 2000 : 500;
+    const std::uint32_t next = nextEnabledCalibrationTarget(config_.calibrationTargetsMl, current);
     calibration_.setTargetMl(next);
     localMode_ = LocalUiMode::CalibrationSelect;
 }
@@ -216,7 +216,7 @@ void AppController::saveCalibration() {
     config_.pulsePerMl = calibration_.proposedPulsePerMl();
     sanitizeConfig(config_);
     flow_.setPulsePerMl(config_.pulsePerMl);
-    calibration_.reset(config_.pulsePerMl);
+    calibration_.reset(config_.pulsePerMl, config_.calibrationTargetsMl);
     localMode_ = LocalUiMode::Normal;
     configDirty_ = true;
 }

@@ -17,8 +17,13 @@ CalibrationController::CalibrationController(float oldPulsePerMl) {
 }
 
 void CalibrationController::reset(float oldPulsePerMl) {
+    reset(oldPulsePerMl, kDefaultCalibrationTargetsMl);
+}
+
+void CalibrationController::reset(float oldPulsePerMl, const std::uint32_t (&targets)[kCalibrationTargetCount]) {
     state_ = CalibrationState::Ready;
-    targetMl_ = kDefaultCalibrationTargetMl;
+    std::copy(targets, targets + kCalibrationTargetCount, targetsMl_);
+    targetMl_ = firstEnabledCalibrationTarget(targetsMl_);
     sampleCount_ = 0;
     oldPulsePerMl_ = isFinitePositive(oldPulsePerMl) ? oldPulsePerMl : kDefaultPulsePerMl;
     proposedPulsePerMl_ = oldPulsePerMl_;
@@ -27,7 +32,7 @@ void CalibrationController::reset(float oldPulsePerMl) {
 }
 
 bool CalibrationController::setTargetMl(std::uint32_t targetMl) {
-    if (!isValidCalibrationTarget(targetMl) || state_ == CalibrationState::Sampling) {
+    if (!isEnabledCalibrationTarget(targetsMl_, targetMl) || state_ == CalibrationState::Sampling) {
         return false;
     }
     targetMl_ = targetMl;
@@ -40,7 +45,7 @@ bool CalibrationController::setTargetMl(std::uint32_t targetMl) {
 }
 
 bool CalibrationController::beginSampling() {
-    if (!isValidCalibrationTarget(targetMl_) || sampleCount_ >= kMaxCalibrationSamples) {
+    if (!isEnabledCalibrationTarget(targetsMl_, targetMl_) || sampleCount_ >= kMaxCalibrationSamples) {
         return false;
     }
     state_ = CalibrationState::Sampling;
@@ -51,7 +56,7 @@ CalibrationSampleResult CalibrationController::finishSample(std::uint32_t pulseC
     if (state_ != CalibrationState::Sampling) {
         return CalibrationSampleResult::InvalidPulseCount;
     }
-    if (!isValidCalibrationTarget(targetMl_)) {
+    if (!isEnabledCalibrationTarget(targetsMl_, targetMl_)) {
         state_ = CalibrationState::Rejected;
         return CalibrationSampleResult::InvalidTarget;
     }

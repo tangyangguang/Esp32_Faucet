@@ -107,6 +107,10 @@ void test_config_save_and_load_round_trips_system_config() {
     SystemConfig config = makeDefaultConfig();
     config.confirmTimeoutSec = 20;
     config.pulsePerMl = 0.62f;
+    config.calibrationTargetsMl[0] = 1500;
+    config.calibrationTargetsMl[1] = 7500;
+    config.calibrationTargetsMl[2] = 10000;
+    config.calibrationTargetsMl[3] = 0;
     config.beepEnabled = false;
     config.presets[2].enabled = true;
     config.presets[2].type = PresetType::Time;
@@ -124,6 +128,10 @@ void test_config_save_and_load_round_trips_system_config() {
     const SystemConfig loaded = store.loadSystemConfig();
     TEST_ASSERT_EQUAL_UINT32(20, loaded.confirmTimeoutSec);
     TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.62f, loaded.pulsePerMl);
+    TEST_ASSERT_EQUAL_UINT32(1500, loaded.calibrationTargetsMl[0]);
+    TEST_ASSERT_EQUAL_UINT32(7500, loaded.calibrationTargetsMl[1]);
+    TEST_ASSERT_EQUAL_UINT32(10000, loaded.calibrationTargetsMl[2]);
+    TEST_ASSERT_EQUAL_UINT32(0, loaded.calibrationTargetsMl[3]);
     TEST_ASSERT_FALSE(loaded.beepEnabled);
     TEST_ASSERT_TRUE(loaded.presets[2].enabled);
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(PresetType::Time), static_cast<std::uint8_t>(loaded.presets[2].type));
@@ -143,7 +151,10 @@ void test_config_load_sanitizes_stored_values() {
     SystemConfig config = makeDefaultConfig();
     config.confirmTimeoutSec = 1;
     config.pulsePerMl = 99.0f;
-    config.calibrationTargetMl = 333;
+    config.calibrationTargetsMl[0] = 0;
+    config.calibrationTargetsMl[1] = 0;
+    config.calibrationTargetsMl[2] = 0;
+    config.calibrationTargetsMl[3] = 0;
     config.presets[0].value = 1;
 
     TEST_ASSERT_TRUE(store.saveSystemConfig(config));
@@ -151,7 +162,10 @@ void test_config_load_sanitizes_stored_values() {
     const SystemConfig loaded = store.loadSystemConfig();
     TEST_ASSERT_EQUAL_UINT32(3, loaded.confirmTimeoutSec);
     TEST_ASSERT_FLOAT_WITHIN(0.001f, kMaxPulsePerMl, loaded.pulsePerMl);
-    TEST_ASSERT_EQUAL_UINT32(kDefaultCalibrationTargetMl, loaded.calibrationTargetMl);
+    TEST_ASSERT_EQUAL_UINT32(1500, loaded.calibrationTargetsMl[0]);
+    TEST_ASSERT_EQUAL_UINT32(7500, loaded.calibrationTargetsMl[1]);
+    TEST_ASSERT_EQUAL_UINT32(0, loaded.calibrationTargetsMl[2]);
+    TEST_ASSERT_EQUAL_UINT32(0, loaded.calibrationTargetsMl[3]);
     TEST_ASSERT_EQUAL_UINT32(kMinVolumePresetMl, loaded.presets[0].value);
 }
 

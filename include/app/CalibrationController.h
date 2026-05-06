@@ -39,6 +39,7 @@ public:
     explicit CalibrationController(float oldPulsePerMl = kDefaultPulsePerMl);
 
     void reset(float oldPulsePerMl);
+    void reset(float oldPulsePerMl, const std::uint32_t (&targets)[kCalibrationTargetCount]);
     bool setTargetMl(std::uint32_t targetMl);
     bool beginSampling();
     CalibrationSampleResult finishSample(std::uint32_t pulseCount);
@@ -52,6 +53,7 @@ private:
 
     CalibrationState state_;
     std::uint32_t targetMl_;
+    std::uint32_t targetsMl_[kCalibrationTargetCount];
     std::uint8_t sampleCount_;
     float oldPulsePerMl_;
     float proposedPulsePerMl_;

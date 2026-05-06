@@ -58,22 +58,15 @@ void sendLiters(std::uint32_t ml) {
     Esp32BaseWeb::sendChunk(text);
 }
 
-void sendAppLinks() {
+void sendAppStyles() {
     Esp32BaseWeb::sendChunk("<style>"
-                            "body>nav{display:none}"
                             "body{background:#f6f7f9;color:#1f2933;max-width:880px;padding:16px}"
-                            "h1{display:none}"
-                            "h2{font-size:1.35rem;margin:0 0 16px;color:#111827}"
+                            "h1{color:#111827}"
+                            "h2{font-size:1.3rem;margin:0 0 16px;color:#111827}"
                             "h3{font-size:1.02rem;margin:0;color:#111827}"
                             "a,button,input[type=submit],input[type=button]{border-radius:6px;box-shadow:none}"
-                            ".app-head{margin:0 0 18px}"
-                            ".app-title{font-size:1.15rem;font-weight:700;margin:0 0 10px;color:#111827}"
-                            ".faucet-nav{display:flex;flex-wrap:wrap;gap:4px;margin:0;padding:3px;background:#fff;border:1px solid #e5e7eb;border-radius:8px}"
-                            ".faucet-nav a{background:transparent;color:#374151;display:inline-flex;align-items:center;min-height:34px;line-height:1.2;margin:0;padding:7px 10px;white-space:nowrap}"
-                            ".faucet-nav a:hover{background:#eef2f7;color:#111827}"
                             ".faucet-actions{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 16px}"
                             ".faucet-actions a{display:inline-flex;align-items:center;min-height:34px;line-height:1.2;margin:0;white-space:nowrap}"
-                            ".info{display:none}"
                             "input:not([type=submit]):not([type=button]),select{width:100%;padding:9px 10px;margin:0;border:1px solid #d1d5db;border-radius:6px;box-sizing:border-box;background:#fff;font-size:1rem}"
                             "select{margin:4px 0 12px}"
                             ".panel{border:1px solid #e5e7eb;border-radius:8px;padding:14px;margin:0 0 14px;background:#fff}"
@@ -89,24 +82,8 @@ void sendAppLinks() {
                             "table{width:100%;border-collapse:collapse;margin:0 0 16px;background:#fff;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden}"
                             "td,th{padding:9px 10px;border-bottom:1px solid #eef0f3;text-align:left}"
                             "tr:last-child td{border-bottom:0}"
-                            ".base-tools{margin:22px 0 0;padding-top:14px;border-top:1px solid #e5e7eb;color:#6b7280}"
-                            ".base-tools details{background:transparent}"
-                            ".base-tools summary{cursor:pointer;font-size:.9rem;line-height:1.8}"
-                            ".base-tools div{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}"
-                            ".base-tools a{background:transparent;color:#4b5563;border:1px solid #d1d5db;display:inline-flex;align-items:center;min-height:30px;line-height:1.2;margin:0;padding:5px 9px;white-space:nowrap;font-size:.86em}"
-                            "@media(max-width:520px){body{padding:12px}.faucet-nav{gap:2px}.faucet-nav a{padding:7px 9px}.grid{grid-template-columns:1fr}.panel{padding:12px}}"
-                            "</style>"
-                            "<header class='app-head'><div class='app-title'>智能出水龙头</div>"
-                            "<nav class='faucet-nav'><a href='/faucet'>状态</a><a href='/faucet/config'>配置</a>"
-                            "<a href='/faucet/stats'>统计</a><a href='/faucet/logs'>记录</a>"
-                            "<a href='/faucet/filters'>滤芯</a><a href='/faucet/calibration'>校准</a></nav></header>");
-}
-
-void sendBaseLinks() {
-    Esp32BaseWeb::sendChunk("<section class='base-tools'><details><summary>基础功能</summary><div>"
-                            "<a href='/esp32base'>首页</a><a href='/esp32base/wifi'>WiFi</a>"
-                            "<a href='/esp32base/ota'>OTA</a><a href='/esp32base/logs'>系统日志</a>"
-                            "<a href='/esp32base/reboot'>重启</a></div></details></section>");
+                            "@media(max-width:520px){body{padding:12px}.grid{grid-template-columns:1fr}.panel{padding:12px}}"
+                            "</style>");
 }
 
 bool sendPageStart(const char* title) {
@@ -114,12 +91,11 @@ bool sendPageStart(const char* title) {
         return false;
     }
     Esp32BaseWeb::sendHeader(title);
-    sendAppLinks();
+    sendAppStyles();
     return true;
 }
 
 void sendPageEnd() {
-    sendBaseLinks();
     Esp32BaseWeb::sendFooter();
 }
 

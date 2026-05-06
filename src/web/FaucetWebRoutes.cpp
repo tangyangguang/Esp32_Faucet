@@ -6,12 +6,12 @@ namespace faucet {
 namespace {
 
 constexpr FaucetWebRoute kRoutes[] = {
-    {"/faucet", FaucetWebMethod::Get, FaucetWebRouteKind::Page, "出水龙头"},
-    {"/faucet/config", FaucetWebMethod::Get, FaucetWebRouteKind::Page, "出水配置"},
-    {"/faucet/logs", FaucetWebMethod::Get, FaucetWebRouteKind::Page, "出水记录"},
-    {"/faucet/stats", FaucetWebMethod::Get, FaucetWebRouteKind::Page, "用水统计"},
-    {"/faucet/filters", FaucetWebMethod::Get, FaucetWebRouteKind::Page, "滤芯状态"},
-    {"/faucet/calibration", FaucetWebMethod::Get, FaucetWebRouteKind::Page, "流量校准"},
+    {"/faucet", FaucetWebMethod::Get, FaucetWebRouteKind::Page, "状态"},
+    {"/faucet/config", FaucetWebMethod::Get, FaucetWebRouteKind::Page, "配置"},
+    {"/faucet/logs", FaucetWebMethod::Get, FaucetWebRouteKind::Page, "记录"},
+    {"/faucet/stats", FaucetWebMethod::Get, FaucetWebRouteKind::Page, "统计"},
+    {"/faucet/filters", FaucetWebMethod::Get, FaucetWebRouteKind::Page, "滤芯"},
+    {"/faucet/calibration", FaucetWebMethod::Get, FaucetWebRouteKind::Page, "校准"},
     {"/api/faucet/status", FaucetWebMethod::Get, FaucetWebRouteKind::Api, nullptr},
     {"/api/faucet/config", FaucetWebMethod::Any, FaucetWebRouteKind::Api, nullptr},
     {"/api/faucet/presets", FaucetWebMethod::Any, FaucetWebRouteKind::Api, nullptr},

@@ -86,6 +86,16 @@ void configureBase() {
 
 #if ESP32BASE_ENABLE_WEB
     Esp32BaseWeb::setAuth(kDefaultWebUser, kDefaultWebPassword);
+    Esp32BaseWeb::setDeviceName("智能出水龙头");
+    Esp32BaseWeb::setHomePath("/faucet");
+    Esp32BaseWeb::setHomeMode(Esp32BaseWeb::HOME_COMBINED);
+    Esp32BaseWeb::setSystemNavMode(Esp32BaseWeb::SYSTEM_NAV_SECTION);
+    Esp32BaseWeb::setBuiltinLabel(Esp32BaseWeb::BUILTIN_HOME, "系统");
+    Esp32BaseWeb::setBuiltinLabel(Esp32BaseWeb::BUILTIN_WIFI, "网络");
+    Esp32BaseWeb::setBuiltinLabel(Esp32BaseWeb::BUILTIN_OTA, "OTA");
+    Esp32BaseWeb::setBuiltinLabel(Esp32BaseWeb::BUILTIN_LOGS, "系统日志");
+    Esp32BaseWeb::setBuiltinLabel(Esp32BaseWeb::BUILTIN_REBOOT, "重启");
+    Esp32BaseWeb::setBuiltinLabel(Esp32BaseWeb::BUILTIN_SYSTEM, "系统工具");
     if (!faucet::registerFaucetWeb()) {
         ESP32BASE_LOG_E("app", "faucet web route registration failed");
     }

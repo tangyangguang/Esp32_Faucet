@@ -48,14 +48,22 @@ ls -1 /dev/cu.* /dev/tty.* | sort
 
 ## 裸板上传命令
 
-串口出现后执行：
+首次烧录、分区调整或设备无法联网时，串口出现后执行：
 
 ```sh
 pio run -e esp32dev_smoke -t upload --upload-port <端口>
 pio run -e esp32dev -t upload --upload-port <端口>
 ```
 
-当前 CH340 串口在 `921600` 上传后切换波特率阶段可能失败，主环境和 smoke 环境都使用 `115200` 低速上传，优先保证上板可靠性。
+当前主环境和 smoke 环境串口上传速度使用 `460800`，避免 `921600` 在部分 CH340 板子上切换波特率失败。
+
+日常需要烧录测试主固件时，优先显示并使用 Esp32Base 快速 Web OTA：
+
+```sh
+pio run -e esp32dev -t webota
+```
+
+`webota` 使用 `platformio.ini` 中的 `custom_esp32base_webota_host` IP 地址，不依赖 mDNS。只有首次烧录、文件系统/分区变化、网络不可达或 OTA 失败恢复时，再回到串口上传。
 
 本项目分区表首个应用分区为 `ota_0`，偏移是 `0x20000`。`platformio.ini` 必须保留：
 

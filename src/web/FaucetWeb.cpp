@@ -139,47 +139,71 @@ void sendMetricCard(const char* label, const char* value) {
 
 void sendAppStyles() {
     Esp32BaseWeb::sendChunk("<style>"
-                            "body{background:#f5f7f8;color:#1f2933;max-width:1120px;padding:12px 14px}"
-                            "h1{color:#111827}"
-                            "h2{font-size:1.22rem;margin:0 0 10px;color:#111827}"
-                            "h3{font-size:1rem;margin:0;color:#111827}"
-                            "a,button,input[type=submit],input[type=button]{border-radius:6px;box-shadow:none}"
-                            ".faucet-actions{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 10px}"
-                            ".faucet-actions a{display:inline-flex;align-items:center;min-height:32px;line-height:1.2;margin:0;white-space:nowrap}"
-                            "input:not([type]),input[type=text],input[type=password],input[type=number],input[type=email],input[type=url],input[type=tel],input[type=search],select{width:100%;height:34px;padding:6px 9px;margin:0;border:1px solid #d1d5db;border-radius:6px;box-sizing:border-box;background:#fff;font-size:.96rem}"
-                            "select{margin:3px 0 8px}"
-                            ".panel{border:1px solid #e1e5ea;border-radius:8px;padding:10px 12px;margin:0 0 10px;background:#fff}"
-                            ".panel h3{padding-bottom:7px;margin-bottom:9px;border-bottom:1px solid #edf0f3}"
-                            ".panel-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:9px;padding-bottom:7px;border-bottom:1px solid #edf0f3}"
+                            "body{background:#f4f7f6;color:#202428;max-width:1080px;padding:10px 14px 14px;line-height:1.45;font-size:14px}"
+                            "h1{color:#111;font-size:1rem;font-weight:400;margin:0 0 10px}"
+                            "h2{font-size:.98rem;font-weight:400;margin:0 0 10px;color:#111}"
+                            "h3{font-size:.94rem;font-weight:400;margin:0;color:#111}"
+                            "p{margin:5px 0}"
+                            "strong,b,th{font-weight:400}"
+                            "nav{display:flex;align-items:center;gap:5px;margin:0 0 12px;padding:10px 12px;background:#fff;border:1px solid #e1e7e5;border-radius:8px;box-shadow:0 1px 2px rgba(21,35,34,.04);overflow-x:auto}"
+                            "nav a{display:inline-flex;align-items:center;min-height:34px;padding:0 11px;margin:0;background:transparent;color:#2f3947;border-radius:9px;text-decoration:none;font-size:.98rem;font-weight:600;white-space:nowrap}"
+                            "nav a.brand{background:transparent;color:#2f3947}"
+                            "nav a.active{background:#e9f3ef;color:#226b5f}"
+                            "a,button,input[type=submit],input[type=button]{border-radius:4px;box-shadow:none}"
+                            "a{background:transparent;color:#2d6f7a;padding:0;margin:0;text-decoration:none}"
+                            "button,input[type=submit],input[type=button]{background:#2f6f73;border:1px solid #2f6f73;color:#fff;cursor:pointer}"
+                            ".faucet-actions{display:flex;flex-wrap:wrap;gap:5px;margin:0 0 10px}"
+                            ".faucet-actions a{display:inline-flex;align-items:center;min-height:28px;line-height:1.2;margin:0;white-space:nowrap}"
+                            "input:not([type]),input[type=text],input[type=password],input[type=number],input[type=email],input[type=url],input[type=tel],input[type=search],input[type=date],select{width:100%;height:30px;padding:4px 8px;margin:0;border:1px solid #d7dde2;border-radius:4px;box-sizing:border-box;background:#fbfcfc;color:#202428;font-size:.94rem}"
+                            "select{margin:0}"
+                            ".panel{border:1px solid #e1e7e5;border-radius:8px;padding:8px 10px;margin:0 0 8px;background:#fff;box-shadow:0 1px 2px rgba(21,35,34,.04)}"
+                            ".panel h3{padding-bottom:6px;margin-bottom:7px;border-bottom:1px solid #edf0f2}"
+                            ".panel-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:7px;padding-bottom:6px;border-bottom:1px solid #edf0f2}"
                             ".panel-head h3{padding:0;margin:0;border:0}"
-                            ".grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:9px 12px}"
+                            ".grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:7px 10px}"
                             ".field{display:block;margin:0}"
-                            ".field span{display:block;font-size:.84em;color:#3f4b5a;margin-bottom:4px}"
+                            ".field span{display:block;font-size:.82em;color:#56616b;margin-bottom:3px}"
                             ".field input{margin:0}"
-                            ".hint{display:block;color:#687386;font-size:.78em;margin:3px 0 0}"
-                            ".status-pill{display:inline-block;padding:2px 7px;border-radius:999px;background:#eef2f7;color:#1f2933;font-size:.78rem;line-height:1.2;white-space:nowrap}"
-                            ".muted{color:#687386}"
-                            ".metric-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin:0 0 12px}"
-                            ".metric-card{background:#fff;border:1px solid #e1e5ea;border-radius:8px;padding:10px 12px}"
-                            ".metric-card span{display:block;color:#687386;font-size:.78rem;margin-bottom:5px}"
-                            ".metric-card strong{display:block;color:#111827;font-size:1.1rem;line-height:1.2}"
-                            ".filter-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px;margin:0 0 12px}"
-                            ".filter-card{background:#fff;border:1px solid #e1e5ea;border-radius:8px;padding:11px 12px}"
-                            ".filter-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px}"
-                            ".filter-head strong{color:#111827}"
-                            ".filter-meta{display:grid;grid-template-columns:1fr 1fr;gap:5px 10px;color:#4b5563;font-size:.84rem;margin-top:8px}"
-                            ".progress{height:8px;background:#eef2f7;border-radius:999px;overflow:hidden}"
-                            ".progress span{display:block;height:100%;background:#2678c8;border-radius:999px}"
+                            ".hint{display:block;color:#69727a;font-size:.76em;margin:2px 0 0}"
+                            ".status-pill{display:inline-block;padding:1px 7px;border-radius:999px;background:#f2f5f4;color:#4c565d;font-size:.76rem;line-height:1.35;white-space:nowrap}"
+                            ".muted{color:#69727a}"
+                            ".metric-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:7px;margin:0 0 10px}"
+                            ".metric-card{background:#fff;border:1px solid #e1e7e5;border-radius:8px;padding:7px 9px;box-shadow:0 1px 2px rgba(21,35,34,.04)}"
+                            ".metric-card span{display:block;color:#69727a;font-size:.8rem;margin-bottom:2px}"
+                            ".metric-card strong{display:block;color:#202428;font-size:.94rem;line-height:1.3}"
+                            ".filter-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px;margin:0 0 10px}"
+                            ".filter-card{background:#fff;border:1px solid #e1e7e5;border-radius:8px;padding:8px 10px;box-shadow:0 1px 2px rgba(21,35,34,.04)}"
+                            ".filter-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px}"
+                            ".filter-head strong{color:#111}"
+                            ".filter-meta{display:grid;grid-template-columns:1fr 1fr;gap:3px 8px;color:#56616b;font-size:.82rem;margin-top:6px}"
+                            ".progress{height:5px;background:#e4e9ed;border-radius:999px;overflow:hidden}"
+                            ".progress span{display:block;height:100%;background:#4f8a86;border-radius:999px}"
                             ".check-field{display:block;margin:0}"
-                            ".check-title{display:block;font-size:.84em;color:#3f4b5a;margin-bottom:4px}"
-                            ".check-line{display:flex;align-items:center;gap:7px;height:34px;padding:0 10px;border:1px solid #d1d5db;border-radius:6px;background:#fff;box-sizing:border-box;color:#1f2933;font-size:.95rem;white-space:nowrap}"
+                            ".check-title{display:block;font-size:.82em;color:#56616b;margin-bottom:3px}"
+                            ".check-line{display:inline-flex;align-items:center;gap:6px;min-height:28px;padding:0 8px;border:1px solid #d7dde2;border-radius:4px;background:#fff;box-sizing:border-box;color:#202428;font-size:.92rem;white-space:nowrap}"
                             ".check-line input[type=checkbox]{margin:0;flex:0 0 auto}"
-                            ".form-actions{display:flex;align-items:center;justify-content:flex-start;gap:8px;margin-top:4px}"
-                            "form input[type=submit]{min-height:34px;padding:7px 18px;margin:0}"
-                            "table{width:100%;border-collapse:collapse;margin:0 0 12px;background:#fff;border:1px solid #e1e5ea;border-radius:8px;overflow:hidden}"
-                            "td,th{padding:7px 9px;border-bottom:1px solid #edf0f3;text-align:left}"
+                            ".form-actions{display:flex;align-items:center;justify-content:flex-start;gap:6px;margin-top:6px;flex-wrap:wrap}"
+                            ".form-actions form{margin:0}"
+                            "form input[type=submit]{min-height:28px;padding:4px 12px;margin:0;font-size:.9rem;line-height:1.2}"
+                            ".form-actions a{display:inline-flex;align-items:center;min-height:28px;padding:0 10px;border:1px solid #d7dde2;border-radius:4px;background:#f7f9fa;color:#355e66;font-size:.9rem;line-height:1.2}"
+                            ".form-actions input.secondary{background:#f7f9fa;border-color:#d7dde2;color:#4c565d}"
+                            "table{width:100%;border-collapse:collapse;margin:0 0 10px;background:#fff;border:1px solid #e1e7e5;border-radius:8px;overflow:hidden;font-size:.92rem;box-shadow:0 1px 2px rgba(21,35,34,.04)}"
+                            "td,th{padding:5px 8px;border-bottom:1px solid #edf0f2;text-align:left;vertical-align:middle}"
+                            "th{background:#fafafa;color:#56616b}"
                             "tr:last-child td{border-bottom:0}"
-                            "@media(max-width:520px){body{padding:10px}.grid,.metric-grid,.filter-cards{grid-template-columns:1fr}.panel{padding:10px}}"
+                            "td .form-actions{margin-top:0;gap:5px;flex-wrap:nowrap}"
+                            "td .form-actions a,td .form-actions input[type=submit]{min-height:26px;padding:3px 9px;font-size:.86rem}"
+                            ".kv{margin:0 0 10px;background:#fff;border:1px solid #e1e7e5;border-radius:8px;box-shadow:0 1px 2px rgba(21,35,34,.04);overflow:hidden}"
+                            ".kv th,.kv td{padding:5px 8px;border-bottom:1px solid #edf0f2}.kv th{width:26%;color:#56616b;background:#fbfcfc}"
+                            "form[action^='/esp32base'],#f,details,pre{background:#fff;border:1px solid #e1e7e5;border-radius:8px;padding:8px 10px;margin:0 0 8px;box-shadow:0 1px 2px rgba(21,35,34,.04)}"
+                            "form[action^='/esp32base'] input:not([type]),form[action^='/esp32base'] input[type=text],form[action^='/esp32base'] input[type=password],#f input:not([type]){margin:3px 0 7px}"
+                            "input[type=file]{margin:3px 8px 7px 0;font-size:.9rem}"
+                            "body>h3{background:#fff;border:1px solid #e1e7e5;border-bottom:0;border-radius:8px 8px 0 0;padding:8px 10px;margin:8px 0 0;box-shadow:0 1px 2px rgba(21,35,34,.04)}"
+                            "body>h3+p{background:#fff;border-left:1px solid #e1e7e5;border-right:1px solid #e1e7e5;margin:0;padding:0 10px 6px}"
+                            "body>h3+p+form[action^='/esp32base/tools']{border-top:0;border-radius:0 0 8px 8px;margin-top:0}"
+                            ".ok,.err{display:block;background:#fff;border:1px solid #e1e7e5;border-radius:8px;padding:6px 10px;margin:0 0 8px;box-shadow:0 1px 2px rgba(21,35,34,.04)}"
+                            ".footerbar{margin-top:10px;padding:6px 10px;background:#fff;border:1px solid #e1e7e5;border-radius:8px;box-shadow:0 1px 2px rgba(21,35,34,.04)}"
+                            "@media(max-width:520px){body{padding:8px 10px 12px}nav{padding:8px 10px}.grid,.metric-grid,.filter-cards{grid-template-columns:1fr}.panel{padding:8px}.form-actions{gap:5px}.kv th{width:34%}}"
                             "</style>");
 }
 
@@ -188,7 +212,6 @@ bool sendPageStart(const char* title) {
         return false;
     }
     Esp32BaseWeb::sendHeader(title);
-    sendAppStyles();
     return true;
 }
 
@@ -556,7 +579,7 @@ void handleFiltersPage() {
         Esp32BaseWeb::sendChunk("<form method='post' action='/api/faucet/filters/reset' "
                                 "onsubmit=\"return confirm('确认重置滤芯？')&&once(this)\">");
         sendFmt("<input type='hidden' name='index' value='%u'>", static_cast<unsigned>(i));
-        Esp32BaseWeb::sendChunk("<input type='submit' value='重置'></form></div></td></tr>");
+        Esp32BaseWeb::sendChunk("<input class='secondary' type='submit' value='重置'></form></div></td></tr>");
     }
     Esp32BaseWeb::sendChunk("</table>");
     sendPageEnd();
@@ -621,7 +644,7 @@ void handleCalibrationPage() {
     for (std::size_t i = 0; i < kCalibrationTargetCount; ++i) {
         sendCalibrationTargetInput(i, config.calibrationTargetsMl[i]);
     }
-    Esp32BaseWeb::sendChunk("</div></section><input type='submit' value='保存'></form>");
+    Esp32BaseWeb::sendChunk("</div></section><div class='form-actions'><input type='submit' value='保存'></div></form>");
     sendPageEnd();
 }
 
@@ -1077,6 +1100,8 @@ bool registerFaucetWeb() {
     if (!faucetWebRoutesFitEsp32Base()) {
         return false;
     }
+
+    Esp32BaseWeb::setHeadExtraCallback(sendAppStyles);
 
     bool ok = true;
     const FaucetWebRoute* routes = faucetWebRoutes();

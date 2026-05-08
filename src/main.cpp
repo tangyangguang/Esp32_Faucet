@@ -104,6 +104,17 @@ void configureBase() {
 #endif
 }
 
+void applyFileLogPolicy() {
+#if ESP32BASE_ENABLE_FILELOG
+    if (!Esp32BaseFileLog::enable(Esp32BaseFileLog::path(),
+                                  Esp32BaseFileLog::maxBytes(),
+                                  Esp32BaseLog::INFO,
+                                  Esp32BaseFileLog::rotateFiles())) {
+        ESP32BASE_LOG_W("app", "file log INFO policy apply failed");
+    }
+#endif
+}
+
 bool isLeapYear(std::uint16_t year) {
     return (year % 4U == 0 && year % 100U != 0) || year % 400U == 0;
 }
@@ -275,6 +286,7 @@ void setup() {
     if (!Esp32Base::begin()) {
         ESP32BASE_LOG_E("app", "Esp32Base begin failed: %s", Esp32Base::lastError());
     }
+    applyFileLogPolicy();
     Serial.println("[faucet] setup: base begin done");
     initializeApplication();
     Serial.println("[faucet] setup: app initialized");

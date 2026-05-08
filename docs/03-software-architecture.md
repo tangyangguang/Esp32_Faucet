@@ -110,7 +110,7 @@
 - Web 端不得注册启动出水、暂停出水、继续出水、停止出水 API 或按钮。
 - Web 端校准页面只允许查看/保存每升信号数和本地候选容量，不允许远程打开电磁阀。
 - Web 默认认证通过 Esp32Base `setDefaultAuth()` 设置为 `admin/admin`；用户可通过 `/esp32base/auth` 修改认证，已保存认证优先于应用默认值。
-- 默认构建将 Esp32Base 串口日志等级设为 WARN，避免基础库 INFO 日志输出 WiFi/Web 认证明文凭据；需要启动诊断时再临时改为 INFO 或 DEBUG。
+- 当前构建将 Esp32Base 串口日志等级设为 DEBUG，文件日志等级设为 INFO，用于保留更完整的启动和现场诊断信息。文件日志等级在启动后显式应用为 INFO，避免设备 NVS 中旧的 `eb_log.level` 覆盖当前项目策略。注意：基础库 INFO 日志会输出 WiFi/Web 认证明文凭据，调试日志和文件日志需要按敏感信息管理。
 
 ### Web 页面
 

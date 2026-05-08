@@ -104,10 +104,13 @@
 
 - 业务 API 前缀为 `/api/faucet/...`。
 - Web 页面通过 Esp32Base 注册，内置 OTA/WiFi/基础状态入口不重复实现。
+- Web 采用业务优先首页模型：`/` 进入 `/faucet`，`/esp32base` 保留为系统工具入口；系统工具放在页面底部小字区域。
 - 配置写入、恢复出厂、重启等操作使用 POST，并需要 Basic Auth。
 - 日志、统计、配置接口必须分页或小响应，避免大内存拼接。
 - Web 端不得注册启动出水、暂停出水、继续出水、停止出水 API 或按钮。
 - Web 端校准页面只允许查看/保存每升信号数和本地候选容量，不允许远程打开电磁阀。
+- Web 默认认证通过 Esp32Base `setDefaultAuth()` 设置为 `admin/admin`；用户可通过 `/esp32base/auth` 修改认证，已保存认证优先于应用默认值。
+- 默认构建将 Esp32Base 串口日志等级设为 WARN，避免基础库 INFO 日志输出 WiFi/Web 认证明文凭据；需要启动诊断时再临时改为 INFO 或 DEBUG。
 
 ### Web 页面
 

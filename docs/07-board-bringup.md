@@ -77,6 +77,8 @@ pio run -e esp32dev -t uploadfs --upload-port <端口>
 pio device monitor -e esp32dev --port <端口> --baud 115200
 ```
 
+默认构建使用 `ESP32BASE_LOG_LEVEL=ESP32BASE_LOG_WARN`，避免 Esp32Base INFO 日志输出 WiFi 和 Web Auth 明文凭据。Web 默认认证通过 Esp32Base `setDefaultAuth()` 提供，用户可在 `/esp32base/auth` 修改。需要排查启动流程时，可临时改为 `ESP32BASE_LOG_LEVEL=ESP32BASE_LOG_INFO` 或 `ESP32BASE_LOG_DEBUG`，调试结束后恢复 WARN。
+
 期望日志：
 
 - 固件名为 `esp32-faucet`。

@@ -59,86 +59,130 @@ void filterKey(char* out, std::size_t len, std::size_t index, const char* suffix
     std::snprintf(out, len, "f%u_%s", static_cast<unsigned>(index), suffix);
 }
 
+bool isKnownSystemConfigVersion(std::int32_t version) {
+    return version >= 1 && version <= kConfigVersion;
+}
+
+void loadCommonSystemConfig(ConfigBackend& backend, SystemConfig& config) {
+    config.confirmTimeoutSec =
+        static_cast<std::uint32_t>(backend.getInt(kConfigNs, "confirm_s", toInt(config.confirmTimeoutSec)));
+    config.maxOutTimeSec = static_cast<std::uint32_t>(backend.getInt(kConfigNs, "max_time", toInt(config.maxOutTimeSec)));
+    config.maxOutVolumeMl = static_cast<std::uint32_t>(backend.getInt(kConfigNs, "max_ml", toInt(config.maxOutVolumeMl)));
+    config.overflowPercent = static_cast<std::uint8_t>(backend.getInt(kConfigNs, "overflow", config.overflowPercent));
+    config.noFlowTimeoutSec =
+        static_cast<std::uint32_t>(backend.getInt(kConfigNs, "noflow_s", toInt(config.noFlowTimeoutSec)));
+    config.highFlowMlPerMin =
+        static_cast<std::uint32_t>(backend.getInt(kConfigNs, "high_flow", toInt(config.highFlowMlPerMin)));
+    config.highFlowDurationSec =
+        static_cast<std::uint32_t>(backend.getInt(kConfigNs, "high_s", toInt(config.highFlowDurationSec)));
+    config.pauseTimeoutSec =
+        static_cast<std::uint32_t>(backend.getInt(kConfigNs, "pause_s", toInt(config.pauseTimeoutSec)));
+    config.pulsePerMl = pulseFromMilli(backend.getInt(kConfigNs, "pulse_m", pulseToMilli(config.pulsePerMl)));
+    config.valveFullPowerSec =
+        static_cast<std::uint32_t>(backend.getInt(kConfigNs, "valve_s", toInt(config.valveFullPowerSec)));
+    config.valveHoldDutyPercent = static_cast<std::uint8_t>(backend.getInt(kConfigNs, "hold_pct", config.valveHoldDutyPercent));
+    config.oledSleepSec = static_cast<std::uint32_t>(backend.getInt(kConfigNs, "oled_s", toInt(config.oledSleepSec)));
+    config.beepEnabled = backend.getBool(kConfigNs, "beep", config.beepEnabled);
+}
+
+void loadLegacyCalibrationTarget(ConfigBackend& backend, SystemConfig& config) {
+    config.calibrationTargetsMl[0] =
+        static_cast<std::uint32_t>(backend.getInt(kConfigNs, "cal_ml", toInt(config.calibrationTargetsMl[0])));
+}
+
+void loadCalibrationTargets(ConfigBackend& backend, SystemConfig& config) {
+    for (std::size_t i = 0; i < kCalibrationTargetCount; ++i) {
+        char key[12]{};
+        std::snprintf(key, sizeof(key), "cal%u_ml", static_cast<unsigned>(i));
+        config.calibrationTargetsMl[i] =
+            static_cast<std::uint32_t>(backend.getInt(kConfigNs, key, toInt(config.calibrationTargetsMl[i])));
+    }
+}
+
+void loadPresets(ConfigBackend& backend, SystemConfig& config) {
+    for (std::size_t i = 0; i < kPresetCount; ++i) {
+        char key[12]{};
+        presetKey(key, sizeof(key), i, "en");
+        config.presets[i].enabled = backend.getBool(kConfigNs, key, config.presets[i].enabled);
+        presetKey(key, sizeof(key), i, "type");
+        config.presets[i].type =
+            backend.getInt(kConfigNs, key, static_cast<std::int32_t>(config.presets[i].type)) == 1
+                ? PresetType::Time
+                : PresetType::Volume;
+        presetKey(key, sizeof(key), i, "val");
+        config.presets[i].value = static_cast<std::uint32_t>(backend.getInt(kConfigNs, key, toInt(config.presets[i].value)));
+        presetKey(key, sizeof(key), i, "name");
+        backend.getStr(kConfigNs, key, config.presets[i].name, sizeof(config.presets[i].name), config.presets[i].name);
+    }
+}
+
+void loadFilterBasics(ConfigBackend& backend, FilterRecord& filter, std::size_t index) {
+    char key[12]{};
+    filterKey(key, sizeof(key), index, "en");
+    filter.enabled = backend.getBool(kConfigNs, key, filter.enabled);
+    filterKey(key, sizeof(key), index, "name");
+    backend.getStr(kConfigNs, key, filter.name, sizeof(filter.name), filter.name);
+    filterKey(key, sizeof(key), index, "life_ml");
+    filter.lifeMl = static_cast<std::uint32_t>(backend.getInt(kConfigNs, key, toInt(filter.lifeMl)));
+    filterKey(key, sizeof(key), index, "start");
+    filter.startTime = static_cast<std::uint32_t>(backend.getInt(kConfigNs, key, toInt(filter.startTime)));
+    filterKey(key, sizeof(key), index, "used");
+    filter.usedMl = static_cast<std::uint32_t>(backend.getInt(kConfigNs, key, toInt(filter.usedMl)));
+}
+
+void loadLegacyFilters(ConfigBackend& backend, SystemConfig& config) {
+    for (std::size_t i = 0; i < kFilterCount; ++i) {
+        loadFilterBasics(backend, config.filters[i], i);
+        char key[12]{};
+        filterKey(key, sizeof(key), i, "life_d");
+        const std::uint32_t lifeDays =
+            static_cast<std::uint32_t>(backend.getInt(kConfigNs, key, toInt(config.filters[i].recommendDays)));
+        config.filters[i].recommendDays = lifeDays;
+        config.filters[i].maxDays = lifeDays;
+    }
+}
+
+void loadFilterRanges(ConfigBackend& backend, SystemConfig& config) {
+    for (std::size_t i = 0; i < kFilterCount; ++i) {
+        loadFilterBasics(backend, config.filters[i], i);
+        char key[12]{};
+        filterKey(key, sizeof(key), i, "life_min");
+        config.filters[i].recommendDays =
+            static_cast<std::uint32_t>(backend.getInt(kConfigNs, key, toInt(config.filters[i].recommendDays)));
+        filterKey(key, sizeof(key), i, "life_max");
+        config.filters[i].maxDays =
+            static_cast<std::uint32_t>(backend.getInt(kConfigNs, key, toInt(config.filters[i].maxDays)));
+    }
+}
+
 }  // namespace
 
 ConfigStore::ConfigStore(ConfigBackend& backend) : backend_(backend) {}
 
 SystemConfig ConfigStore::loadSystemConfig() {
     SystemConfig config = makeDefaultConfig();
-    if (backend_.getInt(kConfigNs, "ver", 0) != kConfigVersion) {
+    const std::int32_t version = backend_.getInt(kConfigNs, "ver", 0);
+    if (!isKnownSystemConfigVersion(version)) {
         return config;
     }
 
-    config.confirmTimeoutSec = static_cast<std::uint32_t>(
-        backend_.getInt(kConfigNs, "confirm_s", toInt(config.confirmTimeoutSec)));
-    config.maxOutTimeSec =
-        static_cast<std::uint32_t>(backend_.getInt(kConfigNs, "max_time", toInt(config.maxOutTimeSec)));
-    config.maxOutVolumeMl =
-        static_cast<std::uint32_t>(backend_.getInt(kConfigNs, "max_ml", toInt(config.maxOutVolumeMl)));
-    config.overflowPercent =
-        static_cast<std::uint8_t>(backend_.getInt(kConfigNs, "overflow", config.overflowPercent));
-    config.noFlowTimeoutSec =
-        static_cast<std::uint32_t>(backend_.getInt(kConfigNs, "noflow_s", toInt(config.noFlowTimeoutSec)));
-    config.highFlowMlPerMin =
-        static_cast<std::uint32_t>(backend_.getInt(kConfigNs, "high_flow", toInt(config.highFlowMlPerMin)));
-    config.highFlowDurationSec =
-        static_cast<std::uint32_t>(backend_.getInt(kConfigNs, "high_s", toInt(config.highFlowDurationSec)));
-    config.pauseTimeoutSec =
-        static_cast<std::uint32_t>(backend_.getInt(kConfigNs, "pause_s", toInt(config.pauseTimeoutSec)));
-    config.pulsePerMl = pulseFromMilli(backend_.getInt(kConfigNs, "pulse_m", pulseToMilli(config.pulsePerMl)));
-    for (std::size_t i = 0; i < kCalibrationTargetCount; ++i) {
-        char key[12]{};
-        std::snprintf(key, sizeof(key), "cal%u_ml", static_cast<unsigned>(i));
-        config.calibrationTargetsMl[i] =
-            static_cast<std::uint32_t>(backend_.getInt(kConfigNs, key, toInt(config.calibrationTargetsMl[i])));
+    loadCommonSystemConfig(backend_, config);
+    if (version < 3) {
+        loadLegacyCalibrationTarget(backend_, config);
+    } else {
+        loadCalibrationTargets(backend_, config);
     }
-    config.valveFullPowerSec =
-        static_cast<std::uint32_t>(backend_.getInt(kConfigNs, "valve_s", toInt(config.valveFullPowerSec)));
-    config.valveHoldDutyPercent =
-        static_cast<std::uint8_t>(backend_.getInt(kConfigNs, "hold_pct", config.valveHoldDutyPercent));
-    config.oledSleepSec =
-        static_cast<std::uint32_t>(backend_.getInt(kConfigNs, "oled_s", toInt(config.oledSleepSec)));
-    config.beepEnabled = backend_.getBool(kConfigNs, "beep", config.beepEnabled);
-
-    for (std::size_t i = 0; i < kPresetCount; ++i) {
-        char key[12]{};
-        presetKey(key, sizeof(key), i, "en");
-        config.presets[i].enabled = backend_.getBool(kConfigNs, key, config.presets[i].enabled);
-        presetKey(key, sizeof(key), i, "type");
-        config.presets[i].type =
-            backend_.getInt(kConfigNs, key, static_cast<std::int32_t>(config.presets[i].type)) == 1
-                ? PresetType::Time
-                : PresetType::Volume;
-        presetKey(key, sizeof(key), i, "val");
-        config.presets[i].value = static_cast<std::uint32_t>(backend_.getInt(kConfigNs, key, toInt(config.presets[i].value)));
-        presetKey(key, sizeof(key), i, "name");
-        backend_.getStr(kConfigNs, key, config.presets[i].name, sizeof(config.presets[i].name), config.presets[i].name);
-    }
-
-    for (std::size_t i = 0; i < kFilterCount; ++i) {
-        char key[12]{};
-        filterKey(key, sizeof(key), i, "en");
-        config.filters[i].enabled = backend_.getBool(kConfigNs, key, config.filters[i].enabled);
-        filterKey(key, sizeof(key), i, "name");
-        backend_.getStr(kConfigNs, key, config.filters[i].name, sizeof(config.filters[i].name), config.filters[i].name);
-        filterKey(key, sizeof(key), i, "life_min");
-        config.filters[i].recommendDays =
-            static_cast<std::uint32_t>(backend_.getInt(kConfigNs, key, toInt(config.filters[i].recommendDays)));
-        filterKey(key, sizeof(key), i, "life_max");
-        config.filters[i].maxDays =
-            static_cast<std::uint32_t>(backend_.getInt(kConfigNs, key, toInt(config.filters[i].maxDays)));
-        filterKey(key, sizeof(key), i, "life_ml");
-        config.filters[i].lifeMl =
-            static_cast<std::uint32_t>(backend_.getInt(kConfigNs, key, toInt(config.filters[i].lifeMl)));
-        filterKey(key, sizeof(key), i, "start");
-        config.filters[i].startTime =
-            static_cast<std::uint32_t>(backend_.getInt(kConfigNs, key, toInt(config.filters[i].startTime)));
-        filterKey(key, sizeof(key), i, "used");
-        config.filters[i].usedMl =
-            static_cast<std::uint32_t>(backend_.getInt(kConfigNs, key, toInt(config.filters[i].usedMl)));
+    loadPresets(backend_, config);
+    if (version == 1) {
+        loadLegacyFilters(backend_, config);
+    } else {
+        loadFilterRanges(backend_, config);
     }
 
     sanitizeConfig(config);
+    if (version != kConfigVersion) {
+        saveSystemConfig(config);
+    }
     return config;
 }
 

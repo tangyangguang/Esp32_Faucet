@@ -101,6 +101,72 @@ void test_config_load_uses_defaults_without_matching_version() {
     TEST_ASSERT_TRUE(config.filters[0].enabled);
 }
 
+void test_config_migrates_v1_without_losing_user_values() {
+    FakeConfigBackend backend;
+    backend.setInt("faucet_cfg", "ver", 1);
+    backend.setInt("faucet_cfg", "confirm_s", 22);
+    backend.setInt("faucet_cfg", "pulse_m", 620);
+    backend.setInt("faucet_cfg", "cal_ml", 2500);
+    backend.setBool("faucet_cfg", "p2_en", true);
+    backend.setInt("faucet_cfg", "p2_type", 1);
+    backend.setInt("faucet_cfg", "p2_val", 150);
+    backend.setStr("faucet_cfg", "p2_name", "Tea");
+    backend.setBool("faucet_cfg", "f0_en", true);
+    backend.setStr("faucet_cfg", "f0_name", "CTO");
+    backend.setInt("faucet_cfg", "f0_life_d", 90);
+    backend.setInt("faucet_cfg", "f0_life_ml", 300000);
+    backend.setInt("faucet_cfg", "f0_start", 1714502400);
+    backend.setInt("faucet_cfg", "f0_used", 123456);
+    ConfigStore store(backend);
+
+    const SystemConfig loaded = store.loadSystemConfig();
+
+    TEST_ASSERT_EQUAL_INT32(3, backend.getInt("faucet_cfg", "ver", 0));
+    TEST_ASSERT_EQUAL_INT32(2500, backend.getInt("faucet_cfg", "cal0_ml", 0));
+    TEST_ASSERT_EQUAL_INT32(90, backend.getInt("faucet_cfg", "f0_life_min", 0));
+    TEST_ASSERT_EQUAL_INT32(90, backend.getInt("faucet_cfg", "f0_life_max", 0));
+    TEST_ASSERT_EQUAL_UINT32(22, loaded.confirmTimeoutSec);
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.62f, loaded.pulsePerMl);
+    TEST_ASSERT_EQUAL_UINT32(2500, loaded.calibrationTargetsMl[0]);
+    TEST_ASSERT_EQUAL_UINT32(7500, loaded.calibrationTargetsMl[1]);
+    TEST_ASSERT_TRUE(loaded.presets[2].enabled);
+    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(PresetType::Time), static_cast<std::uint8_t>(loaded.presets[2].type));
+    TEST_ASSERT_EQUAL_UINT32(150, loaded.presets[2].value);
+    TEST_ASSERT_EQUAL_STRING("Tea", loaded.presets[2].name);
+    TEST_ASSERT_TRUE(loaded.filters[0].enabled);
+    TEST_ASSERT_EQUAL_STRING("CTO", loaded.filters[0].name);
+    TEST_ASSERT_EQUAL_UINT32(90, loaded.filters[0].recommendDays);
+    TEST_ASSERT_EQUAL_UINT32(90, loaded.filters[0].maxDays);
+    TEST_ASSERT_EQUAL_UINT32(300000, loaded.filters[0].lifeMl);
+    TEST_ASSERT_EQUAL_UINT32(1714502400, loaded.filters[0].startTime);
+    TEST_ASSERT_EQUAL_UINT32(123456, loaded.filters[0].usedMl);
+}
+
+void test_config_migrates_v2_filter_ranges_and_single_calibration_target() {
+    FakeConfigBackend backend;
+    backend.setInt("faucet_cfg", "ver", 2);
+    backend.setInt("faucet_cfg", "cal_ml", 3200);
+    backend.setBool("faucet_cfg", "f1_en", true);
+    backend.setStr("faucet_cfg", "f1_name", "RO");
+    backend.setInt("faucet_cfg", "f1_life_min", 360);
+    backend.setInt("faucet_cfg", "f1_life_max", 720);
+    backend.setInt("faucet_cfg", "f1_life_ml", 9000000);
+    ConfigStore store(backend);
+
+    const SystemConfig loaded = store.loadSystemConfig();
+
+    TEST_ASSERT_EQUAL_INT32(3, backend.getInt("faucet_cfg", "ver", 0));
+    TEST_ASSERT_EQUAL_INT32(3200, backend.getInt("faucet_cfg", "cal0_ml", 0));
+    TEST_ASSERT_EQUAL_INT32(7500, backend.getInt("faucet_cfg", "cal1_ml", 0));
+    TEST_ASSERT_EQUAL_UINT32(3200, loaded.calibrationTargetsMl[0]);
+    TEST_ASSERT_EQUAL_UINT32(7500, loaded.calibrationTargetsMl[1]);
+    TEST_ASSERT_TRUE(loaded.filters[1].enabled);
+    TEST_ASSERT_EQUAL_STRING("RO", loaded.filters[1].name);
+    TEST_ASSERT_EQUAL_UINT32(360, loaded.filters[1].recommendDays);
+    TEST_ASSERT_EQUAL_UINT32(720, loaded.filters[1].maxDays);
+    TEST_ASSERT_EQUAL_UINT32(9000000, loaded.filters[1].lifeMl);
+}
+
 void test_config_save_and_load_round_trips_system_config() {
     FakeConfigBackend backend;
     ConfigStore store(backend);
@@ -263,6 +329,8 @@ int main(int argc, char** argv) {
 
     UNITY_BEGIN();
     RUN_TEST(test_config_load_uses_defaults_without_matching_version);
+    RUN_TEST(test_config_migrates_v1_without_losing_user_values);
+    RUN_TEST(test_config_migrates_v2_filter_ranges_and_single_calibration_target);
     RUN_TEST(test_config_save_and_load_round_trips_system_config);
     RUN_TEST(test_config_load_sanitizes_stored_values);
     RUN_TEST(test_config_reset_restores_defaults);

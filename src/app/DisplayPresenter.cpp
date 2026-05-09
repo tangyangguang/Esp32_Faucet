@@ -1,5 +1,7 @@
 #include "app/DisplayPresenter.h"
 
+#include "app/TimeUtils.h"
+
 #include <cstdio>
 #include <cstring>
 
@@ -35,6 +37,10 @@ void copyLine(char (&dest)[kDisplayLineLength], const char* src) {
 
 DisplayPresenter::DisplayPresenter(std::uint32_t sleepTimeoutSec)
     : sleepTimeoutMs_(msFromSeconds(sleepTimeoutSec)), lastWakeMs_(0) {}
+
+void DisplayPresenter::configure(std::uint32_t sleepTimeoutSec) {
+    sleepTimeoutMs_ = msFromSeconds(sleepTimeoutSec);
+}
 
 void DisplayPresenter::wake(std::uint32_t nowMs) {
     lastWakeMs_ = nowMs;
@@ -74,7 +80,7 @@ DisplayFrame DisplayPresenter::render(const AppSnapshot& snapshot, std::uint32_t
         }
     }
 
-    if (sleepTimeoutMs_ > 0 && nowMs >= lastWakeMs_ && nowMs - lastWakeMs_ >= sleepTimeoutMs_ &&
+    if (sleepTimeoutMs_ > 0 && elapsedAtLeast(nowMs, lastWakeMs_, sleepTimeoutMs_) &&
         snapshot.water.state == WaterState::Idle) {
         return makeFrame(DisplayPage::Sleep, false, "", "");
     }
@@ -99,7 +105,9 @@ DisplayFrame DisplayPresenter::render(const AppSnapshot& snapshot, std::uint32_t
                     snapshot.water.targetValue > snapshot.water.volumeMl ? snapshot.water.targetValue - snapshot.water.volumeMl : 0;
                 std::snprintf(line1, sizeof(line1), "Remain %lu", static_cast<unsigned long>(remain));
             } else {
-                std::snprintf(line1, sizeof(line1), "Running");
+                const std::uint32_t remain =
+                    snapshot.water.targetValue > snapshot.water.elapsedSec ? snapshot.water.targetValue - snapshot.water.elapsedSec : 0;
+                std::snprintf(line1, sizeof(line1), "Remain %lu s", static_cast<unsigned long>(remain));
             }
             std::snprintf(line2, sizeof(line2), "Out %lu", static_cast<unsigned long>(snapshot.water.volumeMl));
             return makeFrame(DisplayPage::Running, true, line1, line2);
@@ -109,7 +117,7 @@ DisplayFrame DisplayPresenter::render(const AppSnapshot& snapshot, std::uint32_t
             return makeFrame(DisplayPage::Paused, true, line1, line2);
         case WaterState::Error:
         default:
-            return makeFrame(DisplayPage::Error, true, "Error", stateText(WaterResult::SafetyStopped));
+            return makeFrame(DisplayPage::Error, true, "Error", stateText(snapshot.water.lastResult));
     }
 }
 

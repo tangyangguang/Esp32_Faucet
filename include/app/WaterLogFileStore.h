@@ -2,6 +2,7 @@
 
 #include "app/AppConfig.h"
 #include "app/AppTypes.h"
+#include "app/WaterLogStore.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -21,7 +22,7 @@ public:
     virtual bool removeFile(const char* path) = 0;
 };
 
-class WaterLogFileStore {
+class WaterLogFileStore : public WaterLogReader {
 public:
     WaterLogFileStore(WaterLogFileBackend& backend, const char* path, std::size_t capacity);
 
@@ -30,12 +31,13 @@ public:
     std::size_t readPage(std::size_t pageIndex,
                          std::uint16_t pageSize,
                          WaterLogRecord* output,
-                         std::size_t outputCapacity) const;
+                         std::size_t outputCapacity) const override;
     bool clear();
 
-    std::size_t count() const;
+    std::size_t count() const override;
     std::size_t capacity() const;
-    bool ready() const;
+    bool ready() const override;
+    const char* storageName() const override;
 
 private:
     bool initializeNewFile();

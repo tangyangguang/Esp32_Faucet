@@ -9,6 +9,7 @@
 #include "app/Esp32BaseWaterLogBackend.h"
 #include "app/FilterStore.h"
 #include "app/StatisticsStore.h"
+#include "app/TimeUtils.h"
 #include "app/WaterLogFileStore.h"
 #include "app/WaterLogStore.h"
 #include "drivers/BoardPins.h"
@@ -32,7 +33,7 @@ constexpr std::uint32_t kUnixSecondsAt2000 = 946684800UL;
 
 char g_hostname[17] = "water-0000";
 
-class PersistentLogWriter : public faucet::AppLogWriter {
+class PersistentLogWriter : public faucet::AppLogWriter, public faucet::WaterLogReader {
 public:
     PersistentLogWriter() : fileStore_(nullptr), ramStore_(records_, kRamLogCapacity) {}
 
@@ -45,6 +46,28 @@ public:
             return true;
         }
         return ramStore_.append(record);
+    }
+
+    std::size_t readPage(std::size_t pageIndex,
+                         std::uint16_t pageSize,
+                         faucet::WaterLogRecord* output,
+                         std::size_t outputCapacity) const override {
+        if (fileStore_ && fileStore_->ready()) {
+            return fileStore_->readPage(pageIndex, pageSize, output, outputCapacity);
+        }
+        return ramStore_.readPage(pageIndex, pageSize, output, outputCapacity);
+    }
+
+    std::size_t count() const override {
+        return fileStore_ && fileStore_->ready() ? fileStore_->count() : ramStore_.count();
+    }
+
+    bool ready() const override {
+        return (fileStore_ && fileStore_->ready()) || ramStore_.ready();
+    }
+
+    const char* storageName() const override {
+        return fileStore_ && fileStore_->ready() ? fileStore_->storageName() : ramStore_.storageName();
     }
 
 private:
@@ -91,13 +114,6 @@ void configureBase() {
     Esp32BaseWeb::setHomePath("/faucet");
     Esp32BaseWeb::setHomeMode(Esp32BaseWeb::HOME_COMBINED);
     Esp32BaseWeb::setSystemNavMode(Esp32BaseWeb::SYSTEM_NAV_SECTION);
-    Esp32BaseWeb::setBuiltinLabel(Esp32BaseWeb::BUILTIN_HOME, "系统");
-    Esp32BaseWeb::setBuiltinLabel(Esp32BaseWeb::BUILTIN_WIFI, "网络");
-    Esp32BaseWeb::setBuiltinLabel(Esp32BaseWeb::BUILTIN_OTA, "OTA");
-    Esp32BaseWeb::setBuiltinLabel(Esp32BaseWeb::BUILTIN_LOGS, "系统日志");
-    Esp32BaseWeb::setBuiltinLabel(Esp32BaseWeb::BUILTIN_REBOOT, "重启");
-    Esp32BaseWeb::setBuiltinLabel(Esp32BaseWeb::BUILTIN_SYSTEM, "系统工具");
-    Esp32BaseWeb::setBuiltinLabel(Esp32BaseWeb::BUILTIN_AUTH, "认证");
     if (!faucet::registerFaucetWeb()) {
         ESP32BASE_LOG_E("app", "faucet web route registration failed");
     }
@@ -160,6 +176,14 @@ std::uint32_t currentSeconds() {
            static_cast<std::uint32_t>(now.minute) * 60UL + now.second;
 }
 
+void applyRuntimeSettings(const faucet::SystemConfig& config) {
+    g_beep.setEnabled(config.beepEnabled);
+    if (g_display) {
+        g_display->configure(config.oledSleepSec);
+        g_display->wake(millis());
+    }
+}
+
 faucet::PeriodKeys currentPeriodKeys(std::uint32_t nowSeconds) {
     const faucet::RtcDateTime now = g_rtc.readNow();
     if (!now.valid) {
@@ -185,7 +209,7 @@ void initializeApplication() {
     g_app = new faucet::AppController(g_config, g_statistics, *g_filters, g_logs);
     g_display = new faucet::DisplayPresenter(g_config.oledSleepSec);
     faucet::setFaucetWebContext(
-        faucet::FaucetWebContext{&g_config, &g_configStore, g_app, g_filters, &g_waterLogFile, currentSeconds});
+        faucet::FaucetWebContext{&g_config, &g_configStore, g_app, g_filters, &g_logs, currentSeconds, applyRuntimeSettings});
 
     g_buttons.begin();
     g_flowPulses.begin();
@@ -211,15 +235,20 @@ void runApplicationTick() {
         return;
     }
 
+    const std::uint32_t nowMs = millis();
+    const std::uint32_t nowUs = micros();
+    const std::uint32_t nowSec = currentSeconds();
+    const faucet::ButtonLevels levels = g_buttons.read();
+    if (g_buttons.consumeStopInterrupt() || levels.stopPressed) {
+        g_app->emergencyStop(nowMs);
+        g_valveHardware.apply(g_app->snapshot().valve);
+    }
+
     std::uint32_t pulseUs = 0;
     while (g_flowPulses.pop(pulseUs)) {
         g_app->onFlowPulse(pulseUs);
     }
 
-    const std::uint32_t nowMs = millis();
-    const std::uint32_t nowUs = micros();
-    const std::uint32_t nowSec = currentSeconds();
-    const faucet::ButtonLevels levels = g_buttons.read();
     const faucet::AppTickInput input{
         levels,
         nowMs,
@@ -228,6 +257,10 @@ void runApplicationTick() {
         currentPeriodKeys(nowSec),
     };
     g_app->tick(input);
+    const faucet::BeepPattern beep = g_app->consumeBeepPattern();
+    if (beep != faucet::BeepPattern::None) {
+        g_beep.play(beep, nowMs);
+    }
 
     const faucet::AppSnapshot snapshot = g_app->snapshot();
     g_valveHardware.apply(snapshot.valve);
@@ -236,7 +269,7 @@ void runApplicationTick() {
         if (levels.stopPressed || levels.okPressed || levels.nextPressed || snapshot.water.state != faucet::WaterState::Idle) {
             g_display->wake(nowMs);
         }
-        if (nowMs - g_lastDisplayMs >= 200UL) {
+        if (faucet::elapsedAtLeast(nowMs, g_lastDisplayMs, 200UL)) {
             g_oled.apply(g_display->render(snapshot, nowMs));
             g_lastDisplayMs = nowMs;
         }

@@ -1,6 +1,18 @@
 #include "app/AppController.h"
 
+#include "app/TimeUtils.h"
+
+#include <limits>
+
 namespace faucet {
+namespace {
+
+std::uint32_t msFromSeconds(std::uint32_t seconds) {
+    constexpr std::uint32_t maxMs = std::numeric_limits<std::uint32_t>::max();
+    return seconds > maxMs / 1000UL ? maxMs : seconds * 1000UL;
+}
+
+}  // namespace
 
 AppController::AppController(const SystemConfig& config,
                              StatisticsStore& statistics,
@@ -25,7 +37,8 @@ AppController::AppController(const SystemConfig& config,
       persistenceDirty_(false),
       configDirty_(false),
       factoryResetRequested_(false),
-      factoryConfirmArmedMs_(0) {
+      factoryConfirmArmedMs_(0),
+      pendingBeep_(BeepPattern::None) {
     sanitizeConfig(config_);
 }
 
@@ -46,10 +59,10 @@ void AppController::tick(const AppTickInput& input) {
     }
 
     if (localMode_ == LocalUiMode::CalibrationSampling &&
-        input.nowMs >= calibrationStartMs_ &&
-        input.nowMs - calibrationStartMs_ >= config_.maxOutTimeSec * 1000UL) {
+        elapsedAtLeast(input.nowMs, calibrationStartMs_, msFromSeconds(config_.maxOutTimeSec))) {
         calibrationValveOpen_ = false;
         localMode_ = LocalUiMode::CalibrationRejected;
+        pendingBeep_ = BeepPattern::Error;
     }
 
     syncFlow(input.nowUs);
@@ -101,38 +114,81 @@ bool AppController::consumeFactoryResetRequest() {
     return requested;
 }
 
+BeepPattern AppController::consumeBeepPattern() {
+    const BeepPattern pattern = pendingBeep_;
+    pendingBeep_ = BeepPattern::None;
+    return pattern;
+}
+
+bool AppController::emergencyStop(std::uint32_t nowMs) {
+    const WaterState state = water_.snapshot().state;
+    water_.stop(nowMs);
+    syncValve(nowMs);
+    if (state == WaterState::Running || state == WaterState::Paused) {
+        pendingBeep_ = BeepPattern::Error;
+        return true;
+    }
+    return false;
+}
+
+bool AppController::canApplyConfig() const {
+    return localMode_ == LocalUiMode::Normal && water_.canApplyConfig();
+}
+
+bool AppController::applyConfig(const SystemConfig& config) {
+    if (!canApplyConfig() || !water_.applyConfig(config)) {
+        return false;
+    }
+    SystemConfig safe = config;
+    sanitizeConfig(safe);
+    config_ = safe;
+    flow_.setPulsePerMl(config_.pulsePerMl);
+    valve_.configure(config_.valveFullPowerSec, config_.valveHoldDutyPercent);
+    calibration_.reset(config_.pulsePerMl, config_.calibrationTargetsMl);
+    return true;
+}
+
 void AppController::handleButtonEvent(ButtonEvent event, std::uint32_t nowMs, std::uint32_t nowSeconds) {
     switch (event.type) {
         case ButtonEventType::StopDown:
         case ButtonEventType::StopShort:
         case ButtonEventType::StopLong:
-            water_.stop(nowMs);
+            emergencyStop(nowMs);
             break;
         case ButtonEventType::OkShort:
             if (water_.snapshot().state == WaterState::Idle) {
-                water_.requestStart(nowMs);
+                if (water_.requestStart(nowMs)) {
+                    pendingBeep_ = BeepPattern::Click;
+                }
             } else if (water_.snapshot().state == WaterState::Confirm) {
                 if (water_.confirmStart(nowMs)) {
                     activeStartTimeSec_ = nowSeconds;
                     flow_.reset();
                     lastFlowVolumeMl_ = 0;
+                    pendingBeep_ = BeepPattern::Click;
                 }
             } else {
-                water_.togglePause(nowMs);
+                if (water_.togglePause(nowMs)) {
+                    pendingBeep_ = BeepPattern::Click;
+                }
             }
             break;
         case ButtonEventType::OkLong:
             if (water_.snapshot().state == WaterState::Idle) {
                 enterCalibration();
+                pendingBeep_ = BeepPattern::Click;
             }
             break;
         case ButtonEventType::NextShort:
-            water_.selectNextPreset();
+            if (water_.selectNextPreset()) {
+                pendingBeep_ = BeepPattern::Click;
+            }
             break;
         case ButtonEventType::FactoryResetCombo:
             if (water_.snapshot().state == WaterState::Idle) {
                 localMode_ = LocalUiMode::FactoryResetConfirm;
-                factoryConfirmArmedMs_ = nowMs + 300UL;
+                factoryConfirmArmedMs_ = nowMs;
+                pendingBeep_ = BeepPattern::Error;
             }
             break;
         default:
@@ -141,7 +197,7 @@ void AppController::handleButtonEvent(ButtonEvent event, std::uint32_t nowMs, st
 }
 
 void AppController::handleCalibrationEvent(ButtonEvent event, std::uint32_t nowMs, std::uint32_t nowUs) {
-    if (localMode_ == LocalUiMode::FactoryResetConfirm && nowMs < factoryConfirmArmedMs_ &&
+    if (localMode_ == LocalUiMode::FactoryResetConfirm && !elapsedAtLeast(nowMs, factoryConfirmArmedMs_, 300UL) &&
         event.type != ButtonEventType::None) {
         return;
     }
@@ -154,16 +210,19 @@ void AppController::handleCalibrationEvent(ButtonEvent event, std::uint32_t nowM
             calibration_.reset(config_.pulsePerMl, config_.calibrationTargetsMl);
             flow_.reset();
             lastFlowVolumeMl_ = 0;
+            pendingBeep_ = BeepPattern::Click;
             break;
         case ButtonEventType::NextShort:
         case ButtonEventType::NextLong:
             if (localMode_ == LocalUiMode::CalibrationSelect || localMode_ == LocalUiMode::CalibrationRejected) {
                 cycleCalibrationTarget();
+                pendingBeep_ = BeepPattern::Click;
             }
             break;
         case ButtonEventType::OkShort:
             if (localMode_ == LocalUiMode::CalibrationSelect || localMode_ == LocalUiMode::CalibrationRejected) {
                 localMode_ = LocalUiMode::CalibrationConfirm;
+                pendingBeep_ = BeepPattern::Click;
             } else if (localMode_ == LocalUiMode::CalibrationConfirm) {
                 if (calibration_.beginSampling()) {
                     calibrationValveOpen_ = true;
@@ -171,6 +230,7 @@ void AppController::handleCalibrationEvent(ButtonEvent event, std::uint32_t nowM
                     flow_.reset();
                     lastFlowVolumeMl_ = 0;
                     localMode_ = LocalUiMode::CalibrationSampling;
+                    pendingBeep_ = BeepPattern::Click;
                 }
             } else if (localMode_ == LocalUiMode::CalibrationSampling) {
                 finishCalibrationSample(nowUs);
@@ -179,6 +239,7 @@ void AppController::handleCalibrationEvent(ButtonEvent event, std::uint32_t nowM
             } else if (localMode_ == LocalUiMode::FactoryResetConfirm) {
                 factoryResetRequested_ = true;
                 localMode_ = LocalUiMode::Normal;
+                pendingBeep_ = BeepPattern::Error;
             }
             break;
         default:
@@ -204,9 +265,11 @@ void AppController::finishCalibrationSample(std::uint32_t nowUs) {
     const CalibrationSampleResult result = calibration_.finishSample(snapshot.pulseCount);
     if (result != CalibrationSampleResult::Accepted) {
         localMode_ = LocalUiMode::CalibrationRejected;
+        pendingBeep_ = BeepPattern::Error;
         return;
     }
     localMode_ = calibration_.canSave() ? LocalUiMode::CalibrationReview : LocalUiMode::CalibrationSelect;
+    pendingBeep_ = calibration_.canSave() ? BeepPattern::Done : BeepPattern::Click;
 }
 
 void AppController::saveCalibration() {
@@ -219,6 +282,7 @@ void AppController::saveCalibration() {
     calibration_.reset(config_.pulsePerMl, config_.calibrationTargetsMl);
     localMode_ = LocalUiMode::Normal;
     configDirty_ = true;
+    pendingBeep_ = BeepPattern::Done;
 }
 
 void AppController::syncFlow(std::uint32_t nowUs) {
@@ -266,6 +330,7 @@ void AppController::processResult(std::uint32_t startTime, const PeriodKeys& per
     statistics_.addWater(result.volumeMl, periodKeys);
     filters_.addWater(result.volumeMl);
     persistenceDirty_ = true;
+    pendingBeep_ = result.result == WaterResult::Completed ? BeepPattern::Done : BeepPattern::Error;
 }
 
 }  // namespace faucet

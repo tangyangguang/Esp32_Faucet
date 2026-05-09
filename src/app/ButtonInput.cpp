@@ -1,13 +1,8 @@
 #include "app/ButtonInput.h"
 
+#include "app/TimeUtils.h"
+
 namespace faucet {
-namespace {
-
-bool elapsedAtLeast(std::uint32_t nowMs, std::uint32_t startMs, std::uint32_t durationMs) {
-    return nowMs >= startMs && nowMs - startMs >= durationMs;
-}
-
-}  // namespace
 
 ButtonInput::ButtonInput() {
     reset({false, false, false}, 0);
@@ -64,7 +59,7 @@ ButtonEvent ButtonInput::updateButton(ButtonId id, ButtonState& state, bool rawP
         return none();
     }
 
-    const std::uint32_t heldMs = nowMs >= state.pressedMs ? nowMs - state.pressedMs : 0;
+    const std::uint32_t heldMs = elapsedSince(nowMs, state.pressedMs);
     state.stopDownEmitted = false;
     return shortOrLongEvent(id, heldMs);
 }

@@ -141,6 +141,74 @@ void test_app_controller_stop_down_closes_valve_and_records_user_stop() {
     TEST_ASSERT_EQUAL_UINT32(300, logs.records[0].volumeMl);
 }
 
+void test_app_controller_emergency_stop_closes_valve_without_debounce() {
+    SystemConfig config = makeDefaultConfig();
+    config.pulsePerMl = 1.0f;
+    StatisticsStore statistics;
+    statistics.reset({20260506, 202619, 202605});
+    FilterStore filters(config.filters);
+    MemoryLogWriter logs;
+    AppController app(config, statistics, filters, logs);
+
+    app.resetInputs({false, false, false}, 0);
+    pressAndReleaseOk(app, 100);
+    pressAndReleaseOk(app, 300);
+    TEST_ASSERT_TRUE(app.snapshot().valve.enabled);
+
+    TEST_ASSERT_TRUE(app.emergencyStop(1000));
+    TEST_ASSERT_FALSE(app.snapshot().valve.enabled);
+    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(WaterState::Idle),
+                            static_cast<std::uint8_t>(app.snapshot().water.state));
+}
+
+void test_app_controller_applies_config_only_while_idle() {
+    SystemConfig config = makeDefaultConfig();
+    StatisticsStore statistics;
+    statistics.reset({20260506, 202619, 202605});
+    FilterStore filters(config.filters);
+    MemoryLogWriter logs;
+    AppController app(config, statistics, filters, logs);
+
+    SystemConfig updated = config;
+    updated.presets[0].value = 2000;
+    updated.pulsePerMl = 1.0f;
+    TEST_ASSERT_TRUE(app.canApplyConfig());
+    TEST_ASSERT_TRUE(app.applyConfig(updated));
+    TEST_ASSERT_EQUAL_UINT32(2000, app.snapshot().water.targetValue);
+
+    pressAndReleaseOk(app, 100);
+    pressAndReleaseOk(app, 300);
+    TEST_ASSERT_FALSE(app.canApplyConfig());
+    updated.presets[0].value = 3000;
+    TEST_ASSERT_FALSE(app.applyConfig(updated));
+}
+
+void test_app_controller_emits_beep_patterns_for_actions_and_completion() {
+    SystemConfig config = makeDefaultConfig();
+    config.pulsePerMl = 1.0f;
+    StatisticsStore statistics;
+    statistics.reset({20260506, 202619, 202605});
+    FilterStore filters(config.filters);
+    MemoryLogWriter logs;
+    AppController app(config, statistics, filters, logs);
+
+    app.resetInputs({false, false, false}, 0);
+    pressAndReleaseOk(app, 100);
+    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(BeepPattern::Click),
+                            static_cast<std::uint8_t>(app.consumeBeepPattern()));
+    pressAndReleaseOk(app, 300);
+    app.consumeBeepPattern();
+    for (std::uint32_t i = 0; i < 1500; ++i) {
+        app.onFlowPulse(1000000UL + i * 2000UL);
+    }
+    app.tick(input({false, false, false}, 5000, 5000000, 1714502400));
+
+    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(BeepPattern::Done),
+                            static_cast<std::uint8_t>(app.consumeBeepPattern()));
+    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(BeepPattern::None),
+                            static_cast<std::uint8_t>(app.consumeBeepPattern()));
+}
+
 void test_app_controller_reports_log_write_failure_without_losing_statistics() {
     SystemConfig config = makeDefaultConfig();
     config.pulsePerMl = 1.0f;
@@ -240,6 +308,9 @@ int main(int argc, char** argv) {
     RUN_TEST(test_app_controller_starts_after_double_ok_and_opens_valve);
     RUN_TEST(test_app_controller_completion_writes_log_statistics_and_filters);
     RUN_TEST(test_app_controller_stop_down_closes_valve_and_records_user_stop);
+    RUN_TEST(test_app_controller_emergency_stop_closes_valve_without_debounce);
+    RUN_TEST(test_app_controller_applies_config_only_while_idle);
+    RUN_TEST(test_app_controller_emits_beep_patterns_for_actions_and_completion);
     RUN_TEST(test_app_controller_reports_log_write_failure_without_losing_statistics);
     RUN_TEST(test_app_controller_local_calibration_saves_without_water_log_or_stats);
     RUN_TEST(test_app_controller_factory_reset_requires_second_ok);

@@ -1,5 +1,7 @@
 #include "app/BeepDriver.h"
 
+#include "app/TimeUtils.h"
+
 namespace faucet {
 
 BeepDriver::BeepDriver(bool enabled)
@@ -29,7 +31,7 @@ void BeepDriver::tick(std::uint32_t nowMs) {
     if (pattern_ == BeepPattern::None || !outputEnabled_) {
         return;
     }
-    if (nowMs >= startedMs_ && nowMs - startedMs_ >= durationMs(pattern_)) {
+    if (elapsedAtLeast(nowMs, startedMs_, durationMs(pattern_))) {
         pattern_ = BeepPattern::None;
         outputEnabled_ = false;
     }

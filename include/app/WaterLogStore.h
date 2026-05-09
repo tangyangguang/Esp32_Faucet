@@ -8,7 +8,20 @@
 
 namespace faucet {
 
-class WaterLogStore {
+class WaterLogReader {
+public:
+    virtual ~WaterLogReader() = default;
+
+    virtual std::size_t readPage(std::size_t pageIndex,
+                                 std::uint16_t pageSize,
+                                 WaterLogRecord* output,
+                                 std::size_t outputCapacity) const = 0;
+    virtual std::size_t count() const = 0;
+    virtual bool ready() const = 0;
+    virtual const char* storageName() const = 0;
+};
+
+class WaterLogStore : public WaterLogReader {
 public:
     WaterLogStore(WaterLogRecord* records, std::size_t capacity);
 
@@ -16,12 +29,14 @@ public:
     std::size_t readPage(std::size_t pageIndex,
                          std::uint16_t pageSize,
                          WaterLogRecord* output,
-                         std::size_t outputCapacity) const;
+                         std::size_t outputCapacity) const override;
     const WaterLogRecord* newest(std::size_t offset) const;
 
     void clear();
-    std::size_t count() const;
+    std::size_t count() const override;
     std::size_t capacity() const;
+    bool ready() const override;
+    const char* storageName() const override;
     bool full() const;
 
 private:

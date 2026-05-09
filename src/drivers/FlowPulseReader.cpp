@@ -41,7 +41,10 @@ std::size_t FlowPulseReader::drainTo(FlowMeter& meter) {
 }
 
 std::uint32_t FlowPulseReader::droppedPulses() const {
-    return dropped_;
+    noInterrupts();
+    const std::uint32_t dropped = dropped_;
+    interrupts();
+    return dropped;
 }
 
 void IRAM_ATTR FlowPulseReader::isr() {

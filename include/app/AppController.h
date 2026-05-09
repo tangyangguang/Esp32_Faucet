@@ -1,6 +1,7 @@
 #pragma once
 
 #include "app/ButtonInput.h"
+#include "app/BeepDriver.h"
 #include "app/CalibrationController.h"
 #include "app/FilterStore.h"
 #include "app/FlowMeter.h"
@@ -60,6 +61,10 @@ public:
     bool consumePersistenceDirty();
     bool consumeConfigDirty();
     bool consumeFactoryResetRequest();
+    BeepPattern consumeBeepPattern();
+    bool emergencyStop(std::uint32_t nowMs);
+    bool canApplyConfig() const;
+    bool applyConfig(const SystemConfig& config);
     const SystemConfig& config() const;
 
 private:
@@ -93,6 +98,7 @@ private:
     bool configDirty_;
     bool factoryResetRequested_;
     std::uint32_t factoryConfirmArmedMs_;
+    BeepPattern pendingBeep_;
 };
 
 }  // namespace faucet

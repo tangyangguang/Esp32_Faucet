@@ -1,5 +1,7 @@
 #include "app/FlowMeter.h"
 
+#include "app/TimeUtils.h"
+
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -9,10 +11,6 @@ namespace {
 
 bool validPulsePerMl(float value) {
     return std::isfinite(value) && value >= kMinPulsePerMl && value <= kMaxPulsePerMl;
-}
-
-std::uint32_t elapsedUs(std::uint32_t nowUs, std::uint32_t startUs) {
-    return nowUs >= startUs ? nowUs - startUs : 0;
 }
 
 }  // namespace
@@ -47,7 +45,7 @@ void FlowMeter::setPulseFilterUs(std::uint32_t pulseFilterUs) {
 }
 
 bool FlowMeter::onPulse(std::uint32_t nowUs) {
-    if (hasPulse_ && elapsedUs(nowUs, lastPulseUs_) < pulseFilterUs_) {
+    if (hasPulse_ && elapsedSince(nowUs, lastPulseUs_) < pulseFilterUs_) {
         ++rejectedPulses_;
         return false;
     }
@@ -63,8 +61,8 @@ bool FlowMeter::onPulse(std::uint32_t nowUs) {
 FlowSnapshot FlowMeter::snapshot(std::uint32_t nowUs) const {
     std::uint32_t flow = 0;
     if (hasPulse_ && previousPulseUs_ != 0) {
-        const std::uint32_t interval = elapsedUs(lastPulseUs_, previousPulseUs_);
-        const std::uint32_t age = elapsedUs(nowUs, lastPulseUs_);
+        const std::uint32_t interval = elapsedSince(lastPulseUs_, previousPulseUs_);
+        const std::uint32_t age = elapsedSince(nowUs, lastPulseUs_);
         if (interval > 0 && age <= 2000000UL) {
             flow = flowFromInterval(interval);
         }

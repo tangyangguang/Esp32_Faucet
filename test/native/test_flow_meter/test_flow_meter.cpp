@@ -48,6 +48,18 @@ void test_current_flow_uses_recent_pulse_interval() {
     TEST_ASSERT_EQUAL_UINT32(60, snapshot.currentFlowMlPerMin);
 }
 
+void test_current_flow_survives_micros_wrap() {
+    FlowMeter meter(1.0f);
+    const std::uint32_t firstPulseUs = 0xFFFFF000UL;
+    const std::uint32_t secondPulseUs = firstPulseUs + static_cast<std::uint32_t>(1000000);
+
+    TEST_ASSERT_TRUE(meter.onPulse(firstPulseUs));
+    TEST_ASSERT_TRUE(meter.onPulse(secondPulseUs));
+
+    FlowSnapshot snapshot = meter.snapshot(secondPulseUs);
+    TEST_ASSERT_EQUAL_UINT32(60, snapshot.currentFlowMlPerMin);
+}
+
 void test_current_flow_expires_when_no_recent_pulse() {
     FlowMeter meter(1.0f);
 
@@ -88,6 +100,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_filters_pulses_inside_filter_window);
     RUN_TEST(test_pulse_exactly_at_filter_boundary_is_accepted);
     RUN_TEST(test_current_flow_uses_recent_pulse_interval);
+    RUN_TEST(test_current_flow_survives_micros_wrap);
     RUN_TEST(test_current_flow_expires_when_no_recent_pulse);
     RUN_TEST(test_rejects_invalid_pulse_coefficients);
     RUN_TEST(test_reset_clears_counts_and_flow);

@@ -1,5 +1,7 @@
 #include "app/ValveDriver.h"
 
+#include "app/TimeUtils.h"
+
 namespace faucet {
 namespace {
 
@@ -42,7 +44,7 @@ void ValveDriver::close() {
 }
 
 void ValveDriver::tick(std::uint32_t nowMs) {
-    if (state_ == ValveState::OpeningFullPower && nowMs >= openedAtMs_ && nowMs - openedAtMs_ >= fullPowerMs_) {
+    if (state_ == ValveState::OpeningFullPower && elapsedAtLeast(nowMs, openedAtMs_, fullPowerMs_)) {
         state_ = ValveState::Holding;
     }
 }

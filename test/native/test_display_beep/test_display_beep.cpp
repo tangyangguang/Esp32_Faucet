@@ -17,6 +17,7 @@ AppSnapshot makeSnapshot(WaterState state, std::uint32_t targetMl, std::uint32_t
             state == WaterState::Running,
             volumeMl,
             0,
+            WaterResult::Completed,
             WaterMode::Volume,
             targetMl,
         },
@@ -50,6 +51,32 @@ void test_display_sleep_only_in_idle_after_timeout() {
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(DisplayPage::Sleep), static_cast<std::uint8_t>(idle.page));
     TEST_ASSERT_TRUE(running.on);
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(DisplayPage::Running), static_cast<std::uint8_t>(running.page));
+}
+
+void test_display_sleep_survives_millis_wrap() {
+    DisplayPresenter presenter(1);
+    presenter.wake(0xFFFFF000UL);
+
+    DisplayFrame idle = presenter.render(makeSnapshot(WaterState::Idle, 1500), 0xFFFFF000UL + 1100UL);
+
+    TEST_ASSERT_FALSE(idle.on);
+    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(DisplayPage::Sleep), static_cast<std::uint8_t>(idle.page));
+}
+
+void test_display_time_preset_shows_remaining_seconds_and_error_reason() {
+    DisplayPresenter presenter(30);
+    presenter.wake(0);
+    AppSnapshot running = makeSnapshot(WaterState::Running, 10, 0);
+    running.water.mode = WaterMode::Time;
+    running.water.elapsedSec = 4;
+    DisplayFrame runningFrame = presenter.render(running, 500);
+
+    AppSnapshot error = makeSnapshot(WaterState::Error, 1500, 0);
+    error.water.lastResult = WaterResult::FlowError;
+    DisplayFrame errorFrame = presenter.render(error, 500);
+
+    TEST_ASSERT_EQUAL_STRING("Remain 6 s", runningFrame.line1);
+    TEST_ASSERT_EQUAL_STRING("Flow Error", errorFrame.line2);
 }
 
 void test_display_running_shows_remaining_volume() {
@@ -89,6 +116,15 @@ void test_beep_click_turns_off_after_duration() {
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(BeepPattern::None), static_cast<std::uint8_t>(beep.activePattern()));
 }
 
+void test_beep_duration_survives_millis_wrap() {
+    BeepDriver beep(true);
+
+    beep.play(BeepPattern::Click, 0xFFFFF000UL);
+    beep.tick(0xFFFFF000UL + 40UL);
+
+    TEST_ASSERT_FALSE(beep.output().enabled);
+}
+
 void test_beep_disabled_ignores_patterns_and_stops_active_output() {
     BeepDriver beep(true);
     beep.play(BeepPattern::Error, 1000);
@@ -123,9 +159,12 @@ int main(int argc, char** argv) {
     UNITY_BEGIN();
     RUN_TEST(test_display_idle_shows_preset_and_today_total);
     RUN_TEST(test_display_sleep_only_in_idle_after_timeout);
+    RUN_TEST(test_display_sleep_survives_millis_wrap);
     RUN_TEST(test_display_running_shows_remaining_volume);
+    RUN_TEST(test_display_time_preset_shows_remaining_seconds_and_error_reason);
     RUN_TEST(test_display_confirm_and_pause_pages_are_short);
     RUN_TEST(test_beep_click_turns_off_after_duration);
+    RUN_TEST(test_beep_duration_survives_millis_wrap);
     RUN_TEST(test_beep_disabled_ignores_patterns_and_stops_active_output);
     RUN_TEST(test_beep_patterns_have_distinct_feedback);
     return UNITY_END();

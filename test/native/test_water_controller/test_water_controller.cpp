@@ -46,6 +46,24 @@ void test_time_preset_completes_by_elapsed_time() {
     TEST_ASSERT_EQUAL_UINT32(120, controller.result().volumeMl);
 }
 
+void test_time_preset_completes_across_millis_wrap() {
+    SystemConfig config = makeDefaultConfig();
+    config.presets[2].enabled = true;
+    config.presets[2].type = PresetType::Time;
+    config.presets[2].value = 10;
+    WaterController controller(config);
+    const std::uint32_t startMs = 0xFFFFF000UL;
+    const std::uint32_t tickMs = startMs + static_cast<std::uint32_t>(11000);
+
+    TEST_ASSERT_TRUE(controller.selectPreset(2));
+    startSelected(controller, startMs);
+    controller.addVolume(120);
+    controller.tick(tickMs);
+
+    TEST_ASSERT_TRUE(controller.hasResult());
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(WaterResult::Completed), static_cast<unsigned>(controller.result().result));
+}
+
 void test_confirm_timeout_cancels_without_result() {
     SystemConfig config = makeDefaultConfig();
     WaterController controller(config);
@@ -174,6 +192,7 @@ int main(int argc, char** argv) {
     UNITY_BEGIN();
     RUN_TEST(test_volume_preset_completes_and_closes_valve);
     RUN_TEST(test_time_preset_completes_by_elapsed_time);
+    RUN_TEST(test_time_preset_completes_across_millis_wrap);
     RUN_TEST(test_confirm_timeout_cancels_without_result);
     RUN_TEST(test_stop_finishes_running_task_as_user_stop);
     RUN_TEST(test_pause_and_resume_excludes_paused_time);

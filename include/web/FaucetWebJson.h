@@ -19,7 +19,7 @@ bool writeWaterLogsJson(const WaterLogRecord* records,
                         std::size_t pageIndex,
                         std::uint16_t pageSize,
                         std::size_t totalCount,
-                        bool storageReady,
+                        const char* storageName,
                         char* out,
                         std::size_t len);
 

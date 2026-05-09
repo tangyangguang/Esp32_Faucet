@@ -2,6 +2,7 @@
 
 #include "web/FaucetWebRoutes.h"
 
+#include <cstdio>
 #include <cstring>
 
 using namespace faucet;
@@ -82,6 +83,24 @@ void test_presets_page_is_available_in_navigation() {
     TEST_ASSERT_TRUE(found);
 }
 
+void test_web_page_source_has_no_remote_water_control_forms() {
+    FILE* file = std::fopen("src/web/FaucetWeb.cpp", "rb");
+    TEST_ASSERT_NOT_NULL(file);
+    static char buffer[70000]{};
+    const std::size_t read = std::fread(buffer, 1, sizeof(buffer) - 1, file);
+    std::fclose(file);
+    TEST_ASSERT_GREATER_THAN_size_t(0, read);
+
+    TEST_ASSERT_NULL(std::strstr(buffer, "action='/api/faucet/start'"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "action=\"/api/faucet/start\""));
+    TEST_ASSERT_NULL(std::strstr(buffer, "action='/api/faucet/stop'"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "action=\"/api/faucet/stop\""));
+    TEST_ASSERT_NULL(std::strstr(buffer, "href='/api/faucet/start'"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "href=\"/api/faucet/start\""));
+    TEST_ASSERT_NULL(std::strstr(buffer, "href='/api/faucet/stop'"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "href=\"/api/faucet/stop\""));
+}
+
 int main(int argc, char** argv) {
     (void)argc;
     (void)argv;
@@ -93,5 +112,6 @@ int main(int argc, char** argv) {
     RUN_TEST(test_dual_method_routes_are_merged_to_any);
     RUN_TEST(test_filter_edit_route_is_hidden_from_navigation);
     RUN_TEST(test_presets_page_is_available_in_navigation);
+    RUN_TEST(test_web_page_source_has_no_remote_water_control_forms);
     return UNITY_END();
 }

@@ -15,6 +15,8 @@ namespace {
 class MemoryFileBackend : public WaterLogFileBackend {
 public:
     bool failWrite = false;
+    bool failAppend = false;
+    bool failWriteAt = false;
     bool failRead = false;
 
     bool exists(const char* path) override {
@@ -35,7 +37,7 @@ public:
     }
 
     bool appendBytes(const char* path, const std::uint8_t* data, std::size_t len) override {
-        if (failWrite || !path || (!data && len > 0)) {
+        if (failWrite || failAppend || !path || (!data && len > 0)) {
             return false;
         }
         std::vector<std::uint8_t>& file = files[path];
@@ -60,7 +62,7 @@ public:
     }
 
     bool writeAt(const char* path, std::size_t offset, const std::uint8_t* data, std::size_t len) override {
-        if (failWrite || !path) {
+        if (failWrite || failWriteAt || !path) {
             return false;
         }
         std::vector<std::uint8_t>& file = files[path];
@@ -203,6 +205,37 @@ void test_file_log_reports_backend_failures() {
     TEST_ASSERT_FALSE(store.ready());
 }
 
+void test_file_log_append_failure_keeps_runtime_state() {
+    MemoryFileBackend backend;
+    WaterLogFileStore store(backend, "/water.bin", 3);
+    TEST_ASSERT_TRUE(store.begin());
+    TEST_ASSERT_TRUE(store.append(makeRecord(100, 1000)));
+
+    backend.failAppend = true;
+    TEST_ASSERT_FALSE(store.append(makeRecord(200, 2000)));
+    TEST_ASSERT_EQUAL_size_t(1, store.count());
+
+    WaterLogRecord page[1]{};
+    TEST_ASSERT_EQUAL_size_t(1, store.readPage(0, 1, page, 1));
+    TEST_ASSERT_EQUAL_UINT32(100, page[0].startTime);
+}
+
+void test_file_log_header_failure_rolls_back_runtime_state() {
+    MemoryFileBackend backend;
+    WaterLogFileStore store(backend, "/water.bin", 3);
+    TEST_ASSERT_TRUE(store.begin());
+    TEST_ASSERT_TRUE(store.append(makeRecord(100, 1000)));
+
+    backend.failWriteAt = true;
+    TEST_ASSERT_FALSE(store.append(makeRecord(200, 2000)));
+    TEST_ASSERT_EQUAL_size_t(1, store.count());
+
+    backend.failWriteAt = false;
+    WaterLogRecord page[1]{};
+    TEST_ASSERT_EQUAL_size_t(1, store.readPage(0, 1, page, 1));
+    TEST_ASSERT_EQUAL_UINT32(100, page[0].startTime);
+}
+
 int main(int argc, char** argv) {
     (void)argc;
     (void)argv;
@@ -216,5 +249,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_file_log_clear_keeps_file_ready);
     RUN_TEST(test_file_log_grows_records_on_demand);
     RUN_TEST(test_file_log_reports_backend_failures);
+    RUN_TEST(test_file_log_append_failure_keeps_runtime_state);
+    RUN_TEST(test_file_log_header_failure_rolls_back_runtime_state);
     return UNITY_END();
 }

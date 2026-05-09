@@ -29,6 +29,7 @@ struct WaterSnapshot {
     bool valveOpen;
     std::uint32_t volumeMl;
     std::uint32_t elapsedSec;
+    WaterResult lastResult;
     WaterMode mode;
     std::uint32_t targetValue;
 };
@@ -41,6 +42,8 @@ public:
     bool hasResult() const;
     WaterTaskResult result() const;
     void clearResult();
+    bool canApplyConfig() const;
+    bool applyConfig(const SystemConfig& config);
 
     bool selectNextPreset();
     bool selectPreset(std::size_t index);
@@ -70,6 +73,8 @@ private:
     std::uint32_t accumulatedPausedMs_;
     std::uint32_t volumeMl_;
     std::uint32_t highFlowStartMs_;
+    std::uint32_t lastElapsedSec_;
+    WaterResult lastError_;
     WaterTaskResult lastResult_;
 };
 

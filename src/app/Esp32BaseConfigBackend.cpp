@@ -2,7 +2,7 @@
 
 #include "app/Esp32BaseConfigBackend.h"
 
-#include <Esp32BaseConfig.h>
+#include <Esp32Base.h>
 
 namespace faucet {
 

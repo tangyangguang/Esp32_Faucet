@@ -28,6 +28,7 @@ class DisplayPresenter {
 public:
     explicit DisplayPresenter(std::uint32_t sleepTimeoutSec = kDefaultOledSleepSec);
 
+    void configure(std::uint32_t sleepTimeoutSec);
     void wake(std::uint32_t nowMs);
     DisplayFrame render(const AppSnapshot& snapshot, std::uint32_t nowMs);
 

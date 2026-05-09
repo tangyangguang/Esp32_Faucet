@@ -6,7 +6,7 @@
 #include "app/AppConfig.h"
 #include "app/ConfigStore.h"
 #include "app/FilterStore.h"
-#include "app/WaterLogFileStore.h"
+#include "app/WaterLogStore.h"
 #include "web/FaucetWebJson.h"
 #include "web/FaucetWebRoutes.h"
 
@@ -187,6 +187,9 @@ void sendAppStyles() {
                             "form input[type=submit]{min-height:28px;padding:4px 12px;margin:0;font-size:.9rem;line-height:1.2}"
                             ".form-actions a{display:inline-flex;align-items:center;min-height:28px;padding:0 10px;border:1px solid #d7dde2;border-radius:4px;background:#f7f9fa;color:#355e66;font-size:.9rem;line-height:1.2}"
                             ".form-actions input.secondary{background:#f7f9fa;border-color:#d7dde2;color:#4c565d}"
+                            ".compact-table td,.compact-table th{padding:6px 8px}"
+                            ".row-actions{display:flex;gap:5px;align-items:center;justify-content:flex-start;flex-wrap:wrap}"
+                            ".row-actions a{display:inline-flex;align-items:center;min-height:26px;padding:0 9px;border:1px solid #d7dde2;border-radius:4px;background:#f7f9fa;color:#355e66;font-size:.86rem}"
                             "table{width:100%;border-collapse:collapse;margin:0 0 10px;background:#fff;border:1px solid #e1e7e5;border-radius:8px;overflow:hidden;font-size:.92rem;box-shadow:0 1px 2px rgba(21,35,34,.04)}"
                             "td,th{padding:5px 8px;border-bottom:1px solid #edf0f2;text-align:left;vertical-align:middle}"
                             "th{background:#fafafa;color:#56616b}"
@@ -427,15 +430,20 @@ void handlePresetsPage() {
         sendPageEnd();
         return;
     }
-    Esp32BaseWeb::sendChunk("<h2>预设</h2>");
-    for (std::size_t i = 0; i < kPresetCount; ++i) {
-        const PresetConfig& preset = g_context.config->presets[i];
-        sendFmt("<section class='panel'><div class='panel-head'><h3>预设 %u</h3><span class='status-pill'>%s</span></div>"
+
+    char text[24]{};
+    std::uint32_t editIndex = UINT32_MAX;
+    if (getParam("index", text, sizeof(text))) {
+        parseU32(text, editIndex);
+    }
+    if (editIndex < kPresetCount) {
+        const PresetConfig& preset = g_context.config->presets[editIndex];
+        sendFmt("<h2>预设 %u</h2><section class='panel'>"
                 "<form method='post' action='/api/faucet/presets' onsubmit='return once(this)'>"
-                "<input type='hidden' name='index' value='%u'><div class='grid'>",
-                static_cast<unsigned>(i + 1),
-                preset.enabled ? "启用" : "停用",
-                static_cast<unsigned>(i));
+                "<input type='hidden' name='index' value='%u'><input type='hidden' name='return' value='/faucet/presets'>"
+                "<div class='grid'>",
+                static_cast<unsigned>(editIndex + 1),
+                static_cast<unsigned>(editIndex));
         sendCheckbox("启用", "enabled", preset.enabled);
         Esp32BaseWeb::sendChunk("<label class='field'><span>名称</span><input name='name' maxlength='15' value='");
         Esp32BaseWeb::writeHtmlEscaped(preset.name);
@@ -448,8 +456,32 @@ void handlePresetsPage() {
         } else {
             sendTextInput("数值（秒）", "value", preset.value);
         }
-        Esp32BaseWeb::sendChunk("</div><div class='form-actions'><input type='submit' value='保存'></div></form></section>");
+        Esp32BaseWeb::sendChunk("</div><div class='form-actions'><input type='submit' value='保存'>"
+                                "<a href='/faucet/presets'>取消</a></div></form></section>");
+        sendPageEnd();
+        return;
     }
+
+    Esp32BaseWeb::sendChunk("<h2>预设</h2><table class='compact-table'><tr>"
+                            "<th>序号</th><th>名称</th><th>类型</th><th>数值</th><th>状态</th><th>操作</th></tr>");
+    for (std::size_t i = 0; i < kPresetCount; ++i) {
+        const PresetConfig& preset = g_context.config->presets[i];
+        sendFmt("<tr><td>%u</td><td>",
+                static_cast<unsigned>(i + 1));
+        Esp32BaseWeb::writeHtmlEscaped(preset.name);
+        sendFmt("</td><td>%s</td><td>",
+                preset.type == PresetType::Time ? "时间" : "容量");
+        if (preset.type == PresetType::Time) {
+            sendFmt("%lu 秒", static_cast<unsigned long>(preset.value));
+        } else {
+            sendLiters(preset.value);
+        }
+        sendFmt("</td><td><span class='status-pill'>%s</span></td>"
+                "<td><div class='row-actions'><a href='/faucet/presets?index=%u'>编辑</a></div></td></tr>",
+                preset.enabled ? "启用" : "停用",
+                static_cast<unsigned>(i));
+    }
+    Esp32BaseWeb::sendChunk("</table>");
     sendPageEnd();
 }
 
@@ -827,7 +859,18 @@ void applyBoolParam(const char* name, bool& value) {
 
 bool saveConfigAndReply(const char* kind) {
     sanitizeConfig(*g_context.config);
+    if (!g_context.app->canApplyConfig()) {
+        Esp32BaseWeb::sendJson(409, "{\"error\":\"busy\",\"restartRecommended\":true}");
+        (void)kind;
+        return false;
+    }
     const bool ok = g_context.configStore->saveSystemConfig(*g_context.config);
+    if (ok) {
+        g_context.app->applyConfig(*g_context.config);
+        if (g_context.applySettings) {
+            g_context.applySettings(*g_context.config);
+        }
+    }
     Esp32BaseWeb::sendJson(ok ? 200 : 500,
                            ok ? "{\"ok\":true,\"restartRecommended\":true}" : "{\"error\":\"save_failed\"}");
     (void)kind;
@@ -847,6 +890,10 @@ void handleConfigApi() {
         return;
     }
     if (Esp32BaseWeb::isMethod(Esp32BaseWeb::METHOD_POST)) {
+        if (!g_context.app->canApplyConfig()) {
+            Esp32BaseWeb::sendJson(409, "{\"error\":\"busy\",\"restartRecommended\":true}");
+            return;
+        }
         applyU32Param("confirmTimeoutSec", g_context.config->confirmTimeoutSec);
         applyU32Param("maxOutTimeSec", g_context.config->maxOutTimeSec);
         applyU32Param("maxOutVolumeMl", g_context.config->maxOutVolumeMl);
@@ -878,6 +925,10 @@ void handlePresetsApi() {
         return;
     }
     if (Esp32BaseWeb::isMethod(Esp32BaseWeb::METHOD_POST)) {
+        if (!g_context.app->canApplyConfig()) {
+            Esp32BaseWeb::sendJson(409, "{\"error\":\"busy\",\"restartRecommended\":true}");
+            return;
+        }
         char text[24]{};
         std::uint32_t index = 0;
         if (!getParam("index", text, sizeof(text)) || !parseU32(text, index) || index >= kPresetCount) {
@@ -885,10 +936,7 @@ void handlePresetsApi() {
             return;
         }
         PresetConfig& preset = g_context.config->presets[index];
-        bool enabled = false;
-        if (getParam("enabled", text, sizeof(text)) && parseBool(text, enabled)) {
-            preset.enabled = enabled;
-        }
+        preset.enabled = Esp32BaseWeb::hasParam("enabled");
         if (getParam("type", text, sizeof(text))) {
             preset.type = std::strcmp(text, "time") == 0 ? PresetType::Time : PresetType::Volume;
         }
@@ -897,7 +945,20 @@ void handlePresetsApi() {
             preset.value = value;
         }
         Esp32BaseWeb::getParam("name", preset.name, sizeof(preset.name));
-        saveConfigAndReply("presets");
+        if (Esp32BaseWeb::hasParam("return")) {
+            sanitizeConfig(*g_context.config);
+            const bool canApply = g_context.app->canApplyConfig();
+            const bool ok = canApply && g_context.configStore->saveSystemConfig(*g_context.config);
+            if (ok) {
+                g_context.app->applyConfig(*g_context.config);
+                if (g_context.applySettings) {
+                    g_context.applySettings(*g_context.config);
+                }
+            }
+            Esp32BaseWeb::redirectSeeOther(ok ? "/faucet/presets?saved=1" : "/faucet/presets?error=save_failed");
+        } else {
+            saveConfigAndReply("presets");
+        }
         return;
     }
     char json[1536]{};
@@ -932,7 +993,7 @@ void handleLogsApi() {
                                       page,
                                       sanitizedPageSize,
                                       totalCount,
-                                      ready,
+                                      g_context.logs->storageName(),
                                       json,
                                       sizeof(json)),
                    json);
@@ -951,6 +1012,10 @@ void handleFiltersApi() {
         return;
     }
     if (Esp32BaseWeb::isMethod(Esp32BaseWeb::METHOD_POST)) {
+        if (!g_context.app->canApplyConfig()) {
+            Esp32BaseWeb::sendJson(409, "{\"error\":\"busy\",\"restartRecommended\":true}");
+            return;
+        }
         char text[24]{};
         std::uint32_t index = 0;
         if (!getParam("index", text, sizeof(text)) || !parseU32(text, index) || index >= kFilterCount) {
@@ -1015,6 +1080,10 @@ void handleCalibrationApi() {
         return;
     }
     if (Esp32BaseWeb::isMethod(Esp32BaseWeb::METHOD_POST)) {
+        if (!g_context.app->canApplyConfig()) {
+            Esp32BaseWeb::sendJson(409, "{\"error\":\"busy\",\"restartRecommended\":true}");
+            return;
+        }
         char text[24]{};
         float pulsePerLiter = 0.0f;
         if (getParam("pulsePerLiter", text, sizeof(text)) && parseFloat(text, pulsePerLiter)) {

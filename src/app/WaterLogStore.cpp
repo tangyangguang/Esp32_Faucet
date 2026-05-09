@@ -66,6 +66,14 @@ std::size_t WaterLogStore::capacity() const {
     return capacity_;
 }
 
+bool WaterLogStore::ready() const {
+    return records_ && capacity_ > 0;
+}
+
+const char* WaterLogStore::storageName() const {
+    return ready() ? "ram" : "unavailable";
+}
+
 bool WaterLogStore::full() const {
     return count_ == capacity_ && capacity_ > 0;
 }

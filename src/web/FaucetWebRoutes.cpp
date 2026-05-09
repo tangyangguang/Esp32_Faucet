@@ -6,12 +6,12 @@ namespace faucet {
 namespace {
 
 constexpr FaucetWebRoute kRoutes[] = {
-    {"/faucet", FaucetWebMethod::Get, FaucetWebRouteKind::Page, "状态"},
-    {"/faucet/config", FaucetWebMethod::Get, FaucetWebRouteKind::Page, "配置"},
+    {"/faucet", FaucetWebMethod::Get, FaucetWebRouteKind::Page, "总览"},
     {"/faucet/presets", FaucetWebMethod::Get, FaucetWebRouteKind::Page, "预设"},
+    {"/faucet/filters", FaucetWebMethod::Get, FaucetWebRouteKind::Page, "滤芯"},
     {"/faucet/logs", FaucetWebMethod::Get, FaucetWebRouteKind::Page, "记录"},
     {"/faucet/stats", FaucetWebMethod::Get, FaucetWebRouteKind::Page, "统计"},
-    {"/faucet/filters", FaucetWebMethod::Get, FaucetWebRouteKind::Page, "滤芯"},
+    {"/faucet/config", FaucetWebMethod::Get, FaucetWebRouteKind::Page, "配置"},
     {"/faucet/calibration", FaucetWebMethod::Get, FaucetWebRouteKind::Page, "校准"},
     {"/faucet/filters/edit", FaucetWebMethod::Get, FaucetWebRouteKind::Api, nullptr},
     {"/api/faucet/status", FaucetWebMethod::Get, FaucetWebRouteKind::Api, nullptr},

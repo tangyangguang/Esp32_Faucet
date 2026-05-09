@@ -12,7 +12,7 @@ namespace {
 
 AppSnapshot makeSnapshot() {
     return AppSnapshot{
-        WaterSnapshot{WaterState::Running, 1, true, 250, 0, WaterMode::Volume, 1500},
+        WaterSnapshot{WaterState::Running, 1, true, 250, 0, WaterResult::Completed, WaterMode::Volume, 1500},
         ValveOutput{ValveState::OpeningFullPower, true, 100},
         StatisticsRecord{1000, 2000, 3000, 4000, 20260506, 202619, 202605},
     };
@@ -109,7 +109,7 @@ void test_water_logs_json_is_paged_and_read_only() {
     };
     char json[512]{};
 
-    TEST_ASSERT_TRUE(writeWaterLogsJson(records, 2, 1, 50, 60, true, json, sizeof(json)));
+    TEST_ASSERT_TRUE(writeWaterLogsJson(records, 2, 1, 50, 60, "file", json, sizeof(json)));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"storage\":\"file\""));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"page\":1"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"total\":60"));

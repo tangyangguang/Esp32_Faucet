@@ -59,6 +59,15 @@ void test_full_power_mode_when_hold_duty_is_100() {
     TEST_ASSERT_EQUAL_UINT8(100, output.dutyPercent);
 }
 
+void test_full_power_timeout_survives_millis_wrap() {
+    ValveDriver valve(1, 30);
+
+    valve.open(0xFFFFF000UL);
+    valve.tick(0xFFFFF000UL + 1000UL);
+
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(ValveState::Holding), static_cast<unsigned>(valve.output().state));
+}
+
 void test_rejects_invalid_configuration() {
     ValveDriver valve(3, 30);
 
@@ -81,6 +90,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_open_uses_full_power_then_hold_duty);
     RUN_TEST(test_close_is_idempotent_and_disables_output);
     RUN_TEST(test_full_power_mode_when_hold_duty_is_100);
+    RUN_TEST(test_full_power_timeout_survives_millis_wrap);
     RUN_TEST(test_rejects_invalid_configuration);
     return UNITY_END();
 }

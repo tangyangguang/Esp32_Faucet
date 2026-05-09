@@ -60,6 +60,16 @@ void test_bounce_shorter_than_debounce_is_ignored() {
         static_cast<unsigned>(updateAt(input, false, false, false, 100).type));
 }
 
+void test_debounce_survives_millis_wrap() {
+    ButtonInput input;
+    const std::uint32_t startMs = 0xFFFFFFF0UL;
+
+    updateAt(input, true, false, false, startMs);
+
+    const ButtonEvent event = updateAt(input, true, false, false, startMs + kButtonDebounceMs);
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(ButtonEventType::StopDown), static_cast<unsigned>(event.type));
+}
+
 void test_factory_reset_combo_emits_once_after_five_seconds() {
     ButtonInput input;
     updateAt(input, true, true, false, 0);
@@ -100,6 +110,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_stop_short_emits_on_release);
     RUN_TEST(test_ok_short_and_next_long_events);
     RUN_TEST(test_bounce_shorter_than_debounce_is_ignored);
+    RUN_TEST(test_debounce_survives_millis_wrap);
     RUN_TEST(test_factory_reset_combo_emits_once_after_five_seconds);
     RUN_TEST(test_combo_cancelled_if_released_before_timeout);
     return UNITY_END();

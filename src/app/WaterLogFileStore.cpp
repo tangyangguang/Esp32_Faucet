@@ -72,18 +72,29 @@ bool WaterLogFileStore::append(const WaterLogRecord& record) {
     }
 
     std::size_t writeIndex = 0;
+    std::size_t nextCount = count_;
+    std::size_t nextOldestIndex = oldestIndex_;
     if (count_ < capacity_) {
         writeIndex = (oldestIndex_ + count_) % capacity_;
-        ++count_;
+        ++nextCount;
     } else {
         writeIndex = oldestIndex_;
-        oldestIndex_ = (oldestIndex_ + 1) % capacity_;
+        nextOldestIndex = (oldestIndex_ + 1) % capacity_;
     }
 
     if (!appendRecord(writeIndex, record)) {
         return false;
     }
-    return saveHeader();
+    const std::size_t oldCount = count_;
+    const std::size_t oldOldestIndex = oldestIndex_;
+    count_ = nextCount;
+    oldestIndex_ = nextOldestIndex;
+    if (saveHeader()) {
+        return true;
+    }
+    count_ = oldCount;
+    oldestIndex_ = oldOldestIndex;
+    return false;
 }
 
 std::size_t WaterLogFileStore::readPage(std::size_t pageIndex,
@@ -133,6 +144,10 @@ std::size_t WaterLogFileStore::capacity() const {
 
 bool WaterLogFileStore::ready() const {
     return ready_;
+}
+
+const char* WaterLogFileStore::storageName() const {
+    return ready_ ? "file" : "unavailable";
 }
 
 bool WaterLogFileStore::initializeNewFile() {

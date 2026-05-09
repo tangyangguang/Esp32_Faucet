@@ -82,6 +82,9 @@ std::uint32_t FlowMeter::volumeFromPulses() const {
 }
 
 std::uint32_t FlowMeter::flowFromInterval(std::uint32_t intervalUs) const {
+    if (intervalUs == 0 || pulsePerMl_ <= 0.0f || !std::isfinite(pulsePerMl_)) {
+        return 0;
+    }
     const double pulsesPerMinute = 60000000.0 / static_cast<double>(intervalUs);
     const double mlPerMinute = pulsesPerMinute / static_cast<double>(pulsePerMl_);
     if (mlPerMinute <= 0.0) {

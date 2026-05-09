@@ -38,7 +38,8 @@ AppController::AppController(const SystemConfig& config,
       configDirty_(false),
       factoryResetRequested_(false),
       factoryConfirmArmedMs_(0),
-      pendingBeep_(BeepPattern::None) {
+      pendingBeep_(BeepPattern::None),
+      flowDroppedPulses_(0) {
     sanitizeConfig(config_);
 }
 
@@ -85,6 +86,7 @@ AppSnapshot AppController::snapshot() const {
     snapshot.statistics = statistics_.record();
     snapshot.calibration = calibration_.snapshot();
     snapshot.localMode = localMode_;
+    snapshot.flowDroppedPulses = flowDroppedPulses_;
     return snapshot;
 }
 
@@ -129,6 +131,10 @@ bool AppController::emergencyStop(std::uint32_t nowMs) {
         return true;
     }
     return false;
+}
+
+void AppController::setFlowDroppedPulses(std::uint32_t droppedPulses) {
+    flowDroppedPulses_ = droppedPulses;
 }
 
 bool AppController::canApplyConfig() const {

@@ -16,6 +16,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <new>
 
 namespace faucet {
 namespace {
@@ -48,6 +49,31 @@ void sendFmt(const char* fmt, ...) {
     std::vsnprintf(buffer, sizeof(buffer), fmt, args);
     va_end(args);
     Esp32BaseWeb::sendChunk(buffer);
+}
+
+void sendHtmlAttrEscaped(const char* text) {
+    for (const char* p = text ? text : ""; *p; ++p) {
+        switch (*p) {
+            case '&':
+                Esp32BaseWeb::sendChunk("&amp;");
+                break;
+            case '<':
+                Esp32BaseWeb::sendChunk("&lt;");
+                break;
+            case '>':
+                Esp32BaseWeb::sendChunk("&gt;");
+                break;
+            case '"':
+                Esp32BaseWeb::sendChunk("&quot;");
+                break;
+            case '\'':
+                Esp32BaseWeb::sendChunk("&#39;");
+                break;
+            default:
+                sendFmt("%c", *p);
+                break;
+        }
+    }
 }
 
 void formatLiters(std::uint32_t ml, char* out, std::size_t len) {
@@ -446,7 +472,7 @@ void handlePresetsPage() {
                 static_cast<unsigned>(editIndex));
         sendCheckbox("启用", "enabled", preset.enabled);
         Esp32BaseWeb::sendChunk("<label class='field'><span>名称</span><input name='name' maxlength='15' value='");
-        Esp32BaseWeb::writeHtmlEscaped(preset.name);
+        sendHtmlAttrEscaped(preset.name);
         Esp32BaseWeb::sendChunk("'><small class='hint'>最多 15 个字符</small></label><label class='field'><span>类型</span><select name='type'>");
         sendFmt("<option value='volume'%s>容量</option>", preset.type == PresetType::Volume ? " selected" : "");
         sendFmt("<option value='time'%s>时间</option>", preset.type == PresetType::Time ? " selected" : "");
@@ -643,7 +669,7 @@ void handleFilterEditPage() {
             static_cast<unsigned>(index));
     sendCheckbox("启用", "enabled", filter.enabled);
     Esp32BaseWeb::sendChunk("<label class='field'><span>名称</span><input name='name' maxlength='15' value='");
-    Esp32BaseWeb::writeHtmlEscaped(filter.name);
+    sendHtmlAttrEscaped(filter.name);
     Esp32BaseWeb::sendChunk("'><small class='hint'>最多 15 个字符</small></label>");
     sendMonthInput("建议更换周期（月）", "recommendMonths", filter.recommendDays);
     sendMonthInput("最长使用周期（月）", "maxMonths", filter.maxDays);
@@ -829,18 +855,6 @@ bool parseLitersToMl(const char* text, std::uint32_t& value) {
     return true;
 }
 
-bool parseBool(const char* text, bool& value) {
-    if (std::strcmp(text, "1") == 0 || std::strcmp(text, "true") == 0 || std::strcmp(text, "on") == 0) {
-        value = true;
-        return true;
-    }
-    if (std::strcmp(text, "0") == 0 || std::strcmp(text, "false") == 0 || std::strcmp(text, "off") == 0) {
-        value = false;
-        return true;
-    }
-    return false;
-}
-
 void applyU32Param(const char* name, std::uint32_t& value) {
     char text[24]{};
     std::uint32_t parsed = 0;
@@ -849,32 +863,63 @@ void applyU32Param(const char* name, std::uint32_t& value) {
     }
 }
 
-void applyBoolParam(const char* name, bool& value) {
-    char text[12]{};
-    bool parsed = false;
-    if (getParam(name, text, sizeof(text)) && parseBool(text, parsed)) {
-        value = parsed;
-    }
-}
-
-bool saveConfigAndReply(const char* kind) {
-    sanitizeConfig(*g_context.config);
+bool persistConfig(const SystemConfig& config) {
     if (!g_context.app->canApplyConfig()) {
-        Esp32BaseWeb::sendJson(409, "{\"error\":\"busy\",\"restartRecommended\":true}");
-        (void)kind;
         return false;
     }
-    const bool ok = g_context.configStore->saveSystemConfig(*g_context.config);
-    if (ok) {
-        g_context.app->applyConfig(*g_context.config);
-        if (g_context.applySettings) {
-            g_context.applySettings(*g_context.config);
-        }
+
+    SystemConfig safe = config;
+    sanitizeConfig(safe);
+    if (!g_context.configStore->saveSystemConfig(safe)) {
+        return false;
     }
+    if (!g_context.app->applyConfig(safe)) {
+        return false;
+    }
+    *g_context.config = safe;
+    if (g_context.applySettings) {
+        g_context.applySettings(*g_context.config);
+    }
+    return true;
+}
+
+bool saveConfigAndReply(const SystemConfig& config) {
+    if (!g_context.app->canApplyConfig()) {
+        Esp32BaseWeb::sendJson(409, "{\"error\":\"busy\",\"restartRecommended\":true}");
+        return false;
+    }
+    const bool ok = persistConfig(config);
     Esp32BaseWeb::sendJson(ok ? 200 : 500,
                            ok ? "{\"ok\":true,\"restartRecommended\":true}" : "{\"error\":\"save_failed\"}");
-    (void)kind;
     return ok;
+}
+
+bool persistFilterConfig(const SystemConfig& config, std::size_t index) {
+    if (!g_context.app->canApplyConfig() || index >= kFilterCount) {
+        return false;
+    }
+
+    SystemConfig safe = config;
+    sanitizeConfig(safe);
+
+    FilterRecord runtime[kFilterCount]{};
+    const FilterRecord* current = g_context.filters->records();
+    for (std::size_t i = 0; i < kFilterCount; ++i) {
+        runtime[i] = current[i];
+    }
+    runtime[index] = safe.filters[index];
+
+    if (!g_context.configStore->saveSystemConfig(safe) || !g_context.configStore->saveFilterRuntime(runtime)) {
+        return false;
+    }
+    if (!g_context.filters->updateFilter(index, safe.filters[index]) || !g_context.app->applyConfig(safe)) {
+        return false;
+    }
+    *g_context.config = safe;
+    if (g_context.applySettings) {
+        g_context.applySettings(*g_context.config);
+    }
+    return true;
 }
 
 void handleStatusApi() {
@@ -894,26 +939,27 @@ void handleConfigApi() {
             Esp32BaseWeb::sendJson(409, "{\"error\":\"busy\",\"restartRecommended\":true}");
             return;
         }
-        applyU32Param("confirmTimeoutSec", g_context.config->confirmTimeoutSec);
-        applyU32Param("maxOutTimeSec", g_context.config->maxOutTimeSec);
-        applyU32Param("maxOutVolumeMl", g_context.config->maxOutVolumeMl);
-        applyU32Param("noFlowTimeoutSec", g_context.config->noFlowTimeoutSec);
-        applyU32Param("highFlowMlPerMin", g_context.config->highFlowMlPerMin);
-        applyU32Param("highFlowDurationSec", g_context.config->highFlowDurationSec);
-        applyU32Param("pauseTimeoutSec", g_context.config->pauseTimeoutSec);
-        applyU32Param("valveFullPowerSec", g_context.config->valveFullPowerSec);
-        applyU32Param("oledSleepSec", g_context.config->oledSleepSec);
-        applyBoolParam("beepEnabled", g_context.config->beepEnabled);
+        SystemConfig candidate = *g_context.config;
+        applyU32Param("confirmTimeoutSec", candidate.confirmTimeoutSec);
+        applyU32Param("maxOutTimeSec", candidate.maxOutTimeSec);
+        applyU32Param("maxOutVolumeMl", candidate.maxOutVolumeMl);
+        applyU32Param("noFlowTimeoutSec", candidate.noFlowTimeoutSec);
+        applyU32Param("highFlowMlPerMin", candidate.highFlowMlPerMin);
+        applyU32Param("highFlowDurationSec", candidate.highFlowDurationSec);
+        applyU32Param("pauseTimeoutSec", candidate.pauseTimeoutSec);
+        applyU32Param("valveFullPowerSec", candidate.valveFullPowerSec);
+        applyU32Param("oledSleepSec", candidate.oledSleepSec);
+        candidate.beepEnabled = Esp32BaseWeb::hasParam("beepEnabled");
 
         char text[24]{};
         std::uint32_t parsed = 0;
         if (getParam("overflowPercent", text, sizeof(text)) && parseU32(text, parsed)) {
-            g_context.config->overflowPercent = static_cast<std::uint8_t>(parsed);
+            candidate.overflowPercent = static_cast<std::uint8_t>(parsed);
         }
         if (getParam("valveHoldDutyPercent", text, sizeof(text)) && parseU32(text, parsed)) {
-            g_context.config->valveHoldDutyPercent = static_cast<std::uint8_t>(parsed);
+            candidate.valveHoldDutyPercent = static_cast<std::uint8_t>(parsed);
         }
-        saveConfigAndReply("config");
+        saveConfigAndReply(candidate);
         return;
     }
     char json[640]{};
@@ -935,7 +981,8 @@ void handlePresetsApi() {
             Esp32BaseWeb::sendJson(400, "{\"error\":\"invalid_index\"}");
             return;
         }
-        PresetConfig& preset = g_context.config->presets[index];
+        SystemConfig candidate = *g_context.config;
+        PresetConfig& preset = candidate.presets[index];
         preset.enabled = Esp32BaseWeb::hasParam("enabled");
         if (getParam("type", text, sizeof(text))) {
             preset.type = std::strcmp(text, "time") == 0 ? PresetType::Time : PresetType::Volume;
@@ -946,18 +993,10 @@ void handlePresetsApi() {
         }
         Esp32BaseWeb::getParam("name", preset.name, sizeof(preset.name));
         if (Esp32BaseWeb::hasParam("return")) {
-            sanitizeConfig(*g_context.config);
-            const bool canApply = g_context.app->canApplyConfig();
-            const bool ok = canApply && g_context.configStore->saveSystemConfig(*g_context.config);
-            if (ok) {
-                g_context.app->applyConfig(*g_context.config);
-                if (g_context.applySettings) {
-                    g_context.applySettings(*g_context.config);
-                }
-            }
+            const bool ok = persistConfig(candidate);
             Esp32BaseWeb::redirectSeeOther(ok ? "/faucet/presets?saved=1" : "/faucet/presets?error=save_failed");
         } else {
-            saveConfigAndReply("presets");
+            saveConfigAndReply(candidate);
         }
         return;
     }
@@ -983,8 +1022,14 @@ void handleLogsApi() {
     }
 
     const std::uint16_t sanitizedPageSize = sanitizeLogPageSize(static_cast<std::uint16_t>(pageSize));
-    static WaterLogRecord records[kMaxLogPageSize]{};
-    static char json[32768]{};
+    WaterLogRecord* records = new (std::nothrow) WaterLogRecord[kMaxLogPageSize]{};
+    char* json = new (std::nothrow) char[32768]{};
+    if (!records || !json) {
+        delete[] records;
+        delete[] json;
+        Esp32BaseWeb::sendJson(500, "{\"error\":\"oom\"}");
+        return;
+    }
     const bool ready = g_context.logs->ready();
     const std::size_t readCount = ready ? g_context.logs->readPage(page, sanitizedPageSize, records, kMaxLogPageSize) : 0;
     const std::size_t totalCount = ready ? g_context.logs->count() : 0;
@@ -995,8 +1040,10 @@ void handleLogsApi() {
                                       totalCount,
                                       g_context.logs->storageName(),
                                       json,
-                                      sizeof(json)),
+                                      32768),
                    json);
+    delete[] records;
+    delete[] json;
 }
 
 void handleStatsApi() {
@@ -1023,6 +1070,7 @@ void handleFiltersApi() {
             return;
         }
 
+        SystemConfig candidate = *g_context.config;
         FilterRecord record = g_context.filters->record(index);
         record.enabled = Esp32BaseWeb::hasParam("enabled");
         Esp32BaseWeb::getParam("name", record.name, sizeof(record.name));
@@ -1040,14 +1088,8 @@ void handleFiltersApi() {
         }
         record.name[kNameLength - 1] = '\0';
 
-        g_context.config->filters[index] = record;
-        sanitizeConfig(*g_context.config);
-        if (!g_context.filters->updateFilter(index, g_context.config->filters[index])) {
-            Esp32BaseWeb::sendJson(500, "{\"error\":\"update_failed\"}");
-            return;
-        }
-        const bool ok = g_context.configStore->saveSystemConfig(*g_context.config) &&
-                        g_context.configStore->saveFilterRuntime(g_context.filters->records());
+        candidate.filters[index] = record;
+        const bool ok = persistFilterConfig(candidate, index);
         Esp32BaseWeb::redirectSeeOther(ok ? "/faucet/filters?saved=1" : "/faucet/filters?error=save_failed");
         return;
     }
@@ -1084,20 +1126,21 @@ void handleCalibrationApi() {
             Esp32BaseWeb::sendJson(409, "{\"error\":\"busy\",\"restartRecommended\":true}");
             return;
         }
+        SystemConfig candidate = *g_context.config;
         char text[24]{};
         float pulsePerLiter = 0.0f;
         if (getParam("pulsePerLiter", text, sizeof(text)) && parseFloat(text, pulsePerLiter)) {
-            g_context.config->pulsePerMl = pulsePerLiter / 1000.0f;
+            candidate.pulsePerMl = pulsePerLiter / 1000.0f;
         }
         for (std::size_t i = 0; i < kCalibrationTargetCount; ++i) {
             char name[16]{};
             std::snprintf(name, sizeof(name), "target%uL", static_cast<unsigned>(i + 1));
             std::uint32_t targetMl = 0;
             if (getParam(name, text, sizeof(text)) && parseLitersToMl(text, targetMl)) {
-                g_context.config->calibrationTargetsMl[i] = targetMl;
+                candidate.calibrationTargetsMl[i] = targetMl;
             }
         }
-        saveConfigAndReply("calibration");
+        saveConfigAndReply(candidate);
         return;
     }
     char json[256]{};

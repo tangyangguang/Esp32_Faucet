@@ -13,8 +13,11 @@ void ButtonInput::reset(ButtonLevels levels, std::uint32_t nowMs) {
     ok_ = {levels.okPressed, levels.okPressed, nowMs, levels.okPressed ? nowMs : 0, false};
     next_ = {levels.nextPressed, levels.nextPressed, nowMs, levels.nextPressed ? nowMs : 0, false};
     comboStartMs_ = 0;
+    comboReleasedMs_ = 0;
     comboArmed_ = false;
     comboEmitted_ = false;
+    comboLocked_ = false;
+    comboReleaseSeen_ = false;
 }
 
 ButtonEvent ButtonInput::update(ButtonLevels levels, std::uint32_t nowMs) {
@@ -65,6 +68,21 @@ ButtonEvent ButtonInput::updateButton(ButtonId id, ButtonState& state, bool rawP
 }
 
 ButtonEvent ButtonInput::checkCombo(std::uint32_t nowMs) {
+    if (comboLocked_) {
+        if (!stop_.stablePressed && !ok_.stablePressed) {
+            if (!comboReleaseSeen_) {
+                comboReleaseSeen_ = true;
+                comboReleasedMs_ = nowMs;
+            } else if (elapsedAtLeast(nowMs, comboReleasedMs_, kFactoryResetComboCooldownMs)) {
+                comboLocked_ = false;
+                comboReleaseSeen_ = false;
+            }
+        } else {
+            comboReleaseSeen_ = false;
+        }
+        return none();
+    }
+
     if (stop_.stablePressed && ok_.stablePressed) {
         if (!comboArmed_) {
             comboArmed_ = true;
@@ -73,6 +91,8 @@ ButtonEvent ButtonInput::checkCombo(std::uint32_t nowMs) {
         }
         if (!comboEmitted_ && elapsedAtLeast(nowMs, comboStartMs_, kFactoryResetComboMs)) {
             comboEmitted_ = true;
+            comboLocked_ = true;
+            comboReleaseSeen_ = false;
             return {ButtonEventType::FactoryResetCombo, ButtonId::Stop};
         }
     } else {

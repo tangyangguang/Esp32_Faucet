@@ -90,6 +90,48 @@ void test_cannot_change_target_while_sampling() {
     TEST_ASSERT_EQUAL_UINT32(1500, controller.snapshot().targetMl);
 }
 
+void test_reset_clears_sampling_state_and_uses_new_targets() {
+    CalibrationController controller(0.45f);
+    TEST_ASSERT_TRUE(controller.beginSampling());
+    TEST_ASSERT_EQUAL_UINT8(
+        static_cast<unsigned>(CalibrationSampleResult::Accepted),
+        static_cast<unsigned>(controller.finishSample(675)));
+
+    const std::uint32_t targets[kCalibrationTargetCount] = {0, 2500, 0, 0};
+    controller.reset(0.62f, targets);
+    const CalibrationSnapshot snapshot = controller.snapshot();
+
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationState::Ready), static_cast<unsigned>(snapshot.state));
+    TEST_ASSERT_EQUAL_UINT32(2500, snapshot.targetMl);
+    TEST_ASSERT_EQUAL_UINT8(0, snapshot.sampleCount);
+    TEST_ASSERT_FLOAT_WITHIN(0.0001f, 0.62f, snapshot.oldPulsePerMl);
+    TEST_ASSERT_FLOAT_WITHIN(0.0001f, 0.62f, snapshot.proposedPulsePerMl);
+    TEST_ASSERT_FLOAT_WITHIN(0.0001f, 0.0f, snapshot.lastSamplePulsePerMl);
+    TEST_ASSERT_FALSE(controller.setTargetMl(1500));
+}
+
+void test_switching_targets_clears_previous_samples() {
+    CalibrationController controller(0.45f);
+
+    TEST_ASSERT_TRUE(controller.setTargetMl(1500));
+    TEST_ASSERT_TRUE(controller.beginSampling());
+    TEST_ASSERT_EQUAL_UINT8(
+        static_cast<unsigned>(CalibrationSampleResult::Accepted),
+        static_cast<unsigned>(controller.finishSample(675)));
+    TEST_ASSERT_EQUAL_UINT8(1, controller.snapshot().sampleCount);
+
+    TEST_ASSERT_TRUE(controller.setTargetMl(7500));
+    TEST_ASSERT_EQUAL_UINT32(7500, controller.snapshot().targetMl);
+    TEST_ASSERT_EQUAL_UINT8(0, controller.snapshot().sampleCount);
+    TEST_ASSERT_FLOAT_WITHIN(0.0001f, 0.45f, controller.proposedPulsePerMl());
+
+    TEST_ASSERT_TRUE(controller.beginSampling());
+    TEST_ASSERT_EQUAL_UINT8(
+        static_cast<unsigned>(CalibrationSampleResult::Accepted),
+        static_cast<unsigned>(controller.finishSample(3375)));
+    TEST_ASSERT_EQUAL_UINT8(1, controller.snapshot().sampleCount);
+}
+
 void test_controller_uses_configured_enabled_targets() {
     CalibrationController controller;
     const std::uint32_t targets[kCalibrationTargetCount] = {0, 7500, 0, 0};
@@ -112,6 +154,8 @@ int main(int argc, char** argv) {
     RUN_TEST(test_inconsistent_second_sample_is_rejected);
     RUN_TEST(test_invalid_pulse_count_is_rejected);
     RUN_TEST(test_cannot_change_target_while_sampling);
+    RUN_TEST(test_reset_clears_sampling_state_and_uses_new_targets);
+    RUN_TEST(test_switching_targets_clears_previous_samples);
     RUN_TEST(test_controller_uses_configured_enabled_targets);
     return UNITY_END();
 }

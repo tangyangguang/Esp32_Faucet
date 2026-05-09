@@ -78,6 +78,26 @@ void test_rejects_invalid_pulse_coefficients() {
     TEST_ASSERT_TRUE(meter.setPulsePerMl(1.0f));
 }
 
+void test_pulse_coefficient_boundaries_are_accepted() {
+    FlowMeter meter(kMinPulsePerMl);
+
+    TEST_ASSERT_TRUE(meter.setPulsePerMl(kMaxPulsePerMl));
+    TEST_ASSERT_TRUE(meter.setPulsePerMl(kMinPulsePerMl));
+    TEST_ASSERT_TRUE(meter.onPulse(1000));
+    TEST_ASSERT_TRUE(meter.onPulse(2000));
+
+    TEST_ASSERT_EQUAL_UINT32(40, meter.snapshot(2000).volumeMl);
+}
+
+void test_high_frequency_flow_saturates_without_overflow() {
+    FlowMeter meter(kMinPulsePerMl, 0);
+
+    TEST_ASSERT_TRUE(meter.onPulse(1000));
+    TEST_ASSERT_TRUE(meter.onPulse(1001));
+
+    TEST_ASSERT_UINT32_WITHIN(100UL, 1200000000UL, meter.snapshot(1001).currentFlowMlPerMin);
+}
+
 void test_reset_clears_counts_and_flow() {
     FlowMeter meter(1.0f);
     meter.onPulse(1000);
@@ -103,6 +123,8 @@ int main(int argc, char** argv) {
     RUN_TEST(test_current_flow_survives_micros_wrap);
     RUN_TEST(test_current_flow_expires_when_no_recent_pulse);
     RUN_TEST(test_rejects_invalid_pulse_coefficients);
+    RUN_TEST(test_pulse_coefficient_boundaries_are_accepted);
+    RUN_TEST(test_high_frequency_flow_saturates_without_overflow);
     RUN_TEST(test_reset_clears_counts_and_flow);
     return UNITY_END();
 }

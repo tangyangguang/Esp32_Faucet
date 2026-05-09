@@ -101,6 +101,33 @@ void test_combo_cancelled_if_released_before_timeout() {
         static_cast<unsigned>(updateAt(input, true, false, false, 7000).type));
 }
 
+void test_factory_reset_combo_requires_full_release_cooldown_before_rearming() {
+    ButtonInput input;
+    updateAt(input, true, true, false, 0);
+    updateAt(input, true, true, false, 30);
+    updateAt(input, true, true, false, 60);
+    TEST_ASSERT_EQUAL_UINT8(
+        static_cast<unsigned>(ButtonEventType::FactoryResetCombo),
+        static_cast<unsigned>(updateAt(input, true, true, false, 5030).type));
+
+    updateAt(input, false, false, false, 5100);
+    updateAt(input, false, false, false, 5130);
+    updateAt(input, true, true, false, 5500);
+    updateAt(input, true, true, false, 5530);
+    TEST_ASSERT_EQUAL_UINT8(
+        static_cast<unsigned>(ButtonEventType::None),
+        static_cast<unsigned>(updateAt(input, true, true, false, 11000).type));
+
+    updateAt(input, false, false, false, 11200);
+    updateAt(input, false, false, false, 11230);
+    updateAt(input, false, false, false, 12230);
+    updateAt(input, true, true, false, 12300);
+    updateAt(input, true, true, false, 12330);
+    TEST_ASSERT_EQUAL_UINT8(
+        static_cast<unsigned>(ButtonEventType::FactoryResetCombo),
+        static_cast<unsigned>(updateAt(input, true, true, false, 17330).type));
+}
+
 int main(int argc, char** argv) {
     (void)argc;
     (void)argv;
@@ -113,5 +140,6 @@ int main(int argc, char** argv) {
     RUN_TEST(test_debounce_survives_millis_wrap);
     RUN_TEST(test_factory_reset_combo_emits_once_after_five_seconds);
     RUN_TEST(test_combo_cancelled_if_released_before_timeout);
+    RUN_TEST(test_factory_reset_combo_requires_full_release_cooldown_before_rearming);
     return UNITY_END();
 }

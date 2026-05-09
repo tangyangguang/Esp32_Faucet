@@ -157,13 +157,29 @@ void loadFilterRanges(ConfigBackend& backend, SystemConfig& config) {
 
 }  // namespace
 
-ConfigStore::ConfigStore(ConfigBackend& backend) : backend_(backend) {}
+ConfigStore::ConfigStore(ConfigBackend& backend)
+    : backend_(backend), lastSystemStatus_(LoadStatus::DefaultsNoVersion), systemConfigReadOnly_(false) {}
 
 SystemConfig ConfigStore::loadSystemConfig() {
     SystemConfig config = makeDefaultConfig();
     const std::int32_t version = backend_.getInt(kConfigNs, "ver", 0);
-    if (!isKnownSystemConfigVersion(version)) {
+    systemConfigReadOnly_ = false;
+    if (version == 0) {
+        lastSystemStatus_ = LoadStatus::DefaultsNoVersion;
         return config;
+    }
+    if (version < 0) {
+        lastSystemStatus_ = LoadStatus::UnsupportedVersionDefault;
+        return config;
+    }
+    if (version > kConfigVersion) {
+        systemConfigReadOnly_ = true;
+        lastSystemStatus_ = LoadStatus::LoadedFutureVersionReadOnly;
+    } else if (!isKnownSystemConfigVersion(version)) {
+        lastSystemStatus_ = LoadStatus::UnsupportedVersionDefault;
+        return config;
+    } else {
+        lastSystemStatus_ = version == kConfigVersion ? LoadStatus::LoadedCurrent : LoadStatus::MigratedLegacy;
     }
 
     loadCommonSystemConfig(backend_, config);
@@ -180,13 +196,17 @@ SystemConfig ConfigStore::loadSystemConfig() {
     }
 
     sanitizeConfig(config);
-    if (version != kConfigVersion) {
+    if (version != kConfigVersion && !systemConfigReadOnly_) {
         saveSystemConfig(config);
     }
     return config;
 }
 
 bool ConfigStore::saveSystemConfig(const SystemConfig& config) {
+    if (systemConfigReadOnly_) {
+        return false;
+    }
+
     SystemConfig safe = config;
     sanitizeConfig(safe);
 
@@ -244,7 +264,20 @@ bool ConfigStore::saveSystemConfig(const SystemConfig& config) {
 }
 
 bool ConfigStore::resetSystemConfig() {
-    return backend_.clearNamespace(kConfigNs) && saveSystemConfig(makeDefaultConfig());
+    systemConfigReadOnly_ = false;
+    const bool ok = backend_.clearNamespace(kConfigNs) && saveSystemConfig(makeDefaultConfig());
+    if (ok) {
+        lastSystemStatus_ = LoadStatus::LoadedCurrent;
+    }
+    return ok;
+}
+
+ConfigStore::LoadStatus ConfigStore::lastSystemConfigLoadStatus() const {
+    return lastSystemStatus_;
+}
+
+bool ConfigStore::systemConfigReadOnly() const {
+    return systemConfigReadOnly_;
 }
 
 StatisticsRecord ConfigStore::loadStatistics(const PeriodKeys& defaultKeys) {

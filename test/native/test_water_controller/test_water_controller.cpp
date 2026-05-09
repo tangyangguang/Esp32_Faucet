@@ -157,6 +157,26 @@ void test_max_volume_safety_has_priority_over_normal_completion() {
     TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(WaterState::Error), static_cast<unsigned>(controller.snapshot().state));
 }
 
+void test_max_out_time_forces_safety_stop() {
+    SystemConfig config = makeDefaultConfig();
+    config.maxOutTimeSec = 30;
+    config.presets[2].enabled = true;
+    config.presets[2].type = PresetType::Time;
+    config.presets[2].value = 60;
+    WaterController controller(config);
+
+    TEST_ASSERT_TRUE(controller.selectPreset(2));
+    startSelected(controller, 1000);
+    controller.addVolume(1);
+    controller.tick(32000);
+
+    TEST_ASSERT_TRUE(controller.hasResult());
+    TEST_ASSERT_EQUAL_UINT8(
+        static_cast<unsigned>(WaterResult::SafetyStopped), static_cast<unsigned>(controller.result().result));
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(WaterState::Error), static_cast<unsigned>(controller.snapshot().state));
+    TEST_ASSERT_FALSE(controller.snapshot().valveOpen);
+}
+
 void test_high_flow_must_persist_before_error() {
     SystemConfig config = makeDefaultConfig();
     config.highFlowMlPerMin = 1000;
@@ -199,6 +219,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_pause_timeout_stops_task);
     RUN_TEST(test_no_flow_timeout_enters_error);
     RUN_TEST(test_max_volume_safety_has_priority_over_normal_completion);
+    RUN_TEST(test_max_out_time_forces_safety_stop);
     RUN_TEST(test_high_flow_must_persist_before_error);
     RUN_TEST(test_next_preset_skips_disabled_presets);
     return UNITY_END();

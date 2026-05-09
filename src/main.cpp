@@ -21,6 +21,8 @@
 #include "drivers/RtcClock.h"
 #include "web/FaucetWeb.h"
 
+#include <new>
+
 namespace {
 constexpr const char* kFirmwareName = "esp32-faucet";
 constexpr const char* kFirmwareVersion = "0.1.0-dev";
@@ -95,6 +97,7 @@ faucet::OledDisplay g_oled(faucet::kPinI2cSda, faucet::kPinI2cScl);
 faucet::DisplayPresenter* g_display = nullptr;
 bool g_persistenceFailureLogged = false;
 std::uint32_t g_lastDisplayMs = 0;
+std::uint32_t g_lastDroppedPulsesLogged = 0;
 
 void buildDefaultHostname() {
     const uint64_t mac = ESP.getEfuseMac();
@@ -127,6 +130,53 @@ void applyFileLogPolicy() {
                                   Esp32BaseLog::INFO,
                                   Esp32BaseFileLog::rotateFiles())) {
         ESP32BASE_LOG_W("app", "file log INFO policy apply failed");
+    }
+#endif
+}
+
+const char* configLoadStatusName(faucet::ConfigStore::LoadStatus status) {
+    switch (status) {
+        case faucet::ConfigStore::LoadStatus::DefaultsNoVersion:
+            return "defaults_no_version";
+        case faucet::ConfigStore::LoadStatus::LoadedCurrent:
+            return "loaded_current";
+        case faucet::ConfigStore::LoadStatus::MigratedLegacy:
+            return "migrated_legacy";
+        case faucet::ConfigStore::LoadStatus::LoadedFutureVersionReadOnly:
+            return "future_version_read_only";
+        case faucet::ConfigStore::LoadStatus::UnsupportedVersionDefault:
+            return "unsupported_version_default";
+    }
+    return "unknown";
+}
+
+void logSystemConfigStatus() {
+    const faucet::ConfigStore::LoadStatus status = g_configStore.lastSystemConfigLoadStatus();
+    if (status == faucet::ConfigStore::LoadStatus::LoadedCurrent) {
+        return;
+    }
+    if (status == faucet::ConfigStore::LoadStatus::LoadedFutureVersionReadOnly) {
+        ESP32BASE_LOG_W("app", "system config loaded from future version in read-only mode");
+    } else if (status == faucet::ConfigStore::LoadStatus::UnsupportedVersionDefault) {
+        ESP32BASE_LOG_W("app", "system config version unsupported, defaults used");
+    } else {
+        ESP32BASE_LOG_I("app", "system config status=%s", configLoadStatusName(status));
+    }
+}
+
+void checkFileSystemCapacity() {
+#if ESP32BASE_ENABLE_FS
+    if (!Esp32BaseFs::isReady()) {
+        return;
+    }
+    constexpr std::size_t kLowFreeBytes = 100UL * 1024UL;
+    const std::size_t freeBytes = Esp32BaseFs::freeBytes();
+    if (freeBytes < kLowFreeBytes) {
+        ESP32BASE_LOG_W("app",
+                        "LittleFS low free space: free=%lu total=%lu used=%lu",
+                        static_cast<unsigned long>(freeBytes),
+                        static_cast<unsigned long>(Esp32BaseFs::totalBytes()),
+                        static_cast<unsigned long>(Esp32BaseFs::usedBytes()));
     }
 #endif
 }
@@ -201,13 +251,26 @@ faucet::PeriodKeys currentPeriodKeys(std::uint32_t nowSeconds) {
 void initializeApplication() {
     g_rtc.begin();
     g_config = g_configStore.loadSystemConfig();
+    logSystemConfigStatus();
     g_logs.setFileStore(g_waterLogFile.begin() ? &g_waterLogFile : nullptr);
+    checkFileSystemCapacity();
     const std::uint32_t nowSec = currentSeconds();
     g_statistics = faucet::StatisticsStore(g_configStore.loadStatistics(currentPeriodKeys(nowSec)));
     g_configStore.loadFilterRuntime(g_config.filters);
-    g_filters = new faucet::FilterStore(g_config.filters);
-    g_app = new faucet::AppController(g_config, g_statistics, *g_filters, g_logs);
-    g_display = new faucet::DisplayPresenter(g_config.oledSleepSec);
+    g_filters = new (std::nothrow) faucet::FilterStore(g_config.filters);
+    if (!g_filters) {
+        ESP32BASE_LOG_E("app", "filter store allocation failed");
+        return;
+    }
+    g_app = new (std::nothrow) faucet::AppController(g_config, g_statistics, *g_filters, g_logs);
+    if (!g_app) {
+        ESP32BASE_LOG_E("app", "app controller allocation failed");
+        return;
+    }
+    g_display = new (std::nothrow) faucet::DisplayPresenter(g_config.oledSleepSec);
+    if (!g_display) {
+        ESP32BASE_LOG_W("app", "display presenter allocation failed, oled disabled");
+    }
     faucet::setFaucetWebContext(
         faucet::FaucetWebContext{&g_config, &g_configStore, g_app, g_filters, &g_logs, currentSeconds, applyRuntimeSettings});
 
@@ -247,6 +310,15 @@ void runApplicationTick() {
     std::uint32_t pulseUs = 0;
     while (g_flowPulses.pop(pulseUs)) {
         g_app->onFlowPulse(pulseUs);
+    }
+    const std::uint32_t droppedPulses = g_flowPulses.droppedPulses();
+    g_app->setFlowDroppedPulses(droppedPulses);
+    if (droppedPulses != g_lastDroppedPulsesLogged) {
+        ESP32BASE_LOG_W("app",
+                        "flow pulse buffer dropped pulses: total=%lu delta=%lu",
+                        static_cast<unsigned long>(droppedPulses),
+                        static_cast<unsigned long>(droppedPulses - g_lastDroppedPulsesLogged));
+        g_lastDroppedPulsesLogged = droppedPulses;
     }
 
     const faucet::AppTickInput input{

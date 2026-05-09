@@ -112,6 +112,47 @@ void test_app_controller_completion_writes_log_statistics_and_filters() {
     TEST_ASSERT_FALSE(app.consumePersistenceDirty());
 }
 
+void test_app_controller_pause_resume_then_completion_updates_persistence_once() {
+    SystemConfig config = makeDefaultConfig();
+    config.pulsePerMl = 1.0f;
+    StatisticsStore statistics;
+    statistics.reset({20260506, 202619, 202605});
+    FilterStore filters(config.filters);
+    MemoryLogWriter logs;
+    AppController app(config, statistics, filters, logs);
+
+    app.resetInputs({false, false, false}, 0);
+    pressAndReleaseOk(app, 100);
+    pressAndReleaseOk(app, 300);
+    for (std::uint32_t i = 0; i < 700; ++i) {
+        app.onFlowPulse(1000000UL + i * 2000UL);
+    }
+    app.tick(input({false, false, false}, 2500, 2500000, 1714502400));
+    TEST_ASSERT_EQUAL_UINT32(700, app.snapshot().water.volumeMl);
+
+    pressAndReleaseOk(app, 2600);
+    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(WaterState::Paused),
+                            static_cast<std::uint8_t>(app.snapshot().water.state));
+    TEST_ASSERT_FALSE(app.snapshot().valve.enabled);
+    app.tick(input({false, false, false}, 20000, 20000000, 1714502418));
+    TEST_ASSERT_EQUAL_size_t(0, logs.records.size());
+
+    pressAndReleaseOk(app, 20100);
+    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(WaterState::Running),
+                            static_cast<std::uint8_t>(app.snapshot().water.state));
+    for (std::uint32_t i = 700; i < 1500; ++i) {
+        app.onFlowPulse(21000000UL + i * 2000UL);
+    }
+    app.tick(input({false, false, false}, 23000, 23000000, 1714502421));
+
+    TEST_ASSERT_EQUAL_size_t(1, logs.records.size());
+    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(WaterResult::Completed),
+                            static_cast<std::uint8_t>(logs.records[0].result));
+    TEST_ASSERT_EQUAL_UINT32(1500, statistics.record().todayMl);
+    TEST_ASSERT_EQUAL_UINT32(1500, filters.record(0).usedMl);
+    TEST_ASSERT_TRUE(app.consumePersistenceDirty());
+}
+
 void test_app_controller_stop_down_closes_valve_and_records_user_stop() {
     SystemConfig config = makeDefaultConfig();
     config.pulsePerMl = 1.0f;
@@ -307,6 +348,7 @@ int main(int argc, char** argv) {
     UNITY_BEGIN();
     RUN_TEST(test_app_controller_starts_after_double_ok_and_opens_valve);
     RUN_TEST(test_app_controller_completion_writes_log_statistics_and_filters);
+    RUN_TEST(test_app_controller_pause_resume_then_completion_updates_persistence_once);
     RUN_TEST(test_app_controller_stop_down_closes_valve_and_records_user_stop);
     RUN_TEST(test_app_controller_emergency_stop_closes_valve_without_debounce);
     RUN_TEST(test_app_controller_applies_config_only_while_idle);

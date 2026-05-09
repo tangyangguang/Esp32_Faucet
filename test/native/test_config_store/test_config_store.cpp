@@ -99,6 +99,9 @@ void test_config_load_uses_defaults_without_matching_version() {
     TEST_ASSERT_EQUAL_UINT32(kDefaultConfirmTimeoutSec, config.confirmTimeoutSec);
     TEST_ASSERT_EQUAL_UINT32(1500, config.presets[0].value);
     TEST_ASSERT_TRUE(config.filters[0].enabled);
+    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(ConfigStore::LoadStatus::DefaultsNoVersion),
+                            static_cast<std::uint8_t>(store.lastSystemConfigLoadStatus()));
+    TEST_ASSERT_FALSE(store.systemConfigReadOnly());
 }
 
 void test_config_migrates_v1_without_losing_user_values() {
@@ -121,6 +124,9 @@ void test_config_migrates_v1_without_losing_user_values() {
 
     const SystemConfig loaded = store.loadSystemConfig();
 
+    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(ConfigStore::LoadStatus::MigratedLegacy),
+                            static_cast<std::uint8_t>(store.lastSystemConfigLoadStatus()));
+    TEST_ASSERT_FALSE(store.systemConfigReadOnly());
     TEST_ASSERT_EQUAL_INT32(3, backend.getInt("faucet_cfg", "ver", 0));
     TEST_ASSERT_EQUAL_INT32(2500, backend.getInt("faucet_cfg", "cal0_ml", 0));
     TEST_ASSERT_EQUAL_INT32(90, backend.getInt("faucet_cfg", "f0_life_min", 0));
@@ -155,6 +161,8 @@ void test_config_migrates_v2_filter_ranges_and_single_calibration_target() {
 
     const SystemConfig loaded = store.loadSystemConfig();
 
+    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(ConfigStore::LoadStatus::MigratedLegacy),
+                            static_cast<std::uint8_t>(store.lastSystemConfigLoadStatus()));
     TEST_ASSERT_EQUAL_INT32(3, backend.getInt("faucet_cfg", "ver", 0));
     TEST_ASSERT_EQUAL_INT32(3200, backend.getInt("faucet_cfg", "cal0_ml", 0));
     TEST_ASSERT_EQUAL_INT32(7500, backend.getInt("faucet_cfg", "cal1_ml", 0));
@@ -165,6 +173,33 @@ void test_config_migrates_v2_filter_ranges_and_single_calibration_target() {
     TEST_ASSERT_EQUAL_UINT32(360, loaded.filters[1].recommendDays);
     TEST_ASSERT_EQUAL_UINT32(720, loaded.filters[1].maxDays);
     TEST_ASSERT_EQUAL_UINT32(9000000, loaded.filters[1].lifeMl);
+}
+
+void test_config_future_version_loads_current_fields_read_only_without_overwrite() {
+    FakeConfigBackend backend;
+    backend.setInt("faucet_cfg", "ver", 99);
+    backend.setInt("faucet_cfg", "confirm_s", 24);
+    backend.setBool("faucet_cfg", "beep", false);
+    backend.setBool("faucet_cfg", "p0_en", false);
+    backend.setInt("faucet_cfg", "p0_type", 1);
+    backend.setInt("faucet_cfg", "p0_val", 45);
+    backend.setStr("faucet_cfg", "p0_name", "Legacy");
+    ConfigStore store(backend);
+
+    const SystemConfig loaded = store.loadSystemConfig();
+
+    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(ConfigStore::LoadStatus::LoadedFutureVersionReadOnly),
+                            static_cast<std::uint8_t>(store.lastSystemConfigLoadStatus()));
+    TEST_ASSERT_TRUE(store.systemConfigReadOnly());
+    TEST_ASSERT_EQUAL_INT32(99, backend.getInt("faucet_cfg", "ver", 0));
+    TEST_ASSERT_EQUAL_UINT32(24, loaded.confirmTimeoutSec);
+    TEST_ASSERT_FALSE(loaded.beepEnabled);
+    TEST_ASSERT_FALSE(loaded.presets[0].enabled);
+    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(PresetType::Time), static_cast<std::uint8_t>(loaded.presets[0].type));
+    TEST_ASSERT_EQUAL_UINT32(45, loaded.presets[0].value);
+    TEST_ASSERT_EQUAL_STRING("Legacy", loaded.presets[0].name);
+    TEST_ASSERT_FALSE(store.saveSystemConfig(makeDefaultConfig()));
+    TEST_ASSERT_EQUAL_INT32(99, backend.getInt("faucet_cfg", "ver", 0));
 }
 
 void test_config_save_and_load_round_trips_system_config() {
@@ -245,6 +280,7 @@ void test_config_reset_restores_defaults() {
     TEST_ASSERT_TRUE(store.resetSystemConfig());
 
     const SystemConfig loaded = store.loadSystemConfig();
+    TEST_ASSERT_FALSE(store.systemConfigReadOnly());
     TEST_ASSERT_EQUAL_UINT32(kDefaultConfirmTimeoutSec, loaded.confirmTimeoutSec);
     TEST_ASSERT_EQUAL_UINT32(1500, loaded.presets[0].value);
 }
@@ -331,6 +367,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_config_load_uses_defaults_without_matching_version);
     RUN_TEST(test_config_migrates_v1_without_losing_user_values);
     RUN_TEST(test_config_migrates_v2_filter_ranges_and_single_calibration_target);
+    RUN_TEST(test_config_future_version_loads_current_fields_read_only_without_overwrite);
     RUN_TEST(test_config_save_and_load_round_trips_system_config);
     RUN_TEST(test_config_load_sanitizes_stored_values);
     RUN_TEST(test_config_reset_restores_defaults);

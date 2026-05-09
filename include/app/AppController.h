@@ -43,6 +43,7 @@ struct AppSnapshot {
     StatisticsRecord statistics;
     CalibrationSnapshot calibration;
     LocalUiMode localMode = LocalUiMode::Normal;
+    std::uint32_t flowDroppedPulses = 0;
 };
 
 class AppController {
@@ -63,6 +64,7 @@ public:
     bool consumeFactoryResetRequest();
     BeepPattern consumeBeepPattern();
     bool emergencyStop(std::uint32_t nowMs);
+    void setFlowDroppedPulses(std::uint32_t droppedPulses);
     bool canApplyConfig() const;
     bool applyConfig(const SystemConfig& config);
     const SystemConfig& config() const;
@@ -99,6 +101,7 @@ private:
     bool factoryResetRequested_;
     std::uint32_t factoryConfirmArmedMs_;
     BeepPattern pendingBeep_;
+    std::uint32_t flowDroppedPulses_;
 };
 
 }  // namespace faucet

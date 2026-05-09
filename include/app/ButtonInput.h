@@ -7,6 +7,7 @@ namespace faucet {
 constexpr std::uint32_t kButtonDebounceMs = 30;
 constexpr std::uint32_t kButtonLongPressMs = 1000;
 constexpr std::uint32_t kFactoryResetComboMs = 5000;
+constexpr std::uint32_t kFactoryResetComboCooldownMs = 1000;
 
 enum class ButtonId : std::uint8_t {
     Stop = 0,
@@ -62,8 +63,11 @@ private:
     ButtonState ok_;
     ButtonState next_;
     std::uint32_t comboStartMs_;
+    std::uint32_t comboReleasedMs_;
     bool comboArmed_;
     bool comboEmitted_;
+    bool comboLocked_;
+    bool comboReleaseSeen_;
 };
 
 }  // namespace faucet

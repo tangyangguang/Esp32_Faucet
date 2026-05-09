@@ -279,6 +279,9 @@ bool WaterController::checkTarget(std::uint32_t nowMs) {
     if (!preset) {
         return false;
     }
+    if (preset->value == 0) {
+        return false;
+    }
     if (preset->type == PresetType::Volume && volumeMl_ >= preset->value) {
         finish(nowMs, WaterResult::Completed, WaterState::Idle);
         return true;

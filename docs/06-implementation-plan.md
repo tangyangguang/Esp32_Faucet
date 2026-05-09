@@ -7,7 +7,7 @@
 ## 前置状态
 
 - `ESP32BASE_PROFILE_FULL` 下 LittleFS 依赖问题已在 Esp32Base 修复，并在本项目验证通过。
-- 本项目通过 `symlink:///Users/tyg/dir/claude_dir/Esp32Base` 引用基础库，后续基础库修改可直接在本项目验证。
+- 本项目通过 `symlink://../Esp32Base` 引用同级基础库，后续基础库修改可直接在本项目验证。
 
 ## 目录结构
 

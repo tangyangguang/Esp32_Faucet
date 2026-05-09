@@ -739,6 +739,10 @@ void applyU32Param(const char* name, std::uint32_t& value) {
     }
 }
 
+bool checkboxParam(const char* name) {
+    return Esp32BaseWeb::hasParam(name);
+}
+
 bool persistConfig(const SystemConfig& config) {
     if (!g_context.app->canApplyConfig()) {
         return false;
@@ -825,7 +829,7 @@ void handleConfigApi() {
         applyU32Param("pauseTimeoutSec", candidate.pauseTimeoutSec);
         applyU32Param("valveFullPowerSec", candidate.valveFullPowerSec);
         applyU32Param("oledSleepSec", candidate.oledSleepSec);
-        candidate.beepEnabled = Esp32BaseWeb::hasParam("beepEnabled");
+        candidate.beepEnabled = checkboxParam("beepEnabled");
 
         char text[24]{};
         std::uint32_t parsed = 0;
@@ -859,7 +863,7 @@ void handlePresetsApi() {
         }
         SystemConfig candidate = *g_context.config;
         PresetConfig& preset = candidate.presets[index];
-        preset.enabled = Esp32BaseWeb::hasParam("enabled");
+        preset.enabled = checkboxParam("enabled");
         if (getParam("type", text, sizeof(text))) {
             preset.type = std::strcmp(text, "time") == 0 ? PresetType::Time : PresetType::Volume;
         }
@@ -948,7 +952,7 @@ void handleFiltersApi() {
 
         SystemConfig candidate = *g_context.config;
         FilterRecord record = g_context.filters->record(index);
-        record.enabled = Esp32BaseWeb::hasParam("enabled");
+        record.enabled = checkboxParam("enabled");
         Esp32BaseWeb::getParam("name", record.name, sizeof(record.name));
         std::uint32_t months = 0;
         if (getParam("recommendMonths", text, sizeof(text)) && parseU32(text, months)) {

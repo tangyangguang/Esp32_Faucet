@@ -12,7 +12,7 @@
 
 ```ini
 lib_deps =
-    symlink:///Users/tyg/dir/claude_dir/Esp32Base
+    symlink://../Esp32Base
 ```
 
 项目按规划启用：
@@ -81,7 +81,7 @@ board_build.filesystem = littlefs
 build_flags =
     -D ESP32BASE_PROFILE=ESP32BASE_PROFILE_FULL
 lib_deps =
-    symlink:///Users/tyg/dir/claude_dir/Esp32Base
+    symlink://../Esp32Base
 ```
 
 并在 `src/main.cpp` 中只包含：

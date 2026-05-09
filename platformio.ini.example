@@ -1,0 +1,7 @@
+# Copy this file to platformio.ini.local and adjust it for your device.
+# platformio.ini.local is ignored by git and is loaded by platformio.ini.
+#
+# [env:esp32dev]
+# custom_esp32base_webota_host = <device-ip>
+# custom_esp32base_webota_user = <web-user>
+# custom_esp32base_webota_password = <web-password>

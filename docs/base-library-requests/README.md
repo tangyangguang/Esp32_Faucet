@@ -1,6 +1,6 @@
 # Esp32Base 基础库请求
 
-本目录用于记录需要回到 `/Users/tyg/dir/claude_dir/Esp32Base` 完善的能力、bug 或新设计。
+本目录用于记录需要回到同级基础库项目 `../Esp32Base` 完善的能力、bug 或新设计。
 
 每个请求文档应包含：
 

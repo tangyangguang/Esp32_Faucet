@@ -17,7 +17,7 @@
 
 ```ini
 lib_deps =
-    symlink:///Users/tyg/dir/claude_dir/Esp32Base
+    symlink://../Esp32Base
 ```
 
 引用 Esp32Base，并启用 `ESP32BASE_PROFILE_FULL`。

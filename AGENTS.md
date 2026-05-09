@@ -6,7 +6,7 @@
 
 ## 基本原则
 
-- 本项目所有 ESP32 基础能力使用 `/Users/tyg/dir/claude_dir/Esp32Base`。
+- 本项目所有 ESP32 基础能力使用同级目录 `../Esp32Base`。
 - 如果实现过程中发现基础库能力缺口、基础库 bug，或需要新增基础库设计，不在本项目内打补丁。
 - 遇到上述基础库问题时，在 `docs/base-library-requests/` 下创建独立文档，写出可直接交给 Esp32Base 项目的完整提示词。
 - 本项目不保留旧代码、旧 API 或旧行为的历史包袱；但用户持久化配置必须保护，配置结构变化必须提供版本迁移、导出/导入或明确升级路径，不能因固件升级静默清空用户配置。
@@ -25,6 +25,6 @@
 
 ## 基础库引用
 
-- 使用本地库路径：`/Users/tyg/dir/claude_dir/Esp32Base`。
+- 使用本地库路径：`symlink://../Esp32Base`。
 - 默认启用 `ESP32BASE_PROFILE_FULL`，覆盖 Log、Config、System、Bus、Watchdog、Sleep、Fs、FileLog、Health、WiFi、DNS、NTP、mDNS、Web、OTA/Web OTA。
 - 本项目不得重复实现 Esp32Base 已经提供的基础能力。

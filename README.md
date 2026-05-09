@@ -4,7 +4,7 @@
 
 ## 当前状态
 
-- 使用 `/Users/tyg/dir/claude_dir/Esp32Base` 作为 ESP32 基础库。
+- 使用同级目录 `../Esp32Base` 作为 ESP32 基础库。
 - 主固件已接入 Esp32Base FULL profile、三键业务核心、流量计、电磁阀 PWM、OLED、蜂鸣器、RTC、LittleFS 日志、统计、滤芯和 Web 查看/配置页面。
 - Web 不提供任何远程出水控制能力。
 - 裸板验证已通过：未接外设时 `rtc=absent`、`oled=absent`、`log=file`，WiFi/Web/mDNS/NTP 正常。
@@ -13,7 +13,8 @@
 
 - PlatformIO
 - ESP32 Arduino framework
-- 本地基础库：`/Users/tyg/dir/claude_dir/Esp32Base`
+- 本地基础库：`../Esp32Base`
+- WebOTA 本地配置：复制 `platformio.ini.example` 为 `platformio.ini.local` 后填写设备地址和认证信息。
 
 ## 常用命令
 
@@ -21,6 +22,7 @@
 pio test -e native
 pio run -e esp32dev
 pio run -e esp32dev_smoke
+pio run -e esp32dev -t webota
 pio run -e esp32dev -t upload --upload-port /dev/cu.usbserial-130
 pio run -e esp32dev -t uploadfs --upload-port /dev/cu.usbserial-130
 ```
@@ -44,4 +46,3 @@ pio run -e esp32dev -t uploadfs --upload-port /dev/cu.usbserial-130
 5. 流量计
 6. 电磁阀
 7. 完整水路验证
-

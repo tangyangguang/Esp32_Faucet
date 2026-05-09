@@ -23,13 +23,16 @@ void test_routes_do_not_register_remote_water_control_paths() {
     }
 }
 
-void test_route_blacklist_rejects_dangerous_control_aliases() {
+void test_route_whitelist_rejects_unknown_and_dangerous_control_aliases() {
     TEST_ASSERT_FALSE(faucetWebRouteAllowed("/api/faucet/start"));
     TEST_ASSERT_FALSE(faucetWebRouteAllowed("/api/faucet/stop"));
     TEST_ASSERT_FALSE(faucetWebRouteAllowed("/api/faucet/pause"));
     TEST_ASSERT_FALSE(faucetWebRouteAllowed("/api/faucet/resume"));
     TEST_ASSERT_FALSE(faucetWebRouteAllowed("/api/faucet/water/start"));
     TEST_ASSERT_FALSE(faucetWebRouteAllowed("/api/faucet/water/stop"));
+    TEST_ASSERT_FALSE(faucetWebRouteAllowed("/api/faucet/logs/export"));
+    TEST_ASSERT_FALSE(faucetWebRouteAllowed("/faucet/unknown"));
+    TEST_ASSERT_FALSE(faucetWebRouteAllowed("api/faucet/status"));
 }
 
 void test_dual_method_routes_are_merged_to_any() {
@@ -108,7 +111,7 @@ int main(int argc, char** argv) {
     UNITY_BEGIN();
     RUN_TEST(test_routes_fit_esp32base_default_route_capacity);
     RUN_TEST(test_routes_do_not_register_remote_water_control_paths);
-    RUN_TEST(test_route_blacklist_rejects_dangerous_control_aliases);
+    RUN_TEST(test_route_whitelist_rejects_unknown_and_dangerous_control_aliases);
     RUN_TEST(test_dual_method_routes_are_merged_to_any);
     RUN_TEST(test_filter_edit_route_is_hidden_from_navigation);
     RUN_TEST(test_presets_page_is_available_in_navigation);

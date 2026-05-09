@@ -24,10 +24,6 @@ constexpr FaucetWebRoute kRoutes[] = {
     {"/api/faucet/calibration", FaucetWebMethod::Any, FaucetWebRouteKind::Api, nullptr},
 };
 
-bool containsToken(const char* path, const char* token) {
-    return path && token && std::strstr(path, token) != nullptr;
-}
-
 bool equals(const char* a, const char* b) {
     return a && b && std::strcmp(a, b) == 0;
 }
@@ -46,15 +42,12 @@ bool faucetWebRouteAllowed(const char* path) {
     if (!path || path[0] != '/') {
         return false;
     }
-
-    if (equals(path, "/api/faucet/start") || equals(path, "/api/faucet/stop") ||
-        equals(path, "/api/faucet/pause") || equals(path, "/api/faucet/resume")) {
-        return false;
+    for (std::size_t i = 0; i < faucetWebRouteCount(); ++i) {
+        if (equals(path, kRoutes[i].path)) {
+            return true;
+        }
     }
-    if (containsToken(path, "/api/faucet/water/")) {
-        return false;
-    }
-    return true;
+    return false;
 }
 
 bool faucetWebRoutesFitEsp32Base(std::size_t maxRoutes) {

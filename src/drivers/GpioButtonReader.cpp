@@ -11,10 +11,10 @@ GpioButtonReader::GpioButtonReader(std::uint8_t cancelPin, std::uint8_t okPin, s
 
 void GpioButtonReader::begin() {
     instance_ = this;
-    pinMode(cancelPin_, INPUT);
-    pinMode(okPin_, INPUT);
-    pinMode(plusPin_, INPUT);
-    pinMode(minusPin_, INPUT);
+    pinMode(cancelPin_, INPUT_PULLUP);
+    pinMode(okPin_, INPUT_PULLUP);
+    pinMode(plusPin_, INPUT_PULLUP);
+    pinMode(minusPin_, INPUT_PULLUP);
     attachInterrupt(digitalPinToInterrupt(cancelPin_), GpioButtonReader::isrCancel, FALLING);
 }
 

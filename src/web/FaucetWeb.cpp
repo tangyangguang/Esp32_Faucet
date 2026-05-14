@@ -149,6 +149,52 @@ void sendMetricCard(const char* label, const char* value) {
     Esp32BaseWeb::sendChunk("</strong></section>");
 }
 
+std::uint32_t percentOf(std::uint32_t value, std::uint32_t total) {
+    if (total == 0) {
+        return 0;
+    }
+    const std::uint64_t percent = (static_cast<std::uint64_t>(value) * 100ULL) / total;
+    return percent > 100ULL ? 100UL : static_cast<std::uint32_t>(percent);
+}
+
+void sendStatBar(const char* label, const char* value, std::uint32_t percent) {
+    sendFmt("<div class='stat-bar'><div class='stat-bar-head'><span>%s</span><strong>%s</strong></div>"
+            "<div class='progress'><span style='width:%lu%%'></span></div></div>",
+            label,
+            value,
+            static_cast<unsigned long>(percent));
+}
+
+void sendNoticeFromQuery() {
+    char text[32]{};
+    if (getParam("saved", text, sizeof(text))) {
+        Esp32BaseWeb::sendChunk("<p class='ok'>已保存。</p>");
+        return;
+    }
+    if (getParam("reset", text, sizeof(text))) {
+        Esp32BaseWeb::sendChunk("<p class='ok'>已重置。</p>");
+        return;
+    }
+    if (!getParam("error", text, sizeof(text))) {
+        return;
+    }
+    const char* message = "操作失败，请检查输入后重试。";
+    if (std::strcmp(text, "busy") == 0) {
+        message = "设备正在出水或显示结果，请回到待机后再保存。";
+    } else if (std::strcmp(text, "invalid_index") == 0) {
+        message = "编号无效，请返回列表重新选择。";
+    } else if (std::strcmp(text, "invalid_value") == 0) {
+        message = "数值超出允许范围，请按页面提示填写。";
+    } else if (std::strcmp(text, "invalid_date") == 0) {
+        message = "日期格式无效，请重新选择日期。";
+    } else if (std::strcmp(text, "save_failed") == 0) {
+        message = "保存失败，请稍后重试。";
+    }
+    Esp32BaseWeb::sendChunk("<p class='err'>");
+    Esp32BaseWeb::sendChunk(message);
+    Esp32BaseWeb::sendChunk("</p>");
+}
+
 void sendAppStyles() {
     Esp32BaseWeb::sendChunk("<style>"
                             "body{background:#f4f7f6;color:#202428;max-width:1080px;padding:10px 14px 14px;line-height:1.45;font-size:14px}"
@@ -163,7 +209,7 @@ void sendAppStyles() {
                             "nav a.active{background:#e9f3ef;color:#226b5f}"
                             "a,button,input[type=submit],input[type=button]{border-radius:4px;box-shadow:none}"
                             "a{background:transparent;color:#2d6f7a;padding:0;margin:0;text-decoration:none}"
-                            "button,input[type=submit],input[type=button]{background:#2f6f73;border:1px solid #2f6f73;color:#fff;cursor:pointer}"
+                            "button,input[type=submit],input[type=button]{display:inline-flex;align-items:center;justify-content:center;min-height:34px;padding:0 14px;background:#2f6f73;border:1px solid #2f6f73;color:#fff;cursor:pointer;font-size:.92rem;line-height:1.2;box-sizing:border-box;vertical-align:middle}"
                             ".faucet-actions{display:flex;flex-wrap:wrap;gap:5px;margin:0 0 10px}"
                             ".faucet-actions a{display:inline-flex;align-items:center;min-height:28px;line-height:1.2;margin:0;white-space:nowrap}"
                             "input:not([type]),input[type=text],input[type=password],input[type=number],input[type=email],input[type=url],input[type=tel],input[type=search],input[type=date],select{width:100%;height:30px;padding:4px 8px;margin:0;border:1px solid #d7dde2;border-radius:4px;box-sizing:border-box;background:#fbfcfc;color:#202428;font-size:.94rem}"
@@ -173,6 +219,8 @@ void sendAppStyles() {
                             ".panel-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:7px;padding-bottom:6px;border-bottom:1px solid #edf0f2}"
                             ".panel-head h3{padding:0;margin:0;border:0}"
                             ".grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:7px 10px}"
+                            ".form-grid{display:grid;grid-template-columns:repeat(12,1fr);gap:9px 12px;align-items:start}"
+                            ".span-2{grid-column:span 2}.span-3{grid-column:span 3}.span-4{grid-column:span 4}.span-5{grid-column:span 5}.span-6{grid-column:span 6}.span-8{grid-column:span 8}.span-12{grid-column:1/-1}"
                             ".field{display:block;margin:0}"
                             ".field span{display:block;font-size:.82em;color:#56616b;margin-bottom:3px}"
                             ".field input{margin:0}"
@@ -183,6 +231,11 @@ void sendAppStyles() {
                             ".metric-card{background:#fff;border:1px solid #e1e7e5;border-radius:8px;padding:7px 9px;box-shadow:0 1px 2px rgba(21,35,34,.04)}"
                             ".metric-card span{display:block;color:#69727a;font-size:.8rem;margin-bottom:2px}"
                             ".metric-card strong{display:block;color:#202428;font-size:.94rem;line-height:1.3}"
+                            ".stats-layout{display:grid;grid-template-columns:minmax(0,1fr) minmax(240px,.75fr);gap:10px;align-items:start}"
+                            ".stat-bars{background:#fff;border:1px solid #e1e7e5;border-radius:8px;padding:10px;box-shadow:0 1px 2px rgba(21,35,34,.04)}"
+                            ".stat-bar{margin:0 0 10px}.stat-bar:last-child{margin-bottom:0}"
+                            ".stat-bar-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:4px;color:#56616b;font-size:.86rem}"
+                            ".stat-bar-head strong{color:#202428}"
                             ".filter-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px;margin:0 0 10px}"
                             ".filter-card{background:#fff;border:1px solid #e1e7e5;border-radius:8px;padding:8px 10px;box-shadow:0 1px 2px rgba(21,35,34,.04)}"
                             ".filter-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px}"
@@ -194,20 +247,27 @@ void sendAppStyles() {
                             ".check-title{display:block;font-size:.82em;color:#56616b;margin-bottom:3px}"
                             ".check-line{display:inline-flex;align-items:center;gap:6px;min-height:28px;padding:0 8px;border:1px solid #d7dde2;border-radius:4px;background:#fff;box-sizing:border-box;color:#202428;font-size:.92rem;white-space:nowrap}"
                             ".check-line input[type=checkbox]{margin:0;flex:0 0 auto}"
-                            ".form-actions{display:flex;align-items:center;justify-content:flex-start;gap:6px;margin-top:6px;flex-wrap:wrap}"
+                            ".form-actions{display:flex;align-items:center;justify-content:flex-start;gap:6px;margin-top:8px;flex-wrap:wrap}"
                             ".form-actions form{margin:0}"
-                            "form input[type=submit]{min-height:28px;padding:4px 12px;margin:0;font-size:.9rem;line-height:1.2}"
-                            ".form-actions a{display:inline-flex;align-items:center;min-height:28px;padding:0 10px;border:1px solid #d7dde2;border-radius:4px;background:#f7f9fa;color:#355e66;font-size:.9rem;line-height:1.2}"
+                            "form input[type=submit]{min-height:34px;padding:0 14px;margin:0;font-size:.92rem;line-height:1.2}"
+                            ".form-actions a,.btn-link{display:inline-flex;align-items:center;justify-content:center;min-height:34px;padding:0 12px;border:1px solid #d7dde2;border-radius:4px;background:#f7f9fa;color:#355e66;font-size:.92rem;line-height:1.2;box-sizing:border-box}"
                             ".form-actions input.secondary{background:#f7f9fa;border-color:#d7dde2;color:#4c565d}"
                             ".compact-table td,.compact-table th{padding:6px 8px}"
+                            ".filters-table th:first-child{width:22%}.filters-table th:last-child{width:150px}"
                             ".row-actions{display:flex;gap:5px;align-items:center;justify-content:flex-start;flex-wrap:wrap}"
-                            ".row-actions a{display:inline-flex;align-items:center;min-height:26px;padding:0 9px;border:1px solid #d7dde2;border-radius:4px;background:#f7f9fa;color:#355e66;font-size:.86rem}"
+                            ".row-actions a,.row-actions input[type=submit]{display:inline-flex;align-items:center;justify-content:center;min-width:48px;min-height:30px;padding:0 10px;border:1px solid #d7dde2;border-radius:4px;background:#f7f9fa;color:#355e66;font-size:.86rem;box-sizing:border-box}"
                             "table{width:100%;border-collapse:collapse;margin:0 0 10px;background:#fff;border:1px solid #e1e7e5;border-radius:8px;overflow:hidden;font-size:.92rem;box-shadow:0 1px 2px rgba(21,35,34,.04)}"
                             "td,th{padding:5px 8px;border-bottom:1px solid #edf0f2;text-align:left;vertical-align:middle}"
                             "th{background:#fafafa;color:#56616b}"
                             "tr:last-child td{border-bottom:0}"
                             "td .form-actions{margin-top:0;gap:5px;flex-wrap:nowrap}"
-                            "td .form-actions a,td .form-actions input[type=submit]{min-height:26px;padding:3px 9px;font-size:.86rem}"
+                            "td .form-actions a,td .form-actions input[type=submit]{min-height:30px;padding:0 10px;font-size:.86rem}"
+                            ".pager{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin:0 0 8px}"
+                            ".pager-links{display:flex;align-items:center;gap:5px;flex-wrap:wrap}"
+                            ".page-link,.page-current{display:inline-flex;align-items:center;justify-content:center;min-height:30px;padding:0 10px;border:1px solid #d7dde2;border-radius:4px;background:#fff;color:#355e66;font-size:.88rem;box-sizing:border-box}"
+                            ".page-current{background:#e9f3ef;color:#226b5f;border-color:#cfe4dc}"
+                            ".page-disabled{color:#9aa3aa;background:#f4f6f6;pointer-events:none}"
+                            ".page-size{display:flex;align-items:center;gap:6px;color:#56616b;font-size:.86rem}.page-size select{width:auto;min-width:80px}"
                             ".kv{margin:0 0 10px;background:#fff;border:1px solid #e1e7e5;border-radius:8px;box-shadow:0 1px 2px rgba(21,35,34,.04);overflow:hidden}"
                             ".kv th,.kv td{padding:5px 8px;border-bottom:1px solid #edf0f2}.kv th{width:26%;color:#56616b;background:#fbfcfc}"
                             "form[action^='/esp32base'],#f,details,pre{background:#fff;border:1px solid #e1e7e5;border-radius:8px;padding:8px 10px;margin:0 0 8px;box-shadow:0 1px 2px rgba(21,35,34,.04)}"
@@ -218,7 +278,8 @@ void sendAppStyles() {
                             "body>h3+p+form[action^='/esp32base/tools']{border-top:0;border-radius:0 0 8px 8px;margin-top:0}"
                             ".ok,.err{display:block;background:#fff;border:1px solid #e1e7e5;border-radius:8px;padding:6px 10px;margin:0 0 8px;box-shadow:0 1px 2px rgba(21,35,34,.04)}"
                             ".footerbar{margin-top:10px;padding:6px 10px;background:#fff;border:1px solid #e1e7e5;border-radius:8px;box-shadow:0 1px 2px rgba(21,35,34,.04)}"
-                            "@media(max-width:520px){body{padding:8px 10px 12px}nav{padding:8px 10px}.grid,.metric-grid,.filter-cards{grid-template-columns:1fr}.panel{padding:8px}.form-actions{gap:5px}.kv th{width:34%}}"
+                            "@media(max-width:720px){.stats-layout{grid-template-columns:1fr}.form-grid{grid-template-columns:1fr}.span-2,.span-3,.span-4,.span-5,.span-6,.span-8,.span-12{grid-column:1/-1}}"
+                            "@media(max-width:520px){body{padding:8px 10px 12px}nav{padding:8px 10px}.grid,.metric-grid,.filter-cards{grid-template-columns:1fr}.panel{padding:8px}.form-actions{gap:5px}.kv th{width:34%}.pager{align-items:flex-start}.page-size{width:100%}}"
                             "</style>");
 }
 
@@ -409,30 +470,48 @@ void handlePresetsPage() {
     }
     if (editIndex < kPresetCount) {
         const PresetConfig& preset = g_context.config->presets[editIndex];
+        const bool timePreset = preset.type == PresetType::Time;
         sendFmt("<h2>预设 %u</h2><section class='panel'>"
                 "<form method='post' action='/api/faucet/presets' onsubmit='return once(this)'>"
                 "<input type='hidden' name='index' value='%u'><input type='hidden' name='return' value='/faucet/presets'>"
-                "<div class='grid'>",
+                "<div class='form-grid'>",
                 static_cast<unsigned>(editIndex + 1),
                 static_cast<unsigned>(editIndex));
+        sendNoticeFromQuery();
+        Esp32BaseWeb::sendChunk("<div class='span-2'>");
         sendCheckbox("启用", "enabled", preset.enabled);
-        Esp32BaseWeb::sendChunk("<label class='field'><span>名称</span><input name='name' maxlength='15' value='");
+        Esp32BaseWeb::sendChunk("</div><label class='field span-5'><span>名称</span><input name='name' maxlength='15' value='");
         sendHtmlAttrEscaped(preset.name);
-        Esp32BaseWeb::sendChunk("'><small class='hint'>最多 15 个字符</small></label><label class='field'><span>类型</span><select name='type'>");
+        Esp32BaseWeb::sendChunk("'><small class='hint'>最多 15 个字符</small></label><label class='field span-2'><span>类型</span><select id='presetType' name='type' onchange='presetTypeChanged()'>");
         sendFmt("<option value='volume'%s>容量</option>", preset.type == PresetType::Volume ? " selected" : "");
         sendFmt("<option value='time'%s>时间</option>", preset.type == PresetType::Time ? " selected" : "");
         Esp32BaseWeb::sendChunk("</select></label>");
-        if (preset.type == PresetType::Volume) {
-            sendVolumeInput("数值（ml）", "value", preset.value);
-        } else {
-            sendTextInput("数值（秒）", "value", preset.value);
-        }
+        Esp32BaseWeb::sendChunk("<label class='field span-3'><span id='presetValueLabel'>");
+        Esp32BaseWeb::sendChunk(timePreset ? "时长（秒）" : "出水量（ml）");
+        sendFmt("</span><input id='presetValue' name='value' type='number' min='%lu' max='%lu' step='%lu' value='%lu'>",
+                static_cast<unsigned long>(timePreset ? kMinTimePresetSec : kMinVolumePresetMl),
+                static_cast<unsigned long>(timePreset ? kMaxTimePresetSec : kMaxVolumePresetMl),
+                static_cast<unsigned long>(timePreset ? 1UL : 100UL),
+                static_cast<unsigned long>(preset.value));
+        Esp32BaseWeb::sendChunk("<small id='presetValueHint' class='hint'>");
+        Esp32BaseWeb::sendChunk(timePreset ? "按秒计时，到时自动关阀" : "按毫升计量，到量自动关阀");
+        Esp32BaseWeb::sendChunk("</small></label>");
         Esp32BaseWeb::sendChunk("</div><div class='form-actions'><input type='submit' value='保存'>"
-                                "<a href='/faucet/presets'>取消</a></div></form></section>");
+                                "<a href='/faucet/presets'>取消</a></div></form></section>"
+                                "<script>"
+                                "function presetTypeChanged(){"
+                                "var t=document.getElementById('presetType').value;"
+                                "var v=document.getElementById('presetValue');"
+                                "document.getElementById('presetValueLabel').textContent=t=='time'?'时长（秒）':'出水量（ml）';"
+                                "document.getElementById('presetValueHint').textContent=t=='time'?'按秒计时，到时自动关阀':'按毫升计量，到量自动关阀';"
+                                "v.min=t=='time'?'5':'100';v.max=t=='time'?'1800':'20000';v.step=t=='time'?'1':'100';"
+                                "}"
+                                "</script>");
         sendPageEnd();
         return;
     }
 
+    sendNoticeFromQuery();
     Esp32BaseWeb::sendChunk("<h2>预设</h2><table class='compact-table'><tr>"
                             "<th>序号</th><th>名称</th><th>类型</th><th>数值</th><th>状态</th><th>操作</th></tr>");
     for (std::size_t i = 0; i < kPresetCount; ++i) {
@@ -465,17 +544,38 @@ void handleStatsPage() {
         return;
     }
     const StatisticsRecord& stats = g_context.app->snapshot().statistics;
-    Esp32BaseWeb::sendChunk("<h2>统计</h2><table>");
-    Esp32BaseWeb::sendChunk("<tr><td>今日</td><td>");
-    sendLiters(stats.todayMl);
-    Esp32BaseWeb::sendChunk("</td></tr><tr><td>本周</td><td>");
-    sendLiters(stats.weekMl);
-    Esp32BaseWeb::sendChunk("</td></tr><tr><td>本月</td><td>");
-    sendLiters(stats.monthMl);
-    Esp32BaseWeb::sendChunk("</td></tr><tr><td>总累计</td><td>");
-    sendLiters(stats.totalMl);
-    Esp32BaseWeb::sendChunk("</td></tr>");
-    Esp32BaseWeb::sendChunk("</table>");
+    char today[24]{};
+    char week[24]{};
+    char month[24]{};
+    char total[24]{};
+    char weekAvg[24]{};
+    char monthAvg[24]{};
+    formatLiters(stats.todayMl, today, sizeof(today));
+    formatLiters(stats.weekMl, week, sizeof(week));
+    formatLiters(stats.monthMl, month, sizeof(month));
+    formatLiters(stats.totalMl, total, sizeof(total));
+    formatLiters((stats.weekMl + 3UL) / 7UL, weekAvg, sizeof(weekAvg));
+    formatLiters((stats.monthMl + 14UL) / 30UL, monthAvg, sizeof(monthAvg));
+    const std::uint32_t maxPeriod = stats.monthMl > stats.weekMl ? stats.monthMl : stats.weekMl;
+    Esp32BaseWeb::sendChunk("<h2>统计</h2><div class='stats-layout'><div><div class='metric-grid'>");
+    sendMetricCard("今日", today);
+    sendMetricCard("本周", week);
+    sendMetricCard("本月", month);
+    sendMetricCard("总累计", total);
+    Esp32BaseWeb::sendChunk("</div><div class='metric-grid'>");
+    sendMetricCard("本周日均", weekAvg);
+    sendMetricCard("本月日均", monthAvg);
+    char todayWeek[16]{};
+    char weekMonth[16]{};
+    std::snprintf(todayWeek, sizeof(todayWeek), "%lu%%", static_cast<unsigned long>(percentOf(stats.todayMl, stats.weekMl)));
+    std::snprintf(weekMonth, sizeof(weekMonth), "%lu%%", static_cast<unsigned long>(percentOf(stats.weekMl, stats.monthMl)));
+    sendMetricCard("今日占本周", todayWeek);
+    sendMetricCard("本周占本月", weekMonth);
+    Esp32BaseWeb::sendChunk("</div></div><section class='stat-bars'><h3>周期对比</h3>");
+    sendStatBar("今日", today, percentOf(stats.todayMl, maxPeriod));
+    sendStatBar("本周", week, percentOf(stats.weekMl, maxPeriod));
+    sendStatBar("本月", month, percentOf(stats.monthMl, maxPeriod));
+    Esp32BaseWeb::sendChunk("</section></div>");
     sendPageEnd();
 }
 
@@ -505,10 +605,33 @@ void handleLogsPage() {
         page = maxPage;
     }
     const std::size_t count = ready ? g_context.logs->readPage(page, pageSize, records, pageSize) : 0;
-    Esp32BaseWeb::sendChunk("<h2>记录</h2><form method='get' action='/faucet/logs'><div class='grid'>");
-    sendFmt("<label class='field'><span>页码</span><input name='page' value='%lu'></label>",
-            static_cast<unsigned long>(page));
-    Esp32BaseWeb::sendChunk("<label class='field'><span>每页条数</span><select name='pageSize'>");
+    Esp32BaseWeb::sendChunk("<h2>记录</h2><div class='pager'><div class='pager-links'>");
+    const bool hasPrev = ready && total > 0 && page > 0;
+    const bool hasNext = ready && total > 0 && page < maxPage;
+    if (hasPrev) {
+        sendFmt("<a class='page-link' href='/faucet/logs?page=0&pageSize=%u'>首页</a>"
+                "<a class='page-link' href='/faucet/logs?page=%lu&pageSize=%u'>上一页</a>",
+                static_cast<unsigned>(pageSize),
+                static_cast<unsigned long>(page - 1),
+                static_cast<unsigned>(pageSize));
+    } else {
+        Esp32BaseWeb::sendChunk("<span class='page-link page-disabled'>首页</span><span class='page-link page-disabled'>上一页</span>");
+    }
+    sendFmt("<span class='page-current'>第 %lu / %lu 页</span>",
+            static_cast<unsigned long>(page + 1),
+            static_cast<unsigned long>(maxPage + 1));
+    if (hasNext) {
+        sendFmt("<a class='page-link' href='/faucet/logs?page=%lu&pageSize=%u'>下一页</a>"
+                "<a class='page-link' href='/faucet/logs?page=%lu&pageSize=%u'>末页</a>",
+                static_cast<unsigned long>(page + 1),
+                static_cast<unsigned>(pageSize),
+                static_cast<unsigned long>(maxPage),
+                static_cast<unsigned>(pageSize));
+    } else {
+        Esp32BaseWeb::sendChunk("<span class='page-link page-disabled'>下一页</span><span class='page-link page-disabled'>末页</span>");
+    }
+    sendFmt("</div><form class='page-size' method='get' action='/faucet/logs'>"
+            "<input type='hidden' name='page' value='0'><span>每页</span><select name='pageSize' onchange='this.form.submit()'>");
     constexpr std::uint16_t sizes[] = {20, 30, 50, 100, 200};
     for (std::uint16_t size : sizes) {
         sendFmt("<option value='%u'%s>%u</option>",
@@ -516,23 +639,14 @@ void handleLogsPage() {
                 pageSize == size ? " selected" : "",
                 static_cast<unsigned>(size));
     }
-    Esp32BaseWeb::sendChunk("</select></label></div><div class='form-actions'><input type='submit' value='查看'>");
-    sendFmt("<a href='/faucet/logs?page=0&pageSize=%u'>首页</a>", static_cast<unsigned>(pageSize));
-    if (page > 0) {
-        sendFmt("<a href='/faucet/logs?page=%lu&pageSize=%u'>上一页</a>",
-                static_cast<unsigned long>(page - 1),
-                static_cast<unsigned>(pageSize));
-    }
-    if (page < maxPage) {
-        sendFmt("<a href='/faucet/logs?page=%lu&pageSize=%u'>下一页</a>",
-                static_cast<unsigned long>(page + 1),
-                static_cast<unsigned>(pageSize));
-    }
-    sendFmt("</div><small class='hint'>第 %lu / %lu 页，共 %lu 条</small></form>"
-            "<table><tr><th>时间</th><th>出水量</th><th>时长</th><th>模式</th><th>结果</th></tr>",
-            static_cast<unsigned long>(page + 1),
-            static_cast<unsigned long>(maxPage + 1),
+    sendFmt("</select><span>条</span></form></div><p class='hint'>共 %lu 条记录</p>",
             static_cast<unsigned long>(total));
+    if (!ready) {
+        Esp32BaseWeb::sendChunk("<p class='err'>记录存储不可用。</p>");
+    } else if (total == 0) {
+        Esp32BaseWeb::sendChunk("<p class='ok'>暂无出水记录。</p>");
+    }
+    Esp32BaseWeb::sendChunk("<table><tr><th>时间</th><th>出水量</th><th>时长</th><th>模式</th><th>结果</th></tr>");
     for (std::size_t i = 0; i < count; ++i) {
         sendFmt("<tr><td>%lu</td><td>", static_cast<unsigned long>(records[i].startTime));
         sendLiters(records[i].volumeMl);
@@ -542,9 +656,6 @@ void handleLogsPage() {
                 resultText(records[i].result));
     }
     Esp32BaseWeb::sendChunk("</table>");
-    if (!ready) {
-        Esp32BaseWeb::sendChunk("<p>记录存储不可用。</p>");
-    }
     sendPageEnd();
 }
 
@@ -557,7 +668,8 @@ void handleFiltersPage() {
         return;
     }
     const std::uint32_t now = g_context.nowSeconds();
-    Esp32BaseWeb::sendChunk("<h2>滤芯</h2><table><tr><th>名称</th><th>启用</th><th>已用天数</th><th>已用流量</th><th>寿命</th><th>状态</th><th>操作</th></tr>");
+    sendNoticeFromQuery();
+    Esp32BaseWeb::sendChunk("<h2>滤芯</h2><table class='filters-table'><tr><th>名称</th><th>启用</th><th>已用天数</th><th>已用流量</th><th>寿命</th><th>状态</th><th>操作</th></tr>");
     for (std::size_t i = 0; i < kFilterCount; ++i) {
         const FilterRecord& filter = g_context.filters->record(i);
         const std::uint32_t usedDays = filter.startTime >= kMinFilterDateSeconds ? g_context.filters->usedDays(i, now) : 0;
@@ -576,7 +688,7 @@ void handleFiltersPage() {
         } else {
             Esp32BaseWeb::sendChunk("未设置流量");
         }
-        sendFmt("</td><td>%s</td><td><div class='form-actions'><a href='/faucet/filters/edit?index=%u'>设置</a>",
+        sendFmt("</td><td><span class='status-pill'>%s</span></td><td><div class='row-actions'><a href='/faucet/filters/edit?index=%u'>设置</a>",
                 filterDisplayStatusText(filter, usedDays),
                 static_cast<unsigned>(i));
         Esp32BaseWeb::sendChunk("<form method='post' action='/api/faucet/filters/reset' "
@@ -607,19 +719,29 @@ void handleFilterEditPage() {
     }
 
     const FilterRecord& filter = g_context.filters->record(index);
+    sendNoticeFromQuery();
     sendFmt("<h2>第 %u 级滤芯设置</h2>"
             "<section class='panel'><form method='post' action='/api/faucet/filters' onsubmit='return once(this)'>"
-            "<input type='hidden' name='index' value='%u'><div class='grid'>",
+            "<input type='hidden' name='index' value='%u'><div class='form-grid'>",
             static_cast<unsigned>(index + 1),
             static_cast<unsigned>(index));
+    Esp32BaseWeb::sendChunk("<div class='span-2'>");
     sendCheckbox("启用", "enabled", filter.enabled);
-    Esp32BaseWeb::sendChunk("<label class='field'><span>名称</span><input name='name' maxlength='15' value='");
+    Esp32BaseWeb::sendChunk("</div><label class='field span-6'><span>名称</span><input name='name' maxlength='");
+    sendFmt("%u", static_cast<unsigned>(kFilterNameMaxChars));
+    Esp32BaseWeb::sendChunk("' value='");
     sendHtmlAttrEscaped(filter.name);
-    Esp32BaseWeb::sendChunk("'><small class='hint'>最多 15 个字符</small></label>");
+    Esp32BaseWeb::sendChunk("'><small class='hint'>最多 30 个字符，用于列表和状态页显示</small></label>"
+                            "<div class='span-4'></div>");
+    Esp32BaseWeb::sendChunk("<div class='span-3'>");
     sendMonthInput("建议更换周期（月）", "recommendMonths", filter.recommendDays);
+    Esp32BaseWeb::sendChunk("</div><div class='span-3'>");
     sendMonthInput("最长使用周期（月）", "maxMonths", filter.maxDays);
+    Esp32BaseWeb::sendChunk("</div><div class='span-3'>");
     sendVolumeInput("寿命流量（ml）", "lifeMl", filter.lifeMl);
+    Esp32BaseWeb::sendChunk("<small class='hint'>0 表示不按流量判断</small></div><div class='span-3'>");
     sendDateInput("上次更换日期", "startDate", filter.startTime);
+    Esp32BaseWeb::sendChunk("</div>");
     Esp32BaseWeb::sendChunk("</div><div class='form-actions'><input type='submit' value='保存'>"
                             "<a href='/faucet/filters'>取消</a></div></form></section>");
     sendPageEnd();
@@ -738,13 +860,22 @@ void handlePresetsApi() {
         return;
     }
     if (Esp32BaseWeb::isMethod(Esp32BaseWeb::METHOD_POST)) {
+        const bool browserForm = Esp32BaseWeb::hasParam("return");
         if (!g_context.app->canApplyConfig()) {
+            if (browserForm) {
+                Esp32BaseWeb::redirectSeeOther("/faucet/presets?error=busy");
+                return;
+            }
             Esp32BaseWeb::sendJson(409, "{\"error\":\"busy\",\"restartRecommended\":true}");
             return;
         }
         char text[24]{};
         std::uint32_t index = 0;
         if (!getParam("index", text, sizeof(text)) || !parseU32(text, index) || index >= kPresetCount) {
+            if (browserForm) {
+                Esp32BaseWeb::redirectSeeOther("/faucet/presets?error=invalid_index");
+                return;
+            }
             Esp32BaseWeb::sendJson(400, "{\"error\":\"invalid_index\"}");
             return;
         }
@@ -755,11 +886,27 @@ void handlePresetsApi() {
             preset.type = std::strcmp(text, "time") == 0 ? PresetType::Time : PresetType::Volume;
         }
         std::uint32_t value = 0;
-        if (getParam("value", text, sizeof(text)) && parseU32(text, value)) {
-            preset.value = value;
+        const bool validValue = getParam("value", text, sizeof(text)) && parseU32(text, value) &&
+                                ((preset.type == PresetType::Time && value >= kMinTimePresetSec &&
+                                  value <= kMaxTimePresetSec) ||
+                                 (preset.type == PresetType::Volume && value >= kMinVolumePresetMl &&
+                                  value <= kMaxVolumePresetMl));
+        if (!validValue) {
+            if (browserForm) {
+                char location[80]{};
+                std::snprintf(location,
+                              sizeof(location),
+                              "/faucet/presets?index=%lu&error=invalid_value",
+                              static_cast<unsigned long>(index));
+                Esp32BaseWeb::redirectSeeOther(location);
+                return;
+            }
+            Esp32BaseWeb::sendJson(400, "{\"error\":\"invalid_value\"}");
+            return;
         }
+        preset.value = value;
         Esp32BaseWeb::getParam("name", preset.name, sizeof(preset.name));
-        if (Esp32BaseWeb::hasParam("return")) {
+        if (browserForm) {
             const bool ok = persistConfig(candidate);
             Esp32BaseWeb::redirectSeeOther(ok ? "/faucet/presets?saved=1" : "/faucet/presets?error=save_failed");
         } else {
@@ -827,13 +974,13 @@ void handleFiltersApi() {
     }
     if (Esp32BaseWeb::isMethod(Esp32BaseWeb::METHOD_POST)) {
         if (!g_context.app->canApplyConfig()) {
-            Esp32BaseWeb::sendJson(409, "{\"error\":\"busy\",\"restartRecommended\":true}");
+            Esp32BaseWeb::redirectSeeOther("/faucet/filters?error=busy");
             return;
         }
         char text[24]{};
         std::uint32_t index = 0;
         if (!getParam("index", text, sizeof(text)) || !parseU32(text, index) || index >= kFilterCount) {
-            Esp32BaseWeb::sendJson(400, "{\"error\":\"invalid_index\"}");
+            Esp32BaseWeb::redirectSeeOther("/faucet/filters?error=invalid_index");
             return;
         }
 
@@ -850,17 +997,22 @@ void handleFiltersApi() {
         }
         applyU32Param("lifeMl", record.lifeMl);
         if (getParam("startDate", text, sizeof(text)) && !parseDate(text, record.startTime)) {
-            Esp32BaseWeb::sendJson(400, "{\"error\":\"invalid_date\"}");
+            char location[80]{};
+            std::snprintf(location,
+                          sizeof(location),
+                          "/faucet/filters/edit?index=%lu&error=invalid_date",
+                          static_cast<unsigned long>(index));
+            Esp32BaseWeb::redirectSeeOther(location);
             return;
         }
-        record.name[kNameLength - 1] = '\0';
+        record.name[kFilterNameLength - 1] = '\0';
 
         candidate.filters[index] = record;
         const bool ok = persistFilterConfig(candidate, index);
         Esp32BaseWeb::redirectSeeOther(ok ? "/faucet/filters?saved=1" : "/faucet/filters?error=save_failed");
         return;
     }
-    char json[1024]{};
+    char json[1536]{};
     sendJsonBuffer(writeFiltersJson(g_context.filters->records(), json, sizeof(json)), json);
 }
 

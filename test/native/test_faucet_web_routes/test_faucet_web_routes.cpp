@@ -98,6 +98,38 @@ void test_web_page_source_has_no_remote_water_control_forms() {
     TEST_ASSERT_NULL(std::strstr(buffer, "href=\"/api/faucet/stop\""));
 }
 
+void test_web_page_source_contains_expected_ui_improvements() {
+    FILE* file = std::fopen("src/web/FaucetWeb.cpp", "rb");
+    TEST_ASSERT_NOT_NULL(file);
+    static char buffer[80000]{};
+    const std::size_t read = std::fread(buffer, 1, sizeof(buffer) - 1, file);
+    std::fclose(file);
+    TEST_ASSERT_GREATER_THAN_size_t(0, read);
+
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "presetTypeChanged"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "type='hidden' name='return' value='/faucet/presets'"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "page-current"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "末页"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "filters-table"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "stat-bars"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "今日占本周"));
+}
+
+void test_app_config_source_uses_clear_business_labels_and_help() {
+    FILE* file = std::fopen("src/app/FaucetAppConfig.cpp", "rb");
+    TEST_ASSERT_NOT_NULL(file);
+    static char buffer[24000]{};
+    const std::size_t read = std::fread(buffer, 1, sizeof(buffer) - 1, file);
+    std::fclose(file);
+    TEST_ASSERT_GREATER_THAN_size_t(0, read);
+
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "出水系统参数"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "确认页超时"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "最大出水时长"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "无流量判定超时"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "保存后需重启，重启后重新探测 LCD。"));
+}
+
 int main(int argc, char** argv) {
     (void)argc;
     (void)argv;
@@ -110,5 +142,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_filter_edit_route_is_hidden_from_navigation);
     RUN_TEST(test_presets_page_is_available_in_navigation);
     RUN_TEST(test_web_page_source_has_no_remote_water_control_forms);
+    RUN_TEST(test_web_page_source_contains_expected_ui_improvements);
+    RUN_TEST(test_app_config_source_uses_clear_business_labels_and_help);
     return UNITY_END();
 }

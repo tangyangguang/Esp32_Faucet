@@ -11,7 +11,7 @@ namespace {
 constexpr const char* kConfigNs = "faucet_cfg";
 constexpr const char* kStatNs = "faucet_stat";
 constexpr const char* kRunNs = "faucet_run";
-constexpr std::int32_t kConfigVersion = 3;
+constexpr std::int32_t kConfigVersion = 4;
 constexpr std::int32_t kRuntimeVersion = 1;
 
 std::int32_t toInt(std::uint32_t value) {
@@ -81,8 +81,18 @@ void loadCommonSystemConfig(ConfigBackend& backend, SystemConfig& config) {
     config.valveFullPowerSec =
         static_cast<std::uint32_t>(backend.getInt(kConfigNs, "valve_s", toInt(config.valveFullPowerSec)));
     config.valveHoldDutyPercent = static_cast<std::uint8_t>(backend.getInt(kConfigNs, "hold_pct", config.valveHoldDutyPercent));
-    config.oledSleepSec = static_cast<std::uint32_t>(backend.getInt(kConfigNs, "oled_s", toInt(config.oledSleepSec)));
+    config.displaySleepSec =
+        static_cast<std::uint32_t>(backend.getInt(kConfigNs, "disp_s", toInt(config.displaySleepSec)));
+    config.resultDisplaySec =
+        static_cast<std::uint32_t>(backend.getInt(kConfigNs, "result_s", toInt(config.resultDisplaySec)));
+    config.lcdI2cAddress =
+        static_cast<std::uint8_t>(backend.getInt(kConfigNs, "lcd_addr", config.lcdI2cAddress));
     config.beepEnabled = backend.getBool(kConfigNs, "beep", config.beepEnabled);
+}
+
+void loadLegacyDisplayConfig(ConfigBackend& backend, SystemConfig& config) {
+    config.displaySleepSec =
+        static_cast<std::uint32_t>(backend.getInt(kConfigNs, "oled_s", toInt(config.displaySleepSec)));
 }
 
 void loadLegacyCalibrationTarget(ConfigBackend& backend, SystemConfig& config) {
@@ -183,6 +193,9 @@ SystemConfig ConfigStore::loadSystemConfig() {
     }
 
     loadCommonSystemConfig(backend_, config);
+    if (version < 4) {
+        loadLegacyDisplayConfig(backend_, config);
+    }
     if (version < 3) {
         loadLegacyCalibrationTarget(backend_, config);
     } else {
@@ -227,7 +240,9 @@ bool ConfigStore::saveSystemConfig(const SystemConfig& config) {
     }
     ok = okAll(ok, backend_.setInt(kConfigNs, "valve_s", toInt(safe.valveFullPowerSec)));
     ok = okAll(ok, backend_.setInt(kConfigNs, "hold_pct", safe.valveHoldDutyPercent));
-    ok = okAll(ok, backend_.setInt(kConfigNs, "oled_s", toInt(safe.oledSleepSec)));
+    ok = okAll(ok, backend_.setInt(kConfigNs, "disp_s", toInt(safe.displaySleepSec)));
+    ok = okAll(ok, backend_.setInt(kConfigNs, "result_s", toInt(safe.resultDisplaySec)));
+    ok = okAll(ok, backend_.setInt(kConfigNs, "lcd_addr", safe.lcdI2cAddress));
     ok = okAll(ok, backend_.setBool(kConfigNs, "beep", safe.beepEnabled));
 
     for (std::size_t i = 0; i < kPresetCount; ++i) {

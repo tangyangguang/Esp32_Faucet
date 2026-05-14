@@ -32,14 +32,14 @@ AppController::AppController(const SystemConfig& config,
       activeStartTimeSec_(0),
       lastValveDesiredOpen_(false),
       calibrationValveOpen_(false),
-      calibrationStartMs_(0),
       lastLogWriteOk_(true),
       persistenceDirty_(false),
       configDirty_(false),
       factoryResetRequested_(false),
-      factoryConfirmArmedMs_(0),
       pendingBeep_(BeepPattern::None),
-      flowDroppedPulses_(0) {
+      flowDroppedPulses_(0),
+      resultDisplayStartMs_(0),
+      adjustmentStepMl_(500) {
     sanitizeConfig(config_);
 }
 
@@ -53,17 +53,10 @@ void AppController::onFlowPulse(std::uint32_t nowUs) {
 
 void AppController::tick(const AppTickInput& input) {
     const ButtonEvent event = buttons_.update(input.buttons, input.nowMs);
-    if (localMode_ == LocalUiMode::Normal) {
-        handleButtonEvent(event, input.nowMs, input.nowSeconds);
-    } else {
-        handleCalibrationEvent(event, input.nowMs, input.nowUs);
-    }
-
-    if (localMode_ == LocalUiMode::CalibrationSampling &&
-        elapsedAtLeast(input.nowMs, calibrationStartMs_, msFromSeconds(config_.maxOutTimeSec))) {
-        calibrationValveOpen_ = false;
-        localMode_ = LocalUiMode::CalibrationRejected;
-        pendingBeep_ = BeepPattern::Error;
+    handleButtonEvent(event, input.nowMs, input.nowSeconds);
+    if (localMode_ == LocalUiMode::Result && config_.resultDisplaySec > 0 &&
+        elapsedAtLeast(input.nowMs, resultDisplayStartMs_, msFromSeconds(config_.resultDisplaySec))) {
+        localMode_ = LocalUiMode::Normal;
     }
 
     syncFlow(input.nowUs);
@@ -72,6 +65,10 @@ void AppController::tick(const AppTickInput& input) {
     syncValve(input.nowMs);
 
     if (water_.hasResult()) {
+        if (config_.resultDisplaySec > 0) {
+            localMode_ = LocalUiMode::Result;
+            resultDisplayStartMs_ = input.nowMs;
+        }
         processResult(activeStartTimeSec_, input.periodKeys);
         water_.clearResult();
     }
@@ -86,6 +83,7 @@ AppSnapshot AppController::snapshot() const {
     snapshot.statistics = statistics_.record();
     snapshot.calibration = calibration_.snapshot();
     snapshot.localMode = localMode_;
+    snapshot.adjustmentStepMl = adjustmentStepMl_;
     snapshot.flowDroppedPulses = flowDroppedPulses_;
     return snapshot;
 }
@@ -138,7 +136,7 @@ void AppController::setFlowDroppedPulses(std::uint32_t droppedPulses) {
 }
 
 bool AppController::canApplyConfig() const {
-    return localMode_ == LocalUiMode::Normal && water_.canApplyConfig();
+    return localMode_ != LocalUiMode::Result && water_.canApplyConfig();
 }
 
 bool AppController::applyConfig(const SystemConfig& config) {
@@ -155,97 +153,80 @@ bool AppController::applyConfig(const SystemConfig& config) {
 }
 
 void AppController::handleButtonEvent(ButtonEvent event, std::uint32_t nowMs, std::uint32_t nowSeconds) {
+    if (localMode_ == LocalUiMode::Result && event.type != ButtonEventType::None) {
+        if ((event.type == ButtonEventType::CancelDown || event.type == ButtonEventType::CancelShort ||
+             event.type == ButtonEventType::CancelLong) &&
+            !elapsedAtLeast(nowMs, resultDisplayStartMs_, 500UL)) {
+            return;
+        }
+        if (event.type == ButtonEventType::PlusShort || event.type == ButtonEventType::PlusLong) {
+            exitResultDisplay(nowMs);
+            if (water_.selectNextPreset()) {
+                pendingBeep_ = BeepPattern::Click;
+            }
+            return;
+        }
+        if (event.type == ButtonEventType::MinusShort || event.type == ButtonEventType::MinusLong) {
+            exitResultDisplay(nowMs);
+            if (water_.selectPreviousPreset()) {
+                pendingBeep_ = BeepPattern::Click;
+            }
+            return;
+        }
+        exitResultDisplay(nowMs);
+        pendingBeep_ = BeepPattern::Click;
+        return;
+    }
+
+    const WaterSnapshot water = water_.snapshot();
     switch (event.type) {
-        case ButtonEventType::StopDown:
-        case ButtonEventType::StopShort:
-        case ButtonEventType::StopLong:
+        case ButtonEventType::CancelDown:
+        case ButtonEventType::CancelShort:
+        case ButtonEventType::CancelLong:
             emergencyStop(nowMs);
+            if (water.state == WaterState::Confirm || water.state == WaterState::Error) {
+                water_.cancel(nowMs);
+                pendingBeep_ = BeepPattern::Click;
+            }
             break;
         case ButtonEventType::OkShort:
-            if (water_.snapshot().state == WaterState::Idle) {
+            if (water.state == WaterState::Idle || water.state == WaterState::Error) {
                 if (water_.requestStart(nowMs)) {
+                    adjustmentStepMl_ = 500;
                     pendingBeep_ = BeepPattern::Click;
                 }
-            } else if (water_.snapshot().state == WaterState::Confirm) {
-                if (water_.confirmStart(nowMs)) {
-                    activeStartTimeSec_ = nowSeconds;
-                    flow_.reset();
-                    lastFlowVolumeMl_ = 0;
-                    pendingBeep_ = BeepPattern::Click;
-                }
-            } else {
+            } else if (water.state == WaterState::Confirm) {
+                startSelectedPreset(nowMs, nowSeconds);
+            } else if (water.state == WaterState::Running || water.state == WaterState::Paused) {
                 if (water_.togglePause(nowMs)) {
                     pendingBeep_ = BeepPattern::Click;
                 }
             }
             break;
         case ButtonEventType::OkLong:
-            if (water_.snapshot().state == WaterState::Idle) {
-                enterCalibration();
+            if (water.state == WaterState::Confirm || water.state == WaterState::Paused) {
+                toggleAdjustmentStep();
                 pendingBeep_ = BeepPattern::Click;
             }
             break;
-        case ButtonEventType::NextShort:
-            if (water_.selectNextPreset()) {
-                pendingBeep_ = BeepPattern::Click;
-            }
-            break;
-        case ButtonEventType::FactoryResetCombo:
-            if (water_.snapshot().state == WaterState::Idle) {
-                localMode_ = LocalUiMode::FactoryResetConfirm;
-                factoryConfirmArmedMs_ = nowMs;
-                pendingBeep_ = BeepPattern::Error;
-            }
-            break;
-        default:
-            break;
-    }
-}
-
-void AppController::handleCalibrationEvent(ButtonEvent event, std::uint32_t nowMs, std::uint32_t nowUs) {
-    if (localMode_ == LocalUiMode::FactoryResetConfirm && !elapsedAtLeast(nowMs, factoryConfirmArmedMs_, 300UL) &&
-        event.type != ButtonEventType::None) {
-        return;
-    }
-    switch (event.type) {
-        case ButtonEventType::StopDown:
-        case ButtonEventType::StopShort:
-        case ButtonEventType::StopLong:
-            calibrationValveOpen_ = false;
-            localMode_ = LocalUiMode::Normal;
-            calibration_.reset(config_.pulsePerMl, config_.calibrationTargetsMl);
-            flow_.reset();
-            lastFlowVolumeMl_ = 0;
-            pendingBeep_ = BeepPattern::Click;
-            break;
-        case ButtonEventType::NextShort:
-        case ButtonEventType::NextLong:
-            if (localMode_ == LocalUiMode::CalibrationSelect || localMode_ == LocalUiMode::CalibrationRejected) {
-                cycleCalibrationTarget();
-                pendingBeep_ = BeepPattern::Click;
-            }
-            break;
-        case ButtonEventType::OkShort:
-            if (localMode_ == LocalUiMode::CalibrationSelect || localMode_ == LocalUiMode::CalibrationRejected) {
-                localMode_ = LocalUiMode::CalibrationConfirm;
-                pendingBeep_ = BeepPattern::Click;
-            } else if (localMode_ == LocalUiMode::CalibrationConfirm) {
-                if (calibration_.beginSampling()) {
-                    calibrationValveOpen_ = true;
-                    calibrationStartMs_ = nowMs;
-                    flow_.reset();
-                    lastFlowVolumeMl_ = 0;
-                    localMode_ = LocalUiMode::CalibrationSampling;
+        case ButtonEventType::PlusShort:
+        case ButtonEventType::PlusLong:
+            if (water.state == WaterState::Confirm || water.state == WaterState::Paused) {
+                if (water_.adjustTarget(static_cast<std::int32_t>(adjustmentStepMl_))) {
                     pendingBeep_ = BeepPattern::Click;
                 }
-            } else if (localMode_ == LocalUiMode::CalibrationSampling) {
-                finishCalibrationSample(nowUs);
-            } else if (localMode_ == LocalUiMode::CalibrationReview) {
-                saveCalibration();
-            } else if (localMode_ == LocalUiMode::FactoryResetConfirm) {
-                factoryResetRequested_ = true;
-                localMode_ = LocalUiMode::Normal;
-                pendingBeep_ = BeepPattern::Error;
+            } else if (water_.selectNextPreset()) {
+                pendingBeep_ = BeepPattern::Click;
+            }
+            break;
+        case ButtonEventType::MinusShort:
+        case ButtonEventType::MinusLong:
+            if (water.state == WaterState::Confirm || water.state == WaterState::Paused) {
+                if (water_.adjustTarget(-static_cast<std::int32_t>(adjustmentStepMl_))) {
+                    pendingBeep_ = BeepPattern::Click;
+                }
+            } else if (water_.selectPreviousPreset()) {
+                pendingBeep_ = BeepPattern::Click;
             }
             break;
         default:
@@ -253,42 +234,21 @@ void AppController::handleCalibrationEvent(ButtonEvent event, std::uint32_t nowM
     }
 }
 
-void AppController::enterCalibration() {
-    calibration_.reset(config_.pulsePerMl, config_.calibrationTargetsMl);
-    localMode_ = LocalUiMode::CalibrationSelect;
-}
-
-void AppController::cycleCalibrationTarget() {
-    const std::uint32_t current = calibration_.snapshot().targetMl;
-    const std::uint32_t next = nextEnabledCalibrationTarget(config_.calibrationTargetsMl, current);
-    calibration_.setTargetMl(next);
-    localMode_ = LocalUiMode::CalibrationSelect;
-}
-
-void AppController::finishCalibrationSample(std::uint32_t nowUs) {
-    calibrationValveOpen_ = false;
-    const FlowSnapshot snapshot = flow_.snapshot(nowUs);
-    const CalibrationSampleResult result = calibration_.finishSample(snapshot.pulseCount);
-    if (result != CalibrationSampleResult::Accepted) {
-        localMode_ = LocalUiMode::CalibrationRejected;
-        pendingBeep_ = BeepPattern::Error;
-        return;
+void AppController::startSelectedPreset(std::uint32_t nowMs, std::uint32_t nowSeconds) {
+    if (water_.confirmStart(nowMs)) {
+        activeStartTimeSec_ = nowSeconds;
+        flow_.reset();
+        lastFlowVolumeMl_ = 0;
+        pendingBeep_ = BeepPattern::Click;
     }
-    localMode_ = calibration_.canSave() ? LocalUiMode::CalibrationReview : LocalUiMode::CalibrationSelect;
-    pendingBeep_ = calibration_.canSave() ? BeepPattern::Done : BeepPattern::Click;
 }
 
-void AppController::saveCalibration() {
-    if (!calibration_.canSave()) {
-        return;
-    }
-    config_.pulsePerMl = calibration_.proposedPulsePerMl();
-    sanitizeConfig(config_);
-    flow_.setPulsePerMl(config_.pulsePerMl);
-    calibration_.reset(config_.pulsePerMl, config_.calibrationTargetsMl);
+void AppController::exitResultDisplay(std::uint32_t) {
     localMode_ = LocalUiMode::Normal;
-    configDirty_ = true;
-    pendingBeep_ = BeepPattern::Done;
+}
+
+void AppController::toggleAdjustmentStep() {
+    adjustmentStepMl_ = adjustmentStepMl_ == 500 ? 100 : 500;
 }
 
 void AppController::syncFlow(std::uint32_t nowUs) {

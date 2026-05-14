@@ -29,12 +29,7 @@ struct AppTickInput {
 
 enum class LocalUiMode : std::uint8_t {
     Normal = 0,
-    CalibrationSelect = 1,
-    CalibrationConfirm = 2,
-    CalibrationSampling = 3,
-    CalibrationReview = 4,
-    CalibrationRejected = 5,
-    FactoryResetConfirm = 6,
+    Result = 1,
 };
 
 struct AppSnapshot {
@@ -43,6 +38,7 @@ struct AppSnapshot {
     StatisticsRecord statistics;
     CalibrationSnapshot calibration;
     LocalUiMode localMode = LocalUiMode::Normal;
+    std::uint32_t adjustmentStepMl = 500;
     std::uint32_t flowDroppedPulses = 0;
 };
 
@@ -71,11 +67,9 @@ public:
 
 private:
     void handleButtonEvent(ButtonEvent event, std::uint32_t nowMs, std::uint32_t nowSeconds);
-    void handleCalibrationEvent(ButtonEvent event, std::uint32_t nowMs, std::uint32_t nowUs);
-    void enterCalibration();
-    void cycleCalibrationTarget();
-    void finishCalibrationSample(std::uint32_t nowUs);
-    void saveCalibration();
+    void startSelectedPreset(std::uint32_t nowMs, std::uint32_t nowSeconds);
+    void exitResultDisplay(std::uint32_t nowMs);
+    void toggleAdjustmentStep();
     void syncFlow(std::uint32_t nowUs);
     void syncValve(std::uint32_t nowMs);
     void processResult(std::uint32_t startTime, const PeriodKeys& periodKeys);
@@ -94,14 +88,14 @@ private:
     std::uint32_t activeStartTimeSec_;
     bool lastValveDesiredOpen_;
     bool calibrationValveOpen_;
-    std::uint32_t calibrationStartMs_;
     bool lastLogWriteOk_;
     bool persistenceDirty_;
     bool configDirty_;
     bool factoryResetRequested_;
-    std::uint32_t factoryConfirmArmedMs_;
     BeepPattern pendingBeep_;
     std::uint32_t flowDroppedPulses_;
+    std::uint32_t resultDisplayStartMs_;
+    std::uint32_t adjustmentStepMl_;
 };
 
 }  // namespace faucet

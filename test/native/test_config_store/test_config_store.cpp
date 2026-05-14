@@ -127,7 +127,7 @@ void test_config_migrates_v1_without_losing_user_values() {
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(ConfigStore::LoadStatus::MigratedLegacy),
                             static_cast<std::uint8_t>(store.lastSystemConfigLoadStatus()));
     TEST_ASSERT_FALSE(store.systemConfigReadOnly());
-    TEST_ASSERT_EQUAL_INT32(3, backend.getInt("faucet_cfg", "ver", 0));
+    TEST_ASSERT_EQUAL_INT32(4, backend.getInt("faucet_cfg", "ver", 0));
     TEST_ASSERT_EQUAL_INT32(2500, backend.getInt("faucet_cfg", "cal0_ml", 0));
     TEST_ASSERT_EQUAL_INT32(90, backend.getInt("faucet_cfg", "f0_life_min", 0));
     TEST_ASSERT_EQUAL_INT32(90, backend.getInt("faucet_cfg", "f0_life_max", 0));
@@ -163,7 +163,7 @@ void test_config_migrates_v2_filter_ranges_and_single_calibration_target() {
 
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(ConfigStore::LoadStatus::MigratedLegacy),
                             static_cast<std::uint8_t>(store.lastSystemConfigLoadStatus()));
-    TEST_ASSERT_EQUAL_INT32(3, backend.getInt("faucet_cfg", "ver", 0));
+    TEST_ASSERT_EQUAL_INT32(4, backend.getInt("faucet_cfg", "ver", 0));
     TEST_ASSERT_EQUAL_INT32(3200, backend.getInt("faucet_cfg", "cal0_ml", 0));
     TEST_ASSERT_EQUAL_INT32(7500, backend.getInt("faucet_cfg", "cal1_ml", 0));
     TEST_ASSERT_EQUAL_UINT32(3200, loaded.calibrationTargetsMl[0]);
@@ -213,6 +213,9 @@ void test_config_save_and_load_round_trips_system_config() {
     config.calibrationTargetsMl[2] = 10000;
     config.calibrationTargetsMl[3] = 0;
     config.beepEnabled = false;
+    config.displaySleepSec = 45;
+    config.resultDisplaySec = 12;
+    config.lcdI2cAddress = 0x3F;
     config.presets[2].enabled = true;
     config.presets[2].type = PresetType::Time;
     config.presets[2].value = 120;
@@ -234,6 +237,9 @@ void test_config_save_and_load_round_trips_system_config() {
     TEST_ASSERT_EQUAL_UINT32(10000, loaded.calibrationTargetsMl[2]);
     TEST_ASSERT_EQUAL_UINT32(0, loaded.calibrationTargetsMl[3]);
     TEST_ASSERT_FALSE(loaded.beepEnabled);
+    TEST_ASSERT_EQUAL_UINT32(45, loaded.displaySleepSec);
+    TEST_ASSERT_EQUAL_UINT32(12, loaded.resultDisplaySec);
+    TEST_ASSERT_EQUAL_UINT8(0x3F, loaded.lcdI2cAddress);
     TEST_ASSERT_TRUE(loaded.presets[2].enabled);
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(PresetType::Time), static_cast<std::uint8_t>(loaded.presets[2].type));
     TEST_ASSERT_EQUAL_UINT32(120, loaded.presets[2].value);

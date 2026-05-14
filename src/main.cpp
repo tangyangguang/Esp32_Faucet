@@ -7,6 +7,7 @@
 #include "app/DisplayPresenter.h"
 #include "app/Esp32BaseConfigBackend.h"
 #include "app/Esp32BaseWaterLogBackend.h"
+#include "app/FaucetAppConfig.h"
 #include "app/FilterStore.h"
 #include "app/StatisticsStore.h"
 #include "app/TimeUtils.h"
@@ -15,7 +16,7 @@
 #include "drivers/BoardPins.h"
 #include "drivers/FlowPulseReader.h"
 #include "drivers/GpioButtonReader.h"
-#include "drivers/OledDisplay.h"
+#include "drivers/Lcd1602Display.h"
 #include "drivers/PwmBeepHardware.h"
 #include "drivers/PwmValveHardware.h"
 #include "drivers/RtcClock.h"
@@ -32,8 +33,6 @@ constexpr std::size_t kRamLogCapacity = 128;
 constexpr std::size_t kWaterLogCapacity = 20000;
 constexpr const char* kWaterLogPath = "/faucet_water.bin";
 constexpr std::uint32_t kUnixSecondsAt2000 = 946684800UL;
-
-char g_hostname[17] = "water-0000";
 
 class PersistentLogWriter : public faucet::AppLogWriter, public faucet::WaterLogReader {
 public:
@@ -87,29 +86,24 @@ faucet::Esp32BaseWaterLogBackend g_waterLogBackend;
 faucet::WaterLogFileStore g_waterLogFile(g_waterLogBackend, kWaterLogPath, kWaterLogCapacity);
 PersistentLogWriter g_logs;
 faucet::AppController* g_app = nullptr;
-faucet::GpioButtonReader g_buttons(faucet::kPinButtonStop, faucet::kPinButtonOk, faucet::kPinButtonNext);
+faucet::GpioButtonReader g_buttons(faucet::kPinButtonCancel,
+                                   faucet::kPinButtonOk,
+                                   faucet::kPinButtonPlus,
+                                   faucet::kPinButtonMinus);
 faucet::FlowPulseReader g_flowPulses(faucet::kPinFlow);
 faucet::PwmValveHardware g_valveHardware(faucet::kPinValve, faucet::kLedcChannelValve);
 faucet::BeepDriver g_beep;
 faucet::PwmBeepHardware g_beepHardware(faucet::kPinBeep, faucet::kLedcChannelBeep);
 faucet::RtcClock g_rtc(faucet::kPinI2cSda, faucet::kPinI2cScl);
-faucet::OledDisplay g_oled(faucet::kPinI2cSda, faucet::kPinI2cScl);
+faucet::Lcd1602Display g_lcd(faucet::kPinI2cSda, faucet::kPinI2cScl);
 faucet::DisplayPresenter* g_display = nullptr;
 bool g_persistenceFailureLogged = false;
 std::uint32_t g_lastDisplayMs = 0;
 std::uint32_t g_lastDroppedPulsesLogged = 0;
-
-void buildDefaultHostname() {
-    const uint64_t mac = ESP.getEfuseMac();
-    const uint16_t suffix = static_cast<uint16_t>(mac & 0xFFFF);
-    snprintf(g_hostname, sizeof(g_hostname), "water-%04x", suffix);
-}
+std::uint32_t g_lastDroppedPulsesLogMs = 0;
 
 void configureBase() {
-    buildDefaultHostname();
-
     Esp32Base::setFirmwareInfo(kFirmwareName, kFirmwareVersion, __DATE__ " " __TIME__);
-    Esp32Base::setHostname(g_hostname);
 
 #if ESP32BASE_ENABLE_WEB
     Esp32BaseWeb::setDefaultAuth(kDefaultWebUser, kDefaultWebPassword);
@@ -117,6 +111,9 @@ void configureBase() {
     Esp32BaseWeb::setHomePath("/faucet");
     Esp32BaseWeb::setHomeMode(Esp32BaseWeb::HOME_COMBINED);
     Esp32BaseWeb::setSystemNavMode(Esp32BaseWeb::SYSTEM_NAV_SECTION);
+    if (!faucet::registerFaucetAppConfig()) {
+        ESP32BASE_LOG_E("app", "app config registration failed");
+    }
     if (!faucet::registerFaucetWeb()) {
         ESP32BASE_LOG_E("app", "faucet web route registration failed");
     }
@@ -125,10 +122,7 @@ void configureBase() {
 
 void applyFileLogPolicy() {
 #if ESP32BASE_ENABLE_FILELOG
-    if (!Esp32BaseFileLog::enable(Esp32BaseFileLog::path(),
-                                  Esp32BaseFileLog::maxBytes(),
-                                  Esp32BaseLog::INFO,
-                                  Esp32BaseFileLog::rotateFiles())) {
+    if (!Esp32BaseFileLog::setMode(Esp32BaseFileLog::INFO)) {
         ESP32BASE_LOG_W("app", "file log INFO policy apply failed");
     }
 #endif
@@ -229,9 +223,10 @@ std::uint32_t currentSeconds() {
 void applyRuntimeSettings(const faucet::SystemConfig& config) {
     g_beep.setEnabled(config.beepEnabled);
     if (g_display) {
-        g_display->configure(config.oledSleepSec);
+        g_display->configure(config.displaySleepSec);
         g_display->wake(millis());
     }
+    g_lcd.begin(config.lcdI2cAddress);
 }
 
 faucet::PeriodKeys currentPeriodKeys(std::uint32_t nowSeconds) {
@@ -267,19 +262,21 @@ void initializeApplication() {
         ESP32BASE_LOG_E("app", "app controller allocation failed");
         return;
     }
-    g_display = new (std::nothrow) faucet::DisplayPresenter(g_config.oledSleepSec);
+    g_display = new (std::nothrow) faucet::DisplayPresenter(g_config.displaySleepSec);
     if (!g_display) {
-        ESP32BASE_LOG_W("app", "display presenter allocation failed, oled disabled");
+        ESP32BASE_LOG_W("app", "display presenter allocation failed, lcd disabled");
     }
     faucet::setFaucetWebContext(
         faucet::FaucetWebContext{&g_config, &g_configStore, g_app, g_filters, &g_logs, currentSeconds, applyRuntimeSettings});
+    faucet::setFaucetAppConfigContext(
+        faucet::FaucetAppConfigContext{&g_config, &g_configStore, g_app, applyRuntimeSettings});
 
     g_buttons.begin();
     g_flowPulses.begin();
     g_valveHardware.begin();
     g_beep.setEnabled(g_config.beepEnabled);
     g_beepHardware.begin();
-    g_oled.begin();
+    g_lcd.begin(g_config.lcdI2cAddress);
 
     g_app->resetInputs(g_buttons.read(), millis());
     if (g_display) {
@@ -287,9 +284,9 @@ void initializeApplication() {
     }
 
     ESP32BASE_LOG_I("app",
-                    "application initialized rtc=%s oled=%s log=%s",
+                    "application initialized rtc=%s lcd=%s log=%s",
                     g_rtc.present() ? "present" : "absent",
-                    g_oled.present() ? "present" : "absent",
+                    g_lcd.present() ? "present" : "absent",
                     g_waterLogFile.ready() ? "file" : "ram");
 }
 
@@ -302,7 +299,7 @@ void runApplicationTick() {
     const std::uint32_t nowUs = micros();
     const std::uint32_t nowSec = currentSeconds();
     const faucet::ButtonLevels levels = g_buttons.read();
-    if (g_buttons.consumeStopInterrupt() || levels.stopPressed) {
+    if (g_buttons.consumeCancelInterrupt() || levels.cancelPressed) {
         g_app->emergencyStop(nowMs);
         g_valveHardware.apply(g_app->snapshot().valve);
     }
@@ -313,12 +310,14 @@ void runApplicationTick() {
     }
     const std::uint32_t droppedPulses = g_flowPulses.droppedPulses();
     g_app->setFlowDroppedPulses(droppedPulses);
-    if (droppedPulses != g_lastDroppedPulsesLogged) {
+    if (droppedPulses != g_lastDroppedPulsesLogged &&
+        faucet::elapsedAtLeast(nowMs, g_lastDroppedPulsesLogMs, 5000UL)) {
         ESP32BASE_LOG_W("app",
                         "flow pulse buffer dropped pulses: total=%lu delta=%lu",
                         static_cast<unsigned long>(droppedPulses),
                         static_cast<unsigned long>(droppedPulses - g_lastDroppedPulsesLogged));
         g_lastDroppedPulsesLogged = droppedPulses;
+        g_lastDroppedPulsesLogMs = nowMs;
     }
 
     const faucet::AppTickInput input{
@@ -338,11 +337,12 @@ void runApplicationTick() {
     g_valveHardware.apply(snapshot.valve);
 
     if (g_display) {
-        if (levels.stopPressed || levels.okPressed || levels.nextPressed || snapshot.water.state != faucet::WaterState::Idle) {
+        if (levels.cancelPressed || levels.okPressed || levels.plusPressed || levels.minusPressed ||
+            snapshot.water.state != faucet::WaterState::Idle || snapshot.localMode != faucet::LocalUiMode::Normal) {
             g_display->wake(nowMs);
         }
         if (faucet::elapsedAtLeast(nowMs, g_lastDisplayMs, 200UL)) {
-            g_oled.apply(g_display->render(snapshot, nowMs));
+            g_lcd.apply(g_display->render(snapshot, nowMs));
             g_lastDisplayMs = nowMs;
         }
     }

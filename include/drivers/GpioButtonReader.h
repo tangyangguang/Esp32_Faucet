@@ -8,21 +8,22 @@ namespace faucet {
 
 class GpioButtonReader {
 public:
-    GpioButtonReader(std::uint8_t stopPin, std::uint8_t okPin, std::uint8_t nextPin);
+    GpioButtonReader(std::uint8_t cancelPin, std::uint8_t okPin, std::uint8_t plusPin, std::uint8_t minusPin);
 
     void begin();
     ButtonLevels read() const;
-    bool consumeStopInterrupt();
+    bool consumeCancelInterrupt();
 
 private:
-    static void isrStop();
+    static void isrCancel();
 
     static GpioButtonReader* instance_;
 
-    std::uint8_t stopPin_;
+    std::uint8_t cancelPin_;
     std::uint8_t okPin_;
-    std::uint8_t nextPin_;
-    volatile bool stopInterruptPending_;
+    std::uint8_t plusPin_;
+    std::uint8_t minusPin_;
+    volatile bool cancelInterruptPending_;
 };
 
 }  // namespace faucet

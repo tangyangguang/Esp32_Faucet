@@ -2,12 +2,12 @@
 
 ## 当前连接状态
 
-- 当前只连接 ESP32 核心板，未连接按键、电磁阀、流量计、OLED、蜂鸣器、DS3231 等外设。
+- 当前只连接 ESP32 核心板，未连接按键、电磁阀、流量计、LCD1602、蜂鸣器、DS3231 等外设。
 - 当前电脑已枚举出 `/dev/cu.usbserial-130`，USB VID/PID 为 `1A86:7523`。
 - `esp32dev_smoke` 裸板自检固件已验证核心板、串口、Flash 和 Arduino 启动链路正常。
 - 已定位并修复分区表 `ota_0=0x20000` 与 PlatformIO 默认上传偏移 `0x10000` 不一致的问题。
 - 工程已通过 `board_upload.offset_address = 0x20000` 让串口上传位置与双 OTA 分区表一致。
-- 主固件已在裸板上启动成功：`rtc=absent`、`oled=absent`、`log=file`，WiFi/Web/mDNS/NTP 正常，18 秒串口观察未出现 watchdog 或反复重启。
+- 主固件已在裸板上启动成功：`rtc=absent`、`lcd=absent`、`log=file`，WiFi/Web/mDNS/NTP 正常，18 秒串口观察未出现 watchdog 或反复重启。
 
 ## 裸板验证目标
 
@@ -17,9 +17,10 @@
 - LittleFS 正常挂载。
 - Web、WiFi、OTA 基础能力正常。
 - DS3231 不存在时降级为 uptime 时间。
-- OLED 不存在时不影响主循环。
+- LCD1602 不存在时不影响主循环。
 - 流量计无脉冲时不误计数。
-- 三个按键未连接时不应触发出水、校准或恢复出厂。
+- 裸板未接流量计时不应出现持续的 `flow pulse buffer dropped pulses`；若出现，优先检查 GPIO32 是否悬空、流量计信号是否有稳定上拉和 3.3V 电平转换。
+- 四个按键未连接时不应触发出水、暂停、停止或调整。
 - 电磁阀 GPIO 无负载时不影响启动。
 
 ## 串口识别检查
@@ -85,35 +86,35 @@ pio run -e esp32dev -t uploadfs --upload-port <端口>
 pio device monitor -e esp32dev --port <端口> --baud 115200
 ```
 
-当前构建使用 `ESP32BASE_LOG_LEVEL=ESP32BASE_LOG_DEBUG`，文件日志使用 `ESP32BASE_EB_FILELOG_LEVEL=ESP32BASE_LOG_INFO`，并在启动后显式应用 INFO 文件日志策略，避免旧 NVS 配置覆盖。Web 默认认证通过 Esp32Base `setDefaultAuth()` 提供，用户可在 `/esp32base/auth` 修改。注意：Esp32Base INFO 日志会输出 WiFi 和 Web Auth 明文凭据，串口日志和 `/esp32base/logs` 文件日志需要按敏感信息管理。
+当前构建使用 `ESP32BASE_DEFAULT_HOSTNAME="water-faucet"`、`ESP32BASE_ENABLE_APP_CONFIG=1`、`ESP32BASE_APP_CONFIG_MAX_GROUPS=7`、`ESP32BASE_APP_CONFIG_MAX_FIELDS=80`、`ESP32BASE_LOG_LEVEL=ESP32BASE_LOG_DEBUG`，文件日志使用 `ESP32BASE_EB_FILELOG_DEFAULT_MODE=ESP32BASE_FILELOG_MODE_INFO`，并在启动后显式应用 `Esp32BaseFileLog::setMode(INFO)`，避免旧 NVS 配置覆盖。业务参数配置入口迁移到 Esp32Base 内置 `/esp32base/app-config`，字段直接绑定现有 `faucet_cfg` namespace/key。实际运行 hostname 可由 Esp32Base 内置 `/esp32base/tools` 写入 `eb_sys.hostname`，重启后生效。Web 默认认证通过 Esp32Base `setDefaultAuth()` 提供，用户可在 `/esp32base/auth` 修改。注意：Esp32Base INFO 日志会输出 WiFi 和 Web Auth 明文凭据，串口日志和 `/esp32base/logs` 文件日志需要按敏感信息管理。
 
 期望日志：
 
 - 固件名为 `esp32-faucet`。
 - 应用初始化日志出现。
 - `rtc=absent` 合理，因为当前未接 DS3231。
-- `oled=absent` 合理，因为当前未接 OLED。
+- `lcd=absent` 合理，因为当前未接 LCD1602。
 - `log=file` 优先，若 LittleFS 初始化异常则需要排查分区或文件系统。
 - 不应反复重启，不应出现 panic/backtrace。
 
 ## 逐步接线验证顺序
 
-1. OLED：接 I2C SDA/SCL，验证地址、方向、双行显示、空闲熄屏和按键唤醒。
-2. 三个按键：验证 `STOP`、`OK`、`NEXT` 低电平有效、消抖、长按和组合键。
+1. LCD1602：接 I2C SDA/SCL，验证 0x27 地址、背光、双行显示、空闲熄屏和按键唤醒。
+2. 四个按键：验证 `CANCEL`、`OK`、`PLUS`、`MINUS` 低电平有效、消抖和长按。
 3. 蜂鸣器：验证短提示、异常提示和 Web 关闭蜂鸣器配置。
 4. DS3231：验证自动检测、时间读取、断开后降级。
-5. 流量计：先用手动脉冲或低频信号验证计数，再接水路校准。
-6. 电磁阀：先不接水验证 PWM 输出和 STOP 关断，再接水做安全验证。
-7. 完整水路：验证定量出水、本地校准、日志、统计、滤芯累计。
+5. 流量计：先用手动脉冲或低频信号验证计数，再接水路验证定量误差。
+6. 电磁阀：先不接水验证 PWM 输出和 `CANCEL` 关断，再接水做安全验证。
+7. 完整水路：验证定量出水、暂停/继续、本次目标调整、日志、统计、滤芯累计。
 
 ## 暂不执行的验证
 
 以下必须等对应硬件连接后执行：
 
-- `STOP` 软件停止响应时间。
+- `CANCEL` 软件停止响应时间。
 - 电磁阀关断时间。
-- 流量校准精度。
-- OLED 页面肉眼确认。
+- 定量出水精度。
+- LCD1602 页面肉眼确认。
 - 蜂鸣器提示音。
 - 72 小时连续运行。
 
@@ -127,7 +128,7 @@ pio device monitor -e esp32dev --port <端口> --baud 115200
 - `pio test -e native` 通过，114 个 native 用例全部成功。
 - `pio run -e esp32dev` 通过，主固件 RAM 约 30.8%，Flash 约 72.2%。
 - `pio run -e esp32dev_smoke` 通过。
-- 主固件串口启动正常：进入 `setup()`，`rtc=absent`、`oled=absent`、`log=file`，WiFi 已连接，Web 服务就绪，NTP 已同步。
+- 主固件串口启动正常：进入 `setup()`，`rtc=absent`、`lcd=absent`、`log=file`，WiFi 已连接，Web 服务就绪，NTP 已同步。
 - Web 首页 `http://192.168.2.112/faucet` 返回 200。
 - 未授权访问 `/faucet` 返回 401。
 - 状态 API 返回 `idle`、`valveOpen=false`、`waterControl=false`。

@@ -10,7 +10,7 @@ using namespace faucet;
 void test_routes_fit_esp32base_default_route_capacity() {
     TEST_ASSERT_TRUE(faucetWebRoutesFitEsp32Base());
     TEST_ASSERT_LESS_OR_EQUAL_size_t(kFaucetWebMaxRoutes, faucetWebRouteCount());
-    TEST_ASSERT_EQUAL_size_t(16, faucetWebRouteCount());
+    TEST_ASSERT_EQUAL_size_t(12, faucetWebRouteCount());
 }
 
 void test_routes_do_not_register_remote_water_control_paths() {
@@ -37,29 +37,23 @@ void test_route_whitelist_rejects_unknown_and_dangerous_control_aliases() {
 
 void test_dual_method_routes_are_merged_to_any() {
     const FaucetWebRoute* routes = faucetWebRoutes();
-    bool foundConfig = false;
     bool foundPresets = false;
     bool foundFilters = false;
-    bool foundCalibration = false;
     for (std::size_t i = 0; i < faucetWebRouteCount(); ++i) {
-        if (std::strcmp(routes[i].path, "/api/faucet/config") == 0) {
-            foundConfig = routes[i].method == FaucetWebMethod::Any;
-        }
         if (std::strcmp(routes[i].path, "/api/faucet/presets") == 0) {
             foundPresets = routes[i].method == FaucetWebMethod::Any;
         }
         if (std::strcmp(routes[i].path, "/api/faucet/filters") == 0) {
             foundFilters = routes[i].method == FaucetWebMethod::Any;
         }
-        if (std::strcmp(routes[i].path, "/api/faucet/calibration") == 0) {
-            foundCalibration = routes[i].method == FaucetWebMethod::Any;
-        }
     }
 
-    TEST_ASSERT_TRUE(foundConfig);
     TEST_ASSERT_TRUE(foundPresets);
     TEST_ASSERT_TRUE(foundFilters);
-    TEST_ASSERT_TRUE(foundCalibration);
+    TEST_ASSERT_FALSE(faucetWebRouteAllowed("/api/faucet/config"));
+    TEST_ASSERT_FALSE(faucetWebRouteAllowed("/api/faucet/calibration"));
+    TEST_ASSERT_FALSE(faucetWebRouteAllowed("/faucet/config"));
+    TEST_ASSERT_FALSE(faucetWebRouteAllowed("/faucet/calibration"));
 }
 
 void test_filter_edit_route_is_hidden_from_navigation() {

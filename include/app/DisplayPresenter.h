@@ -6,15 +6,16 @@
 
 namespace faucet {
 
-constexpr std::size_t kDisplayLineLength = 22;
+constexpr std::size_t kDisplayLineLength = 17;
 
 enum class DisplayPage : std::uint8_t {
     Idle = 0,
     Confirm = 1,
     Running = 2,
     Paused = 3,
-    Error = 4,
-    Sleep = 5,
+    Result = 4,
+    Error = 5,
+    Sleep = 6,
 };
 
 struct DisplayFrame {
@@ -26,7 +27,7 @@ struct DisplayFrame {
 
 class DisplayPresenter {
 public:
-    explicit DisplayPresenter(std::uint32_t sleepTimeoutSec = kDefaultOledSleepSec);
+    explicit DisplayPresenter(std::uint32_t sleepTimeoutSec = kDefaultDisplaySleepSec);
 
     void configure(std::uint32_t sleepTimeoutSec);
     void wake(std::uint32_t nowMs);

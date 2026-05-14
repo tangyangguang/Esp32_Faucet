@@ -36,7 +36,9 @@ constexpr std::uint8_t kDefaultValveHoldDutyPercent = 30;
 constexpr std::uint8_t kMinValveHoldDutyPercent = 20;
 constexpr std::uint8_t kMaxValveHoldDutyPercent = 100;
 
-constexpr std::uint32_t kDefaultOledSleepSec = 30;
+constexpr std::uint32_t kDefaultDisplaySleepSec = 30;
+constexpr std::uint32_t kDefaultResultDisplaySec = 15;
+constexpr std::uint8_t kDefaultLcdI2cAddress = 0x27;
 constexpr std::uint16_t kDefaultLogPageSize = 20;
 constexpr std::uint16_t kMaxLogPageSize = 200;
 constexpr std::uint32_t kDaysPerLifeMonth = 30;
@@ -62,7 +64,9 @@ struct SystemConfig {
     std::uint32_t calibrationTargetsMl[kCalibrationTargetCount];
     std::uint32_t valveFullPowerSec;
     std::uint8_t valveHoldDutyPercent;
-    std::uint32_t oledSleepSec;
+    std::uint32_t displaySleepSec;
+    std::uint32_t resultDisplaySec;
+    std::uint8_t lcdI2cAddress;
     bool beepEnabled;
     PresetConfig presets[kPresetCount];
     FilterRecord filters[kFilterCount];

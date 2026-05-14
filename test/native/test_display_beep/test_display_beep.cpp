@@ -36,8 +36,8 @@ void test_display_idle_shows_preset_and_today_total() {
 
     TEST_ASSERT_TRUE(frame.on);
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(DisplayPage::Idle), static_cast<std::uint8_t>(frame.page));
-    TEST_ASSERT_EQUAL_STRING("1500 ml", frame.line1);
-    TEST_ASSERT_EQUAL_STRING("Today 1234", frame.line2);
+    TEST_ASSERT_EQUAL_STRING("P1 1.5L", frame.line1);
+    TEST_ASSERT_EQUAL_STRING("+/- Sel OK", frame.line2);
 }
 
 void test_display_sleep_only_in_idle_after_timeout() {
@@ -75,7 +75,7 @@ void test_display_time_preset_shows_remaining_seconds_and_error_reason() {
     error.water.lastResult = WaterResult::FlowError;
     DisplayFrame errorFrame = presenter.render(error, 500);
 
-    TEST_ASSERT_EQUAL_STRING("Remain 6 s", runningFrame.line1);
+    TEST_ASSERT_EQUAL_STRING("Lft 6s 00:04", runningFrame.line1);
     TEST_ASSERT_EQUAL_STRING("Flow Error", errorFrame.line2);
 }
 
@@ -85,8 +85,8 @@ void test_display_running_shows_remaining_volume() {
 
     DisplayFrame frame = presenter.render(makeSnapshot(WaterState::Running, 1500, 400), 500);
 
-    TEST_ASSERT_EQUAL_STRING("Remain 1100", frame.line1);
-    TEST_ASSERT_EQUAL_STRING("Out 400", frame.line2);
+    TEST_ASSERT_EQUAL_STRING("Lft 1.1L 00:00", frame.line1);
+    TEST_ASSERT_EQUAL_STRING("Out 0.4L OK Paus", frame.line2);
 }
 
 void test_display_confirm_and_pause_pages_are_short() {
@@ -96,10 +96,25 @@ void test_display_confirm_and_pause_pages_are_short() {
     DisplayFrame confirm = presenter.render(makeSnapshot(WaterState::Confirm, 7500), 500);
     DisplayFrame paused = presenter.render(makeSnapshot(WaterState::Paused, 7500, 300), 500);
 
-    TEST_ASSERT_EQUAL_STRING("OK Start?", confirm.line1);
-    TEST_ASSERT_EQUAL_STRING("7500 ml", confirm.line2);
-    TEST_ASSERT_EQUAL_STRING("Paused", paused.line1);
-    TEST_ASSERT_EQUAL_STRING("Out 300", paused.line2);
+    TEST_ASSERT_EQUAL_STRING("Set 7.5L S0.5", confirm.line1);
+    TEST_ASSERT_EQUAL_STRING("+/- Adj OK Go", confirm.line2);
+    TEST_ASSERT_EQUAL_STRING("Pause 0.3L/7.5L", paused.line1);
+    TEST_ASSERT_EQUAL_STRING("S0.5 +/- OK", paused.line2);
+}
+
+void test_display_result_page_shows_summary() {
+    DisplayPresenter presenter(30);
+    presenter.wake(0);
+    AppSnapshot snapshot = makeSnapshot(WaterState::Idle, 7500, 7500);
+    snapshot.water.elapsedSec = 163;
+    snapshot.water.lastResult = WaterResult::Completed;
+    snapshot.localMode = LocalUiMode::Result;
+
+    DisplayFrame frame = presenter.render(snapshot, 500);
+
+    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(DisplayPage::Result), static_cast<std::uint8_t>(frame.page));
+    TEST_ASSERT_EQUAL_STRING("Done 7.5L", frame.line1);
+    TEST_ASSERT_EQUAL_STRING("02:43", frame.line2);
 }
 
 void test_beep_click_turns_off_after_duration() {
@@ -163,6 +178,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_display_running_shows_remaining_volume);
     RUN_TEST(test_display_time_preset_shows_remaining_seconds_and_error_reason);
     RUN_TEST(test_display_confirm_and_pause_pages_are_short);
+    RUN_TEST(test_display_result_page_shows_summary);
     RUN_TEST(test_beep_click_turns_off_after_duration);
     RUN_TEST(test_beep_duration_survives_millis_wrap);
     RUN_TEST(test_beep_disabled_ignores_patterns_and_stops_active_output);

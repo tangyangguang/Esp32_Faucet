@@ -78,16 +78,6 @@ void formatLiters(std::uint32_t ml, char* out, std::size_t len) {
                   static_cast<unsigned long>(centiliters % 100UL));
 }
 
-void formatLiterValue(std::uint32_t ml, char* out, std::size_t len) {
-    if (ml == 0) {
-        std::snprintf(out, len, "0");
-        return;
-    }
-    const std::uint32_t centiliters = (ml + 5UL) / 10UL;
-    std::snprintf(out, len, "%lu.%02lu", static_cast<unsigned long>(centiliters / 100UL),
-                  static_cast<unsigned long>(centiliters % 100UL));
-}
-
 std::uint32_t filterProgressPercent(const FilterRecord& filter, std::uint32_t usedDays) {
     if (filter.recommendDays == 0) {
         return 0;
@@ -318,17 +308,6 @@ void sendDateInput(const char* label, const char* name, std::uint32_t seconds) {
             date);
 }
 
-void sendCalibrationTargetInput(std::size_t index, std::uint32_t ml) {
-    char value[16]{};
-    char name[16]{};
-    formatLiterValue(ml, value, sizeof(value));
-    std::snprintf(name, sizeof(name), "target%uL", static_cast<unsigned>(index + 1));
-    sendFmt("<label class='field'><span>候选容量 %u（L）</span><input name='%s' value='%s'><small class='hint'>0 表示不启用</small></label>",
-            static_cast<unsigned>(index + 1),
-            name,
-            value);
-}
-
 void sendCheckbox(const char* label, const char* name, bool checked) {
     sendFmt("<label class='check-field'><span class='check-title'>%s</span><span class='check-line'><input type='checkbox' name='%s' value='1'%s>启用</span></label>",
             label,
@@ -411,36 +390,6 @@ void handleFaucetPage() {
         Esp32BaseWeb::sendChunk("<section class='filter-card muted'>当前没有启用的滤芯。</section>");
     }
     Esp32BaseWeb::sendChunk("</div>");
-    sendPageEnd();
-}
-
-void handleConfigPage() {
-    if (!sendPageStart("出水配置")) {
-        return;
-    }
-    if (!requireContext()) {
-        sendPageEnd();
-        return;
-    }
-    const SystemConfig& config = *g_context.config;
-    Esp32BaseWeb::sendChunk("<h2>配置</h2><form method='post' action='/api/faucet/config' onsubmit='return once(this)'>"
-                            "<section class='panel'><h3>安全限制</h3><div class='grid'>");
-    sendTextInput("二次确认超时（秒）", "confirmTimeoutSec", config.confirmTimeoutSec);
-    sendTextInput("最长出水时间（秒）", "maxOutTimeSec", config.maxOutTimeSec);
-    sendVolumeInput("最大出水量（ml）", "maxOutVolumeMl", config.maxOutVolumeMl);
-    sendTextInput("超量保护比例（%）", "overflowPercent", config.overflowPercent);
-    Esp32BaseWeb::sendChunk("</div></section><section class='panel'><h3>流量保护</h3><div class='grid'>");
-    sendTextInput("无流量超时（秒）", "noFlowTimeoutSec", config.noFlowTimeoutSec);
-    sendTextInput("高流量阈值（ml/min）", "highFlowMlPerMin", config.highFlowMlPerMin);
-    sendTextInput("高流量持续时间（秒）", "highFlowDurationSec", config.highFlowDurationSec);
-    sendTextInput("暂停超时（秒）", "pauseTimeoutSec", config.pauseTimeoutSec);
-    Esp32BaseWeb::sendChunk("</div></section><section class='panel'><h3>电磁阀</h3><div class='grid'>");
-    sendTextInput("电磁阀全功率时间（秒）", "valveFullPowerSec", config.valveFullPowerSec);
-    sendTextInput("电磁阀保持占空比（%）", "valveHoldDutyPercent", config.valveHoldDutyPercent);
-    Esp32BaseWeb::sendChunk("</div></section><section class='panel'><h3>本地交互</h3><div class='grid'>");
-    sendTextInput("OLED 熄屏时间（秒）", "oledSleepSec", config.oledSleepSec);
-    sendCheckbox("蜂鸣器", "beepEnabled", config.beepEnabled);
-    Esp32BaseWeb::sendChunk("</div></section><div class='form-actions'><input type='submit' value='保存'></div></form>");
     sendPageEnd();
 }
 
@@ -676,32 +625,6 @@ void handleFilterEditPage() {
     sendPageEnd();
 }
 
-void handleCalibrationPage() {
-    if (!sendPageStart("流量校准")) {
-        return;
-    }
-    if (!requireContext()) {
-        sendPageEnd();
-        return;
-    }
-    const SystemConfig& config = *g_context.config;
-    Esp32BaseWeb::sendChunk("<h2>校准</h2><section class='panel'><h3>三段式本地校准</h3>"
-                            "<p><strong>准备：</strong>在本页配置候选容量和当前每升信号数，本地长按 OK 进入校准，NEXT 选择启用容量。</p>"
-                            "<p><strong>采样：</strong>本地按 OK 二次确认并开始出水，到量杯刻度后按 OK 停止采样。</p>"
-                            "<p><strong>保存：</strong>至少两次采样一致后，本地按 OK 保存新系数；STOP 可随时取消并关阀。</p>"
-                            "<p class='hint'>Web 端只允许查看和手动修改参数，不能远程启动出水校准。</p></section>"
-                            "<form method='post' action='/api/faucet/calibration' onsubmit='return once(this)'>"
-                            "<section class='panel'><h3>校准参数</h3><div class='grid'>");
-    Esp32BaseWeb::sendChunk("<label class='field'><span>每升信号数（脉冲/L）</span><input name='pulsePerLiter' value='");
-    sendFmt("%.1f", static_cast<double>(config.pulsePerMl * 1000.0f));
-    Esp32BaseWeb::sendChunk("'><small class='hint'>内部按 pulse/ml 保存和计算</small></label>");
-    for (std::size_t i = 0; i < kCalibrationTargetCount; ++i) {
-        sendCalibrationTargetInput(i, config.calibrationTargetsMl[i]);
-    }
-    Esp32BaseWeb::sendChunk("</div></section><div class='form-actions'><input type='submit' value='保存'></div></form>");
-    sendPageEnd();
-}
-
 void handleApi() {
     if (!Esp32BaseWeb::checkAuth()) {
         return;
@@ -808,42 +731,6 @@ void handleStatusApi() {
     }
     char json[256]{};
     sendJsonBuffer(writeStatusJson(g_context.app->snapshot(), json, sizeof(json)), json);
-}
-
-void handleConfigApi() {
-    if (!Esp32BaseWeb::checkAuth() || !requireContext()) {
-        return;
-    }
-    if (Esp32BaseWeb::isMethod(Esp32BaseWeb::METHOD_POST)) {
-        if (!g_context.app->canApplyConfig()) {
-            Esp32BaseWeb::sendJson(409, "{\"error\":\"busy\",\"restartRecommended\":true}");
-            return;
-        }
-        SystemConfig candidate = *g_context.config;
-        applyU32Param("confirmTimeoutSec", candidate.confirmTimeoutSec);
-        applyU32Param("maxOutTimeSec", candidate.maxOutTimeSec);
-        applyU32Param("maxOutVolumeMl", candidate.maxOutVolumeMl);
-        applyU32Param("noFlowTimeoutSec", candidate.noFlowTimeoutSec);
-        applyU32Param("highFlowMlPerMin", candidate.highFlowMlPerMin);
-        applyU32Param("highFlowDurationSec", candidate.highFlowDurationSec);
-        applyU32Param("pauseTimeoutSec", candidate.pauseTimeoutSec);
-        applyU32Param("valveFullPowerSec", candidate.valveFullPowerSec);
-        applyU32Param("oledSleepSec", candidate.oledSleepSec);
-        candidate.beepEnabled = checkboxParam("beepEnabled");
-
-        char text[24]{};
-        std::uint32_t parsed = 0;
-        if (getParam("overflowPercent", text, sizeof(text)) && parseU32(text, parsed)) {
-            candidate.overflowPercent = static_cast<std::uint8_t>(parsed);
-        }
-        if (getParam("valveHoldDutyPercent", text, sizeof(text)) && parseU32(text, parsed)) {
-            candidate.valveHoldDutyPercent = static_cast<std::uint8_t>(parsed);
-        }
-        saveConfigAndReply(candidate);
-        return;
-    }
-    char json[640]{};
-    sendJsonBuffer(writeConfigJson(*g_context.config, json, sizeof(json)), json);
 }
 
 void handlePresetsApi() {
@@ -997,43 +884,10 @@ void handleFiltersResetApi() {
     Esp32BaseWeb::redirectSeeOther(ok ? "/faucet/filters?reset=1" : "/faucet/filters?error=save_failed");
 }
 
-void handleCalibrationApi() {
-    if (!Esp32BaseWeb::checkAuth() || !requireContext()) {
-        return;
-    }
-    if (Esp32BaseWeb::isMethod(Esp32BaseWeb::METHOD_POST)) {
-        if (!g_context.app->canApplyConfig()) {
-            Esp32BaseWeb::sendJson(409, "{\"error\":\"busy\",\"restartRecommended\":true}");
-            return;
-        }
-        SystemConfig candidate = *g_context.config;
-        char text[24]{};
-        float pulsePerLiter = 0.0f;
-        if (getParam("pulsePerLiter", text, sizeof(text)) && parseFloat(text, pulsePerLiter)) {
-            candidate.pulsePerMl = pulsePerLiter / 1000.0f;
-        }
-        for (std::size_t i = 0; i < kCalibrationTargetCount; ++i) {
-            char name[16]{};
-            std::snprintf(name, sizeof(name), "target%uL", static_cast<unsigned>(i + 1));
-            std::uint32_t targetMl = 0;
-            if (getParam(name, text, sizeof(text)) && parseLitersToMl(text, targetMl)) {
-                candidate.calibrationTargetsMl[i] = targetMl;
-            }
-        }
-        saveConfigAndReply(candidate);
-        return;
-    }
-    char json[256]{};
-    sendJsonBuffer(writeCalibrationJson(*g_context.config, json, sizeof(json)), json);
-}
-
 Esp32BaseWeb::Handler handlerFor(const FaucetWebRoute& route) {
     if (route.kind == FaucetWebRouteKind::Page) {
         if (std::strcmp(route.path, "/faucet") == 0) {
             return handleFaucetPage;
-        }
-        if (std::strcmp(route.path, "/faucet/config") == 0) {
-            return handleConfigPage;
         }
         if (std::strcmp(route.path, "/faucet/presets") == 0) {
             return handlePresetsPage;
@@ -1047,9 +901,6 @@ Esp32BaseWeb::Handler handlerFor(const FaucetWebRoute& route) {
         if (std::strcmp(route.path, "/faucet/filters") == 0) {
             return handleFiltersPage;
         }
-        if (std::strcmp(route.path, "/faucet/calibration") == 0) {
-            return handleCalibrationPage;
-        }
         return handleFaucetPage;
     }
     if (std::strcmp(route.path, "/api/faucet/status") == 0) {
@@ -1057,9 +908,6 @@ Esp32BaseWeb::Handler handlerFor(const FaucetWebRoute& route) {
     }
     if (std::strcmp(route.path, "/faucet/filters/edit") == 0) {
         return handleFilterEditPage;
-    }
-    if (std::strcmp(route.path, "/api/faucet/config") == 0) {
-        return handleConfigApi;
     }
     if (std::strcmp(route.path, "/api/faucet/presets") == 0) {
         return handlePresetsApi;
@@ -1075,9 +923,6 @@ Esp32BaseWeb::Handler handlerFor(const FaucetWebRoute& route) {
     }
     if (std::strcmp(route.path, "/api/faucet/filters/reset") == 0) {
         return handleFiltersResetApi;
-    }
-    if (std::strcmp(route.path, "/api/faucet/calibration") == 0) {
-        return handleCalibrationApi;
     }
     return handleApi;
 }

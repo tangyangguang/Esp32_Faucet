@@ -46,9 +46,11 @@ public:
     bool applyConfig(const SystemConfig& config);
 
     bool selectNextPreset();
+    bool selectPreviousPreset();
     bool selectPreset(std::size_t index);
     bool requestStart(std::uint32_t nowMs);
     bool confirmStart(std::uint32_t nowMs);
+    bool adjustTarget(std::int32_t delta);
     void cancel(std::uint32_t nowMs);
     void stop(std::uint32_t nowMs);
     bool togglePause(std::uint32_t nowMs);
@@ -72,6 +74,8 @@ private:
     std::uint32_t pausedStartMs_;
     std::uint32_t accumulatedPausedMs_;
     std::uint32_t volumeMl_;
+    WaterMode activeMode_;
+    std::uint32_t targetValue_;
     std::uint32_t highFlowStartMs_;
     std::uint32_t lastElapsedSec_;
     WaterResult lastError_;

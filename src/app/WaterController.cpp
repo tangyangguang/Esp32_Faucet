@@ -29,6 +29,8 @@ WaterController::WaterController(const SystemConfig& config)
       pausedStartMs_(0),
       accumulatedPausedMs_(0),
       volumeMl_(0),
+      activeMode_(WaterMode::Volume),
+      targetValue_(0),
       highFlowStartMs_(0),
       lastElapsedSec_(0),
       lastError_(WaterResult::Completed),
@@ -51,8 +53,8 @@ WaterSnapshot WaterController::snapshot() const {
         volumeMl_,
         lastElapsedSec_,
         lastError_,
-        preset ? modeFromPreset(*preset) : WaterMode::Volume,
-        preset ? preset->value : 0,
+        state_ == WaterState::Idle ? (preset ? modeFromPreset(*preset) : WaterMode::Volume) : activeMode_,
+        state_ == WaterState::Idle ? (preset ? preset->value : 0) : targetValue_,
     };
 }
 
@@ -91,7 +93,7 @@ bool WaterController::applyConfig(const SystemConfig& config) {
 }
 
 bool WaterController::selectNextPreset() {
-    if (state_ == WaterState::Running || state_ == WaterState::Paused) {
+    if (state_ != WaterState::Idle && state_ != WaterState::Error) {
         return false;
     }
     for (std::size_t step = 1; step <= kPresetCount; ++step) {
@@ -104,8 +106,22 @@ bool WaterController::selectNextPreset() {
     return false;
 }
 
+bool WaterController::selectPreviousPreset() {
+    if (state_ != WaterState::Idle && state_ != WaterState::Error) {
+        return false;
+    }
+    for (std::size_t step = 1; step <= kPresetCount; ++step) {
+        const std::size_t index = (selectedPreset_ + kPresetCount - step) % kPresetCount;
+        if (enabledPreset(index)) {
+            selectedPreset_ = index;
+            return true;
+        }
+    }
+    return false;
+}
+
 bool WaterController::selectPreset(std::size_t index) {
-    if (state_ == WaterState::Running || state_ == WaterState::Paused || !enabledPreset(index)) {
+    if ((state_ != WaterState::Idle && state_ != WaterState::Error) || !enabledPreset(index)) {
         return false;
     }
     selectedPreset_ = index;
@@ -122,6 +138,8 @@ bool WaterController::requestStart(std::uint32_t nowMs) {
     state_ = WaterState::Confirm;
     confirmStartMs_ = nowMs;
     valveOpen_ = false;
+    activeMode_ = modeFromPreset(*selectedPresetConfig());
+    targetValue_ = selectedPresetConfig()->value;
     lastElapsedSec_ = 0;
     lastError_ = WaterResult::Completed;
     return true;
@@ -141,6 +159,32 @@ bool WaterController::confirmStart(std::uint32_t nowMs) {
     lastElapsedSec_ = 0;
     lastError_ = WaterResult::Completed;
     clearResult();
+    return true;
+}
+
+bool WaterController::adjustTarget(std::int32_t delta) {
+    if ((state_ != WaterState::Confirm && state_ != WaterState::Paused) || activeMode_ != WaterMode::Volume ||
+        delta == 0) {
+        return false;
+    }
+
+    std::uint32_t minTarget = std::max<std::uint32_t>(kMinVolumePresetMl, volumeMl_);
+    if (state_ == WaterState::Paused && volumeMl_ > 0) {
+        minTarget = volumeMl_;
+    }
+    const std::uint32_t maxTarget = std::min<std::uint32_t>(kMaxVolumePresetMl, config_.maxOutVolumeMl);
+    std::int64_t next = static_cast<std::int64_t>(targetValue_) + delta;
+    if (next < static_cast<std::int64_t>(minTarget)) {
+        next = minTarget;
+    }
+    if (next > static_cast<std::int64_t>(maxTarget)) {
+        next = maxTarget;
+    }
+    const std::uint32_t changed = static_cast<std::uint32_t>(next);
+    if (changed == targetValue_) {
+        return false;
+    }
+    targetValue_ = changed;
     return true;
 }
 
@@ -219,7 +263,7 @@ const PresetConfig* WaterController::selectedPresetConfig() const {
 void WaterController::finish(std::uint32_t nowMs, WaterResult result, WaterState nextState) {
     const PresetConfig* preset = selectedPresetConfig();
     lastResult_.valid = true;
-    lastResult_.mode = preset ? modeFromPreset(*preset) : WaterMode::Volume;
+    lastResult_.mode = state_ == WaterState::Idle ? (preset ? modeFromPreset(*preset) : WaterMode::Volume) : activeMode_;
     lastResult_.result = result;
     lastResult_.volumeMl = volumeMl_;
     lastResult_.durationSec = static_cast<std::uint16_t>(std::min<std::uint32_t>(activeElapsedMs(nowMs) / 1000UL, 65535));
@@ -247,9 +291,9 @@ bool WaterController::checkSafety(std::uint32_t nowMs, std::uint32_t currentFlow
     }
 
     const PresetConfig* preset = selectedPresetConfig();
-    if (preset && preset->type == PresetType::Volume) {
+    if (activeMode_ == WaterMode::Volume && targetValue_ > 0) {
         const std::uint64_t overflowLimit =
-            (static_cast<std::uint64_t>(preset->value) * (100UL + config_.overflowPercent)) / 100UL;
+            (static_cast<std::uint64_t>(targetValue_) * (100UL + config_.overflowPercent)) / 100UL;
         if (volumeMl_ > overflowLimit) {
             finish(nowMs, WaterResult::SafetyStopped, WaterState::Error);
             return true;
@@ -275,18 +319,14 @@ bool WaterController::checkSafety(std::uint32_t nowMs, std::uint32_t currentFlow
 }
 
 bool WaterController::checkTarget(std::uint32_t nowMs) {
-    const PresetConfig* preset = selectedPresetConfig();
-    if (!preset) {
+    if (targetValue_ == 0) {
         return false;
     }
-    if (preset->value == 0) {
-        return false;
-    }
-    if (preset->type == PresetType::Volume && volumeMl_ >= preset->value) {
+    if (activeMode_ == WaterMode::Volume && volumeMl_ >= targetValue_) {
         finish(nowMs, WaterResult::Completed, WaterState::Idle);
         return true;
     }
-    if (preset->type == PresetType::Time && activeElapsedMs(nowMs) >= msFromSeconds(preset->value)) {
+    if (activeMode_ == WaterMode::Time && activeElapsedMs(nowMs) >= msFromSeconds(targetValue_)) {
         finish(nowMs, WaterResult::Completed, WaterState::Idle);
         return true;
     }

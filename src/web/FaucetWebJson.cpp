@@ -140,7 +140,8 @@ bool writeConfigJson(const SystemConfig& config, char* out, std::size_t len) {
                   "\"overflowPercent\":%u,\"noFlowTimeoutSec\":%lu,\"highFlowMlPerMin\":%lu,"
                   "\"highFlowDurationSec\":%lu,\"pauseTimeoutSec\":%lu,\"pulsePerMl\":%.3f,"
                   "\"calibrationTargetsMl\":[%lu,%lu,%lu,%lu],\"valveFullPowerSec\":%lu,"
-                  "\"valveHoldDutyPercent\":%u,\"oledSleepSec\":%lu,\"beepEnabled\":%s}",
+                  "\"valveHoldDutyPercent\":%u,\"displaySleepSec\":%lu,\"resultDisplaySec\":%lu,"
+                  "\"lcdI2cAddress\":%u,\"beepEnabled\":%s}",
                   static_cast<unsigned long>(config.confirmTimeoutSec),
                   static_cast<unsigned long>(config.maxOutTimeSec),
                   static_cast<unsigned long>(config.maxOutVolumeMl),
@@ -156,7 +157,9 @@ bool writeConfigJson(const SystemConfig& config, char* out, std::size_t len) {
                   static_cast<unsigned long>(config.calibrationTargetsMl[3]),
                   static_cast<unsigned long>(config.valveFullPowerSec),
                   static_cast<unsigned>(config.valveHoldDutyPercent),
-                  static_cast<unsigned long>(config.oledSleepSec),
+                  static_cast<unsigned long>(config.displaySleepSec),
+                  static_cast<unsigned long>(config.resultDisplaySec),
+                  config.lcdI2cAddress,
                   config.beepEnabled ? "true" : "false");
     return writer.ok();
 }

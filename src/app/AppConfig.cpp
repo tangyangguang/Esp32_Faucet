@@ -53,7 +53,9 @@ SystemConfig makeDefaultConfig() {
               config.calibrationTargetsMl);
     config.valveFullPowerSec = kDefaultValveFullPowerSec;
     config.valveHoldDutyPercent = kDefaultValveHoldDutyPercent;
-    config.oledSleepSec = kDefaultOledSleepSec;
+    config.displaySleepSec = kDefaultDisplaySleepSec;
+    config.resultDisplaySec = kDefaultResultDisplaySec;
+    config.lcdI2cAddress = kDefaultLcdI2cAddress;
     config.beepEnabled = true;
 
     setPreset(config.presets[0], true, PresetType::Volume, 1500, "1.5L");
@@ -114,7 +116,9 @@ void sanitizeConfig(SystemConfig& config) {
     config.valveFullPowerSec = clampValue<std::uint32_t>(config.valveFullPowerSec, 1, 10);
     config.valveHoldDutyPercent = clampValue<std::uint8_t>(
         config.valveHoldDutyPercent, kMinValveHoldDutyPercent, kMaxValveHoldDutyPercent);
-    config.oledSleepSec = clampValue<std::uint32_t>(config.oledSleepSec, 5, 300);
+    config.displaySleepSec = clampValue<std::uint32_t>(config.displaySleepSec, 5, 300);
+    config.resultDisplaySec = clampValue<std::uint32_t>(config.resultDisplaySec, 0, 60);
+    config.lcdI2cAddress = clampValue<std::uint8_t>(config.lcdI2cAddress, 0x03, 0x77);
 
     for (auto& preset : config.presets) {
         if (preset.type == PresetType::Volume) {

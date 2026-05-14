@@ -6,36 +6,38 @@ namespace faucet {
 
 GpioButtonReader* GpioButtonReader::instance_ = nullptr;
 
-GpioButtonReader::GpioButtonReader(std::uint8_t stopPin, std::uint8_t okPin, std::uint8_t nextPin)
-    : stopPin_(stopPin), okPin_(okPin), nextPin_(nextPin), stopInterruptPending_(false) {}
+GpioButtonReader::GpioButtonReader(std::uint8_t cancelPin, std::uint8_t okPin, std::uint8_t plusPin, std::uint8_t minusPin)
+    : cancelPin_(cancelPin), okPin_(okPin), plusPin_(plusPin), minusPin_(minusPin), cancelInterruptPending_(false) {}
 
 void GpioButtonReader::begin() {
     instance_ = this;
-    pinMode(stopPin_, INPUT);
+    pinMode(cancelPin_, INPUT);
     pinMode(okPin_, INPUT);
-    pinMode(nextPin_, INPUT);
-    attachInterrupt(digitalPinToInterrupt(stopPin_), GpioButtonReader::isrStop, FALLING);
+    pinMode(plusPin_, INPUT);
+    pinMode(minusPin_, INPUT);
+    attachInterrupt(digitalPinToInterrupt(cancelPin_), GpioButtonReader::isrCancel, FALLING);
 }
 
 ButtonLevels GpioButtonReader::read() const {
     return ButtonLevels{
-        digitalRead(stopPin_) == LOW,
+        digitalRead(cancelPin_) == LOW,
         digitalRead(okPin_) == LOW,
-        digitalRead(nextPin_) == LOW,
+        digitalRead(plusPin_) == LOW,
+        digitalRead(minusPin_) == LOW,
     };
 }
 
-bool GpioButtonReader::consumeStopInterrupt() {
+bool GpioButtonReader::consumeCancelInterrupt() {
     noInterrupts();
-    const bool pending = stopInterruptPending_;
-    stopInterruptPending_ = false;
+    const bool pending = cancelInterruptPending_;
+    cancelInterruptPending_ = false;
     interrupts();
     return pending;
 }
 
-void IRAM_ATTR GpioButtonReader::isrStop() {
+void IRAM_ATTR GpioButtonReader::isrCancel() {
     if (instance_) {
-        instance_->stopInterruptPending_ = true;
+        instance_->cancelInterruptPending_ = true;
     }
 }
 

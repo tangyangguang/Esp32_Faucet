@@ -12,14 +12,14 @@
 
 - Application：`src/main.cpp`，负责固件信息、hostname 策略占位、Web Auth 占位、Esp32Base 生命周期调用。
 - Business：承载出水状态机、配置模型、日志、统计、滤芯、Web 业务 API。
-- Drivers：承载电磁阀、流量计、三键、OLED、蜂鸣器、RTC。
+- Drivers：承载电磁阀、流量计、四键、LCD1602、蜂鸣器、RTC。
 - Base：Esp32Base 提供 Log、Config、System、Bus、Watchdog、Sleep、Fs、FileLog、Health、WiFi、DNS、NTP、mDNS、Web、OTA。
 
 ## 调度模型
 
 - 主循环中先执行业务控制 tick，再执行 `Esp32Base::handle()`。
 - 业务控制 tick 必须短小、非阻塞，目标单次耗时小于 1ms。
-- 流量计和 `STOP` 使用 ISR 采集最小事件，ISR 内不做复杂计算和日志。
+- 流量计和 `CANCEL` 使用 ISR 采集最小事件，ISR 内不做复杂计算和日志。
 - Web 请求只允许查询状态、读取日志、保存配置或保存校准参数，不投递任何出水控制命令。
 - 不主动创建多个 FreeRTOS 业务任务；只有验证发现 loop tick 无法满足实时性时，再提出明确设计变更。
 
@@ -32,13 +32,13 @@
 | `ConfigStore` | 应用配置默认值、钳位、读写 |
 | `FlowMeter` | 脉冲计数、流量计算、校准系数 |
 | `ValveDriver` | 电磁阀开关、全压吸合、PWM 保持 |
-| `ButtonInput` | 三键消抖、短按/长按/组合键 |
-| `DisplayPresenter` | OLED 页面模型和刷新节流 |
+| `ButtonInput` | 四键消抖、短按/长按 |
+| `DisplayPresenter` | LCD1602 页面模型和刷新节流 |
 | `BeepDriver` | 操作、完成、异常提示 |
 | `WaterLogStore` | 出水日志写入、滚动、分页 |
 | `StatisticsStore` | 今日、本周、本月、总累计 |
 | `FilterStore` | 最多 6 个滤芯的配置、已用天数、已用流量和重置 |
-| `CalibrationController` | 本地流量校准向导、采样一致性检查、系数保存 |
+| `CalibrationController` | 校准采样算法保留为独立逻辑；当前本地四键不进入校准向导 |
 | `FaucetWeb` | 业务页面和 `/api/faucet/...` API |
 
 ## 状态机草案
@@ -49,12 +49,12 @@
 - `RUNNING`：出水中，持续检查容量、时间和异常。
 - `PAUSED`：暂停关阀，等待继续或超时停止。
 - `ERROR`：异常提示，阀门保持关闭。
-- `SLEEP`：OLED 熄屏或低功耗状态。
+- `SLEEP`：LCD 熄屏或低功耗状态。
 
 优先级从高到低：
 
 - 外部电源开关硬断电，不在软件状态机内建模。
-- `STOP` 软件停止关阀。
+- `CANCEL` 软件停止关阀。
 - 安全兜底和异常关阀。
 - 本地按键命令。
 - Web 配置和查询请求。
@@ -64,18 +64,19 @@
 
 | 事件 | 来源 | 说明 |
 | --- | --- | --- |
-| `KeyStopDown` | `STOP` ISR/tick | 最高优先级软件停止 |
-| `KeyOkShort` | 三键输入 | 确认、启动、暂停、继续 |
-| `KeyNextShort` | 三键输入 | 切换预设或菜单项 |
-| `KeyNextLong` | 三键输入 | 进入本地菜单 |
-| `ComboFactoryReset` | `STOP + OK` | 进入恢复出厂确认页 |
+| `KeyCancelDown` | `CANCEL` ISR/tick | 出水中最高优先级软件停止 |
+| `KeyOkShort` | 四键输入 | 确认、启动、暂停、继续 |
+| `KeyOkLong` | 四键输入 | 在确认/暂停页切换 0.5L 与 0.1L 调整步进 |
+| `KeyPlusShort` | 四键输入 | 待机选择下一个预设；确认/暂停页增加本次目标水量 |
+| `KeyMinusShort` | 四键输入 | 待机选择上一个预设；确认/暂停页减少本次目标水量 |
 | `ConfirmTimeout` | timer | 二次确认超时 |
 | `PauseTimeout` | timer | 暂停超时停止 |
 | `TargetReached` | `WaterController` | 容量或时间达到目标 |
 | `SafetyLimitReached` | `WaterController` | 最大时间、最大量、超预设百分比 |
 | `NoFlowTimeout` | `FlowMeter` | 开阀后无流量 |
 | `HighFlowTimeout` | `FlowMeter` | 异常大流量持续超时 |
-| `DisplaySleepTimeout` | timer | OLED 熄屏 |
+| `ResultDisplayTimeout` | timer | 本次出水结果显示结束 |
+| `DisplaySleepTimeout` | timer | LCD 熄屏 |
 | `WebConfigChanged` | Web | 配置保存后生效 |
 
 ### 出水结果
@@ -83,11 +84,10 @@
 | 结果 | 记录日志 | 更新统计/滤芯 | 说明 |
 | --- | --- | --- | --- |
 | `Completed` | yes | yes | 正常达到预设 |
-| `StoppedByUser` | yes | yes | 本地 `STOP` 停止，记录已出水量 |
+| `StoppedByUser` | yes | yes | 本地 `CANCEL` 停止，记录已出水量 |
 | `PauseTimeout` | yes | yes | 暂停超时停止 |
 | `SafetyStopped` | yes | yes | 安全兜底触发 |
 | `FlowError` | yes | yes | 无流量或异常流量 |
-| `CalibrationSample` | no | no | 校准采样不进入出水日志和统计 |
 | `CanceledBeforeStart` | no | no | 确认前取消 |
 
 ## 存储草案
@@ -99,7 +99,7 @@
 - 统计放 NVS，出水完成后立即更新，周期性数据按日期变化重置。
 - 运行快照默认只用于安全恢复判断，重启后默认不继续出水。
 - 滤芯数据放 NVS，记录每个滤芯的启用状态、名称、建议更换天数、最长使用天数、寿命流量、开始时间和累计流量。
-- 校准系数和最多 4 个本地校准候选容量放 NVS；容量为 0 表示停用该候选项，校准采样过程仅在本地操作期间存在，保存前需要用户确认。
+- 校准系数和最多 4 个候选容量放 NVS；容量为 0 表示停用该候选项，当前只能通过 Web 保存参数。
 
 ## Web 草案
 
@@ -195,33 +195,30 @@ struct StatisticsRecord {
 
 ## 持久化配置版本化
 
-系统配置保存在 `faucet_cfg` namespace，当前版本为 v3。运行统计和滤芯运行量分别保存在 `faucet_stat`、`faucet_run`，不与系统配置版本耦合。
+系统配置保存在 `faucet_cfg` namespace，当前版本为 v4。运行统计和滤芯运行量分别保存在 `faucet_stat`、`faucet_run`，不与系统配置版本耦合。
 
 | 版本 | 主要字段 | 加载策略 |
 |---|---|---|
-| v1 | 单个校准目标 `cal_ml`；滤芯只保存单个寿命天数 `life_d` | 加载后迁移为 v3：`cal_ml` 写入第 1 个校准目标，滤芯建议/最大天数都继承 `life_d` |
-| v2 | 单个校准目标 `cal_ml`；滤芯已区分建议/最大天数 | 加载后迁移为 v3：`cal_ml` 写入第 1 个校准目标，其余校准目标保留默认值 |
-| v3 | 多个本地校准候选容量；滤芯建议/最大天数；预设、阀控、OLED、蜂鸣器等完整参数 | 直接加载并做范围钳位 |
+| v1 | 单个校准目标 `cal_ml`；滤芯只保存单个寿命天数 `life_d` | 加载后迁移为 v4：`cal_ml` 写入第 1 个校准目标，滤芯建议/最大天数都继承 `life_d` |
+| v2 | 单个校准目标 `cal_ml`；滤芯已区分建议/最大天数 | 加载后迁移为 v4：`cal_ml` 写入第 1 个校准目标，其余校准目标保留默认值 |
+| v3 | 多个校准候选容量；滤芯建议/最大天数；预设、阀控、OLED 休眠、蜂鸣器等完整参数 | 加载后迁移为 v4：旧 `oled_s` 迁移为 `displaySleepSec`，新增 LCD 地址和结果显示时间 |
+| v4 | LCD1602 地址、显示休眠、结果显示时间；预设、阀控、滤芯、校准参数等完整参数 | 直接加载并做范围钳位 |
 | 未来版本 | 版本号大于当前固件支持版本 | 按当前已知字段只读加载，不自动写回；Web/本地保存会失败，避免降级固件覆盖用户配置 |
-| 未知/损坏版本 | 版本号小于 0 或无法识别 | 使用默认配置并记录警告；用户可通过本地恢复出厂重新生成配置 |
+| 未知/损坏版本 | 版本号小于 0 或无法识别 | 使用默认配置并记录警告；用户可通过 Web 系统工具重新生成配置 |
 
-所有保存路径都必须先复制当前配置、完整修改并通过钳位后再一次性提交给 `ConfigStore` 和 `AppController`。出水、确认、暂停、校准采样期间拒绝热更新配置。
+所有保存路径都必须先复制当前配置、完整修改并通过钳位后再一次性提交给 `ConfigStore` 和 `AppController`。出水、确认和暂停期间拒绝热更新配置。
 
-## 本地流量校准方案
+## 校准参数方案
 
-- 校准入口在本地菜单中，Web 不可触发出水校准。
-- 用户准备有刻度的容器；本地可用 `NEXT` 在 Web 启用的候选容量中选择目标容量，默认启用 1.50L 和 7.50L。
-- 按 `OK` 开始校准出水，达到容器刻度时按 `OK` 停止采样，`STOP` 可随时取消并关阀。
-- 每次采样记录脉冲数和目标容量，计算 `pulse_per_ml = pulses / target_ml`。
-- 至少完成 2 次有效采样；两次结果偏差不超过 5% 时，取平均值作为新系数。
-- 若采样偏差超过 5%，OLED 提示重新采样，不保存新系数。
-- 保存前 OLED 显示旧系数、新系数和确认提示；按 `OK` 保存，按 `STOP` 放弃。
+- 当前本地四键不进入校准向导，避免常用出水操作复杂化。
+- Web 允许查看和手动保存每升信号数，仍不提供远程打开电磁阀的能力。
+- `CalibrationController` 保留纯算法测试能力，后续如果重新设计现场校准流程，应先完整评估交互和安全边界。
 
 ## 已确认实现决策
 
 - Esp32Base 当前 Web 能力按轻量页面、分页、小响应方式使用；若能力不足，按项目规则生成基础库请求。
-- `STOP` ISR 只记录高优先级停止事件，不在 ISR 内做复杂日志、文件、Web 或状态机操作。
-- 控制 tick 必须足够频繁，保证 `STOP` 软件停止响应不超过 50ms。
+- `CANCEL` ISR 只记录高优先级停止事件，不在 ISR 内做复杂日志、文件、Web 或状态机操作。
+- 控制 tick 必须足够频繁，保证 `CANCEL` 软件停止响应不超过 50ms。
 - 日志文件采用二进制定长记录，Web 输出时转换为 JSON。
 - DS3231 按自动检测实现；未焊接时 RTC 驱动自动降级。
 

@@ -11,17 +11,13 @@ constexpr FaucetWebRoute kRoutes[] = {
     {"/faucet/filters", FaucetWebMethod::Get, FaucetWebRouteKind::Page, "滤芯"},
     {"/faucet/logs", FaucetWebMethod::Get, FaucetWebRouteKind::Page, "记录"},
     {"/faucet/stats", FaucetWebMethod::Get, FaucetWebRouteKind::Page, "统计"},
-    {"/faucet/config", FaucetWebMethod::Get, FaucetWebRouteKind::Page, "配置"},
-    {"/faucet/calibration", FaucetWebMethod::Get, FaucetWebRouteKind::Page, "校准"},
     {"/faucet/filters/edit", FaucetWebMethod::Get, FaucetWebRouteKind::Api, nullptr},
     {"/api/faucet/status", FaucetWebMethod::Get, FaucetWebRouteKind::Api, nullptr},
-    {"/api/faucet/config", FaucetWebMethod::Any, FaucetWebRouteKind::Api, nullptr},
     {"/api/faucet/presets", FaucetWebMethod::Any, FaucetWebRouteKind::Api, nullptr},
     {"/api/faucet/logs", FaucetWebMethod::Get, FaucetWebRouteKind::Api, nullptr},
     {"/api/faucet/stats", FaucetWebMethod::Get, FaucetWebRouteKind::Api, nullptr},
     {"/api/faucet/filters", FaucetWebMethod::Any, FaucetWebRouteKind::Api, nullptr},
     {"/api/faucet/filters/reset", FaucetWebMethod::Post, FaucetWebRouteKind::Api, nullptr},
-    {"/api/faucet/calibration", FaucetWebMethod::Any, FaucetWebRouteKind::Api, nullptr},
 };
 
 bool equals(const char* a, const char* b) {

@@ -177,6 +177,12 @@ void test_app_config_source_uses_clear_business_labels_and_help() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "确认页超时"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "最大出水时长"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "无流量判定超时"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "流量计校准系数"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "脉冲/L"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "每升水对应的流量计脉冲数"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "流量计脉冲系数"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "高级救援参数"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "pulse/ml"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "保存后需重启，重启后重新探测 LCD。"));
 }
 

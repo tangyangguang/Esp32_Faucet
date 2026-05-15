@@ -57,7 +57,7 @@ void test_config_json_contains_safety_and_display_settings() {
 
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"confirmTimeoutSec\":10"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"maxOutVolumeMl\":30000"));
-    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"valveHoldDutyPercent\":30"));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"valveHoldDutyPercent\":100"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"beepEnabled\":false"));
 }
 

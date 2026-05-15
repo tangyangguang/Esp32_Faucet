@@ -32,7 +32,7 @@ constexpr std::uint8_t kMinCalibrationSamples = 2;
 constexpr std::uint8_t kCalibrationTolerancePercent = 5;
 
 constexpr std::uint32_t kDefaultValveFullPowerSec = 3;
-constexpr std::uint8_t kDefaultValveHoldDutyPercent = 30;
+constexpr std::uint8_t kDefaultValveHoldDutyPercent = 100;
 constexpr std::uint8_t kMinValveHoldDutyPercent = 20;
 constexpr std::uint8_t kMaxValveHoldDutyPercent = 100;
 

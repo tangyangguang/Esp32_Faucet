@@ -164,7 +164,7 @@ bool addCoreFields(const SystemConfig& defaults) {
     ok = Esp32BaseAppConfig::addInt({kGroupFlow, kConfigNs, kKeyPauseTimeout, "暂停保持时间", static_cast<std::int32_t>(defaults.pauseTimeoutSec), 10, 3600, 10, "s", "暂停超过该时间自动结束本次出水。", false, nullptr}) && ok;
 
     ok = Esp32BaseAppConfig::addInt({kGroupValve, kConfigNs, kKeyValveFullPower, "阀门全功率时间", static_cast<std::int32_t>(defaults.valveFullPowerSec), 1, 10, 1, "s", "开阀初段全功率吸合的持续时间。", false, nullptr}) && ok;
-    ok = Esp32BaseAppConfig::addInt({kGroupValve, kConfigNs, kKeyValveHoldDuty, "阀门保持占空比", defaults.valveHoldDutyPercent, kMinValveHoldDutyPercent, kMaxValveHoldDutyPercent, 1, "%", "全功率后维持开阀的 PWM 占空比。", false, nullptr}) && ok;
+    ok = Esp32BaseAppConfig::addInt({kGroupValve, kConfigNs, kKeyValveHoldDuty, "阀门保持占空比", defaults.valveHoldDutyPercent, kMinValveHoldDutyPercent, kMaxValveHoldDutyPercent, 1, "%", "100% 为全压保持；低于 100% 时启用降功耗 PWM 保持。", false, nullptr}) && ok;
 
     ok = Esp32BaseAppConfig::addInt({kGroupLocal, kConfigNs, kKeyDisplaySleep, "LCD 熄屏时间", static_cast<std::int32_t>(defaults.displaySleepSec), 5, 300, 5, "s", "待机无操作超过该时间关闭背光。立即生效。", false, nullptr}) && ok;
     ok = Esp32BaseAppConfig::addInt({kGroupLocal, kConfigNs, kKeyResultDisplay, "结果页显示时间", static_cast<std::int32_t>(defaults.resultDisplaySec), 0, 60, 1, "s", "出水结束后结果页停留时间，0 表示立即返回。", false, nullptr}) && ok;

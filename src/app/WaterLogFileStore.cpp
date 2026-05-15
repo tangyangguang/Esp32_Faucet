@@ -70,6 +70,9 @@ bool WaterLogFileStore::append(const WaterLogRecord& record) {
     if (!ready_) {
         return false;
     }
+    if (!backend_.exists(path_) && !initializeNewFile()) {
+        return false;
+    }
 
     std::size_t writeIndex = 0;
     std::size_t nextCount = count_;
@@ -98,7 +101,7 @@ bool WaterLogFileStore::append(const WaterLogRecord& record) {
 }
 
 std::size_t WaterLogFileStore::rewriteBootRelativeTimes(std::uint32_t bootId, std::uint32_t bootStartRealSec) {
-    if (!ready_ || bootId == 0) {
+    if (!ready_ || !backend_.exists(path_) || bootId == 0) {
         return 0;
     }
     std::size_t changed = 0;
@@ -126,6 +129,9 @@ std::size_t WaterLogFileStore::readPage(std::size_t pageIndex,
                                         WaterLogRecord* output,
                                         std::size_t outputCapacity) const {
     if (!ready_ || !output || outputCapacity == 0 || count_ == 0) {
+        return 0;
+    }
+    if (!backend_.exists(path_)) {
         return 0;
     }
 
@@ -159,7 +165,7 @@ bool WaterLogFileStore::clear() {
 }
 
 std::size_t WaterLogFileStore::count() const {
-    return count_;
+    return ready_ && backend_.exists(path_) ? count_ : 0;
 }
 
 std::size_t WaterLogFileStore::capacity() const {
@@ -167,11 +173,11 @@ std::size_t WaterLogFileStore::capacity() const {
 }
 
 bool WaterLogFileStore::ready() const {
-    return ready_;
+    return ready_ && backend_.exists(path_);
 }
 
 const char* WaterLogFileStore::storageName() const {
-    return ready_ ? "file" : "unavailable";
+    return ready() ? "file" : "unavailable";
 }
 
 bool WaterLogFileStore::initializeNewFile() {

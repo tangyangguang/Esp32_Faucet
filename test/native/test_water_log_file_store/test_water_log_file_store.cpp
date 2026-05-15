@@ -184,6 +184,30 @@ void test_file_log_clear_keeps_file_ready() {
     TEST_ASSERT_EQUAL_size_t(0, store.readPage(0, 1, page, 1));
 }
 
+void test_file_log_reports_zero_after_external_remove_and_recovers_on_append() {
+    MemoryFileBackend backend;
+    WaterLogFileStore store(backend, "/water.bin", 3);
+    TEST_ASSERT_TRUE(store.begin());
+    TEST_ASSERT_TRUE(store.append(makeRecord(100, 1000)));
+    TEST_ASSERT_TRUE(store.append(makeRecord(200, 2000)));
+    TEST_ASSERT_EQUAL_size_t(2, store.count());
+
+    TEST_ASSERT_TRUE(backend.removeFile("/water.bin"));
+
+    WaterLogRecord page[2]{};
+    TEST_ASSERT_FALSE(store.ready());
+    TEST_ASSERT_EQUAL_STRING("unavailable", store.storageName());
+    TEST_ASSERT_EQUAL_size_t(0, store.count());
+    TEST_ASSERT_EQUAL_size_t(0, store.readPage(0, 2, page, 2));
+
+    TEST_ASSERT_TRUE(store.append(makeRecord(300, 3000)));
+    TEST_ASSERT_TRUE(store.ready());
+    TEST_ASSERT_EQUAL_STRING("file", store.storageName());
+    TEST_ASSERT_EQUAL_size_t(1, store.count());
+    TEST_ASSERT_EQUAL_size_t(1, store.readPage(0, 2, page, 2));
+    TEST_ASSERT_EQUAL_UINT32(300, page[0].startTime);
+}
+
 void test_file_log_grows_records_on_demand() {
     MemoryFileBackend backend;
     WaterLogFileStore store(backend, "/water.bin", 3);
@@ -268,6 +292,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_file_log_persists_header_and_records_across_instances);
     RUN_TEST(test_file_log_reinitializes_corrupt_header);
     RUN_TEST(test_file_log_clear_keeps_file_ready);
+    RUN_TEST(test_file_log_reports_zero_after_external_remove_and_recovers_on_append);
     RUN_TEST(test_file_log_grows_records_on_demand);
     RUN_TEST(test_file_log_reports_backend_failures);
     RUN_TEST(test_file_log_append_failure_keeps_runtime_state);

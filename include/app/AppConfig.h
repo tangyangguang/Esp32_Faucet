@@ -11,11 +11,11 @@ constexpr std::uint32_t kMaxVolumePresetMl = 20000;
 constexpr std::uint32_t kMinTimePresetSec = 5;
 constexpr std::uint32_t kMaxTimePresetSec = 1800;
 
-constexpr std::uint32_t kDefaultConfirmTimeoutSec = 10;
+constexpr std::uint32_t kDefaultConfirmTimeoutSec = 60;
 constexpr std::uint32_t kDefaultMaxOutTimeSec = 1800;
 constexpr std::uint32_t kDefaultMaxOutVolumeMl = 30000;
 constexpr std::uint8_t kDefaultOverflowPercent = 10;
-constexpr std::uint32_t kDefaultNoFlowTimeoutSec = 3;
+constexpr std::uint32_t kDefaultNoFlowTimeoutSec = 10;
 constexpr std::uint32_t kDefaultHighFlowMlPerMin = 30000;
 constexpr std::uint32_t kDefaultHighFlowDurationSec = 5;
 constexpr std::uint32_t kDefaultPauseTimeoutSec = 300;
@@ -31,13 +31,13 @@ constexpr std::uint32_t kDefaultCalibrationTargetsMl[kCalibrationTargetCount] = 
 constexpr std::uint8_t kMinCalibrationSamples = 2;
 constexpr std::uint8_t kCalibrationTolerancePercent = 5;
 
-constexpr std::uint32_t kDefaultValveFullPowerSec = 3;
-constexpr std::uint8_t kDefaultValveHoldDutyPercent = 100;
+constexpr std::uint32_t kDefaultValveFullPowerSec = 10;
+constexpr std::uint8_t kDefaultValveHoldDutyPercent = 70;
 constexpr std::uint8_t kMinValveHoldDutyPercent = 20;
 constexpr std::uint8_t kMaxValveHoldDutyPercent = 100;
 
-constexpr std::uint32_t kDefaultDisplaySleepSec = 30;
-constexpr std::uint32_t kDefaultResultDisplaySec = 15;
+constexpr std::uint32_t kDefaultDisplaySleepSec = 60;
+constexpr std::uint32_t kDefaultResultDisplaySec = 30;
 constexpr std::uint8_t kDefaultLcdI2cAddress = 0x27;
 constexpr std::uint16_t kDefaultLogPageSize = 20;
 constexpr std::uint16_t kMaxLogPageSize = 200;

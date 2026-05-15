@@ -66,7 +66,7 @@ test/native/
    - `WaterLogStore` 使用 LittleFS 二进制定长记录，分页最大 200 条。
 
 5. 设备驱动
-   - `ValveDriver`：GPIO16，全压吸合 3s 后 PWM 保持。业务逻辑、GPIO16 LEDC 适配和主循环接入已完成，待上板验证。
+   - `ValveDriver`：GPIO16，全压吸合后 PWM 保持，默认全压吸合 10s、保持占空比 70%。业务逻辑、GPIO16 LEDC 适配和主循环接入已完成，待上板验证。
    - `FlowMeter`：GPIO32 中断计数，软件过滤，单一流量系数。业务逻辑、GPIO32 ISR 缓冲适配和主循环接入已完成，待上板验证。
    - `ButtonInput`：GPIO25/33/26/27，内部上拉，低电平有效。业务逻辑、GPIO 低电平读取和主循环接入已完成，待上板验证。
    - `Lcd1602Display` / `DisplayPresenter`：LCD1602 I2C 双行页面和 PCF8574T 驱动已完成，按键/运行唤醒、空闲熄屏和结果显示已接入，待上板验证地址和背包引脚映射。

@@ -13,6 +13,7 @@
 
 #include <Esp32Base.h>
 #include <cstdarg>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <new>
@@ -1038,6 +1039,46 @@ void handleFilterEditPage() {
     sendPageEnd();
 }
 
+void handleCalibrationPage() {
+    if (!sendPageStart("流量校准")) {
+        return;
+    }
+    if (!requireContext()) {
+        sendPageEnd();
+        return;
+    }
+
+    sendNoticeFromQuery();
+    const float pulsePerLiter = g_context.config->pulsePerMl * 1000.0f;
+    const std::uint32_t targetMl = firstEnabledCalibrationTarget(g_context.config->calibrationTargetsMl);
+    const std::uint32_t defaultTargetMl = targetMl == kDisabledCalibrationTargetMl ? 1500UL : targetMl;
+
+    Esp32BaseWeb::sendChunk("<h2>流量校准</h2><section class='panel'><h3>量杯校准</h3>"
+                            "<p class='hint'>用本地按键按目标量出水到量杯，只在这里填写量杯实际水量并保存系数。</p>"
+                            "<form method='post' action='/faucet/calibration/save' onsubmit='return once(this)'>"
+                            "<input type='hidden' name='mode' value='measured'><div class='form-grid'>");
+    sendVolumeInput("设定出水量（ml）", "targetMl", defaultTargetMl);
+    sendVolumeInput("量杯实际水量（ml）", "actualMl", defaultTargetMl);
+    Esp32BaseWeb::sendChunk("</div><div class='form-actions'><input type='submit' value='按实测保存'></div></form></section>");
+
+    sendFmt("<section class='panel'><h3>手动参数</h3>"
+            "<form method='post' action='/faucet/calibration/save' onsubmit='return once(this)'>"
+            "<input type='hidden' name='mode' value='manual'><div class='form-grid'>"
+            "<label class='field span-3'><span>每升脉冲数</span><input name='pulsePerLiter' value='%.1f'>"
+            "<small class='hint'>当前 %.3f pulse/ml</small></label>",
+            static_cast<double>(pulsePerLiter),
+            static_cast<double>(g_context.config->pulsePerMl));
+    for (std::size_t i = 0; i < kCalibrationTargetCount; ++i) {
+        char label[24]{};
+        std::snprintf(label, sizeof(label), "候选容量%u（ml）", static_cast<unsigned>(i + 1));
+        sendVolumeInput(label, i == 0 ? "target0" : i == 1 ? "target1" : i == 2 ? "target2" : "target3",
+                        g_context.config->calibrationTargetsMl[i]);
+    }
+    Esp32BaseWeb::sendChunk("</div><div class='form-actions'><input type='submit' value='保存手动参数'></div>"
+                            "</form></section>");
+    sendPageEnd();
+}
+
 void handleApi() {
     if (!Esp32BaseWeb::checkAuth()) {
         return;
@@ -1077,6 +1118,19 @@ void applyU32Param(const char* name, std::uint32_t& value) {
 
 bool checkboxParam(const char* name) {
     return Esp32BaseWeb::hasParam(name);
+}
+
+bool parseCalibrationTargetParam(const char* name, std::uint32_t& targetMl) {
+    char text[24]{};
+    std::uint32_t parsed = 0;
+    if (!getParam(name, text, sizeof(text)) || !parseU32(text, parsed)) {
+        return false;
+    }
+    if (parsed != kDisabledCalibrationTargetMl && !isValidCalibrationTarget(parsed)) {
+        return false;
+    }
+    targetMl = parsed;
+    return true;
 }
 
 bool persistConfig(const SystemConfig& config) {
@@ -1259,6 +1313,67 @@ void handleStatsApi() {
     sendJsonBuffer(writeStatsJson(g_context.app->snapshot().statistics, json, sizeof(json)), json);
 }
 
+void handleCalibrationSave() {
+    if (!Esp32BaseWeb::checkAuth() || !requireContext()) {
+        return;
+    }
+    if (!g_context.app->canApplyConfig()) {
+        Esp32BaseWeb::redirectSeeOther("/faucet/calibration?error=busy");
+        return;
+    }
+
+    char text[32]{};
+    if (!getParam("mode", text, sizeof(text))) {
+        Esp32BaseWeb::redirectSeeOther("/faucet/calibration?error=invalid_value");
+        return;
+    }
+
+    SystemConfig candidate = *g_context.config;
+    if (std::strcmp(text, "measured") == 0) {
+        std::uint32_t targetMl = 0;
+        std::uint32_t actualMl = 0;
+        char value[24]{};
+        if (!getParam("targetMl", value, sizeof(value)) || !parseU32(value, targetMl) ||
+            !getParam("actualMl", value, sizeof(value)) || !parseU32(value, actualMl) ||
+            !isValidCalibrationTarget(targetMl) || !isValidCalibrationTarget(actualMl)) {
+            Esp32BaseWeb::redirectSeeOther("/faucet/calibration?error=invalid_value");
+            return;
+        }
+        const float proposed =
+            candidate.pulsePerMl * (static_cast<float>(targetMl) / static_cast<float>(actualMl));
+        if (!std::isfinite(proposed) || proposed < kMinPulsePerMl || proposed > kMaxPulsePerMl) {
+            Esp32BaseWeb::redirectSeeOther("/faucet/calibration?error=invalid_value");
+            return;
+        }
+        candidate.pulsePerMl = proposed;
+    } else if (std::strcmp(text, "manual") == 0) {
+        float pulsePerLiter = 0.0f;
+        if (!getParam("pulsePerLiter", text, sizeof(text)) || !parseFloat(text, pulsePerLiter)) {
+            Esp32BaseWeb::redirectSeeOther("/faucet/calibration?error=invalid_value");
+            return;
+        }
+        const float pulsePerMl = pulsePerLiter / 1000.0f;
+        if (!std::isfinite(pulsePerMl) || pulsePerMl < kMinPulsePerMl || pulsePerMl > kMaxPulsePerMl) {
+            Esp32BaseWeb::redirectSeeOther("/faucet/calibration?error=invalid_value");
+            return;
+        }
+        candidate.pulsePerMl = pulsePerMl;
+        const char* names[kCalibrationTargetCount] = {"target0", "target1", "target2", "target3"};
+        for (std::size_t i = 0; i < kCalibrationTargetCount; ++i) {
+            if (!parseCalibrationTargetParam(names[i], candidate.calibrationTargetsMl[i])) {
+                Esp32BaseWeb::redirectSeeOther("/faucet/calibration?error=invalid_value");
+                return;
+            }
+        }
+    } else {
+        Esp32BaseWeb::redirectSeeOther("/faucet/calibration?error=invalid_value");
+        return;
+    }
+
+    const bool ok = persistConfig(candidate);
+    Esp32BaseWeb::redirectSeeOther(ok ? "/faucet/calibration?saved=1" : "/faucet/calibration?error=save_failed");
+}
+
 void handleFiltersApi() {
     if (!Esp32BaseWeb::checkAuth() || !requireContext()) {
         return;
@@ -1352,6 +1467,9 @@ Esp32BaseWeb::Handler handlerFor(const FaucetWebRoute& route) {
         if (std::strcmp(route.path, "/faucet/filters") == 0) {
             return handleFiltersPage;
         }
+        if (std::strcmp(route.path, "/faucet/calibration") == 0) {
+            return handleCalibrationPage;
+        }
         return handleFaucetPage;
     }
     if (std::strcmp(route.path, "/api/faucet/status") == 0) {
@@ -1365,6 +1483,9 @@ Esp32BaseWeb::Handler handlerFor(const FaucetWebRoute& route) {
     }
     if (std::strcmp(route.path, "/faucet/filters/reset") == 0) {
         return handleFiltersResetApi;
+    }
+    if (std::strcmp(route.path, "/faucet/calibration/save") == 0) {
+        return handleCalibrationSave;
     }
     if (std::strcmp(route.path, "/api/faucet/presets") == 0) {
         return handlePresetsApi;

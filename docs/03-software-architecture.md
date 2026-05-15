@@ -109,7 +109,7 @@
 - 配置写入、恢复出厂、重启等操作使用 POST，并需要 Basic Auth。
 - 日志、统计、配置接口必须分页或小响应，避免大内存拼接。
 - Web 端不得注册启动出水、暂停出水、继续出水、停止出水 API 或按钮。
-- Web 端校准页面只允许查看/保存每升信号数和本地候选容量，不允许远程打开电磁阀。
+- Web 端校准页面允许按量杯实测换算或手动保存每升信号数和本地候选容量，不允许远程打开电磁阀。
 - Web 默认认证通过 Esp32Base `setDefaultAuth()` 设置为 `admin/admin`；用户可通过 `/esp32base/auth` 修改认证，已保存认证优先于应用默认值。
 - WebOTA 目标地址和凭据不写入仓库；本地复制 `platformio.ini.example` 为 `platformio.ini.local` 后填写 `custom_esp32base_webota_*`。
 - 当前构建将 Esp32Base 串口日志等级设为 DEBUG，文件日志等级设为 INFO，用于保留更完整的启动和现场诊断信息。文件日志等级在启动后显式应用为 INFO，避免设备 NVS 中旧的 `eb_log.level` 覆盖当前项目策略。注意：基础库 INFO 日志会输出 WiFi/Web 认证明文凭据，调试日志和文件日志需要按敏感信息管理。
@@ -125,7 +125,7 @@
 | 统计 | `/faucet/stats` | 今日、本周、本月、总累计 |
 | 滤芯 | `/faucet/filters` | 最多 6 个滤芯的已用天数、已用流量、寿命范围、状态、设置入口和重置 |
 | 滤芯设置 | `/faucet/filters/edit?index=N` | 单个滤芯的启用状态、名称、建议更换周期、最长使用周期、寿命流量和上次更换日期配置；隐藏路由，不进入导航 |
-| 校准 | `/faucet/calibration` | 查看/保存每升信号数和 4 个本地候选容量；不出水 |
+| 校准 | `/faucet/calibration` | 按量杯实测换算或手动保存每升信号数和 4 个本地候选容量；不出水 |
 
 ### Web API
 

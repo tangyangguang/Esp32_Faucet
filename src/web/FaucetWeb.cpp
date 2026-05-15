@@ -946,7 +946,7 @@ void handleFiltersPage() {
         sendFmt("</td><td><span class='status-pill filter-status'>%s</span></td><td><div class='row-actions'><a href='/faucet/filters/edit?index=%u'>设置</a>",
                 filterDisplayStatusText(filter, usedDays),
                 static_cast<unsigned>(i));
-        Esp32BaseWeb::sendChunk("<form method='post' action='/faucet/filters/reset' data-filter-name='");
+        Esp32BaseWeb::sendChunk("<form method='post' action='/api/faucet/filters/reset' data-filter-name='");
         sendHtmlAttrEscaped(filter.name);
         Esp32BaseWeb::sendChunk("' data-reset-date='");
         sendHtmlAttrEscaped(todayDate);
@@ -1013,8 +1013,9 @@ void handleFilterEditPage() {
     const FilterRecord& filter = g_context.filters->record(index);
     sendNoticeFromQuery();
     sendFmt("<h2>第 %u 级滤芯设置</h2>"
-            "<section class='panel'><form method='post' action='/faucet/filters/save' onsubmit='return once(this)'>"
-            "<input type='hidden' name='index' value='%u'><div class='form-grid'>",
+            "<section class='panel'><form method='post' action='/api/faucet/filters' onsubmit='return once(this)'>"
+            "<input type='hidden' name='index' value='%u'><input type='hidden' name='return' value='/faucet/filters'>"
+            "<div class='form-grid'>",
             static_cast<unsigned>(index + 1),
             static_cast<unsigned>(index));
     Esp32BaseWeb::sendChunk("<div class='span-2'>");
@@ -1055,14 +1056,14 @@ void handleCalibrationPage() {
 
     Esp32BaseWeb::sendChunk("<h2>流量校准</h2><section class='panel'><h3>量杯校准</h3>"
                             "<p class='hint'>用本地按键按目标量出水到量杯，只在这里填写量杯实际水量并保存系数。</p>"
-                            "<form method='post' action='/faucet/calibration/save' onsubmit='return once(this)'>"
+                            "<form method='post' action='/api/faucet/calibration' onsubmit='return once(this)'>"
                             "<input type='hidden' name='mode' value='measured'><div class='form-grid'>");
     sendVolumeInput("设定出水量（ml）", "targetMl", defaultTargetMl);
     sendVolumeInput("量杯实际水量（ml）", "actualMl", defaultTargetMl);
     Esp32BaseWeb::sendChunk("</div><div class='form-actions'><input type='submit' value='按实测保存'></div></form></section>");
 
     sendFmt("<section class='panel'><h3>手动参数</h3>"
-            "<form method='post' action='/faucet/calibration/save' onsubmit='return once(this)'>"
+            "<form method='post' action='/api/faucet/calibration' onsubmit='return once(this)'>"
             "<input type='hidden' name='mode' value='manual'><div class='form-grid'>"
             "<label class='field span-3'><span>每升脉冲数</span><input name='pulsePerLiter' value='%.1f'>"
             "<small class='hint'>当前 %.3f pulse/ml</small></label>",
@@ -1164,28 +1165,35 @@ bool saveConfigAndReply(const SystemConfig& config) {
     return ok;
 }
 
-bool persistFilterConfig(const SystemConfig& config, std::size_t index) {
+bool persistFilterConfig(const FilterRecord& record, std::size_t index) {
     if (!g_context.app->canApplyConfig() || index >= kFilterCount) {
         return false;
     }
 
-    SystemConfig safe = config;
-    sanitizeConfig(safe);
+    SystemConfig* safe = new (std::nothrow) SystemConfig(*g_context.config);
+    if (!safe) {
+        return false;
+    }
+    safe->filters[index] = record;
+    sanitizeConfig(*safe);
 
     FilterRecord runtime[kFilterCount]{};
     const FilterRecord* current = g_context.filters->records();
     for (std::size_t i = 0; i < kFilterCount; ++i) {
         runtime[i] = current[i];
     }
-    runtime[index] = safe.filters[index];
+    runtime[index] = safe->filters[index];
 
-    if (!g_context.configStore->saveSystemConfig(safe) || !g_context.configStore->saveFilterRuntime(runtime)) {
+    if (!g_context.configStore->saveSystemConfig(*safe) || !g_context.configStore->saveFilterRuntime(runtime)) {
+        delete safe;
         return false;
     }
-    if (!g_context.filters->updateFilter(index, safe.filters[index]) || !g_context.app->applyConfig(safe)) {
+    if (!g_context.filters->updateFilter(index, safe->filters[index]) || !g_context.app->applyConfig(*safe)) {
+        delete safe;
         return false;
     }
-    *g_context.config = safe;
+    *g_context.config = *safe;
+    delete safe;
     if (g_context.applySettings) {
         g_context.applySettings(*g_context.config);
     }
@@ -1224,8 +1232,16 @@ void handlePresetsApi() {
             Esp32BaseWeb::sendJson(400, "{\"error\":\"invalid_index\"}");
             return;
         }
-        SystemConfig candidate = *g_context.config;
-        PresetConfig& preset = candidate.presets[index];
+        SystemConfig* candidate = new (std::nothrow) SystemConfig(*g_context.config);
+        if (!candidate) {
+            if (browserForm) {
+                Esp32BaseWeb::redirectSeeOther("/faucet/presets?error=save_failed");
+                return;
+            }
+            Esp32BaseWeb::sendJson(500, "{\"error\":\"oom\"}");
+            return;
+        }
+        PresetConfig& preset = candidate->presets[index];
         preset.enabled = checkboxParam("enabled");
         if (getParam("type", text, sizeof(text))) {
             preset.type = std::strcmp(text, "time") == 0 ? PresetType::Time : PresetType::Volume;
@@ -1237,6 +1253,7 @@ void handlePresetsApi() {
                                  (preset.type == PresetType::Volume && value >= kMinVolumePresetMl &&
                                   value <= kMaxVolumePresetMl));
         if (!validValue) {
+            delete candidate;
             if (browserForm) {
                 char location[80]{};
                 std::snprintf(location,
@@ -1252,10 +1269,12 @@ void handlePresetsApi() {
         preset.value = value;
         Esp32BaseWeb::getParam("name", preset.name, sizeof(preset.name));
         if (browserForm) {
-            const bool ok = persistConfig(candidate);
+            const bool ok = persistConfig(*candidate);
+            delete candidate;
             Esp32BaseWeb::redirectSeeOther(ok ? "/faucet/presets?saved=1" : "/faucet/presets?error=save_failed");
         } else {
-            saveConfigAndReply(candidate);
+            saveConfigAndReply(*candidate);
+            delete candidate;
         }
         return;
     }
@@ -1313,8 +1332,13 @@ void handleStatsApi() {
     sendJsonBuffer(writeStatsJson(g_context.app->snapshot().statistics, json, sizeof(json)), json);
 }
 
-void handleCalibrationSave() {
+void handleCalibrationApi() {
     if (!Esp32BaseWeb::checkAuth() || !requireContext()) {
+        return;
+    }
+    if (!Esp32BaseWeb::isMethod(Esp32BaseWeb::METHOD_POST)) {
+        char json[512]{};
+        sendJsonBuffer(writeCalibrationJson(*g_context.config, json, sizeof(json)), json);
         return;
     }
     if (!g_context.app->canApplyConfig()) {
@@ -1328,7 +1352,11 @@ void handleCalibrationSave() {
         return;
     }
 
-    SystemConfig candidate = *g_context.config;
+    SystemConfig* candidate = new (std::nothrow) SystemConfig(*g_context.config);
+    if (!candidate) {
+        Esp32BaseWeb::redirectSeeOther("/faucet/calibration?error=save_failed");
+        return;
+    }
     if (std::strcmp(text, "measured") == 0) {
         std::uint32_t targetMl = 0;
         std::uint32_t actualMl = 0;
@@ -1336,41 +1364,48 @@ void handleCalibrationSave() {
         if (!getParam("targetMl", value, sizeof(value)) || !parseU32(value, targetMl) ||
             !getParam("actualMl", value, sizeof(value)) || !parseU32(value, actualMl) ||
             !isValidCalibrationTarget(targetMl) || !isValidCalibrationTarget(actualMl)) {
+            delete candidate;
             Esp32BaseWeb::redirectSeeOther("/faucet/calibration?error=invalid_value");
             return;
         }
         const float proposed =
-            candidate.pulsePerMl * (static_cast<float>(targetMl) / static_cast<float>(actualMl));
+            candidate->pulsePerMl * (static_cast<float>(targetMl) / static_cast<float>(actualMl));
         if (!std::isfinite(proposed) || proposed < kMinPulsePerMl || proposed > kMaxPulsePerMl) {
+            delete candidate;
             Esp32BaseWeb::redirectSeeOther("/faucet/calibration?error=invalid_value");
             return;
         }
-        candidate.pulsePerMl = proposed;
+        candidate->pulsePerMl = proposed;
     } else if (std::strcmp(text, "manual") == 0) {
         float pulsePerLiter = 0.0f;
         if (!getParam("pulsePerLiter", text, sizeof(text)) || !parseFloat(text, pulsePerLiter)) {
+            delete candidate;
             Esp32BaseWeb::redirectSeeOther("/faucet/calibration?error=invalid_value");
             return;
         }
         const float pulsePerMl = pulsePerLiter / 1000.0f;
         if (!std::isfinite(pulsePerMl) || pulsePerMl < kMinPulsePerMl || pulsePerMl > kMaxPulsePerMl) {
+            delete candidate;
             Esp32BaseWeb::redirectSeeOther("/faucet/calibration?error=invalid_value");
             return;
         }
-        candidate.pulsePerMl = pulsePerMl;
+        candidate->pulsePerMl = pulsePerMl;
         const char* names[kCalibrationTargetCount] = {"target0", "target1", "target2", "target3"};
         for (std::size_t i = 0; i < kCalibrationTargetCount; ++i) {
-            if (!parseCalibrationTargetParam(names[i], candidate.calibrationTargetsMl[i])) {
+            if (!parseCalibrationTargetParam(names[i], candidate->calibrationTargetsMl[i])) {
+                delete candidate;
                 Esp32BaseWeb::redirectSeeOther("/faucet/calibration?error=invalid_value");
                 return;
             }
         }
     } else {
+        delete candidate;
         Esp32BaseWeb::redirectSeeOther("/faucet/calibration?error=invalid_value");
         return;
     }
 
-    const bool ok = persistConfig(candidate);
+    const bool ok = persistConfig(*candidate);
+    delete candidate;
     Esp32BaseWeb::redirectSeeOther(ok ? "/faucet/calibration?saved=1" : "/faucet/calibration?error=save_failed");
 }
 
@@ -1390,7 +1425,6 @@ void handleFiltersApi() {
             return;
         }
 
-        SystemConfig candidate = *g_context.config;
         FilterRecord record = g_context.filters->record(index);
         record.enabled = checkboxParam("enabled");
         Esp32BaseWeb::getParam("name", record.name, sizeof(record.name));
@@ -1417,8 +1451,7 @@ void handleFiltersApi() {
         }
         record.name[kFilterNameLength - 1] = '\0';
 
-        candidate.filters[index] = record;
-        const bool ok = persistFilterConfig(candidate, index);
+        const bool ok = persistFilterConfig(record, index);
         Esp32BaseWeb::redirectSeeOther(ok ? "/faucet/filters?saved=1" : "/faucet/filters?error=save_failed");
         return;
     }
@@ -1478,15 +1511,6 @@ Esp32BaseWeb::Handler handlerFor(const FaucetWebRoute& route) {
     if (std::strcmp(route.path, "/faucet/filters/edit") == 0) {
         return handleFilterEditPage;
     }
-    if (std::strcmp(route.path, "/faucet/filters/save") == 0) {
-        return handleFiltersApi;
-    }
-    if (std::strcmp(route.path, "/faucet/filters/reset") == 0) {
-        return handleFiltersResetApi;
-    }
-    if (std::strcmp(route.path, "/faucet/calibration/save") == 0) {
-        return handleCalibrationSave;
-    }
     if (std::strcmp(route.path, "/api/faucet/presets") == 0) {
         return handlePresetsApi;
     }
@@ -1501,6 +1525,9 @@ Esp32BaseWeb::Handler handlerFor(const FaucetWebRoute& route) {
     }
     if (std::strcmp(route.path, "/api/faucet/filters/reset") == 0) {
         return handleFiltersResetApi;
+    }
+    if (std::strcmp(route.path, "/api/faucet/calibration") == 0) {
+        return handleCalibrationApi;
     }
     return handleApi;
 }

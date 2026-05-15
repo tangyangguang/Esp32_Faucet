@@ -10,7 +10,7 @@ using namespace faucet;
 void test_routes_fit_esp32base_default_route_capacity() {
     TEST_ASSERT_TRUE(faucetWebRoutesFitEsp32Base());
     TEST_ASSERT_LESS_OR_EQUAL_size_t(kFaucetWebMaxRoutes, faucetWebRouteCount());
-    TEST_ASSERT_EQUAL_size_t(16, faucetWebRouteCount());
+    TEST_ASSERT_EQUAL_size_t(14, faucetWebRouteCount());
 }
 
 void test_routes_do_not_register_remote_water_control_paths() {
@@ -51,10 +51,10 @@ void test_dual_method_routes_are_merged_to_any() {
     TEST_ASSERT_TRUE(foundPresets);
     TEST_ASSERT_TRUE(foundFilters);
     TEST_ASSERT_FALSE(faucetWebRouteAllowed("/api/faucet/config"));
-    TEST_ASSERT_FALSE(faucetWebRouteAllowed("/api/faucet/calibration"));
+    TEST_ASSERT_TRUE(faucetWebRouteAllowed("/api/faucet/calibration"));
     TEST_ASSERT_FALSE(faucetWebRouteAllowed("/faucet/config"));
     TEST_ASSERT_TRUE(faucetWebRouteAllowed("/faucet/calibration"));
-    TEST_ASSERT_TRUE(faucetWebRouteAllowed("/faucet/calibration/save"));
+    TEST_ASSERT_FALSE(faucetWebRouteAllowed("/faucet/calibration/save"));
 }
 
 void test_filter_edit_route_is_hidden_from_navigation() {
@@ -69,21 +69,21 @@ void test_filter_edit_route_is_hidden_from_navigation() {
     TEST_ASSERT_TRUE(found);
 }
 
-void test_filter_form_routes_are_page_post_endpoints() {
+void test_filter_forms_use_registered_api_endpoints() {
     const FaucetWebRoute* routes = faucetWebRoutes();
-    bool foundSave = false;
+    bool foundFilters = false;
     bool foundReset = false;
     for (std::size_t i = 0; i < faucetWebRouteCount(); ++i) {
-        if (std::strcmp(routes[i].path, "/faucet/filters/save") == 0) {
-            foundSave = routes[i].method == FaucetWebMethod::Post && routes[i].kind == FaucetWebRouteKind::Api &&
-                        routes[i].title == nullptr;
+        if (std::strcmp(routes[i].path, "/api/faucet/filters") == 0) {
+            foundFilters = routes[i].method == FaucetWebMethod::Any && routes[i].kind == FaucetWebRouteKind::Api &&
+                           routes[i].title == nullptr;
         }
-        if (std::strcmp(routes[i].path, "/faucet/filters/reset") == 0) {
+        if (std::strcmp(routes[i].path, "/api/faucet/filters/reset") == 0) {
             foundReset = routes[i].method == FaucetWebMethod::Post && routes[i].kind == FaucetWebRouteKind::Api &&
                          routes[i].title == nullptr;
         }
     }
-    TEST_ASSERT_TRUE(foundSave);
+    TEST_ASSERT_TRUE(foundFilters);
     TEST_ASSERT_TRUE(foundReset);
 }
 
@@ -102,19 +102,19 @@ void test_presets_page_is_available_in_navigation() {
 void test_calibration_page_is_available_in_navigation() {
     const FaucetWebRoute* routes = faucetWebRoutes();
     bool found = false;
-    bool foundSave = false;
+    bool foundApi = false;
     for (std::size_t i = 0; i < faucetWebRouteCount(); ++i) {
         if (std::strcmp(routes[i].path, "/faucet/calibration") == 0) {
             found = routes[i].method == FaucetWebMethod::Get && routes[i].kind == FaucetWebRouteKind::Page &&
                     std::strcmp(routes[i].title, "校准") == 0;
         }
-        if (std::strcmp(routes[i].path, "/faucet/calibration/save") == 0) {
-            foundSave = routes[i].method == FaucetWebMethod::Post && routes[i].kind == FaucetWebRouteKind::Api &&
-                        routes[i].title == nullptr;
+        if (std::strcmp(routes[i].path, "/api/faucet/calibration") == 0) {
+            foundApi = routes[i].method == FaucetWebMethod::Any && routes[i].kind == FaucetWebRouteKind::Api &&
+                       routes[i].title == nullptr;
         }
     }
     TEST_ASSERT_TRUE(found);
-    TEST_ASSERT_TRUE(foundSave);
+    TEST_ASSERT_TRUE(foundApi);
 }
 
 void test_web_page_source_has_no_remote_water_control_forms() {
@@ -148,9 +148,9 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "page-current"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "末页"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "filters-table"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "action='/faucet/filters/save'"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "action='/faucet/filters/reset'"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "action='/faucet/calibration/save'"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "action='/api/faucet/filters'"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "action='/api/faucet/filters/reset'"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "action='/api/faucet/calibration'"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "量杯实际水量"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "已用天数 (天)"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "data-filter-start"));
@@ -186,7 +186,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_route_whitelist_rejects_unknown_and_dangerous_control_aliases);
     RUN_TEST(test_dual_method_routes_are_merged_to_any);
     RUN_TEST(test_filter_edit_route_is_hidden_from_navigation);
-    RUN_TEST(test_filter_form_routes_are_page_post_endpoints);
+    RUN_TEST(test_filter_forms_use_registered_api_endpoints);
     RUN_TEST(test_presets_page_is_available_in_navigation);
     RUN_TEST(test_calibration_page_is_available_in_navigation);
     RUN_TEST(test_web_page_source_has_no_remote_water_control_forms);

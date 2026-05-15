@@ -251,7 +251,10 @@ RecordAggregates aggregateRecords(std::uint32_t nowSeconds) {
         aggregates.days[i].dayIndex = firstChartDay + i;
     }
 
-    WaterRecord records[kMaxRecordPageSize]{};
+    WaterRecord* records = new (std::nothrow) WaterRecord[kMaxRecordPageSize]{};
+    if (!records) {
+        return aggregates;
+    }
     const std::size_t total = g_context.records->count();
     for (std::size_t offset = 0; offset < total; offset += kMaxRecordPageSize) {
         const std::size_t page = offset / kMaxRecordPageSize;
@@ -288,6 +291,7 @@ RecordAggregates aggregateRecords(std::uint32_t nowSeconds) {
             }
         }
     }
+    delete[] records;
     return aggregates;
 }
 
@@ -296,7 +300,10 @@ std::uint32_t sumRealRecordVolumeSince(std::uint32_t startTime) {
         return 0;
     }
     std::uint32_t total = 0;
-    WaterRecord records[kMaxRecordPageSize]{};
+    WaterRecord* records = new (std::nothrow) WaterRecord[kMaxRecordPageSize]{};
+    if (!records) {
+        return 0;
+    }
     const std::size_t count = g_context.records->count();
     for (std::size_t offset = 0; offset < count; offset += kMaxRecordPageSize) {
         const std::size_t page = offset / kMaxRecordPageSize;
@@ -310,6 +317,7 @@ std::uint32_t sumRealRecordVolumeSince(std::uint32_t startTime) {
             }
         }
     }
+    delete[] records;
     return total;
 }
 
@@ -442,22 +450,16 @@ void sendNoticeFromQuery() {
 void sendAppStyles() {
     Esp32BaseWeb::sendChunk("<style>"
                             "body{background:#f4f7f6;color:#202428;max-width:1080px;padding:10px 14px 14px;line-height:1.45;font-size:14px}"
-                            "h1{color:#111;font-size:1rem;font-weight:400;margin:0 0 10px}"
-                            "h2{font-size:.98rem;font-weight:400;margin:0 0 10px;color:#111}"
-                            "h3{font-size:.94rem;font-weight:400;margin:0;color:#111}"
+                            "h1,h2{color:#111;font-size:1rem;font-weight:500;margin:0 0 10px}"
+                            "h3{font-size:.94rem;font-weight:500;margin:0;color:#111}"
                             "p{margin:5px 0}"
-                            "strong,b,th{font-weight:400}"
                             "nav{display:flex;align-items:center;gap:5px;margin:0 0 12px;padding:10px 12px;background:#fff;border:1px solid #e1e7e5;border-radius:8px;box-shadow:0 1px 2px rgba(21,35,34,.04);overflow-x:auto}"
-                            "nav a{display:inline-flex;align-items:center;min-height:34px;padding:0 11px;margin:0;background:transparent;color:#2f3947;border-radius:9px;text-decoration:none;font-size:.98rem;font-weight:600;white-space:nowrap}"
-                            "nav a.brand{background:transparent;color:#2f3947}"
+                            "nav a{display:inline-flex;align-items:center;min-height:34px;padding:0 11px;margin:0;background:transparent;color:#2f3947;border-radius:8px;text-decoration:none;font-size:.98rem;font-weight:600;white-space:nowrap}"
                             "nav a.active{background:#e9f3ef;color:#226b5f}"
-                            "a,button,input[type=submit],input[type=button]{border-radius:4px;box-shadow:none}"
                             "a{background:transparent;color:#2d6f7a;padding:0;margin:0;text-decoration:none}"
                             "button,input[type=submit],input[type=button]{display:inline-flex;align-items:center;justify-content:center;min-height:34px;padding:0 14px;background:#2f6f73;border:1px solid #2f6f73;color:#fff;cursor:pointer;font-size:.92rem;line-height:1.2;box-sizing:border-box;vertical-align:middle}"
-                            ".faucet-actions{display:flex;flex-wrap:wrap;gap:5px;margin:0 0 10px}"
-                            ".faucet-actions a{display:inline-flex;align-items:center;min-height:28px;line-height:1.2;margin:0;white-space:nowrap}"
                             "input:not([type]),input[type=text],input[type=password],input[type=number],input[type=email],input[type=url],input[type=tel],input[type=search],input[type=date],select{width:100%;height:30px;padding:4px 8px;margin:0;border:1px solid #d7dde2;border-radius:4px;box-sizing:border-box;background:#fbfcfc;color:#202428;font-size:.94rem}"
-                            "select{margin:0}"
+                            "button,input[type=submit],input[type=button],select,a{border-radius:4px;box-shadow:none}"
                             ".panel{border:1px solid #e1e7e5;border-radius:8px;padding:8px 10px;margin:0 0 8px;background:#fff;box-shadow:0 1px 2px rgba(21,35,34,.04)}"
                             ".panel h3{padding-bottom:6px;margin-bottom:7px;border-bottom:1px solid #edf0f2}"
                             ".panel-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:7px;padding-bottom:6px;border-bottom:1px solid #edf0f2}"
@@ -465,9 +467,7 @@ void sendAppStyles() {
                             ".grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:7px 10px}"
                             ".form-grid{display:grid;grid-template-columns:repeat(12,1fr);gap:9px 12px;align-items:start}"
                             ".span-2{grid-column:span 2}.span-3{grid-column:span 3}.span-4{grid-column:span 4}.span-5{grid-column:span 5}.span-6{grid-column:span 6}.span-8{grid-column:span 8}.span-12{grid-column:1/-1}"
-                            ".field{display:block;margin:0}"
                             ".field span{display:block;font-size:.82em;color:#56616b;margin-bottom:3px}"
-                            ".field input{margin:0}"
                             ".hint{display:block;color:#69727a;font-size:.76em;margin:2px 0 0}"
                             ".status-pill{display:inline-block;padding:1px 7px;border-radius:999px;background:#f2f5f4;color:#4c565d;font-size:.76rem;line-height:1.35;white-space:nowrap}"
                             ".muted{color:#69727a}"
@@ -477,8 +477,7 @@ void sendAppStyles() {
                             ".metric-card strong{display:block;color:#202428;font-size:.94rem;line-height:1.3}"
                             ".stats-layout{display:grid;grid-template-columns:minmax(0,1fr) minmax(240px,.75fr);gap:10px;align-items:start}"
                             ".stat-bars{background:#fff;border:1px solid #e1e7e5;border-radius:8px;padding:10px;box-shadow:0 1px 2px rgba(21,35,34,.04)}"
-                            ".stat-bars .hint{margin:0 0 8px}"
-                            ".stat-bar{margin:0 0 10px}.stat-bar:last-child{margin-bottom:0}"
+                            ".stat-bar{margin:0 0 10px}"
                             ".stat-bar-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:4px;color:#56616b;font-size:.86rem}"
                             ".stat-bar-head strong{color:#202428}"
                             ".daily-chart{grid-column:1/-1;background:#fff;border:1px solid #e1e7e5;border-radius:8px;padding:10px;box-shadow:0 1px 2px rgba(21,35,34,.04)}"
@@ -486,11 +485,9 @@ void sendAppStyles() {
                             ".filter-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px;margin:0 0 10px}"
                             ".filter-card{background:#fff;border:1px solid #e1e7e5;border-radius:8px;padding:8px 10px;box-shadow:0 1px 2px rgba(21,35,34,.04)}"
                             ".filter-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px}"
-                            ".filter-head strong{color:#111}"
                             ".filter-meta{display:grid;grid-template-columns:1fr 1fr;gap:3px 8px;color:#56616b;font-size:.82rem;margin-top:6px}"
                             ".progress{height:5px;background:#e4e9ed;border-radius:999px;overflow:hidden}"
                             ".progress span{display:block;height:100%;background:#4f8a86;border-radius:999px}"
-                            ".check-field{display:block;margin:0}"
                             ".check-title{display:block;font-size:.82em;color:#56616b;margin-bottom:3px}"
                             ".check-line{display:inline-flex;align-items:center;gap:6px;min-height:28px;padding:0 8px;border:1px solid #d7dde2;border-radius:4px;background:#fff;box-sizing:border-box;color:#202428;font-size:.92rem;white-space:nowrap}"
                             ".check-line input[type=checkbox]{margin:0;flex:0 0 auto}"
@@ -499,16 +496,12 @@ void sendAppStyles() {
                             "form input[type=submit]{min-height:34px;padding:0 14px;margin:0;font-size:.92rem;line-height:1.2}"
                             ".form-actions a,.btn-link{display:inline-flex;align-items:center;justify-content:center;min-height:34px;padding:0 12px;border:1px solid #d7dde2;border-radius:4px;background:#f7f9fa;color:#355e66;font-size:.92rem;line-height:1.2;box-sizing:border-box}"
                             ".form-actions input.secondary{background:#f7f9fa;border-color:#d7dde2;color:#4c565d}"
-                            ".compact-table td,.compact-table th{padding:6px 8px}"
                             ".filters-table th:first-child{width:22%}.filters-table th:last-child{width:150px}"
                             ".row-actions{display:flex;gap:5px;align-items:center;justify-content:flex-start;flex-wrap:wrap}"
                             ".row-actions a,.row-actions input[type=submit]{display:inline-flex;align-items:center;justify-content:center;min-width:48px;min-height:30px;padding:0 10px;border:1px solid #d7dde2;border-radius:4px;background:#f7f9fa;color:#355e66;font-size:.86rem;box-sizing:border-box}"
                             "table{width:100%;border-collapse:collapse;margin:0 0 10px;background:#fff;border:1px solid #e1e7e5;border-radius:8px;overflow:hidden;font-size:.92rem;box-shadow:0 1px 2px rgba(21,35,34,.04)}"
                             "td,th{padding:5px 8px;border-bottom:1px solid #edf0f2;text-align:left;vertical-align:middle}"
                             "th{background:#fafafa;color:#56616b}"
-                            "tr:last-child td{border-bottom:0}"
-                            "td .form-actions{margin-top:0;gap:5px;flex-wrap:nowrap}"
-                            "td .form-actions a,td .form-actions input[type=submit]{min-height:30px;padding:0 10px;font-size:.86rem}"
                             ".pager{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin:0 0 8px}"
                             ".pager-links{display:flex;align-items:center;gap:5px;flex-wrap:wrap}"
                             ".page-link,.page-current{display:inline-flex;align-items:center;justify-content:center;min-height:30px;padding:0 10px;border:1px solid #d7dde2;border-radius:4px;background:#fff;color:#355e66;font-size:.88rem;box-sizing:border-box}"
@@ -517,12 +510,6 @@ void sendAppStyles() {
                             ".page-size{display:flex;align-items:center;gap:6px;color:#56616b;font-size:.86rem}.page-size select{width:auto;min-width:80px}"
                             ".kv{margin:0 0 10px;background:#fff;border:1px solid #e1e7e5;border-radius:8px;box-shadow:0 1px 2px rgba(21,35,34,.04);overflow:hidden}"
                             ".kv th,.kv td{padding:5px 8px;border-bottom:1px solid #edf0f2}.kv th{width:26%;color:#56616b;background:#fbfcfc}"
-                            "form[action^='/esp32base'],#f,details,pre{background:#fff;border:1px solid #e1e7e5;border-radius:8px;padding:8px 10px;margin:0 0 8px;box-shadow:0 1px 2px rgba(21,35,34,.04)}"
-                            "form[action^='/esp32base'] input:not([type]),form[action^='/esp32base'] input[type=text],form[action^='/esp32base'] input[type=password],#f input:not([type]){margin:3px 0 7px}"
-                            "input[type=file]{margin:3px 8px 7px 0;font-size:.9rem}"
-                            "body>h3{background:#fff;border:1px solid #e1e7e5;border-bottom:0;border-radius:8px 8px 0 0;padding:8px 10px;margin:8px 0 0;box-shadow:0 1px 2px rgba(21,35,34,.04)}"
-                            "body>h3+p{background:#fff;border-left:1px solid #e1e7e5;border-right:1px solid #e1e7e5;margin:0;padding:0 10px 6px}"
-                            "body>h3+p+form[action^='/esp32base/tools']{border-top:0;border-radius:0 0 8px 8px;margin-top:0}"
                             ".ok,.err{display:block;background:#fff;border:1px solid #e1e7e5;border-radius:8px;padding:6px 10px;margin:0 0 8px;box-shadow:0 1px 2px rgba(21,35,34,.04)}"
                             ".footerbar{margin-top:10px;padding:6px 10px;background:#fff;border:1px solid #e1e7e5;border-radius:8px;box-shadow:0 1px 2px rgba(21,35,34,.04)}"
                             "@media(max-width:720px){.stats-layout{grid-template-columns:1fr}.form-grid{grid-template-columns:1fr}.span-2,.span-3,.span-4,.span-5,.span-6,.span-8,.span-12{grid-column:1/-1}}"
@@ -781,11 +768,10 @@ void handlePresetsPage() {
 }
 
 void handleStatsPage() {
-    if (!sendPageStart("用水统计")) {
+    if (!Esp32BaseWeb::checkAuth()) {
         return;
     }
     if (!requireContext()) {
-        sendPageEnd();
         return;
     }
     const std::uint32_t now = g_context.nowSeconds();
@@ -810,6 +796,7 @@ void handleStatsPage() {
                   "%lu s / %lu 条",
                   static_cast<unsigned long>(aggregates.unknownDurationSec),
                   static_cast<unsigned long>(aggregates.unknownCount));
+    Esp32BaseWeb::sendHeader("用水统计");
     Esp32BaseWeb::sendChunk("<h2>统计</h2><div class='stats-layout'><div><div class='metric-grid'>");
     sendMetricCard("今日", today);
     sendMetricCard("本周", week);
@@ -837,11 +824,10 @@ void handleStatsPage() {
 }
 
 void handleRecordsPage() {
-    if (!sendPageStart("出水记录")) {
+    if (!Esp32BaseWeb::checkAuth()) {
         return;
     }
     if (!requireContext()) {
-        sendPageEnd();
         return;
     }
     char text[24]{};
@@ -854,7 +840,11 @@ void handleRecordsPage() {
         parseU32(text, requestedPageSize);
     }
     const std::uint16_t pageSize = sanitizeRecordPageSize(static_cast<std::uint16_t>(requestedPageSize));
-    WaterRecord records[kMaxRecordPageSize]{};
+    WaterRecord* records = new (std::nothrow) WaterRecord[pageSize]{};
+    if (!records) {
+        Esp32BaseWeb::sendJson(500, "{\"error\":\"oom\"}");
+        return;
+    }
     const bool ready = g_context.records->ready();
     const std::size_t total = ready ? g_context.records->count() : 0;
     const std::uint32_t maxPage = total == 0 ? 0 : static_cast<std::uint32_t>((total - 1) / pageSize);
@@ -862,6 +852,7 @@ void handleRecordsPage() {
         page = maxPage;
     }
     const std::size_t count = ready ? g_context.records->readPage(page, pageSize, records, pageSize) : 0;
+    Esp32BaseWeb::sendHeader("出水记录");
     Esp32BaseWeb::sendChunk("<h2>记录</h2>");
     sendNoticeFromQuery();
     Esp32BaseWeb::sendChunk("<div class='pager'><div class='pager-links'>");
@@ -940,6 +931,7 @@ void handleRecordsPage() {
         Esp32BaseWeb::sendChunk("</td></tr>");
     }
     Esp32BaseWeb::sendChunk("</table>");
+    delete[] records;
     sendPageEnd();
 }
 

@@ -143,14 +143,17 @@ std::size_t WaterRecordFileStore::readPage(std::size_t pageIndex,
 
     const std::size_t available = count_ - startOffset;
     const std::size_t limit = std::min<std::size_t>({available, sanitizedPageSize, outputCapacity});
-    for (std::size_t i = 0; i < limit; ++i) {
-        const std::size_t index = physicalIndexFromNewestOffset(startOffset + i);
-        if (!backend_.readAt(path_,
-                             recordOffset(index),
-                             reinterpret_cast<std::uint8_t*>(&output[i]),
-                             sizeof(output[i]))) {
-            return i;
+    std::size_t copied = 0;
+    while (copied < limit) {
+        const std::size_t newestOffset = startOffset + copied;
+        const std::size_t newestIndex = physicalIndexFromNewestOffset(newestOffset);
+        const std::size_t batch = std::min<std::size_t>(limit - copied, newestIndex + 1);
+        const std::size_t firstIndex = newestIndex + 1 - batch;
+        if (!readRecordSpan(firstIndex, output + copied, batch)) {
+            return copied;
         }
+        std::reverse(output + copied, output + copied + batch);
+        copied += batch;
     }
     return limit;
 }
@@ -233,6 +236,16 @@ bool WaterRecordFileStore::appendRecord(std::size_t index, const WaterRecord& re
         return backend_.writeAt(path_, offset, data, sizeof(record));
     }
     return false;
+}
+
+bool WaterRecordFileStore::readRecordSpan(std::size_t firstIndex, WaterRecord* output, std::size_t count) const {
+    if (!output || count == 0 || firstIndex >= capacity_ || count > capacity_ - firstIndex) {
+        return false;
+    }
+    return backend_.readAt(path_,
+                           recordOffset(firstIndex),
+                           reinterpret_cast<std::uint8_t*>(output),
+                           count * sizeof(WaterRecord));
 }
 
 std::size_t WaterRecordFileStore::fileSizeBytes() const {

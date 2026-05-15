@@ -18,6 +18,7 @@ public:
     bool failAppend = false;
     bool failWriteAt = false;
     bool failRead = false;
+    std::size_t readCalls = 0;
 
     bool exists(const char* path) override {
         return files.find(path ? path : "") != files.end();
@@ -50,6 +51,7 @@ public:
     }
 
     bool readAt(const char* path, std::size_t offset, std::uint8_t* out, std::size_t len) override {
+        ++readCalls;
         if (failRead || !out) {
             return false;
         }
@@ -145,6 +147,26 @@ void test_file_record_rolls_after_capacity() {
     TEST_ASSERT_EQUAL_UINT32(500, page[0].startTime);
     TEST_ASSERT_EQUAL_UINT32(400, page[1].startTime);
     TEST_ASSERT_EQUAL_UINT32(300, page[2].startTime);
+}
+
+void test_file_record_reads_page_in_contiguous_spans() {
+    MemoryFileBackend backend;
+    WaterRecordFileStore store(backend, "/water.bin", 5);
+    TEST_ASSERT_TRUE(store.begin());
+
+    for (std::uint32_t i = 1; i <= 7; ++i) {
+        TEST_ASSERT_TRUE(store.append(makeRecord(i * 100, i * 1000)));
+    }
+
+    backend.readCalls = 0;
+    WaterRecord page[5]{};
+    TEST_ASSERT_EQUAL_size_t(5, store.readPage(0, 5, page, 5));
+    TEST_ASSERT_EQUAL_UINT32(700, page[0].startTime);
+    TEST_ASSERT_EQUAL_UINT32(600, page[1].startTime);
+    TEST_ASSERT_EQUAL_UINT32(500, page[2].startTime);
+    TEST_ASSERT_EQUAL_UINT32(400, page[3].startTime);
+    TEST_ASSERT_EQUAL_UINT32(300, page[4].startTime);
+    TEST_ASSERT_LESS_OR_EQUAL_size_t(2, backend.readCalls);
 }
 
 void test_file_record_persists_header_and_records_across_instances() {
@@ -309,6 +331,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_file_record_initializes_empty_file);
     RUN_TEST(test_file_record_appends_and_reads_newest_first);
     RUN_TEST(test_file_record_rolls_after_capacity);
+    RUN_TEST(test_file_record_reads_page_in_contiguous_spans);
     RUN_TEST(test_file_record_persists_header_and_records_across_instances);
     RUN_TEST(test_file_record_reinitializes_capacity_mismatch);
     RUN_TEST(test_file_record_reinitializes_corrupt_header);

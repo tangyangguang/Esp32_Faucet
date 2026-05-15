@@ -917,12 +917,7 @@ void handleRecordsPage() {
                 modeText(records[i].mode),
                 resultText(records[i].result));
         if (canCalibrate) {
-            sendFmt("<form method='post' action='/api/faucet/records/calibration' onsubmit='return once(this)'>"
-                    "<label><span>量杯实际水量</span><input name='actualMl' type='number' min='%lu' max='%lu' step='10' value='%lu'></label>"
-                    "<input type='submit' value='校准'></form>",
-                    static_cast<unsigned long>(kMinVolumePresetMl),
-                    static_cast<unsigned long>(kMaxVolumePresetMl),
-                    static_cast<unsigned long>(records[i].volumeMl));
+            Esp32BaseWeb::sendChunk("<a class='btn-link' href='/faucet/records/calibration'>校准</a>");
         } else if (!latestRecord) {
             Esp32BaseWeb::sendChunk("<span class='muted'>仅最新记录</span>");
         } else {
@@ -932,6 +927,58 @@ void handleRecordsPage() {
     }
     Esp32BaseWeb::sendChunk("</table>");
     delete[] records;
+    sendPageEnd();
+}
+
+void handleRecordCalibrationPage() {
+    if (!Esp32BaseWeb::checkAuth()) {
+        return;
+    }
+    if (!requireContext()) {
+        return;
+    }
+
+    WaterRecord record{};
+    const bool canCalibrate =
+        g_context.records && g_context.records->ready() && g_context.records->readPage(0, 1, &record, 1) == 1 &&
+        waterRecordCanCalibrate(record);
+
+    Esp32BaseWeb::sendHeader("记录校准");
+    Esp32BaseWeb::sendChunk("<h2>记录校准</h2>");
+    if (!canCalibrate) {
+        Esp32BaseWeb::sendChunk("<p class='err'>最新记录不可校准。</p><p><a class='btn-link' href='/faucet/records'>返回记录</a></p>");
+        sendPageEnd();
+        return;
+    }
+
+    char startTime[40]{};
+    formatWaterRecordTime(record, startTime, sizeof(startTime));
+    Esp32BaseWeb::sendChunk("<table class='kv'><tr><th>开始时间</th><td>");
+    Esp32BaseWeb::sendChunk(startTime);
+    Esp32BaseWeb::sendChunk("</td></tr><tr><th>目标</th><td>");
+    sendTargetValue(record);
+    Esp32BaseWeb::sendChunk("</td></tr><tr><th>出水量</th><td>");
+    sendLiters(record.volumeMl);
+    sendFmt("</td></tr><tr><th>脉冲数</th><td>%lu</td></tr>"
+            "<tr><th>过滤脉冲</th><td>%lu</td></tr>"
+            "<tr><th>当时系数</th><td>%.3f</td></tr>"
+            "<tr><th>持续时间</th><td>%u s</td></tr>"
+            "<tr><th>结束原因</th><td>%s</td></tr></table>",
+            static_cast<unsigned long>(record.pulseCount),
+            static_cast<unsigned long>(record.rejectedPulseCount),
+            static_cast<double>(record.pulsePerMlAtRun),
+            static_cast<unsigned>(record.durationSec),
+            resultText(record.result));
+    sendFmt("<section class='panel'><h3>量杯实际水量</h3>"
+            "<form method='post' action='/api/faucet/records/calibration' onsubmit='return once(this)'>"
+            "<label class='field'><span>实际水量 (ml)</span>"
+            "<input name='actualMl' type='number' min='%lu' max='%lu' step='10' value='%lu'></label>"
+            "<p class='hint'>保存后按 脉冲数 / 实际水量 更新流量计校准系数。</p>"
+            "<div class='form-actions'><input type='submit' value='保存校准'>"
+            "<a class='btn-link' href='/faucet/records'>取消</a></div></form></section>",
+            static_cast<unsigned long>(kMinVolumePresetMl),
+            static_cast<unsigned long>(kMaxVolumePresetMl),
+            static_cast<unsigned long>(record.volumeMl));
     sendPageEnd();
 }
 
@@ -1451,6 +1498,9 @@ Esp32BaseWeb::Handler handlerFor(const FaucetWebRoute& route) {
     }
     if (std::strcmp(route.path, "/faucet/filters/edit") == 0) {
         return handleFilterEditPage;
+    }
+    if (std::strcmp(route.path, "/faucet/records/calibration") == 0) {
+        return handleRecordCalibrationPage;
     }
     if (std::strcmp(route.path, "/api/faucet/presets") == 0) {
         return handlePresetsApi;

@@ -57,7 +57,7 @@ test/native/
 3. 校准参数和算法
    - 删除独立校准控制器，校准直接基于最新可校准出水记录。
    - 删除 4 个校准候选容量配置。
-   - 校准基于最新本地出水记录的原始脉冲数；本地结果页长按 OK 进入，Web 记录页保存量杯实际水量，不允许远程打开电磁阀。
+   - 校准基于最新本地出水记录的原始脉冲数；本地结果页长按 OK 进入，Web 记录页进入校准页输入量杯实际水量，不允许远程打开电磁阀。
 
 4. 存储与统计
    - `ConfigStore` 使用应用 namespace：`faucet_cfg`、`faucet_stat`、`faucet_run`。
@@ -77,7 +77,7 @@ test/native/
    - 注册 `/faucet`、`/faucet/presets`、`/faucet/records`、`/faucet/stats`、`/faucet/filters`、`/faucet/filters/edit`。
    - 注册只读和配置 API：状态、预设、记录、统计、滤芯，以及 records 校准动作。
    - 禁止注册 `/api/faucet/water/*`、`/api/faucet/start`、`/api/faucet/stop` 或同义出水控制接口。
-   - Web 记录页允许基于最新记录输入量杯实际水量校准，不提供独立校准页，不允许打开电磁阀。
+   - Web 记录页允许基于最新记录进入校准页输入量杯实际水量，不允许打开电磁阀。
 
 7. 上板验证
    - 先验证 `CANCEL` 软件停止、电磁阀 PWM、流量计计数。

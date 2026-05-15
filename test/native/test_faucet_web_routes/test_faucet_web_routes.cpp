@@ -10,7 +10,7 @@ using namespace faucet;
 void test_routes_fit_esp32base_default_route_capacity() {
     TEST_ASSERT_TRUE(faucetWebRoutesFitEsp32Base());
     TEST_ASSERT_LESS_OR_EQUAL_size_t(kFaucetWebMaxRoutes, faucetWebRouteCount());
-    TEST_ASSERT_EQUAL_size_t(13, faucetWebRouteCount());
+    TEST_ASSERT_EQUAL_size_t(14, faucetWebRouteCount());
 }
 
 void test_routes_do_not_register_remote_water_control_paths() {
@@ -52,6 +52,7 @@ void test_dual_method_routes_are_merged_to_any() {
     TEST_ASSERT_TRUE(foundFilters);
     TEST_ASSERT_FALSE(faucetWebRouteAllowed("/api/faucet/config"));
     TEST_ASSERT_TRUE(faucetWebRouteAllowed("/api/faucet/records/calibration"));
+    TEST_ASSERT_TRUE(faucetWebRouteAllowed("/faucet/records/calibration"));
     TEST_ASSERT_FALSE(faucetWebRouteAllowed("/api/faucet/calibration"));
     TEST_ASSERT_FALSE(faucetWebRouteAllowed("/api/faucet/records/latest/calibration"));
     TEST_ASSERT_FALSE(faucetWebRouteAllowed("/faucet/config"));
@@ -105,11 +106,16 @@ void test_presets_page_is_available_in_navigation() {
 void test_records_page_and_calibration_api_are_available() {
     const FaucetWebRoute* routes = faucetWebRoutes();
     bool found = false;
+    bool foundCalibrationPage = false;
     bool foundApi = false;
     for (std::size_t i = 0; i < faucetWebRouteCount(); ++i) {
         if (std::strcmp(routes[i].path, "/faucet/records") == 0) {
             found = routes[i].method == FaucetWebMethod::Get && routes[i].kind == FaucetWebRouteKind::Page &&
                     std::strcmp(routes[i].title, "记录") == 0;
+        }
+        if (std::strcmp(routes[i].path, "/faucet/records/calibration") == 0) {
+            foundCalibrationPage = routes[i].method == FaucetWebMethod::Get && routes[i].kind == FaucetWebRouteKind::Api &&
+                                   routes[i].title == nullptr;
         }
         if (std::strcmp(routes[i].path, "/api/faucet/records/calibration") == 0) {
             foundApi = routes[i].method == FaucetWebMethod::Post && routes[i].kind == FaucetWebRouteKind::Api &&
@@ -117,6 +123,7 @@ void test_records_page_and_calibration_api_are_available() {
         }
     }
     TEST_ASSERT_TRUE(found);
+    TEST_ASSERT_TRUE(foundCalibrationPage);
     TEST_ASSERT_TRUE(foundApi);
 }
 
@@ -154,6 +161,7 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "action='/api/faucet/filters'"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "action='/api/faucet/filters/reset'"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "action='/api/faucet/records/calibration'"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "href='/faucet/records/calibration'"));
     TEST_ASSERT_NULL(std::strstr(buffer, "/api/faucet/calibration"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "量杯实际水量"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "已用天数 (天)"));

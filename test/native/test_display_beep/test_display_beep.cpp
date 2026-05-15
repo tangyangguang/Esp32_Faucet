@@ -10,7 +10,7 @@ using namespace faucet;
 namespace {
 
 AppSnapshot makeSnapshot(WaterState state, std::uint32_t targetMl, std::uint32_t volumeMl = 0) {
-    return AppSnapshot{
+    AppSnapshot snapshot{
         WaterSnapshot{
             state,
             0,
@@ -24,6 +24,13 @@ AppSnapshot makeSnapshot(WaterState state, std::uint32_t targetMl, std::uint32_t
         ValveOutput{ValveState::Closed, false, 0},
         StatisticsRecord{1234, 0, 0, 9000, 20260506, 202619, 202605},
     };
+    snapshot.pulsePerLiter = 450;
+    return snapshot;
+}
+
+void assertDisplayLinesFit(const DisplayFrame& frame) {
+    TEST_ASSERT_LESS_OR_EQUAL_size_t(16, std::strlen(frame.line1));
+    TEST_ASSERT_LESS_OR_EQUAL_size_t(16, std::strlen(frame.line2));
 }
 
 }  // namespace
@@ -36,8 +43,9 @@ void test_display_idle_shows_preset_and_today_total() {
 
     TEST_ASSERT_TRUE(frame.on);
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(DisplayPage::Idle), static_cast<std::uint8_t>(frame.page));
-    TEST_ASSERT_EQUAL_STRING("P1 1.50L", frame.line1);
+    TEST_ASSERT_EQUAL_STRING("P1 1.50L    450P", frame.line1);
     TEST_ASSERT_EQUAL_STRING("+/- Sel OK", frame.line2);
+    assertDisplayLinesFit(frame);
 }
 
 void test_display_sleep_only_in_idle_after_timeout() {
@@ -75,8 +83,11 @@ void test_display_time_preset_shows_remaining_seconds_and_error_reason() {
     error.water.lastResult = WaterResult::FlowError;
     DisplayFrame errorFrame = presenter.render(error, 500);
 
-    TEST_ASSERT_EQUAL_STRING("Lft 6s 00:04", runningFrame.line1);
+    TEST_ASSERT_EQUAL_STRING("Lft 6s      450P", runningFrame.line1);
     TEST_ASSERT_EQUAL_STRING("Flow Error", errorFrame.line2);
+    TEST_ASSERT_EQUAL_STRING("Error", errorFrame.line1);
+    assertDisplayLinesFit(runningFrame);
+    assertDisplayLinesFit(errorFrame);
 }
 
 void test_display_running_shows_remaining_volume() {
@@ -85,8 +96,9 @@ void test_display_running_shows_remaining_volume() {
 
     DisplayFrame frame = presenter.render(makeSnapshot(WaterState::Running, 1500, 400), 500);
 
-    TEST_ASSERT_EQUAL_STRING("Lft 1.10L 00:00", frame.line1);
+    TEST_ASSERT_EQUAL_STRING("Lft 1.10L   450P", frame.line1);
     TEST_ASSERT_EQUAL_STRING("Out 0.40L OK", frame.line2);
+    assertDisplayLinesFit(frame);
 }
 
 void test_display_confirm_and_pause_pages_are_short() {
@@ -96,10 +108,12 @@ void test_display_confirm_and_pause_pages_are_short() {
     DisplayFrame confirm = presenter.render(makeSnapshot(WaterState::Confirm, 7500), 500);
     DisplayFrame paused = presenter.render(makeSnapshot(WaterState::Paused, 7500, 300), 500);
 
-    TEST_ASSERT_EQUAL_STRING("Set 7.50L S0.50", confirm.line1);
+    TEST_ASSERT_EQUAL_STRING("Set 7.50L   450P", confirm.line1);
     TEST_ASSERT_EQUAL_STRING("+/- Adj OK Go", confirm.line2);
-    TEST_ASSERT_EQUAL_STRING("Paus 0.30/7.50", paused.line1);
+    TEST_ASSERT_EQUAL_STRING("P 0.30/7.50 450P", paused.line1);
     TEST_ASSERT_EQUAL_STRING("Step0.50 +/-OK", paused.line2);
+    assertDisplayLinesFit(confirm);
+    assertDisplayLinesFit(paused);
 }
 
 void test_display_result_page_shows_summary() {
@@ -113,8 +127,9 @@ void test_display_result_page_shows_summary() {
     DisplayFrame frame = presenter.render(snapshot, 500);
 
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(DisplayPage::Result), static_cast<std::uint8_t>(frame.page));
-    TEST_ASSERT_EQUAL_STRING("Done 7.50L", frame.line1);
+    TEST_ASSERT_EQUAL_STRING("Done 7.50L  450P", frame.line1);
     TEST_ASSERT_EQUAL_STRING("OK Back", frame.line2);
+    assertDisplayLinesFit(frame);
 }
 
 void test_display_local_calibration_page_shows_actual_and_step() {
@@ -131,6 +146,21 @@ void test_display_local_calibration_page_shows_actual_and_step() {
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(DisplayPage::Calibration), static_cast<std::uint8_t>(frame.page));
     TEST_ASSERT_EQUAL_STRING("A1.00L P450/L", frame.line1);
     TEST_ASSERT_EQUAL_STRING("S0.10 +/- OK", frame.line2);
+    assertDisplayLinesFit(frame);
+}
+
+void test_display_omits_pulse_label_when_unavailable() {
+    DisplayPresenter presenter(30);
+    presenter.wake(0);
+    AppSnapshot snapshot = makeSnapshot(WaterState::Idle, 1500);
+    snapshot.pulsePerLiter = 0;
+
+    DisplayFrame frame = presenter.render(snapshot, 500);
+
+    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(DisplayPage::Idle), static_cast<std::uint8_t>(frame.page));
+    TEST_ASSERT_EQUAL_STRING("P1 1.50L", frame.line1);
+    TEST_ASSERT_EQUAL_STRING("+/- Sel OK", frame.line2);
+    assertDisplayLinesFit(frame);
 }
 
 void test_beep_click_turns_off_after_duration() {
@@ -196,6 +226,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_display_confirm_and_pause_pages_are_short);
     RUN_TEST(test_display_result_page_shows_summary);
     RUN_TEST(test_display_local_calibration_page_shows_actual_and_step);
+    RUN_TEST(test_display_omits_pulse_label_when_unavailable);
     RUN_TEST(test_beep_click_turns_off_after_duration);
     RUN_TEST(test_beep_duration_survives_millis_wrap);
     RUN_TEST(test_beep_disabled_ignores_patterns_and_stops_active_output);

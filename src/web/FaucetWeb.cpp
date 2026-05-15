@@ -165,6 +165,24 @@ void sendStatBar(const char* label, const char* value, std::uint32_t percent) {
             static_cast<unsigned long>(percent));
 }
 
+void formatLogTime(std::uint32_t seconds, char* out, std::size_t len) {
+    if (!out || len == 0) {
+        return;
+    }
+    if (seconds >= kMinFilterDateSeconds) {
+        char date[16]{};
+        formatDate(seconds, date, sizeof(date));
+        const std::uint32_t daySecond = seconds % 86400UL;
+        std::snprintf(out, len, "%s %02lu:%02lu:%02lu",
+                      date,
+                      static_cast<unsigned long>(daySecond / 3600UL),
+                      static_cast<unsigned long>((daySecond / 60UL) % 60UL),
+                      static_cast<unsigned long>(daySecond % 60UL));
+        return;
+    }
+    std::snprintf(out, len, "开机+%lu s", static_cast<unsigned long>(seconds));
+}
+
 void sendNoticeFromQuery() {
     char text[32]{};
     if (getParam("saved", text, sizeof(text))) {
@@ -233,6 +251,7 @@ void sendAppStyles() {
                             ".metric-card strong{display:block;color:#202428;font-size:.94rem;line-height:1.3}"
                             ".stats-layout{display:grid;grid-template-columns:minmax(0,1fr) minmax(240px,.75fr);gap:10px;align-items:start}"
                             ".stat-bars{background:#fff;border:1px solid #e1e7e5;border-radius:8px;padding:10px;box-shadow:0 1px 2px rgba(21,35,34,.04)}"
+                            ".stat-bars .hint{margin:0 0 8px}"
                             ".stat-bar{margin:0 0 10px}.stat-bar:last-child{margin-bottom:0}"
                             ".stat-bar-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:4px;color:#56616b;font-size:.86rem}"
                             ".stat-bar-head strong{color:#202428}"
@@ -556,7 +575,6 @@ void handleStatsPage() {
     formatLiters(stats.totalMl, total, sizeof(total));
     formatLiters((stats.weekMl + 3UL) / 7UL, weekAvg, sizeof(weekAvg));
     formatLiters((stats.monthMl + 14UL) / 30UL, monthAvg, sizeof(monthAvg));
-    const std::uint32_t maxPeriod = stats.monthMl > stats.weekMl ? stats.monthMl : stats.weekMl;
     Esp32BaseWeb::sendChunk("<h2>统计</h2><div class='stats-layout'><div><div class='metric-grid'>");
     sendMetricCard("今日", today);
     sendMetricCard("本周", week);
@@ -571,10 +589,26 @@ void handleStatsPage() {
     std::snprintf(weekMonth, sizeof(weekMonth), "%lu%%", static_cast<unsigned long>(percentOf(stats.weekMl, stats.monthMl)));
     sendMetricCard("今日占本周", todayWeek);
     sendMetricCard("本周占本月", weekMonth);
-    Esp32BaseWeb::sendChunk("</div></div><section class='stat-bars'><h3>周期对比</h3>");
-    sendStatBar("今日", today, percentOf(stats.todayMl, maxPeriod));
-    sendStatBar("本周", week, percentOf(stats.weekMl, maxPeriod));
-    sendStatBar("本月", month, percentOf(stats.monthMl, maxPeriod));
+    Esp32BaseWeb::sendChunk("</div></div><section class='stat-bars'><h3>最近出水量趋势</h3>"
+                            "<p class='hint'>按最新记录显示每次出水量，单位 L，用于观察近期用水是否集中或异常。</p>");
+    WaterLogRecord records[8]{};
+    const std::size_t count = g_context.logs && g_context.logs->ready() ? g_context.logs->readPage(0, 8, records, 8) : 0;
+    std::uint32_t maxVolume = 0;
+    for (std::size_t i = 0; i < count; ++i) {
+        if (records[i].volumeMl > maxVolume) {
+            maxVolume = records[i].volumeMl;
+        }
+    }
+    if (count == 0) {
+        Esp32BaseWeb::sendChunk("<p class='ok'>暂无出水记录，产生记录后显示趋势。</p>");
+    }
+    for (std::size_t i = 0; i < count; ++i) {
+        char label[40]{};
+        char value[24]{};
+        formatLogTime(records[i].startTime, label, sizeof(label));
+        formatLiters(records[i].volumeMl, value, sizeof(value));
+        sendStatBar(label, value, percentOf(records[i].volumeMl, maxVolume));
+    }
     Esp32BaseWeb::sendChunk("</section></div>");
     sendPageEnd();
 }
@@ -646,9 +680,13 @@ void handleLogsPage() {
     } else if (total == 0) {
         Esp32BaseWeb::sendChunk("<p class='ok'>暂无出水记录。</p>");
     }
-    Esp32BaseWeb::sendChunk("<table><tr><th>时间</th><th>出水量</th><th>时长</th><th>模式</th><th>结果</th></tr>");
+    Esp32BaseWeb::sendChunk("<table><tr><th>开始时间</th><th>出水量 (L)</th><th>持续时间 (s)</th><th>预设模式</th><th>结束原因</th></tr>");
     for (std::size_t i = 0; i < count; ++i) {
-        sendFmt("<tr><td>%lu</td><td>", static_cast<unsigned long>(records[i].startTime));
+        char startTime[40]{};
+        formatLogTime(records[i].startTime, startTime, sizeof(startTime));
+        Esp32BaseWeb::sendChunk("<tr><td>");
+        Esp32BaseWeb::sendChunk(startTime);
+        Esp32BaseWeb::sendChunk("</td><td>");
         sendLiters(records[i].volumeMl);
         sendFmt("</td><td>%u s</td><td>%s</td><td>%s</td></tr>",
                 static_cast<unsigned>(records[i].durationSec),
@@ -669,15 +707,21 @@ void handleFiltersPage() {
     }
     const std::uint32_t now = g_context.nowSeconds();
     sendNoticeFromQuery();
-    Esp32BaseWeb::sendChunk("<h2>滤芯</h2><table class='filters-table'><tr><th>名称</th><th>启用</th><th>已用天数</th><th>已用流量</th><th>寿命</th><th>状态</th><th>操作</th></tr>");
+    Esp32BaseWeb::sendChunk("<h2>滤芯</h2><table class='filters-table'><tr><th>名称</th><th>启用状态</th><th>已用天数 (天)</th><th>已用流量 (L)</th><th>寿命规则</th><th>状态</th><th>操作</th></tr>");
     for (std::size_t i = 0; i < kFilterCount; ++i) {
         const FilterRecord& filter = g_context.filters->record(i);
         const std::uint32_t usedDays = filter.startTime >= kMinFilterDateSeconds ? g_context.filters->usedDays(i, now) : 0;
         char life[32]{};
         formatLifeRange(filter, life, sizeof(life));
-        Esp32BaseWeb::sendChunk("<tr><td>");
+        sendFmt("<tr data-filter-start='%lu' data-filter-enabled='%u' data-filter-recommend-days='%lu' data-filter-max-days='%lu' data-filter-life-ml='%lu' data-filter-used-ml='%lu'><td>",
+                static_cast<unsigned long>(filter.startTime),
+                filter.enabled ? 1U : 0U,
+                static_cast<unsigned long>(filter.recommendDays),
+                static_cast<unsigned long>(filter.maxDays),
+                static_cast<unsigned long>(filter.lifeMl),
+                static_cast<unsigned long>(filter.usedMl));
         Esp32BaseWeb::writeHtmlEscaped(filter.name);
-        sendFmt("</td><td>%s</td><td>%lu</td><td>",
+        sendFmt("</td><td>%s</td><td class='filter-used-days'>%lu 天</td><td>",
                 filter.enabled ? "启用" : "停用",
                 static_cast<unsigned long>(usedDays));
         sendLiters(filter.usedMl);
@@ -688,7 +732,7 @@ void handleFiltersPage() {
         } else {
             Esp32BaseWeb::sendChunk("未设置流量");
         }
-        sendFmt("</td><td><span class='status-pill'>%s</span></td><td><div class='row-actions'><a href='/faucet/filters/edit?index=%u'>设置</a>",
+        sendFmt("</td><td><span class='status-pill filter-status'>%s</span></td><td><div class='row-actions'><a href='/faucet/filters/edit?index=%u'>设置</a>",
                 filterDisplayStatusText(filter, usedDays),
                 static_cast<unsigned>(i));
         Esp32BaseWeb::sendChunk("<form method='post' action='/api/faucet/filters/reset' "
@@ -696,7 +740,32 @@ void handleFiltersPage() {
         sendFmt("<input type='hidden' name='index' value='%u'>", static_cast<unsigned>(i));
         Esp32BaseWeb::sendChunk("<input class='secondary' type='submit' value='重置'></form></div></td></tr>");
     }
-    Esp32BaseWeb::sendChunk("</table>");
+    Esp32BaseWeb::sendChunk("</table><script>"
+                            "(function(){"
+                            "var unix2000=946684800;"
+                            "document.querySelectorAll('tr[data-filter-start]').forEach(function(row){"
+                            "var start=parseInt(row.getAttribute('data-filter-start')||'0',10);"
+                            "if(!start){return;}"
+                            "var now=Math.floor(Date.now()/1000)-unix2000;"
+                            "if(!isFinite(now)||now<=start){return;}"
+                            "var days=Math.floor((now-start)/86400);"
+                            "var used=row.querySelector('.filter-used-days');"
+                            "if(used){used.textContent=days+' 天';}"
+                            "var status=row.querySelector('.filter-status');"
+                            "if(!status){return;}"
+                            "var enabled=row.getAttribute('data-filter-enabled')==='1';"
+                            "var rec=parseInt(row.getAttribute('data-filter-recommend-days')||'0',10);"
+                            "var max=parseInt(row.getAttribute('data-filter-max-days')||'0',10);"
+                            "var life=parseInt(row.getAttribute('data-filter-life-ml')||'0',10);"
+                            "var flow=parseInt(row.getAttribute('data-filter-used-ml')||'0',10);"
+                            "var text='正常';"
+                            "if(!enabled){text='停用';}"
+                            "else if((life>0&&flow>=life)||(max>0&&days>=max)){text='已超期';}"
+                            "else if(rec>0&&days>=rec){text='建议更换';}"
+                            "status.textContent=text;"
+                            "});"
+                            "})();"
+                            "</script>");
     sendPageEnd();
 }
 

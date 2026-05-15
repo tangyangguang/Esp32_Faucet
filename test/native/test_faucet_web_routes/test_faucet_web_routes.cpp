@@ -111,8 +111,12 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "page-current"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "末页"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "filters-table"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "已用天数 (天)"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "data-filter-start"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "开始时间"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "出水量 (L)"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "stat-bars"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "今日占本周"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "最近出水量趋势"));
 }
 
 void test_app_config_source_uses_clear_business_labels_and_help() {

@@ -83,7 +83,7 @@ DisplayFrame DisplayPresenter::render(const AppSnapshot& snapshot, std::uint32_t
         formatLitersNumber(step, sizeof(step), snapshot.calibrationStepMl);
         char line1[kDisplayLineLength]{};
         char line2[kDisplayLineLength]{};
-        std::snprintf(line1, sizeof(line1), "Actual %s", actual);
+        std::snprintf(line1, sizeof(line1), "A%s P%lu/L", actual, static_cast<unsigned long>(snapshot.pulsePerLiter));
         std::snprintf(line2, sizeof(line2), "S%s +/- OK", step);
         return makeFrame(DisplayPage::Calibration, true, line1, line2);
     }

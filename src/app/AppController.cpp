@@ -60,7 +60,8 @@ AppController::AppController(const SystemConfig& config,
       resultOkHoldTriggered_(false),
       resultOkHoldStartMs_(0),
       calibrationActualMl_(0),
-      calibrationStepMl_(100) {
+      calibrationStepMl_(100),
+      calibrationIgnoreOkUntilReleased_(false) {
     sanitizeConfig(config_);
 }
 
@@ -76,6 +77,9 @@ void AppController::tick(const AppTickInput& input) {
     const ButtonEvent event = buttons_.update(input.buttons, input.nowMs);
     updateResultCalibrationHold(input.buttons.okPressed, input.nowMs);
     handleButtonEvent(event, input.nowMs, input.nowSeconds, input.timeSynced, input.bootId);
+    if (localMode_ == LocalUiMode::Calibration && !input.buttons.okPressed) {
+        calibrationIgnoreOkUntilReleased_ = false;
+    }
     if (localMode_ == LocalUiMode::Result && config_.resultDisplaySec > 0 &&
         elapsedAtLeast(input.nowMs, resultDisplayStartMs_, msFromSeconds(config_.resultDisplaySec))) {
         localMode_ = LocalUiMode::Normal;
@@ -119,6 +123,7 @@ AppSnapshot AppController::snapshot() const {
     snapshot.calibrationActualMl = calibrationActualMl_;
     snapshot.calibrationStepMl = calibrationStepMl_;
     snapshot.calibrationReady = lastResultRecordValid_;
+    snapshot.pulsePerLiter = static_cast<std::uint32_t>(std::lround(config_.pulsePerMl * 1000.0f));
     snapshot.flowDroppedPulses = flowDroppedPulses_;
     return snapshot;
 }
@@ -187,7 +192,14 @@ bool AppController::applyConfig(const SystemConfig& config) {
 }
 
 CalibrationApplyResult AppController::applyCalibrationFromRecord(const WaterRecord& record, std::uint32_t actualMl) {
-    if (water_.snapshot().state != WaterState::Idle || localMode_ == LocalUiMode::Calibration) {
+    return applyCalibrationFromRecordInternal(record, actualMl, false);
+}
+
+CalibrationApplyResult AppController::applyCalibrationFromRecordInternal(const WaterRecord& record,
+                                                                         std::uint32_t actualMl,
+                                                                         bool allowLocalCalibration) {
+    if (water_.snapshot().state != WaterState::Idle ||
+        (localMode_ == LocalUiMode::Calibration && !allowLocalCalibration)) {
         return CalibrationApplyResult::NotAvailable;
     }
     if (actualMl < kCalibrationMinActualMl || actualMl > kMaxVolumePresetMl) {
@@ -227,9 +239,15 @@ void AppController::handleButtonEvent(ButtonEvent event,
                 pendingBeep_ = BeepPattern::Click;
                 break;
             case ButtonEventType::OkShort:
+                if (calibrationIgnoreOkUntilReleased_) {
+                    break;
+                }
                 saveLocalCalibration();
                 break;
             case ButtonEventType::OkLong:
+                if (calibrationIgnoreOkUntilReleased_) {
+                    break;
+                }
                 toggleCalibrationStep();
                 pendingBeep_ = BeepPattern::Click;
                 break;
@@ -377,6 +395,7 @@ void AppController::enterCalibrationFromResult(std::uint32_t) {
     }
     calibrationStepMl_ = 100;
     localMode_ = LocalUiMode::Calibration;
+    calibrationIgnoreOkUntilReleased_ = true;
     resultOkHoldTracking_ = false;
     resultOkHoldTriggered_ = true;
     pendingBeep_ = BeepPattern::Click;
@@ -422,7 +441,7 @@ CalibrationApplyResult AppController::saveLocalCalibration() {
         pendingBeep_ = BeepPattern::Error;
         return CalibrationApplyResult::NotAvailable;
     }
-    const CalibrationApplyResult result = applyCalibrationFromRecord(lastResultRecord_, calibrationActualMl_);
+    const CalibrationApplyResult result = applyCalibrationFromRecordInternal(lastResultRecord_, calibrationActualMl_, true);
     if (result != CalibrationApplyResult::Saved) {
         pendingBeep_ = BeepPattern::Error;
     }

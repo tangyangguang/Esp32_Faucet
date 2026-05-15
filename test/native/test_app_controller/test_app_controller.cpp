@@ -176,6 +176,46 @@ void test_app_controller_holds_ok_five_seconds_to_enter_local_calibration() {
     TEST_ASSERT_EQUAL_UINT32(100, app.snapshot().calibrationStepMl);
 }
 
+void test_app_controller_ok_saves_local_calibration() {
+    SystemConfig config = makeDefaultConfig();
+    config.pulsePerMl = 1.0f;
+    StatisticsStore statistics;
+    statistics.reset({20260506, 202619, 202605});
+    FilterStore filters(config.filters);
+    MemoryRecordWriter records;
+    AppController app(config, statistics, filters, records);
+
+    app.resetInputs({false, false, false, false}, 0);
+    pressAndReleaseOk(app, 100);
+    pressAndReleaseOk(app, 300);
+    for (std::uint32_t i = 0; i < 1500; ++i) {
+        app.onFlowPulse(1000000UL + i * 2000UL);
+    }
+    app.tick(input({false, false, false, false}, 5000, 5000000, 1714502400));
+    app.tick(input({false, true, false, false}, 6000, 6000000, 1714502401));
+    app.tick(input({false, true, false, false}, 6000 + kButtonDebounceMs, (6000 + kButtonDebounceMs) * 1000UL, 1714502401));
+    app.tick(input({false, true, false, false}, 6000 + kButtonDebounceMs + kButtonLongPressMs,
+                   (6000 + kButtonDebounceMs + kButtonLongPressMs) * 1000UL,
+                   1714502402));
+    app.tick(input({false, true, false, false}, 11000, 11000000, 1714502406));
+    app.tick(input({false, false, false, false}, 11080, 11080000, 1714502406));
+    app.tick(input({false, false, false, false}, 11080 + kButtonDebounceMs, (11080 + kButtonDebounceMs) * 1000UL, 1714502406));
+    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(LocalUiMode::Calibration),
+                            static_cast<std::uint8_t>(app.snapshot().localMode));
+
+    pressAndReleaseMinus(app, 11300);
+    pressAndReleaseMinus(app, 11500);
+    pressAndReleaseMinus(app, 11700);
+    TEST_ASSERT_EQUAL_UINT32(1200, app.snapshot().calibrationActualMl);
+
+    pressAndReleaseOk(app, 11900);
+
+    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(LocalUiMode::Result),
+                            static_cast<std::uint8_t>(app.snapshot().localMode));
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 1.25f, app.config().pulsePerMl);
+    TEST_ASSERT_TRUE(app.consumeConfigDirty());
+}
+
 void test_app_controller_applies_calibration_from_raw_record() {
     SystemConfig config = makeDefaultConfig();
     config.pulsePerMl = 1.0f;
@@ -490,6 +530,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_app_controller_reports_record_write_failure_without_losing_statistics);
     RUN_TEST(test_app_controller_adjusts_this_run_target_and_step);
     RUN_TEST(test_app_controller_holds_ok_five_seconds_to_enter_local_calibration);
+    RUN_TEST(test_app_controller_ok_saves_local_calibration);
     RUN_TEST(test_app_controller_applies_calibration_from_raw_record);
     RUN_TEST(test_app_controller_result_display_exits_after_configured_timeout);
     return UNITY_END();

@@ -124,11 +124,12 @@ void test_display_local_calibration_page_shows_actual_and_step() {
     snapshot.localMode = LocalUiMode::Calibration;
     snapshot.calibrationActualMl = 1000;
     snapshot.calibrationStepMl = 100;
+    snapshot.pulsePerLiter = 450;
 
     DisplayFrame frame = presenter.render(snapshot, 500);
 
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(DisplayPage::Calibration), static_cast<std::uint8_t>(frame.page));
-    TEST_ASSERT_EQUAL_STRING("Actual 1.00L", frame.line1);
+    TEST_ASSERT_EQUAL_STRING("A1.00L P450/L", frame.line1);
     TEST_ASSERT_EQUAL_STRING("S0.10 +/- OK", frame.line2);
 }
 

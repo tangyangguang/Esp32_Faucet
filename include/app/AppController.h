@@ -44,6 +44,7 @@ struct AppSnapshot {
     std::uint32_t calibrationActualMl = 0;
     std::uint32_t calibrationStepMl = 100;
     bool calibrationReady = false;
+    std::uint32_t pulsePerLiter = 0;
     std::uint32_t flowDroppedPulses = 0;
 };
 
@@ -94,6 +95,9 @@ private:
     void updateResultCalibrationHold(bool okPressed, std::uint32_t nowMs);
     bool adjustCalibrationActual(std::int32_t deltaMl);
     CalibrationApplyResult saveLocalCalibration();
+    CalibrationApplyResult applyCalibrationFromRecordInternal(const WaterRecord& record,
+                                                              std::uint32_t actualMl,
+                                                              bool allowLocalCalibration);
     void syncFlow(std::uint32_t nowUs);
     void syncValve(std::uint32_t nowMs);
     void processResult(std::uint32_t startTime,
@@ -133,6 +137,7 @@ private:
     std::uint32_t resultOkHoldStartMs_;
     std::uint32_t calibrationActualMl_;
     std::uint32_t calibrationStepMl_;
+    bool calibrationIgnoreOkUntilReleased_;
 };
 
 }  // namespace faucet

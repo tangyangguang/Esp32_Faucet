@@ -35,10 +35,9 @@
 | `ButtonInput` | 四键消抖、短按/长按 |
 | `DisplayPresenter` | LCD1602 页面模型和刷新节流 |
 | `BeepDriver` | 操作、完成、异常提示 |
-| `WaterLogStore` | 出水日志写入、滚动、分页 |
+| `WaterRecordStore` | 出水记录写入、滚动、分页 |
 | `StatisticsStore` | 今日、本周、本月、总累计 |
 | `FilterStore` | 最多 6 个滤芯的配置、已用天数、已用流量和重置 |
-| `CalibrationController` | 校准算法保留为独立逻辑；本地结果页 5 秒长按 OK 可基于最新出水记录现场校准 |
 | `FaucetWeb` | 业务页面和 `/api/faucet/...` API |
 
 ## 状态机草案
@@ -58,7 +57,7 @@
 - 安全兜底和异常关阀。
 - 本地按键命令。
 - Web 配置和查询请求。
-- 显示、日志、统计。
+- 显示、记录、统计。
 
 ### 事件
 
@@ -93,13 +92,13 @@
 ## 存储草案
 
 - 应用 NVS namespace 使用 `faucet_cfg`、`faucet_stat`、`faucet_run`，不得使用 `eb_` 前缀。
-- 配置使用版本化结构。已知旧版本必须迁移到当前结构，保护用户已保存的预设、滤芯名称、启用状态、寿命、校准系数和候选容量等配置；新增字段使用当前默认值补齐。
+- 配置使用版本化结构。已知旧版本必须迁移到当前结构，保护用户已保存的预设、滤芯名称、启用状态、寿命和流量系数等配置；新增字段使用当前默认值补齐。
 - 只有没有配置版本、未知未来版本或无法识别的数据，才加载当前默认配置。固件升级不得静默清空可识别的用户配置。
-- 日志放 LittleFS，分页读取，单次最多 200 条；记录目标值、原始脉冲数、过滤脉冲数和当时流量系数。
+- 出水记录放 LittleFS，分页读取，单次最多 200 条；记录目标值、原始脉冲数、过滤脉冲数和当时流量系数。
 - 统计放 NVS，出水完成后立即更新，周期性数据按日期变化重置。
 - 运行快照默认只用于安全恢复判断，重启后默认不继续出水。
 - 滤芯数据放 NVS，记录每个滤芯的启用状态、名称、建议更换天数、最长使用天数、寿命流量、开始时间和累计流量。
-- 校准系数和最多 4 个候选容量放 NVS；容量为 0 表示停用该候选项。校准系数可由本地结果页或 Web 最新记录页基于原始脉冲保存。
+- 流量系数放 NVS；可由本地结果页或 Web records 页基于最新可校准出水记录保存，也可在 Esp32Base 系统参数页作为高级救援参数手动修改。
 
 ## Web 草案
 
@@ -107,9 +106,9 @@
 - Web 页面通过 Esp32Base 注册，内置 OTA/WiFi/基础状态入口不重复实现。
 - Web 采用业务优先首页模型：`/` 进入 `/faucet`，`/esp32base` 保留为系统工具入口；系统工具放在页面底部小字区域。
 - 配置写入、恢复出厂、重启等操作使用 POST，并需要 Basic Auth。
-- 日志、统计、配置接口必须分页或小响应，避免大内存拼接。
+- 记录、统计、配置接口必须分页或小响应，避免大内存拼接。
 - Web 端不得注册启动出水、暂停出水、继续出水、停止出水 API 或按钮。
-- Web 端记录页允许基于最新一条真实出水记录输入量杯实际水量并保存校准；校准页面只保留手动保存每升信号数和本地候选容量，不允许远程打开电磁阀。
+- Web records 页允许基于最新一条可校准出水记录输入量杯实际水量并保存校准，不提供独立校准页，不允许远程打开电磁阀。
 - Web 默认认证通过 Esp32Base `setDefaultAuth()` 设置为 `admin/admin`；用户可通过 `/esp32base/auth` 修改认证，已保存认证优先于应用默认值。
 - WebOTA 目标地址和凭据不写入仓库；本地复制 `platformio.ini.example` 为 `platformio.ini.local` 后填写 `custom_esp32base_webota_*`。
 - 当前构建将 Esp32Base 串口日志等级设为 DEBUG，文件日志等级设为 INFO，用于保留更完整的启动和现场诊断信息。文件日志等级在启动后显式应用为 INFO，避免设备 NVS 中旧的 `eb_log.level` 覆盖当前项目策略。注意：基础库 INFO 日志会输出 WiFi/Web 认证明文凭据，调试日志和文件日志需要按敏感信息管理。
@@ -121,11 +120,10 @@
 | 首页 | `/faucet` | 状态、当前预设、基础统计、启用滤芯寿命概览 |
 | 配置 | `/faucet/config` | 安全阈值、显示、蜂鸣器、电磁阀参数 |
 | 预设 | `/faucet/presets` | 9 组预设的启用、名称、类型和值 |
-| 日志 | `/faucet/logs` | 分页查看出水记录 |
+| 记录 | `/faucet/records` | 分页查看出水记录，最新可校准记录可输入量杯实际水量保存校准 |
 | 统计 | `/faucet/stats` | 今日、本周、本月、总累计 |
 | 滤芯 | `/faucet/filters` | 最多 6 个滤芯的已用天数、已用流量、寿命范围、状态、设置入口和重置 |
 | 滤芯设置 | `/faucet/filters/edit?index=N` | 单个滤芯的启用状态、名称、建议更换周期、最长使用周期、寿命流量和上次更换日期配置；隐藏路由，不进入导航 |
-| 校准 | `/faucet/calibration` | 查看校准说明，手动保存每升信号数和 4 个本地候选容量；不出水 |
 
 ### Web API
 
@@ -136,13 +134,12 @@
 | POST | `/api/faucet/config` | 保存配置 |
 | GET | `/api/faucet/presets` | 查询预设 |
 | POST | `/api/faucet/presets` | 保存预设 |
-| GET | `/api/faucet/logs` | 分页查询日志 |
+| GET | `/api/faucet/records` | 分页查询出水记录 |
+| POST | `/api/faucet/records/calibration` | 基于最新可校准出水记录保存流量系数 |
 | GET | `/api/faucet/stats` | 查询统计 |
 | GET | `/api/faucet/filters` | 查询滤芯 |
 | POST | `/api/faucet/filters` | 保存指定滤芯的启用状态、名称、寿命和上次更换日期 |
 | POST | `/api/faucet/filters/reset` | 重置指定滤芯更换时间和累计流量 |
-| GET | `/api/faucet/calibration` | 查询流量系数和候选容量 |
-| POST | `/api/faucet/calibration` | 手动保存每升信号数和候选容量 |
 
 禁止注册 `/api/faucet/water/*`、`/api/faucet/start`、`/api/faucet/stop` 等任何远程出水控制接口。
 
@@ -171,7 +168,7 @@ struct FilterRecord {
     uint32_t usedMl;
 };
 
-struct WaterLogRecord {
+struct WaterRecord {
     uint32_t startTime;    // UTC seconds or relative seconds when time is unknown
     uint32_t volumeMl;
     uint32_t targetValue;  // ml for Volume, seconds for Time
@@ -200,14 +197,15 @@ struct StatisticsRecord {
 
 ## 持久化配置版本化
 
-系统配置保存在 `faucet_cfg` namespace，当前版本为 v4。运行统计和滤芯运行量分别保存在 `faucet_stat`、`faucet_run`，不与系统配置版本耦合。
+系统配置保存在 `faucet_cfg` namespace，当前版本为 v5。运行统计和滤芯运行量分别保存在 `faucet_stat`、`faucet_run`，不与系统配置版本耦合。
 
 | 版本 | 主要字段 | 加载策略 |
 |---|---|---|
-| v1 | 单个校准目标 `cal_ml`；滤芯只保存单个寿命天数 `life_d` | 加载后迁移为 v4：`cal_ml` 写入第 1 个校准目标，滤芯建议/最大天数都继承 `life_d` |
-| v2 | 单个校准目标 `cal_ml`；滤芯已区分建议/最大天数 | 加载后迁移为 v4：`cal_ml` 写入第 1 个校准目标，其余校准目标保留默认值 |
-| v3 | 多个校准候选容量；滤芯建议/最大天数；预设、阀控、OLED 休眠、蜂鸣器等完整参数 | 加载后迁移为 v4：旧 `oled_s` 迁移为 `displaySleepSec`，新增 LCD 地址和结果显示时间 |
-| v4 | LCD1602 地址、显示休眠、结果显示时间；预设、阀控、滤芯、校准参数等完整参数 | 直接加载并做范围钳位 |
+| v1 | 单个校准目标 `cal_ml`；滤芯只保存单个寿命天数 `life_d` | 加载后迁移为 v5：忽略 `cal_ml`，滤芯建议/最大天数都继承 `life_d` |
+| v2 | 单个校准目标 `cal_ml`；滤芯已区分建议/最大天数 | 加载后迁移为 v5：忽略 `cal_ml`，保留其他有效字段 |
+| v3 | 多个校准候选容量；滤芯建议/最大天数；预设、阀控、OLED 休眠、蜂鸣器等完整参数 | 加载后迁移为 v5：忽略 `cal*_ml`，旧 `oled_s` 迁移为 `displaySleepSec` |
+| v4 | LCD1602 地址、显示休眠、结果显示时间；预设、阀控、滤芯、流量系数等完整参数 | 加载后迁移为 v5：忽略旧校准候选容量，保留其他有效字段 |
+| v5 | 删除校准候选容量；records 作为出水记录与校准入口；流量系数保留为高级参数 | 直接加载并做范围钳位 |
 | 未来版本 | 版本号大于当前固件支持版本 | 按当前已知字段只读加载，不自动写回；Web/本地保存会失败，避免降级固件覆盖用户配置 |
 | 未知/损坏版本 | 版本号小于 0 或无法识别 | 使用默认配置并记录警告；用户可通过 Web 系统工具重新生成配置 |
 

@@ -1,13 +1,13 @@
-#include "app/WaterLogStore.h"
+#include "app/WaterRecordStore.h"
 
 #include <algorithm>
 
 namespace faucet {
 
-WaterLogStore::WaterLogStore(WaterLogRecord* records, std::size_t capacity)
+WaterRecordStore::WaterRecordStore(WaterRecord* records, std::size_t capacity)
     : records_(records), capacity_(capacity), oldestIndex_(0), count_(0) {}
 
-bool WaterLogStore::append(const WaterLogRecord& record) {
+bool WaterRecordStore::append(const WaterRecord& record) {
     if (!records_ || capacity_ == 0) {
         return false;
     }
@@ -24,31 +24,31 @@ bool WaterLogStore::append(const WaterLogRecord& record) {
     return true;
 }
 
-std::size_t WaterLogStore::rewriteBootRelativeTimes(std::uint32_t bootId, std::uint32_t bootStartRealSec) {
+std::size_t WaterRecordStore::rewriteBootRelativeTimes(std::uint32_t bootId, std::uint32_t bootStartRealSec) {
     if (!records_ || bootId == 0) {
         return 0;
     }
     std::size_t changed = 0;
     for (std::size_t offset = 0; offset < count_; ++offset) {
-        WaterLogRecord& record = records_[physicalIndexFromNewestOffset(offset)];
-        if (waterLogHasBootRelativeTime(record) && waterLogBootId(record) == bootId) {
+        WaterRecord& record = records_[physicalIndexFromNewestOffset(offset)];
+        if (waterRecordHasBootRelativeTime(record) && waterRecordBootId(record) == bootId) {
             record.startTime = bootStartRealSec + record.startTime;
-            clearWaterLogBootId(record);
+            clearWaterRecordBootId(record);
             ++changed;
         }
     }
     return changed;
 }
 
-std::size_t WaterLogStore::readPage(std::size_t pageIndex,
+std::size_t WaterRecordStore::readPage(std::size_t pageIndex,
                                     std::uint16_t pageSize,
-                                    WaterLogRecord* output,
+                                    WaterRecord* output,
                                     std::size_t outputCapacity) const {
     if (!output || outputCapacity == 0 || count_ == 0) {
         return 0;
     }
 
-    const std::uint16_t sanitizedPageSize = sanitizeLogPageSize(pageSize);
+    const std::uint16_t sanitizedPageSize = sanitizeRecordPageSize(pageSize);
     const std::size_t startOffset = pageIndex * static_cast<std::size_t>(sanitizedPageSize);
     if (startOffset >= count_) {
         return 0;
@@ -62,39 +62,39 @@ std::size_t WaterLogStore::readPage(std::size_t pageIndex,
     return limit;
 }
 
-const WaterLogRecord* WaterLogStore::newest(std::size_t offset) const {
+const WaterRecord* WaterRecordStore::newest(std::size_t offset) const {
     if (!records_ || offset >= count_) {
         return nullptr;
     }
     return &records_[physicalIndexFromNewestOffset(offset)];
 }
 
-void WaterLogStore::clear() {
+void WaterRecordStore::clear() {
     oldestIndex_ = 0;
     count_ = 0;
 }
 
-std::size_t WaterLogStore::count() const {
+std::size_t WaterRecordStore::count() const {
     return count_;
 }
 
-std::size_t WaterLogStore::capacity() const {
+std::size_t WaterRecordStore::capacity() const {
     return capacity_;
 }
 
-bool WaterLogStore::ready() const {
+bool WaterRecordStore::ready() const {
     return records_ && capacity_ > 0;
 }
 
-const char* WaterLogStore::storageName() const {
+const char* WaterRecordStore::storageName() const {
     return ready() ? "ram" : "unavailable";
 }
 
-bool WaterLogStore::full() const {
+bool WaterRecordStore::full() const {
     return count_ == capacity_ && capacity_ > 0;
 }
 
-std::size_t WaterLogStore::physicalIndexFromNewestOffset(std::size_t offset) const {
+std::size_t WaterRecordStore::physicalIndexFromNewestOffset(std::size_t offset) const {
     return (oldestIndex_ + count_ - 1 - offset) % capacity_;
 }
 

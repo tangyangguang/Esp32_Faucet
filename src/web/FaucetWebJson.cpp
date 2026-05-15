@@ -66,8 +66,6 @@ const char* waterModeName(WaterMode mode) {
             return "volume";
         case WaterMode::Time:
             return "time";
-        case WaterMode::Calibration:
-            return "calibration";
     }
     return "unknown";
 }
@@ -163,7 +161,7 @@ bool writeConfigJson(const SystemConfig& config, char* out, std::size_t len) {
     writer.append("{\"confirmTimeoutSec\":%lu,\"maxOutTimeSec\":%lu,\"maxOutVolumeMl\":%lu,"
                   "\"overflowPercent\":%u,\"noFlowTimeoutSec\":%lu,\"highFlowMlPerMin\":%lu,"
                   "\"highFlowDurationSec\":%lu,\"pauseTimeoutSec\":%lu,\"pulsePerMl\":%.3f,"
-                  "\"calibrationTargetsMl\":[%lu,%lu,%lu,%lu],\"valveFullPowerSec\":%lu,"
+                  "\"valveFullPowerSec\":%lu,"
                   "\"valveHoldDutyPercent\":%u,\"displaySleepSec\":%lu,\"resultDisplaySec\":%lu,"
                   "\"lcdI2cAddress\":%u,\"beepEnabled\":%s}",
                   static_cast<unsigned long>(config.confirmTimeoutSec),
@@ -175,10 +173,6 @@ bool writeConfigJson(const SystemConfig& config, char* out, std::size_t len) {
                   static_cast<unsigned long>(config.highFlowDurationSec),
                   static_cast<unsigned long>(config.pauseTimeoutSec),
                   static_cast<double>(config.pulsePerMl),
-                  static_cast<unsigned long>(config.calibrationTargetsMl[0]),
-                  static_cast<unsigned long>(config.calibrationTargetsMl[1]),
-                  static_cast<unsigned long>(config.calibrationTargetsMl[2]),
-                  static_cast<unsigned long>(config.calibrationTargetsMl[3]),
                   static_cast<unsigned long>(config.valveFullPowerSec),
                   static_cast<unsigned>(config.valveHoldDutyPercent),
                   static_cast<unsigned long>(config.displaySleepSec),
@@ -225,20 +219,7 @@ bool writeFiltersJson(const FilterRecord (&filters)[kFilterCount], char* out, st
     return writer.ok();
 }
 
-bool writeCalibrationJson(const SystemConfig& config, char* out, std::size_t len) {
-    JsonWriter writer(out, len);
-    writer.append("{\"pulsePerMl\":%.3f,\"pulsePerLiter\":%.1f,\"targetsMl\":[%lu,%lu,%lu,%lu],"
-                  "\"webCanStartCalibration\":false}",
-                  static_cast<double>(config.pulsePerMl),
-                  static_cast<double>(config.pulsePerMl * 1000.0f),
-                  static_cast<unsigned long>(config.calibrationTargetsMl[0]),
-                  static_cast<unsigned long>(config.calibrationTargetsMl[1]),
-                  static_cast<unsigned long>(config.calibrationTargetsMl[2]),
-                  static_cast<unsigned long>(config.calibrationTargetsMl[3]));
-    return writer.ok();
-}
-
-bool writeWaterLogsJson(const WaterLogRecord* records,
+bool writeWaterRecordsJson(const WaterRecord* records,
                         std::size_t recordCount,
                         std::size_t pageIndex,
                         std::uint16_t pageSize,
@@ -247,14 +228,14 @@ bool writeWaterLogsJson(const WaterLogRecord* records,
                         char* out,
                         std::size_t len) {
     JsonWriter writer(out, len);
-    writer.append("{\"storage\":\"%s\",\"page\":%u,\"pageSize\":%u,\"total\":%u,\"count\":%u,\"logs\":[",
+    writer.append("{\"storage\":\"%s\",\"page\":%u,\"pageSize\":%u,\"total\":%u,\"count\":%u,\"records\":[",
                   storageName ? storageName : "unavailable",
                   static_cast<unsigned>(pageIndex),
                   static_cast<unsigned>(pageSize),
                   static_cast<unsigned>(totalCount),
                   static_cast<unsigned>(recordCount));
     for (std::size_t i = 0; i < recordCount; ++i) {
-        const WaterLogRecord& record = records[i];
+        const WaterRecord& record = records[i];
         writer.append("%s{\"startTime\":%lu,\"volumeMl\":%lu,\"durationSec\":%u,"
                       "\"mode\":\"%s\",\"result\":\"%s\",\"targetValue\":%lu,\"selectedPreset\":%u,"
                       "\"pulseCount\":%lu,\"rejectedPulseCount\":%lu,\"pulsePerMlAtRun\":%.3f}",

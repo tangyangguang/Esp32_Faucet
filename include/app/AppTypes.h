@@ -21,7 +21,6 @@ enum class PresetType : std::uint8_t {
 enum class WaterMode : std::uint8_t {
     Volume = 0,
     Time = 1,
-    Calibration = 2,
 };
 
 enum class WaterResult : std::uint8_t {
@@ -50,7 +49,7 @@ struct FilterRecord {
     std::uint32_t startBootId;
 };
 
-struct WaterLogRecord {
+struct WaterRecord {
     std::uint32_t startTime;
     std::uint32_t volumeMl;
     std::uint32_t targetValue;
@@ -65,30 +64,30 @@ struct WaterLogRecord {
     std::uint8_t reserved[4];
 };
 
-inline std::uint32_t waterLogBootId(const WaterLogRecord& record) {
+inline std::uint32_t waterRecordBootId(const WaterRecord& record) {
     return static_cast<std::uint32_t>(record.reserved[0]) |
            (static_cast<std::uint32_t>(record.reserved[1]) << 8U) |
            (static_cast<std::uint32_t>(record.reserved[2]) << 16U) |
            (static_cast<std::uint32_t>(record.reserved[3]) << 24U);
 }
 
-inline void markWaterLogBootId(WaterLogRecord& record, std::uint32_t bootId) {
+inline void markWaterRecordBootId(WaterRecord& record, std::uint32_t bootId) {
     record.reserved[0] = static_cast<std::uint8_t>(bootId & 0xFFU);
     record.reserved[1] = static_cast<std::uint8_t>((bootId >> 8U) & 0xFFU);
     record.reserved[2] = static_cast<std::uint8_t>((bootId >> 16U) & 0xFFU);
     record.reserved[3] = static_cast<std::uint8_t>((bootId >> 24U) & 0xFFU);
 }
 
-inline void clearWaterLogBootId(WaterLogRecord& record) {
-    markWaterLogBootId(record, 0);
+inline void clearWaterRecordBootId(WaterRecord& record) {
+    markWaterRecordBootId(record, 0);
 }
 
-inline bool waterLogHasRealTime(const WaterLogRecord& record) {
-    return record.startTime >= kMinRealDateSeconds && waterLogBootId(record) == 0;
+inline bool waterRecordHasRealTime(const WaterRecord& record) {
+    return record.startTime >= kMinRealDateSeconds && waterRecordBootId(record) == 0;
 }
 
-inline bool waterLogHasBootRelativeTime(const WaterLogRecord& record) {
-    return record.startTime > 0 && record.startTime < kMinRealDateSeconds && waterLogBootId(record) != 0;
+inline bool waterRecordHasBootRelativeTime(const WaterRecord& record) {
+    return record.startTime > 0 && record.startTime < kMinRealDateSeconds && waterRecordBootId(record) != 0;
 }
 
 struct StatisticsRecord {

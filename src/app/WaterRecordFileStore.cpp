@@ -1,4 +1,4 @@
-#include "app/WaterLogFileStore.h"
+#include "app/WaterRecordFileStore.h"
 
 #include <algorithm>
 #include <cstring>
@@ -6,10 +6,10 @@
 namespace faucet {
 namespace {
 
-constexpr std::uint32_t kLogMagic = 0x464C5746UL;  // FWLF
-constexpr std::uint16_t kLogVersion = 2;
+constexpr std::uint32_t kRecordMagic = 0x46575244UL;  // FWRD
+constexpr std::uint16_t kRecordVersion = 1;
 
-struct LogHeader {
+struct RecordHeader {
     std::uint32_t magic;
     std::uint16_t version;
     std::uint16_t recordSize;
@@ -19,17 +19,17 @@ struct LogHeader {
     std::uint32_t reserved;
 };
 
-static_assert(sizeof(LogHeader) == 24, "LogHeader must stay fixed-size");
+static_assert(sizeof(RecordHeader) == 24, "RecordHeader must stay fixed-size");
 
 bool validPath(const char* path) {
     return path && path[0] == '/';
 }
 
-LogHeader makeHeader(std::size_t capacity, std::size_t count, std::size_t oldestIndex) {
-    return LogHeader{
-        kLogMagic,
-        kLogVersion,
-        static_cast<std::uint16_t>(sizeof(WaterLogRecord)),
+RecordHeader makeHeader(std::size_t capacity, std::size_t count, std::size_t oldestIndex) {
+    return RecordHeader{
+        kRecordMagic,
+        kRecordVersion,
+        static_cast<std::uint16_t>(sizeof(WaterRecord)),
         static_cast<std::uint32_t>(capacity),
         static_cast<std::uint32_t>(count),
         static_cast<std::uint32_t>(oldestIndex),
@@ -39,7 +39,7 @@ LogHeader makeHeader(std::size_t capacity, std::size_t count, std::size_t oldest
 
 }  // namespace
 
-WaterLogFileStore::WaterLogFileStore(WaterLogFileBackend& backend, const char* path, std::size_t capacity)
+WaterRecordFileStore::WaterRecordFileStore(WaterRecordFileBackend& backend, const char* path, std::size_t capacity)
     : backend_(backend),
       path_(path),
       capacity_(capacity),
@@ -47,7 +47,7 @@ WaterLogFileStore::WaterLogFileStore(WaterLogFileBackend& backend, const char* p
       count_(0),
       ready_(false) {}
 
-bool WaterLogFileStore::begin() {
+bool WaterRecordFileStore::begin() {
     ready_ = false;
     if (!validPath(path_) || capacity_ == 0 || capacity_ > UINT32_MAX) {
         return false;
@@ -66,7 +66,7 @@ bool WaterLogFileStore::begin() {
     return true;
 }
 
-bool WaterLogFileStore::append(const WaterLogRecord& record) {
+bool WaterRecordFileStore::append(const WaterRecord& record) {
     if (!ready_) {
         return false;
     }
@@ -100,22 +100,22 @@ bool WaterLogFileStore::append(const WaterLogRecord& record) {
     return false;
 }
 
-std::size_t WaterLogFileStore::rewriteBootRelativeTimes(std::uint32_t bootId, std::uint32_t bootStartRealSec) {
+std::size_t WaterRecordFileStore::rewriteBootRelativeTimes(std::uint32_t bootId, std::uint32_t bootStartRealSec) {
     if (!ready_ || !backend_.exists(path_) || bootId == 0) {
         return 0;
     }
     std::size_t changed = 0;
     for (std::size_t offset = 0; offset < count_; ++offset) {
         const std::size_t index = physicalIndexFromNewestOffset(offset);
-        WaterLogRecord record{};
+        WaterRecord record{};
         if (!backend_.readAt(path_, recordOffset(index), reinterpret_cast<std::uint8_t*>(&record), sizeof(record))) {
             return changed;
         }
-        if (!waterLogHasBootRelativeTime(record) || waterLogBootId(record) != bootId) {
+        if (!waterRecordHasBootRelativeTime(record) || waterRecordBootId(record) != bootId) {
             continue;
         }
         record.startTime = bootStartRealSec + record.startTime;
-        clearWaterLogBootId(record);
+        clearWaterRecordBootId(record);
         if (!backend_.writeAt(path_, recordOffset(index), reinterpret_cast<const std::uint8_t*>(&record), sizeof(record))) {
             return changed;
         }
@@ -124,9 +124,9 @@ std::size_t WaterLogFileStore::rewriteBootRelativeTimes(std::uint32_t bootId, st
     return changed;
 }
 
-std::size_t WaterLogFileStore::readPage(std::size_t pageIndex,
+std::size_t WaterRecordFileStore::readPage(std::size_t pageIndex,
                                         std::uint16_t pageSize,
-                                        WaterLogRecord* output,
+                                        WaterRecord* output,
                                         std::size_t outputCapacity) const {
     if (!ready_ || !output || outputCapacity == 0 || count_ == 0) {
         return 0;
@@ -135,7 +135,7 @@ std::size_t WaterLogFileStore::readPage(std::size_t pageIndex,
         return 0;
     }
 
-    const std::uint16_t sanitizedPageSize = sanitizeLogPageSize(pageSize);
+    const std::uint16_t sanitizedPageSize = sanitizeRecordPageSize(pageSize);
     const std::size_t startOffset = pageIndex * static_cast<std::size_t>(sanitizedPageSize);
     if (startOffset >= count_) {
         return 0;
@@ -155,7 +155,7 @@ std::size_t WaterLogFileStore::readPage(std::size_t pageIndex,
     return limit;
 }
 
-bool WaterLogFileStore::clear() {
+bool WaterRecordFileStore::clear() {
     if (!ready_) {
         return false;
     }
@@ -164,48 +164,48 @@ bool WaterLogFileStore::clear() {
     return saveHeader();
 }
 
-std::size_t WaterLogFileStore::count() const {
+std::size_t WaterRecordFileStore::count() const {
     return ready_ && backend_.exists(path_) ? count_ : 0;
 }
 
-std::size_t WaterLogFileStore::capacity() const {
+std::size_t WaterRecordFileStore::capacity() const {
     return capacity_;
 }
 
-bool WaterLogFileStore::ready() const {
+bool WaterRecordFileStore::ready() const {
     return ready_ && backend_.exists(path_);
 }
 
-const char* WaterLogFileStore::storageName() const {
+const char* WaterRecordFileStore::storageName() const {
     return ready() ? "file" : "unavailable";
 }
 
-bool WaterLogFileStore::initializeNewFile() {
+bool WaterRecordFileStore::initializeNewFile() {
     oldestIndex_ = 0;
     count_ = 0;
-    ready_ = backend_.createSized(path_, sizeof(LogHeader)) && saveHeader();
+    ready_ = backend_.createSized(path_, sizeof(RecordHeader)) && saveHeader();
     return ready_;
 }
 
-bool WaterLogFileStore::loadHeader() {
+bool WaterRecordFileStore::loadHeader() {
     const std::int64_t fileSize = backend_.fileSize(path_);
-    if (fileSize < static_cast<std::int64_t>(sizeof(LogHeader)) ||
+    if (fileSize < static_cast<std::int64_t>(sizeof(RecordHeader)) ||
         fileSize > static_cast<std::int64_t>(fileSizeBytes())) {
         return false;
     }
 
-    LogHeader header{};
+    RecordHeader header{};
     if (!backend_.readAt(path_, 0, reinterpret_cast<std::uint8_t*>(&header), sizeof(header))) {
         return false;
     }
 
-    if (header.magic != kLogMagic || header.version != kLogVersion ||
-        header.recordSize != sizeof(WaterLogRecord) || header.capacity == 0 || header.capacity != capacity_ ||
+    if (header.magic != kRecordMagic || header.version != kRecordVersion ||
+        header.recordSize != sizeof(WaterRecord) || header.capacity == 0 || header.capacity != capacity_ ||
         header.count > header.capacity || header.oldestIndex >= header.capacity) {
         return false;
     }
 
-    const std::size_t requiredSize = sizeof(LogHeader) + static_cast<std::size_t>(header.count) * sizeof(WaterLogRecord);
+    const std::size_t requiredSize = sizeof(RecordHeader) + static_cast<std::size_t>(header.count) * sizeof(WaterRecord);
     if (fileSize < static_cast<std::int64_t>(requiredSize)) {
         return false;
     }
@@ -216,12 +216,12 @@ bool WaterLogFileStore::loadHeader() {
     return true;
 }
 
-bool WaterLogFileStore::saveHeader() const {
-    const LogHeader header = makeHeader(capacity_, count_, oldestIndex_);
+bool WaterRecordFileStore::saveHeader() const {
+    const RecordHeader header = makeHeader(capacity_, count_, oldestIndex_);
     return backend_.writeAt(path_, 0, reinterpret_cast<const std::uint8_t*>(&header), sizeof(header));
 }
 
-bool WaterLogFileStore::appendRecord(std::size_t index, const WaterLogRecord& record) {
+bool WaterRecordFileStore::appendRecord(std::size_t index, const WaterRecord& record) {
     const std::size_t offset = recordOffset(index);
     const std::int64_t fileSize = backend_.fileSize(path_);
     const std::uint8_t* data = reinterpret_cast<const std::uint8_t*>(&record);
@@ -235,16 +235,16 @@ bool WaterLogFileStore::appendRecord(std::size_t index, const WaterLogRecord& re
     return false;
 }
 
-std::size_t WaterLogFileStore::fileSizeBytes() const {
-    return sizeof(LogHeader) + capacity_ * sizeof(WaterLogRecord);
+std::size_t WaterRecordFileStore::fileSizeBytes() const {
+    return sizeof(RecordHeader) + capacity_ * sizeof(WaterRecord);
 }
 
-std::size_t WaterLogFileStore::physicalIndexFromNewestOffset(std::size_t offset) const {
+std::size_t WaterRecordFileStore::physicalIndexFromNewestOffset(std::size_t offset) const {
     return (oldestIndex_ + count_ - 1 - offset) % capacity_;
 }
 
-std::size_t WaterLogFileStore::recordOffset(std::size_t index) const {
-    return sizeof(LogHeader) + index * sizeof(WaterLogRecord);
+std::size_t WaterRecordFileStore::recordOffset(std::size_t index) const {
+    return sizeof(RecordHeader) + index * sizeof(WaterRecord);
 }
 
 }  // namespace faucet

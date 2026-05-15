@@ -8,12 +8,12 @@ using namespace faucet;
 
 namespace {
 
-class MemoryLogWriter : public AppLogWriter {
+class MemoryRecordWriter : public WaterRecordWriter {
 public:
     bool ok = true;
-    std::vector<WaterLogRecord> records;
+    std::vector<WaterRecord> records;
 
-    bool append(const WaterLogRecord& record) override {
+    bool append(const WaterRecord& record) override {
         if (!ok) {
             return false;
         }
@@ -90,8 +90,8 @@ void test_app_controller_starts_after_double_ok_and_opens_valve() {
     StatisticsStore statistics;
     statistics.reset({20260506, 202619, 202605});
     FilterStore filters(config.filters);
-    MemoryLogWriter logs;
-    AppController app(config, statistics, filters, logs);
+    MemoryRecordWriter records;
+    AppController app(config, statistics, filters, records);
 
     app.resetInputs({false, false, false, false}, 0);
     pressAndReleaseOk(app, 100);
@@ -106,14 +106,14 @@ void test_app_controller_starts_after_double_ok_and_opens_valve() {
     TEST_ASSERT_EQUAL_UINT8(100, app.snapshot().valve.dutyPercent);
 }
 
-void test_app_controller_completion_writes_log_statistics_and_filters() {
+void test_app_controller_completion_writes_record_statistics_and_filters() {
     SystemConfig config = makeDefaultConfig();
     config.pulsePerMl = 1.0f;
     StatisticsStore statistics;
     statistics.reset({20260506, 202619, 202605});
     FilterStore filters(config.filters);
-    MemoryLogWriter logs;
-    AppController app(config, statistics, filters, logs);
+    MemoryRecordWriter records;
+    AppController app(config, statistics, filters, records);
 
     app.resetInputs({false, false, false, false}, 0);
     pressAndReleaseOk(app, 100);
@@ -127,15 +127,15 @@ void test_app_controller_completion_writes_log_statistics_and_filters() {
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(WaterState::Idle),
                             static_cast<std::uint8_t>(app.snapshot().water.state));
     TEST_ASSERT_FALSE(app.snapshot().valve.enabled);
-    TEST_ASSERT_EQUAL_size_t(1, logs.records.size());
-    TEST_ASSERT_EQUAL_UINT32(1500, logs.records[0].volumeMl);
-    TEST_ASSERT_EQUAL_UINT32(1500, logs.records[0].targetValue);
-    TEST_ASSERT_EQUAL_UINT32(1500, logs.records[0].pulseCount);
-    TEST_ASSERT_EQUAL_UINT32(0, logs.records[0].rejectedPulseCount);
-    TEST_ASSERT_FLOAT_WITHIN(0.001f, 1.0f, logs.records[0].pulsePerMlAtRun);
-    TEST_ASSERT_EQUAL_UINT8(0, logs.records[0].selectedPreset);
+    TEST_ASSERT_EQUAL_size_t(1, records.records.size());
+    TEST_ASSERT_EQUAL_UINT32(1500, records.records[0].volumeMl);
+    TEST_ASSERT_EQUAL_UINT32(1500, records.records[0].targetValue);
+    TEST_ASSERT_EQUAL_UINT32(1500, records.records[0].pulseCount);
+    TEST_ASSERT_EQUAL_UINT32(0, records.records[0].rejectedPulseCount);
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 1.0f, records.records[0].pulsePerMlAtRun);
+    TEST_ASSERT_EQUAL_UINT8(0, records.records[0].selectedPreset);
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(WaterResult::Completed),
-                            static_cast<std::uint8_t>(logs.records[0].result));
+                            static_cast<std::uint8_t>(records.records[0].result));
     TEST_ASSERT_EQUAL_UINT32(1500, statistics.record().todayMl);
     TEST_ASSERT_EQUAL_UINT32(1500, filters.record(0).usedMl);
     TEST_ASSERT_TRUE(app.consumePersistenceDirty());
@@ -148,8 +148,8 @@ void test_app_controller_holds_ok_five_seconds_to_enter_local_calibration() {
     StatisticsStore statistics;
     statistics.reset({20260506, 202619, 202605});
     FilterStore filters(config.filters);
-    MemoryLogWriter logs;
-    AppController app(config, statistics, filters, logs);
+    MemoryRecordWriter records;
+    AppController app(config, statistics, filters, records);
 
     app.resetInputs({false, false, false, false}, 0);
     pressAndReleaseOk(app, 100);
@@ -181,9 +181,9 @@ void test_app_controller_applies_calibration_from_raw_record() {
     config.pulsePerMl = 1.0f;
     StatisticsStore statistics;
     FilterStore filters(config.filters);
-    MemoryLogWriter logs;
-    AppController app(config, statistics, filters, logs);
-    WaterLogRecord record{
+    MemoryRecordWriter records;
+    AppController app(config, statistics, filters, records);
+    WaterRecord record{
         1714502400,
         1200,
         1200,
@@ -207,10 +207,10 @@ void test_app_controller_applies_calibration_from_raw_record() {
 void test_app_controller_offline_completion_marks_unknown_time_with_boot_id() {
     SystemConfig config = makeDefaultConfig();
     config.pulsePerMl = 1.0f;
-    MemoryLogWriter logs;
+    MemoryRecordWriter records;
     StatisticsStore statistics;
     FilterStore filters(config.filters);
-    AppController app(config, statistics, filters, logs);
+    AppController app(config, statistics, filters, records);
 
     app.resetInputs({false, false, false, false}, 0);
     app.tick(offlineInput({false, true, false, false}, 100, 100000, 1));
@@ -226,10 +226,10 @@ void test_app_controller_offline_completion_marks_unknown_time_with_boot_id() {
     }
     app.tick(offlineInput({false, false, false, false}, 5000, 5000000, 5));
 
-    TEST_ASSERT_EQUAL_size_t(1, logs.records.size());
-    TEST_ASSERT_EQUAL_UINT32(1500, logs.records[0].volumeMl);
-    TEST_ASSERT_EQUAL_UINT32(1, logs.records[0].startTime);
-    TEST_ASSERT_EQUAL_UINT32(42, waterLogBootId(logs.records[0]));
+    TEST_ASSERT_EQUAL_size_t(1, records.records.size());
+    TEST_ASSERT_EQUAL_UINT32(1500, records.records[0].volumeMl);
+    TEST_ASSERT_EQUAL_UINT32(1, records.records[0].startTime);
+    TEST_ASSERT_EQUAL_UINT32(42, waterRecordBootId(records.records[0]));
     TEST_ASSERT_EQUAL_UINT32(0, statistics.record().todayMl);
     TEST_ASSERT_EQUAL_UINT32(0, statistics.record().totalMl);
     TEST_ASSERT_EQUAL_UINT32(1500, filters.record(0).usedMl);
@@ -238,10 +238,10 @@ void test_app_controller_offline_completion_marks_unknown_time_with_boot_id() {
 void test_app_controller_offline_start_sync_before_completion_writes_real_time() {
     SystemConfig config = makeDefaultConfig();
     config.pulsePerMl = 1.0f;
-    MemoryLogWriter logs;
+    MemoryRecordWriter records;
     StatisticsStore statistics;
     FilterStore filters(config.filters);
-    AppController app(config, statistics, filters, logs);
+    AppController app(config, statistics, filters, records);
 
     app.resetInputs({false, false, false, false}, 0);
     app.tick(offlineInput({false, true, false, false}, 1000, 1000000, 1));
@@ -257,9 +257,9 @@ void test_app_controller_offline_start_sync_before_completion_writes_real_time()
     }
     app.tick(input({false, false, false, false}, 5000, 5000000, 815500004));
 
-    TEST_ASSERT_EQUAL_size_t(1, logs.records.size());
-    TEST_ASSERT_EQUAL_UINT32(815500000, logs.records[0].startTime);
-    TEST_ASSERT_EQUAL_UINT32(0, waterLogBootId(logs.records[0]));
+    TEST_ASSERT_EQUAL_size_t(1, records.records.size());
+    TEST_ASSERT_EQUAL_UINT32(815500000, records.records[0].startTime);
+    TEST_ASSERT_EQUAL_UINT32(0, waterRecordBootId(records.records[0]));
 }
 
 void test_app_controller_pause_resume_then_completion_updates_persistence_once() {
@@ -268,8 +268,8 @@ void test_app_controller_pause_resume_then_completion_updates_persistence_once()
     StatisticsStore statistics;
     statistics.reset({20260506, 202619, 202605});
     FilterStore filters(config.filters);
-    MemoryLogWriter logs;
-    AppController app(config, statistics, filters, logs);
+    MemoryRecordWriter records;
+    AppController app(config, statistics, filters, records);
 
     app.resetInputs({false, false, false, false}, 0);
     pressAndReleaseOk(app, 100);
@@ -285,7 +285,7 @@ void test_app_controller_pause_resume_then_completion_updates_persistence_once()
                             static_cast<std::uint8_t>(app.snapshot().water.state));
     TEST_ASSERT_FALSE(app.snapshot().valve.enabled);
     app.tick(input({false, false, false, false}, 20000, 20000000, 1714502418));
-    TEST_ASSERT_EQUAL_size_t(0, logs.records.size());
+    TEST_ASSERT_EQUAL_size_t(0, records.records.size());
 
     pressAndReleaseOk(app, 20100);
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(WaterState::Running),
@@ -295,9 +295,9 @@ void test_app_controller_pause_resume_then_completion_updates_persistence_once()
     }
     app.tick(input({false, false, false, false}, 23000, 23000000, 1714502421));
 
-    TEST_ASSERT_EQUAL_size_t(1, logs.records.size());
+    TEST_ASSERT_EQUAL_size_t(1, records.records.size());
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(WaterResult::Completed),
-                            static_cast<std::uint8_t>(logs.records[0].result));
+                            static_cast<std::uint8_t>(records.records[0].result));
     TEST_ASSERT_EQUAL_UINT32(1500, statistics.record().todayMl);
     TEST_ASSERT_EQUAL_UINT32(1500, filters.record(0).usedMl);
     TEST_ASSERT_TRUE(app.consumePersistenceDirty());
@@ -309,8 +309,8 @@ void test_app_controller_stop_down_closes_valve_and_records_user_stop() {
     StatisticsStore statistics;
     statistics.reset({20260506, 202619, 202605});
     FilterStore filters(config.filters);
-    MemoryLogWriter logs;
-    AppController app(config, statistics, filters, logs);
+    MemoryRecordWriter records;
+    AppController app(config, statistics, filters, records);
 
     app.resetInputs({false, false, false, false}, 0);
     pressAndReleaseOk(app, 100);
@@ -326,10 +326,10 @@ void test_app_controller_stop_down_closes_valve_and_records_user_stop() {
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(WaterState::Idle),
                             static_cast<std::uint8_t>(app.snapshot().water.state));
     TEST_ASSERT_FALSE(app.snapshot().valve.enabled);
-    TEST_ASSERT_EQUAL_size_t(1, logs.records.size());
+    TEST_ASSERT_EQUAL_size_t(1, records.records.size());
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(WaterResult::StoppedByUser),
-                            static_cast<std::uint8_t>(logs.records[0].result));
-    TEST_ASSERT_EQUAL_UINT32(300, logs.records[0].volumeMl);
+                            static_cast<std::uint8_t>(records.records[0].result));
+    TEST_ASSERT_EQUAL_UINT32(300, records.records[0].volumeMl);
 }
 
 void test_app_controller_emergency_stop_closes_valve_without_debounce() {
@@ -338,8 +338,8 @@ void test_app_controller_emergency_stop_closes_valve_without_debounce() {
     StatisticsStore statistics;
     statistics.reset({20260506, 202619, 202605});
     FilterStore filters(config.filters);
-    MemoryLogWriter logs;
-    AppController app(config, statistics, filters, logs);
+    MemoryRecordWriter records;
+    AppController app(config, statistics, filters, records);
 
     app.resetInputs({false, false, false, false}, 0);
     pressAndReleaseOk(app, 100);
@@ -357,8 +357,8 @@ void test_app_controller_applies_config_only_while_idle() {
     StatisticsStore statistics;
     statistics.reset({20260506, 202619, 202605});
     FilterStore filters(config.filters);
-    MemoryLogWriter logs;
-    AppController app(config, statistics, filters, logs);
+    MemoryRecordWriter records;
+    AppController app(config, statistics, filters, records);
 
     SystemConfig updated = config;
     updated.presets[0].value = 2000;
@@ -380,8 +380,8 @@ void test_app_controller_emits_beep_patterns_for_actions_and_completion() {
     StatisticsStore statistics;
     statistics.reset({20260506, 202619, 202605});
     FilterStore filters(config.filters);
-    MemoryLogWriter logs;
-    AppController app(config, statistics, filters, logs);
+    MemoryRecordWriter records;
+    AppController app(config, statistics, filters, records);
 
     app.resetInputs({false, false, false, false}, 0);
     pressAndReleaseOk(app, 100);
@@ -400,15 +400,15 @@ void test_app_controller_emits_beep_patterns_for_actions_and_completion() {
                             static_cast<std::uint8_t>(app.consumeBeepPattern()));
 }
 
-void test_app_controller_reports_log_write_failure_without_losing_statistics() {
+void test_app_controller_reports_record_write_failure_without_losing_statistics() {
     SystemConfig config = makeDefaultConfig();
     config.pulsePerMl = 1.0f;
     StatisticsStore statistics;
     statistics.reset({20260506, 202619, 202605});
     FilterStore filters(config.filters);
-    MemoryLogWriter logs;
-    logs.ok = false;
-    AppController app(config, statistics, filters, logs);
+    MemoryRecordWriter records;
+    records.ok = false;
+    AppController app(config, statistics, filters, records);
 
     app.resetInputs({false, false, false, false}, 0);
     pressAndReleaseOk(app, 100);
@@ -418,7 +418,7 @@ void test_app_controller_reports_log_write_failure_without_losing_statistics() {
     }
     app.tick(input({false, false, false, false}, 5000, 5000000, 1714502400));
 
-    TEST_ASSERT_FALSE(app.lastLogWriteOk());
+    TEST_ASSERT_FALSE(app.lastRecordWriteOk());
     TEST_ASSERT_EQUAL_UINT32(1500, statistics.record().todayMl);
     TEST_ASSERT_EQUAL_UINT32(1500, filters.record(0).usedMl);
 }
@@ -428,8 +428,8 @@ void test_app_controller_adjusts_this_run_target_and_step() {
     StatisticsStore statistics;
     statistics.reset({20260506, 202619, 202605});
     FilterStore filters(config.filters);
-    MemoryLogWriter logs;
-    AppController app(config, statistics, filters, logs);
+    MemoryRecordWriter records;
+    AppController app(config, statistics, filters, records);
 
     app.resetInputs({false, false, false, false}, 0);
     pressAndReleaseOk(app, 100);
@@ -455,8 +455,8 @@ void test_app_controller_result_display_exits_after_configured_timeout() {
     StatisticsStore statistics;
     statistics.reset({20260506, 202619, 202605});
     FilterStore filters(config.filters);
-    MemoryLogWriter logs;
-    AppController app(config, statistics, filters, logs);
+    MemoryRecordWriter records;
+    AppController app(config, statistics, filters, records);
 
     app.resetInputs({false, false, false, false}, 0);
     pressAndReleaseOk(app, 100);
@@ -479,7 +479,7 @@ int main(int argc, char** argv) {
 
     UNITY_BEGIN();
     RUN_TEST(test_app_controller_starts_after_double_ok_and_opens_valve);
-    RUN_TEST(test_app_controller_completion_writes_log_statistics_and_filters);
+    RUN_TEST(test_app_controller_completion_writes_record_statistics_and_filters);
     RUN_TEST(test_app_controller_offline_completion_marks_unknown_time_with_boot_id);
     RUN_TEST(test_app_controller_offline_start_sync_before_completion_writes_real_time);
     RUN_TEST(test_app_controller_pause_resume_then_completion_updates_persistence_once);
@@ -487,7 +487,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_app_controller_emergency_stop_closes_valve_without_debounce);
     RUN_TEST(test_app_controller_applies_config_only_while_idle);
     RUN_TEST(test_app_controller_emits_beep_patterns_for_actions_and_completion);
-    RUN_TEST(test_app_controller_reports_log_write_failure_without_losing_statistics);
+    RUN_TEST(test_app_controller_reports_record_write_failure_without_losing_statistics);
     RUN_TEST(test_app_controller_adjusts_this_run_target_and_step);
     RUN_TEST(test_app_controller_holds_ok_five_seconds_to_enter_local_calibration);
     RUN_TEST(test_app_controller_applies_calibration_from_raw_record);

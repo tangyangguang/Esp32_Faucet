@@ -11,7 +11,7 @@ namespace {
 constexpr const char* kConfigNs = "faucet_cfg";
 constexpr const char* kStatNs = "faucet_stat";
 constexpr const char* kRunNs = "faucet_run";
-constexpr std::int32_t kConfigVersion = 4;
+constexpr std::int32_t kConfigVersion = 5;
 constexpr std::int32_t kRuntimeVersion = 1;
 
 std::int32_t toInt(std::uint32_t value) {
@@ -97,20 +97,6 @@ void loadCommonSystemConfig(ConfigBackend& backend, SystemConfig& config) {
 void loadLegacyDisplayConfig(ConfigBackend& backend, SystemConfig& config) {
     config.displaySleepSec =
         static_cast<std::uint32_t>(backend.getInt(kConfigNs, "oled_s", toInt(config.displaySleepSec)));
-}
-
-void loadLegacyCalibrationTarget(ConfigBackend& backend, SystemConfig& config) {
-    config.calibrationTargetsMl[0] =
-        static_cast<std::uint32_t>(backend.getInt(kConfigNs, "cal_ml", toInt(config.calibrationTargetsMl[0])));
-}
-
-void loadCalibrationTargets(ConfigBackend& backend, SystemConfig& config) {
-    for (std::size_t i = 0; i < kCalibrationTargetCount; ++i) {
-        char key[12]{};
-        std::snprintf(key, sizeof(key), "cal%u_ml", static_cast<unsigned>(i));
-        config.calibrationTargetsMl[i] =
-            static_cast<std::uint32_t>(backend.getInt(kConfigNs, key, toInt(config.calibrationTargetsMl[i])));
-    }
 }
 
 void loadPresets(ConfigBackend& backend, SystemConfig& config) {
@@ -200,11 +186,6 @@ SystemConfig ConfigStore::loadSystemConfig() {
     if (version < 4) {
         loadLegacyDisplayConfig(backend_, config);
     }
-    if (version < 3) {
-        loadLegacyCalibrationTarget(backend_, config);
-    } else {
-        loadCalibrationTargets(backend_, config);
-    }
     loadPresets(backend_, config);
     if (version == 1) {
         loadLegacyFilters(backend_, config);
@@ -237,11 +218,6 @@ bool ConfigStore::saveSystemConfig(const SystemConfig& config) {
     ok = okAll(ok, backend_.setInt(kConfigNs, "high_s", toInt(safe.highFlowDurationSec)));
     ok = okAll(ok, backend_.setInt(kConfigNs, "pause_s", toInt(safe.pauseTimeoutSec)));
     ok = okAll(ok, backend_.setInt(kConfigNs, "pulse_m", pulseToMilli(safe.pulsePerMl)));
-    for (std::size_t i = 0; i < kCalibrationTargetCount; ++i) {
-        char key[12]{};
-        std::snprintf(key, sizeof(key), "cal%u_ml", static_cast<unsigned>(i));
-        ok = okAll(ok, backend_.setInt(kConfigNs, key, toInt(safe.calibrationTargetsMl[i])));
-    }
     ok = okAll(ok, backend_.setInt(kConfigNs, "valve_s", toInt(safe.valveFullPowerSec)));
     ok = okAll(ok, backend_.setInt(kConfigNs, "hold_pct", safe.valveHoldDutyPercent));
     ok = okAll(ok, backend_.setInt(kConfigNs, "disp_s", toInt(safe.displaySleepSec)));

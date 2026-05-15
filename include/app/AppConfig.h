@@ -23,13 +23,6 @@ constexpr std::uint32_t kDefaultPauseTimeoutSec = 300;
 constexpr float kDefaultPulsePerMl = 0.45f;
 constexpr float kMinPulsePerMl = 0.05f;
 constexpr float kMaxPulsePerMl = 5.0f;
-constexpr std::size_t kCalibrationTargetCount = 4;
-constexpr std::uint32_t kDisabledCalibrationTargetMl = 0;
-constexpr std::uint32_t kMinCalibrationTargetMl = 100;
-constexpr std::uint32_t kMaxCalibrationTargetMl = 20000;
-constexpr std::uint32_t kDefaultCalibrationTargetsMl[kCalibrationTargetCount] = {1500, 7500, 0, 0};
-constexpr std::uint8_t kMinCalibrationSamples = 2;
-constexpr std::uint8_t kCalibrationTolerancePercent = 5;
 
 constexpr std::uint32_t kDefaultValveFullPowerSec = 10;
 constexpr std::uint8_t kDefaultValveHoldDutyPercent = 70;
@@ -39,8 +32,8 @@ constexpr std::uint8_t kMaxValveHoldDutyPercent = 100;
 constexpr std::uint32_t kDefaultDisplaySleepSec = 60;
 constexpr std::uint32_t kDefaultResultDisplaySec = 30;
 constexpr std::uint8_t kDefaultLcdI2cAddress = 0x27;
-constexpr std::uint16_t kDefaultLogPageSize = 20;
-constexpr std::uint16_t kMaxLogPageSize = 200;
+constexpr std::uint16_t kDefaultRecordPageSize = 20;
+constexpr std::uint16_t kMaxRecordPageSize = 200;
 constexpr std::uint32_t kDaysPerLifeMonth = 30;
 constexpr std::uint32_t kMaxFilterLifeDays = 3650;
 constexpr std::uint32_t kMaxFilterLifeMl = 10000000;
@@ -61,7 +54,6 @@ struct SystemConfig {
     std::uint32_t highFlowDurationSec;
     std::uint32_t pauseTimeoutSec;
     float pulsePerMl;
-    std::uint32_t calibrationTargetsMl[kCalibrationTargetCount];
     std::uint32_t valveFullPowerSec;
     std::uint8_t valveHoldDutyPercent;
     std::uint32_t displaySleepSec;
@@ -75,12 +67,7 @@ struct SystemConfig {
 SystemConfig makeDefaultConfig();
 void sanitizeConfig(SystemConfig& config);
 
-bool isValidCalibrationTarget(std::uint32_t targetMl);
-bool hasEnabledCalibrationTarget(const std::uint32_t (&targets)[kCalibrationTargetCount]);
-bool isEnabledCalibrationTarget(const std::uint32_t (&targets)[kCalibrationTargetCount], std::uint32_t targetMl);
-std::uint32_t firstEnabledCalibrationTarget(const std::uint32_t (&targets)[kCalibrationTargetCount]);
-std::uint32_t nextEnabledCalibrationTarget(const std::uint32_t (&targets)[kCalibrationTargetCount], std::uint32_t currentMl);
-std::uint16_t sanitizeLogPageSize(std::uint16_t pageSize);
+std::uint16_t sanitizeRecordPageSize(std::uint16_t pageSize);
 FilterLifeStatus filterLifeStatus(const FilterRecord& filter, std::uint32_t usedDays);
 
 }  // namespace faucet

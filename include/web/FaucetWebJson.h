@@ -13,14 +13,13 @@ bool writeStatsJson(const StatisticsRecord& record, char* out, std::size_t len);
 bool writeConfigJson(const SystemConfig& config, char* out, std::size_t len);
 bool writePresetsJson(const PresetConfig (&presets)[kPresetCount], char* out, std::size_t len);
 bool writeFiltersJson(const FilterRecord (&filters)[kFilterCount], char* out, std::size_t len);
-bool writeCalibrationJson(const SystemConfig& config, char* out, std::size_t len);
-bool writeWaterLogsJson(const WaterLogRecord* records,
-                        std::size_t recordCount,
-                        std::size_t pageIndex,
-                        std::uint16_t pageSize,
-                        std::size_t totalCount,
-                        const char* storageName,
-                        char* out,
-                        std::size_t len);
+bool writeWaterRecordsJson(const WaterRecord* records,
+                           std::size_t recordCount,
+                           std::size_t pageIndex,
+                           std::uint16_t pageSize,
+                           std::size_t totalCount,
+                           const char* storageName,
+                           char* out,
+                           std::size_t len);
 
 }  // namespace faucet

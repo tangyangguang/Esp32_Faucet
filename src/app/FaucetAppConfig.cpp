@@ -13,7 +13,7 @@ namespace {
 
 constexpr const char* kConfigNs = "faucet_cfg";
 constexpr const char* kVersionKey = "ver";
-constexpr std::int32_t kConfigVersion = 4;
+constexpr std::int32_t kConfigVersion = 5;
 
 FaucetAppConfigContext g_context{};
 
@@ -21,7 +21,7 @@ const char kGroupSafety[] = "safety";
 const char kGroupFlow[] = "flow";
 const char kGroupValve[] = "valve";
 const char kGroupLocal[] = "local";
-const char kGroupCalibration[] = "calibration";
+const char kGroupMetering[] = "metering";
 
 const char kKeyConfirmTimeout[] = "confirm_s";
 const char kKeyMaxTime[] = "max_time";
@@ -38,10 +38,6 @@ const char kKeyDisplaySleep[] = "disp_s";
 const char kKeyResultDisplay[] = "result_s";
 const char kKeyLcdAddress[] = "lcd_addr";
 const char kKeyBeep[] = "beep";
-
-const char kCalKeys[kCalibrationTargetCount][8] = {"cal0_ml", "cal1_ml", "cal2_ml", "cal3_ml"};
-
-const char kCalLabels[kCalibrationTargetCount][16] = {"校准容量1", "校准容量2", "校准容量3", "校准容量4"};
 
 void copyError(char* error, std::size_t len, const char* text) {
     if (error && len > 0) {
@@ -69,28 +65,6 @@ bool validateAppConfigPage(char* error, std::size_t errorLen) {
     }
     if (noFlow > maxTime || highDuration > maxTime) {
         copyError(error, errorLen, "无流量超时和高流量持续时间不能大于最长出水时间。");
-        return false;
-    }
-
-    bool hasCalibrationTarget = false;
-    std::int32_t targets[kCalibrationTargetCount]{};
-    for (std::size_t i = 0; i < kCalibrationTargetCount; ++i) {
-        if (!submittedInt(kCalKeys[i], targets[i])) {
-            copyError(error, errorLen, "提交的校准容量不可用。");
-            return false;
-        }
-        if (targets[i] != 0) {
-            hasCalibrationTarget = true;
-        }
-        for (std::size_t j = 0; j < i; ++j) {
-            if (targets[i] != 0 && targets[i] == targets[j]) {
-                copyError(error, errorLen, "启用的校准容量不能重复。");
-                return false;
-            }
-        }
-    }
-    if (!hasCalibrationTarget) {
-        copyError(error, errorLen, "至少需要保留一个启用的校准容量。");
         return false;
     }
 
@@ -151,7 +125,7 @@ bool addCoreFields(const SystemConfig& defaults) {
     ok = Esp32BaseAppConfig::addGroup({kGroupFlow, "流量保护"}) && ok;
     ok = Esp32BaseAppConfig::addGroup({kGroupValve, "电磁阀"}) && ok;
     ok = Esp32BaseAppConfig::addGroup({kGroupLocal, "本地交互"}) && ok;
-    ok = Esp32BaseAppConfig::addGroup({kGroupCalibration, "校准"}) && ok;
+    ok = Esp32BaseAppConfig::addGroup({kGroupMetering, "计量"}) && ok;
 
     ok = Esp32BaseAppConfig::addInt({kGroupSafety, kConfigNs, kKeyConfirmTimeout, "确认页超时", static_cast<std::int32_t>(defaults.confirmTimeoutSec), 3, 60, 1, "s", "进入确认页后无操作自动取消。立即生效。", false, nullptr}) && ok;
     ok = Esp32BaseAppConfig::addInt({kGroupSafety, kConfigNs, kKeyMaxTime, "最大出水时长", static_cast<std::int32_t>(defaults.maxOutTimeSec), 30, 7200, 5, "s", "单次出水达到该时长强制关阀。立即生效。", false, nullptr}) && ok;
@@ -171,10 +145,7 @@ bool addCoreFields(const SystemConfig& defaults) {
     ok = Esp32BaseAppConfig::addInt({kGroupLocal, kConfigNs, kKeyLcdAddress, "LCD I2C 地址", defaults.lcdI2cAddress, 0x03, 0x77, 1, nullptr, "保存后需重启，重启后重新探测 LCD。", true, nullptr}) && ok;
     ok = Esp32BaseAppConfig::addBool({kGroupLocal, kConfigNs, kKeyBeep, "蜂鸣器提示音", defaults.beepEnabled, "控制按键、完成和异常提示音。立即生效。", false, nullptr}) && ok;
 
-    ok = Esp32BaseAppConfig::addDecimal({kGroupCalibration, kConfigNs, kKeyPulseMilli, "流量计脉冲系数", static_cast<std::int32_t>(defaults.pulsePerMl * 1000.0f), static_cast<std::int32_t>(kMinPulsePerMl * 1000.0f), static_cast<std::int32_t>(kMaxPulsePerMl * 1000.0f), 1, 3, "pulse/ml", "每毫升对应脉冲数，影响计量精度。", false, nullptr}) && ok;
-    for (std::size_t i = 0; i < kCalibrationTargetCount; ++i) {
-        ok = Esp32BaseAppConfig::addInt({kGroupCalibration, kConfigNs, kCalKeys[i], kCalLabels[i], static_cast<std::int32_t>(defaults.calibrationTargetsMl[i]), 0, kMaxCalibrationTargetMl, 100, "ml", "校准用目标水量；0 表示不启用。", false, nullptr}) && ok;
-    }
+    ok = Esp32BaseAppConfig::addDecimal({kGroupMetering, kConfigNs, kKeyPulseMilli, "流量计脉冲系数", static_cast<std::int32_t>(defaults.pulsePerMl * 1000.0f), static_cast<std::int32_t>(kMinPulsePerMl * 1000.0f), static_cast<std::int32_t>(kMaxPulsePerMl * 1000.0f), 1, 3, "pulse/ml", "高级救援参数；通常通过出水记录校准自动更新。", false, nullptr}) && ok;
 
     return ok;
 }

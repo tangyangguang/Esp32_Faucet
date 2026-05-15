@@ -2,7 +2,6 @@
 
 #include "app/ButtonInput.h"
 #include "app/BeepDriver.h"
-#include "app/CalibrationController.h"
 #include "app/FilterStore.h"
 #include "app/FlowMeter.h"
 #include "app/StatisticsStore.h"
@@ -13,10 +12,10 @@
 
 namespace faucet {
 
-class AppLogWriter {
+class WaterRecordWriter {
 public:
-    virtual ~AppLogWriter() = default;
-    virtual bool append(const WaterLogRecord& record) = 0;
+    virtual ~WaterRecordWriter() = default;
+    virtual bool append(const WaterRecord& record) = 0;
 };
 
 struct AppTickInput {
@@ -40,7 +39,6 @@ struct AppSnapshot {
     WaterSnapshot water;
     ValveOutput valve;
     StatisticsRecord statistics;
-    CalibrationSnapshot calibration;
     LocalUiMode localMode = LocalUiMode::Normal;
     std::uint32_t adjustmentStepMl = 500;
     std::uint32_t calibrationActualMl = 0;
@@ -63,14 +61,14 @@ public:
     AppController(const SystemConfig& config,
                   StatisticsStore& statistics,
                   FilterStore& filters,
-                  AppLogWriter& logs);
+                  WaterRecordWriter& records);
 
     void resetInputs(ButtonLevels levels, std::uint32_t nowMs);
     void onFlowPulse(std::uint32_t nowUs);
     void tick(const AppTickInput& input);
 
     AppSnapshot snapshot() const;
-    bool lastLogWriteOk() const;
+    bool lastRecordWriteOk() const;
     bool consumePersistenceDirty();
     bool consumeConfigDirty();
     bool consumeFactoryResetRequest();
@@ -79,7 +77,7 @@ public:
     void setFlowDroppedPulses(std::uint32_t droppedPulses);
     bool canApplyConfig() const;
     bool applyConfig(const SystemConfig& config);
-    CalibrationApplyResult applyCalibrationFromRecord(const WaterLogRecord& record, std::uint32_t actualMl);
+    CalibrationApplyResult applyCalibrationFromRecord(const WaterRecord& record, std::uint32_t actualMl);
     const SystemConfig& config() const;
 
 private:
@@ -107,21 +105,20 @@ private:
 
     SystemConfig config_;
     WaterController water_;
-    CalibrationController calibration_;
     LocalUiMode localMode_;
     ButtonInput buttons_;
     FlowMeter flow_;
     ValveDriver valve_;
     StatisticsStore& statistics_;
     FilterStore& filters_;
-    AppLogWriter& logs_;
+    WaterRecordWriter& records_;
     std::uint32_t lastFlowVolumeMl_;
     std::uint32_t activeStartTimeSec_;
     bool activeStartTimeSynced_;
     std::uint32_t activeStartBootId_;
     bool lastValveDesiredOpen_;
     bool calibrationValveOpen_;
-    bool lastLogWriteOk_;
+    bool lastRecordWriteOk_;
     bool persistenceDirty_;
     bool configDirty_;
     bool factoryResetRequested_;
@@ -130,7 +127,7 @@ private:
     std::uint32_t resultDisplayStartMs_;
     std::uint32_t adjustmentStepMl_;
     bool lastResultRecordValid_;
-    WaterLogRecord lastResultRecord_;
+    WaterRecord lastResultRecord_;
     bool resultOkHoldTracking_;
     bool resultOkHoldTriggered_;
     std::uint32_t resultOkHoldStartMs_;

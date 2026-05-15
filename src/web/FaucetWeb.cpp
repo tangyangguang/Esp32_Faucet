@@ -6,7 +6,7 @@
 #include "app/AppConfig.h"
 #include "app/ConfigStore.h"
 #include "app/FilterStore.h"
-#include "app/WaterLogStore.h"
+#include "app/WaterRecordStore.h"
 #include "web/FaucetWebJson.h"
 #include "web/FaucetWebParsing.h"
 #include "web/FaucetWebRoutes.h"
@@ -180,7 +180,7 @@ void sendLiters(std::uint32_t ml) {
     Esp32BaseWeb::sendChunk(text);
 }
 
-void sendTargetValue(const WaterLogRecord& record) {
+void sendTargetValue(const WaterRecord& record) {
     if (record.mode == WaterMode::Time) {
         sendFmt("%lu 秒", static_cast<unsigned long>(record.targetValue));
         return;
@@ -188,7 +188,7 @@ void sendTargetValue(const WaterLogRecord& record) {
     sendLiters(record.targetValue);
 }
 
-bool logRecordCanCalibrate(const WaterLogRecord& record) {
+bool waterRecordCanCalibrate(const WaterRecord& record) {
     return record.pulseCount > 0 &&
            (record.result == WaterResult::Completed || record.result == WaterResult::StoppedByUser);
 }
@@ -223,7 +223,7 @@ struct DailyBucket {
     std::uint32_t durationSec = 0;
 };
 
-struct LogAggregates {
+struct RecordAggregates {
     DailyBucket days[kChartDays]{};
     std::uint32_t todayMl = 0;
     std::uint32_t weekMl = 0;
@@ -239,9 +239,9 @@ void addSaturating(std::uint32_t& target, std::uint32_t value) {
     target = max - target < value ? max : target + value;
 }
 
-LogAggregates aggregateLogs(std::uint32_t nowSeconds) {
-    LogAggregates aggregates{};
-    if (!g_context.logs || !g_context.logs->ready()) {
+RecordAggregates aggregateRecords(std::uint32_t nowSeconds) {
+    RecordAggregates aggregates{};
+    if (!g_context.records || !g_context.records->ready()) {
         return aggregates;
     }
     const bool hasRealNow = nowSeconds >= kMinRealDateSeconds;
@@ -251,17 +251,17 @@ LogAggregates aggregateLogs(std::uint32_t nowSeconds) {
         aggregates.days[i].dayIndex = firstChartDay + i;
     }
 
-    WaterLogRecord records[kMaxLogPageSize]{};
-    const std::size_t total = g_context.logs->count();
-    for (std::size_t offset = 0; offset < total; offset += kMaxLogPageSize) {
-        const std::size_t page = offset / kMaxLogPageSize;
-        const std::size_t count = g_context.logs->readPage(page, kMaxLogPageSize, records, kMaxLogPageSize);
+    WaterRecord records[kMaxRecordPageSize]{};
+    const std::size_t total = g_context.records->count();
+    for (std::size_t offset = 0; offset < total; offset += kMaxRecordPageSize) {
+        const std::size_t page = offset / kMaxRecordPageSize;
+        const std::size_t count = g_context.records->readPage(page, kMaxRecordPageSize, records, kMaxRecordPageSize);
         if (count == 0) {
             break;
         }
         for (std::size_t i = 0; i < count; ++i) {
-            const WaterLogRecord& record = records[i];
-            if (!waterLogHasRealTime(record)) {
+            const WaterRecord& record = records[i];
+            if (!waterRecordHasRealTime(record)) {
                 ++aggregates.unknownCount;
                 addSaturating(aggregates.unknownMl, record.volumeMl);
                 addSaturating(aggregates.unknownDurationSec, record.durationSec);
@@ -291,21 +291,21 @@ LogAggregates aggregateLogs(std::uint32_t nowSeconds) {
     return aggregates;
 }
 
-std::uint32_t sumRealLogVolumeSince(std::uint32_t startTime) {
-    if (!g_context.logs || !g_context.logs->ready() || startTime < kMinRealDateSeconds) {
+std::uint32_t sumRealRecordVolumeSince(std::uint32_t startTime) {
+    if (!g_context.records || !g_context.records->ready() || startTime < kMinRealDateSeconds) {
         return 0;
     }
     std::uint32_t total = 0;
-    WaterLogRecord records[kMaxLogPageSize]{};
-    const std::size_t count = g_context.logs->count();
-    for (std::size_t offset = 0; offset < count; offset += kMaxLogPageSize) {
-        const std::size_t page = offset / kMaxLogPageSize;
-        const std::size_t read = g_context.logs->readPage(page, kMaxLogPageSize, records, kMaxLogPageSize);
+    WaterRecord records[kMaxRecordPageSize]{};
+    const std::size_t count = g_context.records->count();
+    for (std::size_t offset = 0; offset < count; offset += kMaxRecordPageSize) {
+        const std::size_t page = offset / kMaxRecordPageSize;
+        const std::size_t read = g_context.records->readPage(page, kMaxRecordPageSize, records, kMaxRecordPageSize);
         if (read == 0) {
             break;
         }
         for (std::size_t i = 0; i < read; ++i) {
-            if (waterLogHasRealTime(records[i]) && records[i].startTime >= startTime && records[i].volumeMl > 0) {
+            if (waterRecordHasRealTime(records[i]) && records[i].startTime >= startTime && records[i].volumeMl > 0) {
                 addSaturating(total, records[i].volumeMl);
             }
         }
@@ -372,7 +372,7 @@ void sendTimeUnsyncedChartNotice() {
                             "</section>");
 }
 
-void formatLogTime(std::uint32_t seconds, char* out, std::size_t len) {
+void formatRecordTime(std::uint32_t seconds, char* out, std::size_t len) {
     if (!out || len == 0) {
         return;
     }
@@ -390,15 +390,15 @@ void formatLogTime(std::uint32_t seconds, char* out, std::size_t len) {
     std::snprintf(out, len, "开机+%lu s", static_cast<unsigned long>(seconds));
 }
 
-void formatWaterLogTime(const WaterLogRecord& record, char* out, std::size_t len) {
+void formatWaterRecordTime(const WaterRecord& record, char* out, std::size_t len) {
     if (!out || len == 0) {
         return;
     }
-    if (waterLogHasRealTime(record)) {
-        formatLogTime(record.startTime, out, len);
+    if (waterRecordHasRealTime(record)) {
+        formatRecordTime(record.startTime, out, len);
         return;
     }
-    if (waterLogHasBootRelativeTime(record)) {
+    if (waterRecordHasBootRelativeTime(record)) {
         std::snprintf(out, len, "未知时间 / 本次开机+%lu s", static_cast<unsigned long>(record.startTime));
         return;
     }
@@ -564,8 +564,6 @@ const char* modeText(WaterMode mode) {
             return "容量";
         case WaterMode::Time:
             return "时间";
-        case WaterMode::Calibration:
-            return "校准";
     }
     return "未知";
 }
@@ -791,7 +789,7 @@ void handleStatsPage() {
         return;
     }
     const std::uint32_t now = g_context.nowSeconds();
-    const LogAggregates aggregates = aggregateLogs(now);
+    const RecordAggregates aggregates = aggregateRecords(now);
     char today[24]{};
     char week[24]{};
     char month[24]{};
@@ -838,7 +836,7 @@ void handleStatsPage() {
     sendPageEnd();
 }
 
-void handleLogsPage() {
+void handleRecordsPage() {
     if (!sendPageStart("出水记录")) {
         return;
     }
@@ -851,27 +849,27 @@ void handleLogsPage() {
     if (getParam("page", text, sizeof(text))) {
         parseU32(text, page);
     }
-    std::uint32_t requestedPageSize = kDefaultLogPageSize;
+    std::uint32_t requestedPageSize = kDefaultRecordPageSize;
     if (getParam("pageSize", text, sizeof(text))) {
         parseU32(text, requestedPageSize);
     }
-    const std::uint16_t pageSize = sanitizeLogPageSize(static_cast<std::uint16_t>(requestedPageSize));
-    WaterLogRecord records[kMaxLogPageSize]{};
-    const bool ready = g_context.logs->ready();
-    const std::size_t total = ready ? g_context.logs->count() : 0;
+    const std::uint16_t pageSize = sanitizeRecordPageSize(static_cast<std::uint16_t>(requestedPageSize));
+    WaterRecord records[kMaxRecordPageSize]{};
+    const bool ready = g_context.records->ready();
+    const std::size_t total = ready ? g_context.records->count() : 0;
     const std::uint32_t maxPage = total == 0 ? 0 : static_cast<std::uint32_t>((total - 1) / pageSize);
     if (page > maxPage) {
         page = maxPage;
     }
-    const std::size_t count = ready ? g_context.logs->readPage(page, pageSize, records, pageSize) : 0;
+    const std::size_t count = ready ? g_context.records->readPage(page, pageSize, records, pageSize) : 0;
     Esp32BaseWeb::sendChunk("<h2>记录</h2>");
     sendNoticeFromQuery();
     Esp32BaseWeb::sendChunk("<div class='pager'><div class='pager-links'>");
     const bool hasPrev = ready && total > 0 && page > 0;
     const bool hasNext = ready && total > 0 && page < maxPage;
     if (hasPrev) {
-        sendFmt("<a class='page-link' href='/faucet/logs?page=0&pageSize=%u'>首页</a>"
-                "<a class='page-link' href='/faucet/logs?page=%lu&pageSize=%u'>上一页</a>",
+        sendFmt("<a class='page-link' href='/faucet/records?page=0&pageSize=%u'>首页</a>"
+                "<a class='page-link' href='/faucet/records?page=%lu&pageSize=%u'>上一页</a>",
                 static_cast<unsigned>(pageSize),
                 static_cast<unsigned long>(page - 1),
                 static_cast<unsigned>(pageSize));
@@ -882,8 +880,8 @@ void handleLogsPage() {
             static_cast<unsigned long>(page + 1),
             static_cast<unsigned long>(maxPage + 1));
     if (hasNext) {
-        sendFmt("<a class='page-link' href='/faucet/logs?page=%lu&pageSize=%u'>下一页</a>"
-                "<a class='page-link' href='/faucet/logs?page=%lu&pageSize=%u'>末页</a>",
+        sendFmt("<a class='page-link' href='/faucet/records?page=%lu&pageSize=%u'>下一页</a>"
+                "<a class='page-link' href='/faucet/records?page=%lu&pageSize=%u'>末页</a>",
                 static_cast<unsigned long>(page + 1),
                 static_cast<unsigned>(pageSize),
                 static_cast<unsigned long>(maxPage),
@@ -891,7 +889,7 @@ void handleLogsPage() {
     } else {
         Esp32BaseWeb::sendChunk("<span class='page-link page-disabled'>下一页</span><span class='page-link page-disabled'>末页</span>");
     }
-    sendFmt("</div><form class='page-size' method='get' action='/faucet/logs'>"
+    sendFmt("</div><form class='page-size' method='get' action='/faucet/records'>"
             "<input type='hidden' name='page' value='0'><span>每页</span><select name='pageSize' onchange='this.form.submit()'>");
     constexpr std::uint16_t sizes[] = {20, 30, 50, 100, 200};
     for (std::uint16_t size : sizes) {
@@ -911,9 +909,9 @@ void handleLogsPage() {
                             "<th>过滤脉冲</th><th>当时系数</th><th>持续时间 (s)</th><th>预设模式</th><th>结束原因</th><th>操作</th></tr>");
     for (std::size_t i = 0; i < count; ++i) {
         char startTime[40]{};
-        formatWaterLogTime(records[i], startTime, sizeof(startTime));
+        formatWaterRecordTime(records[i], startTime, sizeof(startTime));
         const bool latestRecord = page == 0 && i == 0;
-        const bool canCalibrate = latestRecord && logRecordCanCalibrate(records[i]);
+        const bool canCalibrate = latestRecord && waterRecordCanCalibrate(records[i]);
         Esp32BaseWeb::sendChunk("<tr><td>");
         Esp32BaseWeb::sendChunk(startTime);
         Esp32BaseWeb::sendChunk("</td><td>");
@@ -928,12 +926,11 @@ void handleLogsPage() {
                 modeText(records[i].mode),
                 resultText(records[i].result));
         if (canCalibrate) {
-            sendFmt("<form method='post' action='/api/faucet/calibration' onsubmit='return once(this)'>"
-                    "<input type='hidden' name='source' value='latest_log'>"
-                    "<input name='actual_ml' type='number' min='%lu' max='%lu' step='10' value='%lu'>"
+            sendFmt("<form method='post' action='/api/faucet/records/calibration' onsubmit='return once(this)'>"
+                    "<label><span>量杯实际水量</span><input name='actualMl' type='number' min='%lu' max='%lu' step='10' value='%lu'></label>"
                     "<input type='submit' value='校准'></form>",
-                    static_cast<unsigned long>(kMinCalibrationTargetMl),
-                    static_cast<unsigned long>(kMaxCalibrationTargetMl),
+                    static_cast<unsigned long>(kMinVolumePresetMl),
+                    static_cast<unsigned long>(kMaxVolumePresetMl),
                     static_cast<unsigned long>(records[i].volumeMl));
         } else if (!latestRecord) {
             Esp32BaseWeb::sendChunk("<span class='muted'>仅最新记录</span>");
@@ -1081,39 +1078,6 @@ void handleFilterEditPage() {
     sendPageEnd();
 }
 
-void handleCalibrationPage() {
-    if (!sendPageStart("流量校准")) {
-        return;
-    }
-    if (!requireContext()) {
-        sendPageEnd();
-        return;
-    }
-
-    sendNoticeFromQuery();
-    const float pulsePerLiter = g_context.config->pulsePerMl * 1000.0f;
-    Esp32BaseWeb::sendChunk("<h2>流量校准</h2><section class='panel'><h3>现场校准</h3>"
-                            "<p class='hint'>先用本地按键实际出水，目标停止或手工停止都可以；完成后到最新一条出水记录输入量杯实际水量保存校准。</p>"
-                            "<div class='form-actions'><a href='/faucet/logs'>查看出水记录</a></div></section>");
-
-    sendFmt("<section class='panel'><h3>手动参数</h3>"
-            "<form method='post' action='/api/faucet/calibration' onsubmit='return once(this)'>"
-            "<input type='hidden' name='mode' value='manual'><div class='form-grid'>"
-            "<label class='field span-3'><span>每升脉冲数</span><input name='pulsePerLiter' value='%.1f'>"
-            "<small class='hint'>当前 %.3f pulse/ml</small></label>",
-            static_cast<double>(pulsePerLiter),
-            static_cast<double>(g_context.config->pulsePerMl));
-    for (std::size_t i = 0; i < kCalibrationTargetCount; ++i) {
-        char label[24]{};
-        std::snprintf(label, sizeof(label), "候选容量%u（ml）", static_cast<unsigned>(i + 1));
-        sendVolumeInput(label, i == 0 ? "target0" : i == 1 ? "target1" : i == 2 ? "target2" : "target3",
-                        g_context.config->calibrationTargetsMl[i]);
-    }
-    Esp32BaseWeb::sendChunk("</div><div class='form-actions'><input type='submit' value='保存手动参数'></div>"
-                            "</form></section>");
-    sendPageEnd();
-}
-
 void handleApi() {
     if (!Esp32BaseWeb::checkAuth()) {
         return;
@@ -1131,7 +1095,7 @@ bool sendJsonBuffer(bool ok, const char* json) {
 }
 
 bool requireContext() {
-    if (!g_context.config || !g_context.configStore || !g_context.app || !g_context.filters || !g_context.logs ||
+    if (!g_context.config || !g_context.configStore || !g_context.app || !g_context.filters || !g_context.records ||
         !g_context.nowSeconds) {
         Esp32BaseWeb::sendJson(503, "{\"error\":\"context_not_ready\"}");
         return false;
@@ -1155,18 +1119,6 @@ bool checkboxParam(const char* name) {
     return Esp32BaseWeb::hasParam(name);
 }
 
-bool parseCalibrationTargetParam(const char* name, std::uint32_t& targetMl) {
-    char text[24]{};
-    std::uint32_t parsed = 0;
-    if (!getParam(name, text, sizeof(text)) || !parseU32(text, parsed)) {
-        return false;
-    }
-    if (parsed != kDisabledCalibrationTargetMl && !isValidCalibrationTarget(parsed)) {
-        return false;
-    }
-    targetMl = parsed;
-    return true;
-}
 
 bool persistConfig(const SystemConfig& config) {
     if (!g_context.app->canApplyConfig()) {
@@ -1316,25 +1268,25 @@ void handlePresetsApi() {
     sendJsonBuffer(writePresetsJson(g_context.config->presets, json, sizeof(json)), json);
 }
 
-void handleLogsApi() {
+void handleRecordsApi() {
     if (!Esp32BaseWeb::checkAuth() || !requireContext()) {
         return;
     }
     char text[24]{};
     std::uint32_t page = 0;
-    std::uint32_t pageSize = kDefaultLogPageSize;
+    std::uint32_t pageSize = kDefaultRecordPageSize;
     if (getParam("page", text, sizeof(text))) {
         parseU32(text, page);
     }
     if (getParam("pageSize", text, sizeof(text))) {
         parseU32(text, pageSize);
     }
-    if (pageSize > kMaxLogPageSize) {
-        pageSize = kMaxLogPageSize;
+    if (pageSize > kMaxRecordPageSize) {
+        pageSize = kMaxRecordPageSize;
     }
 
-    const std::uint16_t sanitizedPageSize = sanitizeLogPageSize(static_cast<std::uint16_t>(pageSize));
-    WaterLogRecord* records = new (std::nothrow) WaterLogRecord[kMaxLogPageSize]{};
+    const std::uint16_t sanitizedPageSize = sanitizeRecordPageSize(static_cast<std::uint16_t>(pageSize));
+    WaterRecord* records = new (std::nothrow) WaterRecord[kMaxRecordPageSize]{};
     char* json = new (std::nothrow) char[32768]{};
     if (!records || !json) {
         delete[] records;
@@ -1342,15 +1294,15 @@ void handleLogsApi() {
         Esp32BaseWeb::sendJson(500, "{\"error\":\"oom\"}");
         return;
     }
-    const bool ready = g_context.logs->ready();
-    const std::size_t readCount = ready ? g_context.logs->readPage(page, sanitizedPageSize, records, kMaxLogPageSize) : 0;
-    const std::size_t totalCount = ready ? g_context.logs->count() : 0;
-    sendJsonBuffer(writeWaterLogsJson(records,
+    const bool ready = g_context.records->ready();
+    const std::size_t readCount = ready ? g_context.records->readPage(page, sanitizedPageSize, records, kMaxRecordPageSize) : 0;
+    const std::size_t totalCount = ready ? g_context.records->count() : 0;
+    sendJsonBuffer(writeWaterRecordsJson(records,
                                       readCount,
                                       page,
                                       sanitizedPageSize,
                                       totalCount,
-                                      g_context.logs->storageName(),
+                                      g_context.records->storageName(),
                                       json,
                                       32768),
                    json);
@@ -1366,95 +1318,47 @@ void handleStatsApi() {
     sendJsonBuffer(writeStatsJson(g_context.app->snapshot().statistics, json, sizeof(json)), json);
 }
 
-void handleCalibrationApi() {
+void handleRecordCalibrationApi() {
     if (!Esp32BaseWeb::checkAuth() || !requireContext()) {
         return;
     }
     if (!Esp32BaseWeb::isMethod(Esp32BaseWeb::METHOD_POST)) {
-        char json[512]{};
-        sendJsonBuffer(writeCalibrationJson(*g_context.config, json, sizeof(json)), json);
+        Esp32BaseWeb::sendJson(405, "{\"error\":\"method_not_allowed\"}");
+        return;
+    }
+
+    WaterRecord record{};
+    if (!g_context.records || !g_context.records->ready() || g_context.records->readPage(0, 1, &record, 1) != 1 ||
+        !waterRecordCanCalibrate(record)) {
+        Esp32BaseWeb::redirectSeeOther("/faucet/records?error=no_calibration_record");
         return;
     }
 
     char text[32]{};
-    if (getParam("source", text, sizeof(text)) && std::strcmp(text, "latest_log") == 0) {
-        WaterLogRecord record{};
-        if (!g_context.logs || !g_context.logs->ready() || g_context.logs->readPage(0, 1, &record, 1) != 1 ||
-            !logRecordCanCalibrate(record)) {
-            Esp32BaseWeb::redirectSeeOther("/faucet/logs?error=no_calibration_record");
-            return;
-        }
-        std::uint32_t actualMl = 0;
-        if (!getParam("actual_ml", text, sizeof(text)) || !parseU32(text, actualMl)) {
-            Esp32BaseWeb::redirectSeeOther("/faucet/logs?error=invalid_value");
-            return;
-        }
-        const CalibrationApplyResult result = g_context.app->applyCalibrationFromRecord(record, actualMl);
-        if (result == CalibrationApplyResult::Saved) {
-            *g_context.config = g_context.app->config();
-            if (!g_context.configStore->saveSystemConfig(*g_context.config)) {
-                Esp32BaseWeb::redirectSeeOther("/faucet/logs?error=save_failed");
-                return;
-            }
-            Esp32BaseWeb::redirectSeeOther("/faucet/logs?saved=1");
-            return;
-        }
-        const char* error = result == CalibrationApplyResult::TooMuchDrift       ? "calibration_drift"
-                            : result == CalibrationApplyResult::NotAvailable    ? "busy"
-                            : result == CalibrationApplyResult::InvalidRecord   ? "no_calibration_record"
-                                                                                 : "invalid_value";
-        char url[80]{};
-        std::snprintf(url, sizeof(url), "/faucet/logs?error=%s", error);
-        Esp32BaseWeb::redirectSeeOther(url);
+    std::uint32_t actualMl = 0;
+    if (!getParam("actualMl", text, sizeof(text)) || !parseU32(text, actualMl)) {
+        Esp32BaseWeb::redirectSeeOther("/faucet/records?error=invalid_value");
         return;
     }
 
-    if (!g_context.app->canApplyConfig()) {
-        Esp32BaseWeb::redirectSeeOther("/faucet/calibration?error=busy");
-        return;
-    }
-
-    if (!getParam("mode", text, sizeof(text))) {
-        Esp32BaseWeb::redirectSeeOther("/faucet/calibration?error=invalid_value");
-        return;
-    }
-
-    SystemConfig* candidate = new (std::nothrow) SystemConfig(*g_context.config);
-    if (!candidate) {
-        Esp32BaseWeb::redirectSeeOther("/faucet/calibration?error=save_failed");
-        return;
-    }
-    if (std::strcmp(text, "manual") == 0) {
-        float pulsePerLiter = 0.0f;
-        if (!getParam("pulsePerLiter", text, sizeof(text)) || !parseFloat(text, pulsePerLiter)) {
-            delete candidate;
-            Esp32BaseWeb::redirectSeeOther("/faucet/calibration?error=invalid_value");
+    const CalibrationApplyResult result = g_context.app->applyCalibrationFromRecord(record, actualMl);
+    if (result == CalibrationApplyResult::Saved) {
+        *g_context.config = g_context.app->config();
+        if (!g_context.configStore->saveSystemConfig(*g_context.config)) {
+            Esp32BaseWeb::redirectSeeOther("/faucet/records?error=save_failed");
             return;
         }
-        const float pulsePerMl = pulsePerLiter / 1000.0f;
-        if (!std::isfinite(pulsePerMl) || pulsePerMl < kMinPulsePerMl || pulsePerMl > kMaxPulsePerMl) {
-            delete candidate;
-            Esp32BaseWeb::redirectSeeOther("/faucet/calibration?error=invalid_value");
-            return;
-        }
-        candidate->pulsePerMl = pulsePerMl;
-        const char* names[kCalibrationTargetCount] = {"target0", "target1", "target2", "target3"};
-        for (std::size_t i = 0; i < kCalibrationTargetCount; ++i) {
-            if (!parseCalibrationTargetParam(names[i], candidate->calibrationTargetsMl[i])) {
-                delete candidate;
-                Esp32BaseWeb::redirectSeeOther("/faucet/calibration?error=invalid_value");
-                return;
-            }
-        }
-    } else {
-        delete candidate;
-        Esp32BaseWeb::redirectSeeOther("/faucet/calibration?error=invalid_value");
+        Esp32BaseWeb::redirectSeeOther("/faucet/records?saved=1");
         return;
     }
 
-    const bool ok = persistConfig(*candidate);
-    delete candidate;
-    Esp32BaseWeb::redirectSeeOther(ok ? "/faucet/calibration?saved=1" : "/faucet/calibration?error=save_failed");
+    const char* error = result == CalibrationApplyResult::TooMuchDrift       ? "calibration_drift"
+                        : result == CalibrationApplyResult::NotAvailable    ? "busy"
+                        : result == CalibrationApplyResult::InvalidRecord   ? "no_calibration_record"
+                                                                             : "invalid_value";
+    char url[80]{};
+    std::snprintf(url, sizeof(url), "/faucet/records?error=%s", error);
+    Esp32BaseWeb::redirectSeeOther(url);
 }
 
 void handleFiltersApi() {
@@ -1495,7 +1399,7 @@ void handleFiltersApi() {
                 return;
             }
             record.startBootId = 0;
-            record.usedMl = sumRealLogVolumeSince(record.startTime);
+            record.usedMl = sumRealRecordVolumeSince(record.startTime);
         }
         record.name[kFilterNameLength - 1] = '\0';
 
@@ -1539,17 +1443,14 @@ Esp32BaseWeb::Handler handlerFor(const FaucetWebRoute& route) {
         if (std::strcmp(route.path, "/faucet/presets") == 0) {
             return handlePresetsPage;
         }
-        if (std::strcmp(route.path, "/faucet/logs") == 0) {
-            return handleLogsPage;
+        if (std::strcmp(route.path, "/faucet/records") == 0) {
+            return handleRecordsPage;
         }
         if (std::strcmp(route.path, "/faucet/stats") == 0) {
             return handleStatsPage;
         }
         if (std::strcmp(route.path, "/faucet/filters") == 0) {
             return handleFiltersPage;
-        }
-        if (std::strcmp(route.path, "/faucet/calibration") == 0) {
-            return handleCalibrationPage;
         }
         return handleFaucetPage;
     }
@@ -1562,8 +1463,8 @@ Esp32BaseWeb::Handler handlerFor(const FaucetWebRoute& route) {
     if (std::strcmp(route.path, "/api/faucet/presets") == 0) {
         return handlePresetsApi;
     }
-    if (std::strcmp(route.path, "/api/faucet/logs") == 0) {
-        return handleLogsApi;
+    if (std::strcmp(route.path, "/api/faucet/records") == 0) {
+        return handleRecordsApi;
     }
     if (std::strcmp(route.path, "/api/faucet/stats") == 0) {
         return handleStatsApi;
@@ -1574,8 +1475,8 @@ Esp32BaseWeb::Handler handlerFor(const FaucetWebRoute& route) {
     if (std::strcmp(route.path, "/api/faucet/filters/reset") == 0) {
         return handleFiltersResetApi;
     }
-    if (std::strcmp(route.path, "/api/faucet/calibration") == 0) {
-        return handleCalibrationApi;
+    if (std::strcmp(route.path, "/api/faucet/records/calibration") == 0) {
+        return handleRecordCalibrationApi;
     }
     return handleApi;
 }

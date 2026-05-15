@@ -20,10 +20,6 @@ void test_default_config_matches_product_defaults() {
     TEST_ASSERT_EQUAL_UINT32(kDefaultHighFlowDurationSec, config.highFlowDurationSec);
     TEST_ASSERT_EQUAL_UINT32(kDefaultPauseTimeoutSec, config.pauseTimeoutSec);
     TEST_ASSERT_FLOAT_WITHIN(0.0001f, kDefaultPulsePerMl, config.pulsePerMl);
-    TEST_ASSERT_EQUAL_UINT32(1500, config.calibrationTargetsMl[0]);
-    TEST_ASSERT_EQUAL_UINT32(7500, config.calibrationTargetsMl[1]);
-    TEST_ASSERT_EQUAL_UINT32(0, config.calibrationTargetsMl[2]);
-    TEST_ASSERT_EQUAL_UINT32(0, config.calibrationTargetsMl[3]);
     TEST_ASSERT_EQUAL_UINT32(kDefaultValveFullPowerSec, config.valveFullPowerSec);
     TEST_ASSERT_EQUAL_UINT8(kDefaultValveHoldDutyPercent, config.valveHoldDutyPercent);
     TEST_ASSERT_EQUAL_UINT32(kDefaultDisplaySleepSec, config.displaySleepSec);
@@ -90,10 +86,6 @@ void test_sanitize_config_clamps_scalar_ranges() {
     config.highFlowDurationSec = 99;
     config.pauseTimeoutSec = 999999;
     config.pulsePerMl = 999.0f;
-    config.calibrationTargetsMl[0] = 1;
-    config.calibrationTargetsMl[1] = 500000;
-    config.calibrationTargetsMl[2] = 0;
-    config.calibrationTargetsMl[3] = 0;
     config.valveFullPowerSec = 0;
     config.valveHoldDutyPercent = 1;
     config.displaySleepSec = 999999;
@@ -111,10 +103,6 @@ void test_sanitize_config_clamps_scalar_ranges() {
     TEST_ASSERT_EQUAL_UINT32(30, config.highFlowDurationSec);
     TEST_ASSERT_EQUAL_UINT32(3600, config.pauseTimeoutSec);
     TEST_ASSERT_FLOAT_WITHIN(0.0001f, kMaxPulsePerMl, config.pulsePerMl);
-    TEST_ASSERT_EQUAL_UINT32(1500, config.calibrationTargetsMl[0]);
-    TEST_ASSERT_EQUAL_UINT32(7500, config.calibrationTargetsMl[1]);
-    TEST_ASSERT_EQUAL_UINT32(0, config.calibrationTargetsMl[2]);
-    TEST_ASSERT_EQUAL_UINT32(0, config.calibrationTargetsMl[3]);
     TEST_ASSERT_EQUAL_UINT32(1, config.valveFullPowerSec);
     TEST_ASSERT_EQUAL_UINT8(kMinValveHoldDutyPercent, config.valveHoldDutyPercent);
     TEST_ASSERT_EQUAL_UINT32(300, config.displaySleepSec);
@@ -162,33 +150,12 @@ void test_sanitize_config_clamps_preset_values_by_type() {
     TEST_ASSERT_EQUAL_UINT32(kMaxFilterLifeMl, config.filters[0].lifeMl);
 }
 
-void test_calibration_target_and_page_size_helpers() {
-    TEST_ASSERT_TRUE(isValidCalibrationTarget(1500));
-    TEST_ASSERT_TRUE(isValidCalibrationTarget(7500));
-    TEST_ASSERT_FALSE(isValidCalibrationTarget(0));
-    TEST_ASSERT_FALSE(isValidCalibrationTarget(99));
-    TEST_ASSERT_FALSE(isValidCalibrationTarget(20001));
-
-    std::uint32_t targets[kCalibrationTargetCount] = {1500, 7500, 0, 0};
-    TEST_ASSERT_TRUE(hasEnabledCalibrationTarget(targets));
-    TEST_ASSERT_TRUE(isEnabledCalibrationTarget(targets, 1500));
-    TEST_ASSERT_FALSE(isEnabledCalibrationTarget(targets, 0));
-    TEST_ASSERT_EQUAL_UINT32(1500, firstEnabledCalibrationTarget(targets));
-    TEST_ASSERT_EQUAL_UINT32(7500, nextEnabledCalibrationTarget(targets, 1500));
-    TEST_ASSERT_EQUAL_UINT32(1500, nextEnabledCalibrationTarget(targets, 7500));
-
-    SystemConfig duplicate = makeDefaultConfig();
-    duplicate.calibrationTargetsMl[0] = 1500;
-    duplicate.calibrationTargetsMl[1] = 1500;
-    sanitizeConfig(duplicate);
-    TEST_ASSERT_EQUAL_UINT32(1500, duplicate.calibrationTargetsMl[0]);
-    TEST_ASSERT_EQUAL_UINT32(0, duplicate.calibrationTargetsMl[1]);
-
-    TEST_ASSERT_EQUAL_UINT16(kDefaultLogPageSize, sanitizeLogPageSize(0));
-    TEST_ASSERT_EQUAL_UINT16(20, sanitizeLogPageSize(20));
-    TEST_ASSERT_EQUAL_UINT16(30, sanitizeLogPageSize(30));
-    TEST_ASSERT_EQUAL_UINT16(1, sanitizeLogPageSize(1));
-    TEST_ASSERT_EQUAL_UINT16(kMaxLogPageSize, sanitizeLogPageSize(999));
+void test_record_page_size_and_filter_life_helpers() {
+    TEST_ASSERT_EQUAL_UINT16(kDefaultRecordPageSize, sanitizeRecordPageSize(0));
+    TEST_ASSERT_EQUAL_UINT16(20, sanitizeRecordPageSize(20));
+    TEST_ASSERT_EQUAL_UINT16(30, sanitizeRecordPageSize(30));
+    TEST_ASSERT_EQUAL_UINT16(1, sanitizeRecordPageSize(1));
+    TEST_ASSERT_EQUAL_UINT16(kMaxRecordPageSize, sanitizeRecordPageSize(999));
 
     FilterRecord filter = makeDefaultConfig().filters[0];
     filter.enabled = true;
@@ -217,6 +184,6 @@ int main(int argc, char** argv) {
     RUN_TEST(test_sanitize_config_clamps_scalar_ranges);
     RUN_TEST(test_sanitize_config_replaces_non_finite_pulse_factor);
     RUN_TEST(test_sanitize_config_clamps_preset_values_by_type);
-    RUN_TEST(test_calibration_target_and_page_size_helpers);
+    RUN_TEST(test_record_page_size_and_filter_life_helpers);
     return UNITY_END();
 }

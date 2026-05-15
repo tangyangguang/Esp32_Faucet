@@ -7,13 +7,13 @@
 #include "app/ConfigStore.h"
 #include "app/DisplayPresenter.h"
 #include "app/Esp32BaseConfigBackend.h"
-#include "app/Esp32BaseWaterLogBackend.h"
+#include "app/Esp32BaseWaterRecordBackend.h"
 #include "app/FaucetAppConfig.h"
 #include "app/FilterStore.h"
 #include "app/StatisticsStore.h"
 #include "app/TimeUtils.h"
-#include "app/WaterLogFileStore.h"
-#include "app/WaterLogStore.h"
+#include "app/WaterRecordFileStore.h"
+#include "app/WaterRecordStore.h"
 #include "drivers/BoardPins.h"
 #include "drivers/FlowPulseReader.h"
 #include "drivers/GpioButtonReader.h"
@@ -31,19 +31,19 @@ constexpr const char* kFirmwareName = "esp32-faucet";
 constexpr const char* kFirmwareVersion = "0.1.0-dev";
 constexpr const char* kDefaultWebUser = "admin";
 constexpr const char* kDefaultWebPassword = "admin";
-constexpr std::size_t kRamLogCapacity = 128;
-constexpr std::size_t kWaterLogCapacity = 20000;
-constexpr const char* kWaterLogPath = "/faucet_water_v3.bin";
+constexpr std::size_t kRamRecordCapacity = 128;
+constexpr std::size_t kWaterRecordCapacity = 20000;
+constexpr const char* kWaterRecordPath = "/faucet_records_v1.bin";
 
-class PersistentLogWriter : public faucet::AppLogWriter, public faucet::WaterLogReader {
+class PersistentRecordWriter : public faucet::WaterRecordWriter, public faucet::WaterRecordReader {
 public:
-    PersistentLogWriter() : fileStore_(nullptr), ramStore_(records_, kRamLogCapacity) {}
+    PersistentRecordWriter() : fileStore_(nullptr), ramStore_(records_, kRamRecordCapacity) {}
 
-    void setFileStore(faucet::WaterLogFileStore* store) {
+    void setFileStore(faucet::WaterRecordFileStore* store) {
         fileStore_ = store;
     }
 
-    bool append(const faucet::WaterLogRecord& record) override {
+    bool append(const faucet::WaterRecord& record) override {
         if (fileStore_ && fileStore_->ready() && fileStore_->append(record)) {
             return true;
         }
@@ -59,7 +59,7 @@ public:
 
     std::size_t readPage(std::size_t pageIndex,
                          std::uint16_t pageSize,
-                         faucet::WaterLogRecord* output,
+                         faucet::WaterRecord* output,
                          std::size_t outputCapacity) const override {
         if (fileStore_ && fileStore_->ready()) {
             return fileStore_->readPage(pageIndex, pageSize, output, outputCapacity);
@@ -80,9 +80,9 @@ public:
     }
 
 private:
-    faucet::WaterLogFileStore* fileStore_;
-    faucet::WaterLogRecord records_[kRamLogCapacity]{};
-    faucet::WaterLogStore ramStore_;
+    faucet::WaterRecordFileStore* fileStore_;
+    faucet::WaterRecord records_[kRamRecordCapacity]{};
+    faucet::WaterRecordStore ramStore_;
 };
 
 faucet::Esp32BaseConfigBackend g_configBackend;
@@ -90,9 +90,9 @@ faucet::ConfigStore g_configStore(g_configBackend);
 faucet::SystemConfig g_config{};
 faucet::StatisticsStore g_statistics;
 faucet::FilterStore* g_filters = nullptr;
-faucet::Esp32BaseWaterLogBackend g_waterLogBackend;
-faucet::WaterLogFileStore g_waterLogFile(g_waterLogBackend, kWaterLogPath, kWaterLogCapacity);
-PersistentLogWriter g_logs;
+faucet::Esp32BaseWaterRecordBackend g_waterRecordBackend;
+faucet::WaterRecordFileStore g_waterRecordFile(g_waterRecordBackend, kWaterRecordPath, kWaterRecordCapacity);
+PersistentRecordWriter g_records;
 faucet::AppController* g_app = nullptr;
 faucet::GpioButtonReader g_buttons(faucet::kPinButtonCancel,
                                    faucet::kPinButtonOk,
@@ -311,7 +311,7 @@ void initializeApplication() {
     g_rtc.begin();
     g_config = g_configStore.loadSystemConfig();
     logSystemConfigStatus();
-    g_logs.setFileStore(g_waterLogFile.begin() ? &g_waterLogFile : nullptr);
+    g_records.setFileStore(g_waterRecordFile.begin() ? &g_waterRecordFile : nullptr);
     checkFileSystemCapacity();
     const std::uint32_t nowSeconds = currentSeconds();
     faucet::PeriodKeys periodKeys{};
@@ -323,7 +323,7 @@ void initializeApplication() {
         ESP32BASE_LOG_E("app", "filter store allocation failed");
         return;
     }
-    g_app = new (std::nothrow) faucet::AppController(g_config, g_statistics, *g_filters, g_logs);
+    g_app = new (std::nothrow) faucet::AppController(g_config, g_statistics, *g_filters, g_records);
     if (!g_app) {
         ESP32BASE_LOG_E("app", "app controller allocation failed");
         return;
@@ -333,7 +333,7 @@ void initializeApplication() {
         ESP32BASE_LOG_W("app", "display presenter allocation failed, lcd disabled");
     }
     faucet::setFaucetWebContext(
-        faucet::FaucetWebContext{&g_config, &g_configStore, g_app, g_filters, &g_logs, currentSeconds, currentBootId, applyRuntimeSettings});
+        faucet::FaucetWebContext{&g_config, &g_configStore, g_app, g_filters, &g_records, currentSeconds, currentBootId, applyRuntimeSettings});
     faucet::setFaucetAppConfigContext(
         faucet::FaucetAppConfigContext{&g_config, &g_configStore, g_app, applyRuntimeSettings});
 #if ESP32BASE_ENABLE_NTP
@@ -353,10 +353,10 @@ void initializeApplication() {
     }
 
     ESP32BASE_LOG_I("app",
-                    "application initialized rtc=%s lcd=%s log=%s",
+                    "application initialized rtc=%s lcd=%s records=%s",
                     g_rtc.present() ? "present" : "absent",
                     g_lcd.present() ? "present" : "absent",
-                    g_waterLogFile.ready() ? "file" : "ram");
+                    g_waterRecordFile.ready() ? "file" : "ram");
 }
 
 void handleTimeSynced(const Esp32BaseNtp::TimeSnapshot& time) {
@@ -369,7 +369,7 @@ void handleTimeSynced(const Esp32BaseNtp::TimeSnapshot& time) {
         return;
     }
     const std::uint32_t bootStartRealSec = localSecondsFromUnix(bootStartEpochSec);
-    const std::size_t logCount = g_logs.rewriteBootRelativeTimes(time.bootId, bootStartRealSec);
+    const std::size_t recordCount = g_records.rewriteBootRelativeTimes(time.bootId, bootStartRealSec);
     bool filtersChanged = false;
     if (g_filters) {
         for (std::size_t i = 0; i < faucet::kFilterCount; ++i) {
@@ -390,11 +390,11 @@ void handleTimeSynced(const Esp32BaseNtp::TimeSnapshot& time) {
     if (filtersChanged && !g_configStore.saveFilterRuntime(g_filters->records())) {
         ESP32BASE_LOG_E("app", "filter time correction persistence failed");
     }
-    if (logCount > 0 || filtersChanged) {
+    if (recordCount > 0 || filtersChanged) {
         ESP32BASE_LOG_I("app",
-                        "boot_relative_times_rewritten boot_id=%lu logs=%lu filters=%s",
+                        "boot_relative_times_rewritten boot_id=%lu records=%lu filters=%s",
                         static_cast<unsigned long>(time.bootId),
-                        static_cast<unsigned long>(logCount),
+                        static_cast<unsigned long>(recordCount),
                         filtersChanged ? "yes" : "no");
     }
     g_bootRelativeTimesRewritten = true;
@@ -491,7 +491,7 @@ void runApplicationTick() {
         currentPeriodKeys(currentSeconds(), periodKeys);
         g_configStore.resetStatistics(periodKeys);
         g_configStore.resetFilterRuntime();
-        g_waterLogFile.clear();
+        g_waterRecordFile.clear();
         delay(200);
         ESP.restart();
     }

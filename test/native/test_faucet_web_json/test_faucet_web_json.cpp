@@ -95,27 +95,17 @@ void test_filters_json_contains_runtime_fields() {
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"usedMl\":123456"));
 }
 
-void test_calibration_json_forbids_remote_calibration_start() {
-    char json[256]{};
-    SystemConfig config = makeDefaultConfig();
-
-    TEST_ASSERT_TRUE(writeCalibrationJson(config, json, sizeof(json)));
-
-    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"pulsePerMl\":0.450"));
-    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"pulsePerLiter\":450.0"));
-    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"targetsMl\":[1500,7500,0,0]"));
-    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"webCanStartCalibration\":false"));
-}
-
-void test_water_logs_json_is_paged_and_read_only() {
-    WaterLogRecord records[2]{
+void test_water_records_json_is_paged_and_read_only() {
+    WaterRecord records[2]{
         {100, 1500, 1500, 675, 2, 30, WaterMode::Volume, WaterResult::Completed, 0, 0, 0.45f, {0, 0, 0, 0}},
         {200, 300, 60, 135, 1, 10, WaterMode::Time, WaterResult::StoppedByUser, 1, 0, 0.45f, {0, 0, 0, 0}},
     };
     char json[1024]{};
 
-    TEST_ASSERT_TRUE(writeWaterLogsJson(records, 2, 1, 50, 60, "file", json, sizeof(json)));
+    TEST_ASSERT_TRUE(writeWaterRecordsJson(records, 2, 1, 50, 60, "file", json, sizeof(json)));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"storage\":\"file\""));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"records\""));
+    TEST_ASSERT_NULL(std::strstr(json, "\"logs\""));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"page\":1"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"total\":60"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"mode\":\"volume\""));
@@ -142,8 +132,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_config_json_contains_safety_and_display_settings);
     RUN_TEST(test_presets_json_escapes_names_and_lists_nine_presets);
     RUN_TEST(test_filters_json_contains_runtime_fields);
-    RUN_TEST(test_calibration_json_forbids_remote_calibration_start);
-    RUN_TEST(test_water_logs_json_is_paged_and_read_only);
+    RUN_TEST(test_water_records_json_is_paged_and_read_only);
     RUN_TEST(test_json_writer_reports_small_buffers);
     return UNITY_END();
 }

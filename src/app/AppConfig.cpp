@@ -50,9 +50,6 @@ SystemConfig makeDefaultConfig() {
     config.highFlowDurationSec = kDefaultHighFlowDurationSec;
     config.pauseTimeoutSec = kDefaultPauseTimeoutSec;
     config.pulsePerMl = kDefaultPulsePerMl;
-    std::copy(kDefaultCalibrationTargetsMl,
-              kDefaultCalibrationTargetsMl + kCalibrationTargetCount,
-              config.calibrationTargetsMl);
     config.valveFullPowerSec = kDefaultValveFullPowerSec;
     config.valveHoldDutyPercent = kDefaultValveHoldDutyPercent;
     config.displaySleepSec = kDefaultDisplaySleepSec;
@@ -88,33 +85,6 @@ void sanitizeConfig(SystemConfig& config) {
     config.pulsePerMl = std::isfinite(config.pulsePerMl)
                             ? clampValue<float>(config.pulsePerMl, kMinPulsePerMl, kMaxPulsePerMl)
                             : kDefaultPulsePerMl;
-    bool anyCalibrationTarget = false;
-    for (auto& target : config.calibrationTargetsMl) {
-        if (target == kDisabledCalibrationTargetMl) {
-            continue;
-        }
-        if (!isValidCalibrationTarget(target)) {
-            target = kDisabledCalibrationTargetMl;
-            continue;
-        }
-        anyCalibrationTarget = true;
-    }
-    for (std::size_t i = 0; i < kCalibrationTargetCount; ++i) {
-        if (config.calibrationTargetsMl[i] == kDisabledCalibrationTargetMl) {
-            continue;
-        }
-        for (std::size_t j = 0; j < i; ++j) {
-            if (config.calibrationTargetsMl[j] == config.calibrationTargetsMl[i]) {
-                config.calibrationTargetsMl[i] = kDisabledCalibrationTargetMl;
-                break;
-            }
-        }
-    }
-    if (!anyCalibrationTarget) {
-        std::copy(kDefaultCalibrationTargetsMl,
-                  kDefaultCalibrationTargetsMl + kCalibrationTargetCount,
-                  config.calibrationTargetsMl);
-    }
     config.valveFullPowerSec = clampValue<std::uint32_t>(config.valveFullPowerSec, 1, 10);
     config.valveHoldDutyPercent = clampValue<std::uint8_t>(
         config.valveHoldDutyPercent, kMinValveHoldDutyPercent, kMaxValveHoldDutyPercent);
@@ -144,57 +114,11 @@ void sanitizeConfig(SystemConfig& config) {
     }
 }
 
-bool isValidCalibrationTarget(std::uint32_t targetMl) {
-    return targetMl >= kMinCalibrationTargetMl && targetMl <= kMaxCalibrationTargetMl;
-}
-
-bool hasEnabledCalibrationTarget(const std::uint32_t (&targets)[kCalibrationTargetCount]) {
-    return firstEnabledCalibrationTarget(targets) != kDisabledCalibrationTargetMl;
-}
-
-bool isEnabledCalibrationTarget(const std::uint32_t (&targets)[kCalibrationTargetCount], std::uint32_t targetMl) {
-    if (targetMl == kDisabledCalibrationTargetMl) {
-        return false;
-    }
-    for (std::size_t i = 0; i < kCalibrationTargetCount; ++i) {
-        if (targets[i] == targetMl && isValidCalibrationTarget(targetMl)) {
-            return true;
-        }
-    }
-    return false;
-}
-
-std::uint32_t firstEnabledCalibrationTarget(const std::uint32_t (&targets)[kCalibrationTargetCount]) {
-    for (std::size_t i = 0; i < kCalibrationTargetCount; ++i) {
-        if (targets[i] != kDisabledCalibrationTargetMl && isValidCalibrationTarget(targets[i])) {
-            return targets[i];
-        }
-    }
-    return kDisabledCalibrationTargetMl;
-}
-
-std::uint32_t nextEnabledCalibrationTarget(const std::uint32_t (&targets)[kCalibrationTargetCount], std::uint32_t currentMl) {
-    std::size_t start = 0;
-    for (std::size_t i = 0; i < kCalibrationTargetCount; ++i) {
-        if (targets[i] == currentMl) {
-            start = i + 1;
-            break;
-        }
-    }
-    for (std::size_t step = 0; step < kCalibrationTargetCount; ++step) {
-        const std::size_t index = (start + step) % kCalibrationTargetCount;
-        if (targets[index] != kDisabledCalibrationTargetMl && isValidCalibrationTarget(targets[index])) {
-            return targets[index];
-        }
-    }
-    return kDisabledCalibrationTargetMl;
-}
-
-std::uint16_t sanitizeLogPageSize(std::uint16_t pageSize) {
+std::uint16_t sanitizeRecordPageSize(std::uint16_t pageSize) {
     if (pageSize == 0) {
-        return kDefaultLogPageSize;
+        return kDefaultRecordPageSize;
     }
-    return clampValue<std::uint16_t>(pageSize, 1, kMaxLogPageSize);
+    return clampValue<std::uint16_t>(pageSize, 1, kMaxRecordPageSize);
 }
 
 FilterLifeStatus filterLifeStatus(const FilterRecord& filter, std::uint32_t usedDays) {

@@ -2,16 +2,16 @@
 
 #include "app/AppConfig.h"
 #include "app/AppTypes.h"
-#include "app/WaterLogStore.h"
+#include "app/WaterRecordStore.h"
 
 #include <cstddef>
 #include <cstdint>
 
 namespace faucet {
 
-class WaterLogFileBackend {
+class WaterRecordFileBackend {
 public:
-    virtual ~WaterLogFileBackend() = default;
+    virtual ~WaterRecordFileBackend() = default;
 
     virtual bool exists(const char* path) = 0;
     virtual std::int64_t fileSize(const char* path) = 0;
@@ -22,16 +22,16 @@ public:
     virtual bool removeFile(const char* path) = 0;
 };
 
-class WaterLogFileStore : public WaterLogReader {
+class WaterRecordFileStore : public WaterRecordReader {
 public:
-    WaterLogFileStore(WaterLogFileBackend& backend, const char* path, std::size_t capacity);
+    WaterRecordFileStore(WaterRecordFileBackend& backend, const char* path, std::size_t capacity);
 
     bool begin();
-    bool append(const WaterLogRecord& record);
+    bool append(const WaterRecord& record);
     std::size_t rewriteBootRelativeTimes(std::uint32_t bootId, std::uint32_t bootStartRealSec);
     std::size_t readPage(std::size_t pageIndex,
                          std::uint16_t pageSize,
-                         WaterLogRecord* output,
+                         WaterRecord* output,
                          std::size_t outputCapacity) const override;
     bool clear();
 
@@ -44,12 +44,12 @@ private:
     bool initializeNewFile();
     bool loadHeader();
     bool saveHeader() const;
-    bool appendRecord(std::size_t index, const WaterLogRecord& record);
+    bool appendRecord(std::size_t index, const WaterRecord& record);
     std::size_t fileSizeBytes() const;
     std::size_t physicalIndexFromNewestOffset(std::size_t offset) const;
     std::size_t recordOffset(std::size_t index) const;
 
-    WaterLogFileBackend& backend_;
+    WaterRecordFileBackend& backend_;
     const char* path_;
     std::size_t capacity_;
     std::size_t oldestIndex_;

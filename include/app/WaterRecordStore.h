@@ -8,30 +8,30 @@
 
 namespace faucet {
 
-class WaterLogReader {
+class WaterRecordReader {
 public:
-    virtual ~WaterLogReader() = default;
+    virtual ~WaterRecordReader() = default;
 
     virtual std::size_t readPage(std::size_t pageIndex,
                                  std::uint16_t pageSize,
-                                 WaterLogRecord* output,
+                                 WaterRecord* output,
                                  std::size_t outputCapacity) const = 0;
     virtual std::size_t count() const = 0;
     virtual bool ready() const = 0;
     virtual const char* storageName() const = 0;
 };
 
-class WaterLogStore : public WaterLogReader {
+class WaterRecordStore : public WaterRecordReader {
 public:
-    WaterLogStore(WaterLogRecord* records, std::size_t capacity);
+    WaterRecordStore(WaterRecord* records, std::size_t capacity);
 
-    bool append(const WaterLogRecord& record);
+    bool append(const WaterRecord& record);
     std::size_t rewriteBootRelativeTimes(std::uint32_t bootId, std::uint32_t bootStartRealSec);
     std::size_t readPage(std::size_t pageIndex,
                          std::uint16_t pageSize,
-                         WaterLogRecord* output,
+                         WaterRecord* output,
                          std::size_t outputCapacity) const override;
-    const WaterLogRecord* newest(std::size_t offset) const;
+    const WaterRecord* newest(std::size_t offset) const;
 
     void clear();
     std::size_t count() const override;
@@ -43,7 +43,7 @@ public:
 private:
     std::size_t physicalIndexFromNewestOffset(std::size_t offset) const;
 
-    WaterLogRecord* records_;
+    WaterRecord* records_;
     std::size_t capacity_;
     std::size_t oldestIndex_;
     std::size_t count_;

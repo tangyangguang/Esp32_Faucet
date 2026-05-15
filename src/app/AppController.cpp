@@ -30,24 +30,23 @@ bool finitePulsePerMl(float value) {
 AppController::AppController(const SystemConfig& config,
                              StatisticsStore& statistics,
                              FilterStore& filters,
-                             AppLogWriter& logs)
+                             WaterRecordWriter& records)
     : config_(config),
       water_(config_),
-      calibration_(config_.pulsePerMl),
       localMode_(LocalUiMode::Normal),
       buttons_(),
       flow_(config_.pulsePerMl),
       valve_(config_.valveFullPowerSec, config_.valveHoldDutyPercent),
       statistics_(statistics),
       filters_(filters),
-      logs_(logs),
+      records_(records),
       lastFlowVolumeMl_(0),
       activeStartTimeSec_(0),
       activeStartTimeSynced_(false),
       activeStartBootId_(0),
       lastValveDesiredOpen_(false),
       calibrationValveOpen_(false),
-      lastLogWriteOk_(true),
+      lastRecordWriteOk_(true),
       persistenceDirty_(false),
       configDirty_(false),
       factoryResetRequested_(false),
@@ -115,7 +114,6 @@ AppSnapshot AppController::snapshot() const {
     snapshot.water = water_.snapshot();
     snapshot.valve = valve_.output();
     snapshot.statistics = statistics_.record();
-    snapshot.calibration = calibration_.snapshot();
     snapshot.localMode = localMode_;
     snapshot.adjustmentStepMl = adjustmentStepMl_;
     snapshot.calibrationActualMl = calibrationActualMl_;
@@ -125,8 +123,8 @@ AppSnapshot AppController::snapshot() const {
     return snapshot;
 }
 
-bool AppController::lastLogWriteOk() const {
-    return lastLogWriteOk_;
+bool AppController::lastRecordWriteOk() const {
+    return lastRecordWriteOk_;
 }
 
 bool AppController::consumePersistenceDirty() {
@@ -185,15 +183,14 @@ bool AppController::applyConfig(const SystemConfig& config) {
     config_ = safe;
     flow_.setPulsePerMl(config_.pulsePerMl);
     valve_.configure(config_.valveFullPowerSec, config_.valveHoldDutyPercent);
-    calibration_.reset(config_.pulsePerMl, config_.calibrationTargetsMl);
     return true;
 }
 
-CalibrationApplyResult AppController::applyCalibrationFromRecord(const WaterLogRecord& record, std::uint32_t actualMl) {
+CalibrationApplyResult AppController::applyCalibrationFromRecord(const WaterRecord& record, std::uint32_t actualMl) {
     if (water_.snapshot().state != WaterState::Idle || localMode_ == LocalUiMode::Calibration) {
         return CalibrationApplyResult::NotAvailable;
     }
-    if (actualMl < kCalibrationMinActualMl || actualMl > kMaxCalibrationTargetMl) {
+    if (actualMl < kCalibrationMinActualMl || actualMl > kMaxVolumePresetMl) {
         return CalibrationApplyResult::InvalidActual;
     }
     if (record.pulseCount == 0 || !resultAllowsCalibration(record.result)) {
@@ -210,7 +207,6 @@ CalibrationApplyResult AppController::applyCalibrationFromRecord(const WaterLogR
     }
     config_.pulsePerMl = nextPulsePerMl;
     flow_.setPulsePerMl(config_.pulsePerMl);
-    calibration_.reset(config_.pulsePerMl, config_.calibrationTargetsMl);
     configDirty_ = true;
     pendingBeep_ = BeepPattern::Done;
     localMode_ = LocalUiMode::Result;
@@ -376,8 +372,8 @@ void AppController::enterCalibrationFromResult(std::uint32_t) {
     if (calibrationActualMl_ < kCalibrationMinActualMl) {
         calibrationActualMl_ = 1000;
     }
-    if (calibrationActualMl_ > kMaxCalibrationTargetMl) {
-        calibrationActualMl_ = kMaxCalibrationTargetMl;
+    if (calibrationActualMl_ > kMaxVolumePresetMl) {
+        calibrationActualMl_ = kMaxVolumePresetMl;
     }
     calibrationStepMl_ = 100;
     localMode_ = LocalUiMode::Calibration;
@@ -413,7 +409,7 @@ bool AppController::adjustCalibrationActual(std::int32_t deltaMl) {
     const std::uint32_t clamped =
         next < static_cast<std::int64_t>(kCalibrationMinActualMl)
             ? kCalibrationMinActualMl
-            : next > static_cast<std::int64_t>(kMaxCalibrationTargetMl) ? kMaxCalibrationTargetMl : static_cast<std::uint32_t>(next);
+            : next > static_cast<std::int64_t>(kMaxVolumePresetMl) ? kMaxVolumePresetMl : static_cast<std::uint32_t>(next);
     if (clamped == calibrationActualMl_) {
         return false;
     }
@@ -470,7 +466,7 @@ void AppController::processResult(std::uint32_t startTime,
         return;
     }
 
-    WaterLogRecord record{
+    WaterRecord record{
         startTime,
         result.volumeMl,
         result.targetValue,
@@ -485,12 +481,12 @@ void AppController::processResult(std::uint32_t startTime,
         {0, 0, 0, 0},
     };
     if (!startTimeSynced) {
-        markWaterLogBootId(record, bootId);
+        markWaterRecordBootId(record, bootId);
     }
 
     lastResultRecord_ = record;
     lastResultRecordValid_ = record.pulseCount > 0 && resultAllowsCalibration(record.result);
-    lastLogWriteOk_ = logs_.append(record);
+    lastRecordWriteOk_ = records_.append(record);
     if (periodKeysValid) {
         statistics_.addWater(result.volumeMl, periodKeys);
     }

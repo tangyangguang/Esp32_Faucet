@@ -7,7 +7,7 @@
 - `esp32dev_smoke` 裸板自检固件已验证核心板、串口、Flash 和 Arduino 启动链路正常。
 - 已定位并修复分区表 `ota_0=0x20000` 与 PlatformIO 默认上传偏移 `0x10000` 不一致的问题。
 - 工程已通过 `board_upload.offset_address = 0x20000` 让串口上传位置与双 OTA 分区表一致。
-- 主固件已在裸板上启动成功：`rtc=absent`、`lcd=absent`、`log=file`，WiFi/Web/mDNS/NTP 正常，18 秒串口观察未出现 watchdog 或反复重启。
+- 主固件已在裸板上启动成功：`rtc=absent`、`lcd=absent`、`records=file`，WiFi/Web/mDNS/NTP 正常，18 秒串口观察未出现 watchdog 或反复重启。
 
 ## 裸板验证目标
 
@@ -94,7 +94,7 @@ pio device monitor -e esp32dev --port <端口> --baud 115200
 - 应用初始化日志出现。
 - `rtc=absent` 合理，因为当前未接 DS3231。
 - `lcd=absent` 合理，因为当前未接 LCD1602。
-- `log=file` 优先，若 LittleFS 初始化异常则需要排查分区或文件系统。
+- `records=file` 优先，若 LittleFS 初始化异常则需要排查分区或文件系统。
 - 不应反复重启，不应出现 panic/backtrace。
 
 ## 逐步接线验证顺序
@@ -105,7 +105,7 @@ pio device monitor -e esp32dev --port <端口> --baud 115200
 4. DS3231：验证自动检测、时间读取、断开后降级。
 5. 流量计：先用手动脉冲或低频信号验证计数，再接水路验证定量误差。
 6. 电磁阀：先不接水验证 PWM 输出和 `CANCEL` 关断，再接水做安全验证。
-7. 完整水路：验证定量出水、暂停/继续、本次目标调整、日志、统计、滤芯累计。
+7. 完整水路：验证定量出水、暂停/继续、本次目标调整、记录、统计、滤芯累计。
 
 ## 暂不执行的验证
 
@@ -128,14 +128,14 @@ pio device monitor -e esp32dev --port <端口> --baud 115200
 - `pio test -e native` 通过，114 个 native 用例全部成功。
 - `pio run -e esp32dev` 通过，主固件 RAM 约 30.8%，Flash 约 72.2%。
 - `pio run -e esp32dev_smoke` 通过。
-- 主固件串口启动正常：进入 `setup()`，`rtc=absent`、`lcd=absent`、`log=file`，WiFi 已连接，Web 服务就绪，NTP 已同步。
+- 主固件串口启动正常：进入 `setup()`，`rtc=absent`、`lcd=absent`、`records=file`，WiFi 已连接，Web 服务就绪，NTP 已同步。
 - Web 首页 `http://192.168.2.112/faucet` 返回 200。
 - 未授权访问 `/faucet` 返回 401。
 - 状态 API 返回 `idle`、`valveOpen=false`、`waterControl=false`。
 - 远程出水控制路径 `/api/faucet/start` 返回 404。
-- `/api/faucet/stats`、`/api/faucet/presets`、`/api/faucet/filters`、`/api/faucet/calibration`、`/api/faucet/logs?page=0&pageSize=10` 均可访问。
-- 日志 API 返回 `storage=file`。
-- 校准 API 返回 `webCanStartCalibration=false`。
+- `/api/faucet/stats`、`/api/faucet/presets`、`/api/faucet/filters`、`/api/faucet/records?page=0&pageSize=10` 均可访问。
+- 记录 API 返回 `storage=file`。
+- records 校准 API 使用 `POST /api/faucet/records/calibration`，基于最新可校准记录保存。
 
 观察到但不影响本次裸板验证：
 

@@ -7,7 +7,7 @@ namespace faucet {
 class AppController;
 class ConfigStore;
 class FilterStore;
-class WaterLogReader;
+class WaterRecordReader;
 struct SystemConfig;
 
 using FaucetNowSeconds = std::uint32_t (*)();
@@ -19,7 +19,7 @@ struct FaucetWebContext {
     ConfigStore* configStore;
     AppController* app;
     FilterStore* filters;
-    const WaterLogReader* logs;
+    const WaterRecordReader* records;
     FaucetNowSeconds nowSeconds;
     FaucetBootId bootId;
     FaucetApplySettings applySettings;

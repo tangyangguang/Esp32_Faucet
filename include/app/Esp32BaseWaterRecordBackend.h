@@ -2,11 +2,11 @@
 
 #ifndef NATIVE_BUILD
 
-#include "app/WaterLogFileStore.h"
+#include "app/WaterRecordFileStore.h"
 
 namespace faucet {
 
-class Esp32BaseWaterLogBackend : public WaterLogFileBackend {
+class Esp32BaseWaterRecordBackend : public WaterRecordFileBackend {
 public:
     bool exists(const char* path) override;
     std::int64_t fileSize(const char* path) override;

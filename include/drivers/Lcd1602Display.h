@@ -21,6 +21,9 @@ private:
     void data(std::uint8_t value);
     void pulse(std::uint8_t value);
     bool writeExpander(std::uint8_t value);
+    bool initialize();
+    void markBusFailure();
+    bool shouldReinitialize(std::uint32_t nowMs, const DisplayFrame& frame) const;
     void setBacklight(bool on);
     void clear();
     void drawLine(std::uint8_t row, const char* text);
@@ -30,6 +33,9 @@ private:
     std::uint8_t address_;
     bool present_;
     bool backlight_;
+    bool busFailed_;
+    std::uint32_t lastInitMs_;
+    std::uint32_t lastRetryMs_;
     DisplayFrame lastFrame_;
 };
 

@@ -15,6 +15,8 @@ constexpr std::uint8_t kDataShift = 4;
 constexpr std::uint8_t kCols = 16;
 constexpr std::uint8_t kRows = 2;
 constexpr std::uint8_t kLineAddress[kRows] = {0x00, 0x40};
+constexpr std::uint32_t kReconnectRetryMs = 3000;
+constexpr std::uint32_t kHealthyReinitMs = 15000;
 
 bool sameFrame(const DisplayFrame& a, const DisplayFrame& b) {
     return a.page == b.page && a.on == b.on && std::strncmp(a.line1, b.line1, kDisplayLineLength) == 0 &&
@@ -24,17 +26,30 @@ bool sameFrame(const DisplayFrame& a, const DisplayFrame& b) {
 }  // namespace
 
 Lcd1602Display::Lcd1602Display(std::uint8_t sdaPin, std::uint8_t sclPin)
-    : sdaPin_(sdaPin), sclPin_(sclPin), address_(0x27), present_(false), backlight_(true), lastFrame_{} {}
+    : sdaPin_(sdaPin),
+      sclPin_(sclPin),
+      address_(0x27),
+      present_(false),
+      backlight_(true),
+      busFailed_(false),
+      lastInitMs_(0),
+      lastRetryMs_(0),
+      lastFrame_{} {}
 
 bool Lcd1602Display::begin(std::uint8_t address) {
     address_ = address;
     Wire.begin(sdaPin_, sclPin_);
+    return initialize();
+}
+
+bool Lcd1602Display::initialize() {
+    busFailed_ = false;
+    backlight_ = true;
     delay(50);
-    present_ = writeExpander(kBacklight);
-    if (!present_) {
+    if (!writeExpander(kBacklight)) {
+        markBusFailure();
         return false;
     }
-
     write4(0x03, false);
     delay(5);
     write4(0x03, false);
@@ -47,6 +62,12 @@ bool Lcd1602Display::begin(std::uint8_t address) {
     clear();
     command(0x06);
     command(0x0C);
+    if (busFailed_) {
+        markBusFailure();
+        return false;
+    }
+    present_ = true;
+    lastInitMs_ = millis();
     lastFrame_ = {};
     return true;
 }
@@ -56,20 +77,38 @@ bool Lcd1602Display::present() const {
 }
 
 void Lcd1602Display::apply(const DisplayFrame& frame) {
+    const std::uint32_t nowMs = millis();
+    if (!present_) {
+        if (nowMs - lastRetryMs_ >= kReconnectRetryMs) {
+            lastRetryMs_ = nowMs;
+            initialize();
+        }
+        return;
+    }
+
+    const bool reinitialized = shouldReinitialize(nowMs, frame) && initialize();
     if (!present_) {
         return;
     }
-    if (sameFrame(frame, lastFrame_)) {
+    if (!reinitialized && sameFrame(frame, lastFrame_)) {
         return;
     }
     setBacklight(frame.on);
+    if (busFailed_) {
+        markBusFailure();
+        return;
+    }
     if (!frame.on) {
         lastFrame_ = frame;
         return;
     }
     drawLine(0, frame.line1);
     drawLine(1, frame.line2);
-    lastFrame_ = frame;
+    if (busFailed_) {
+        markBusFailure();
+    } else {
+        lastFrame_ = frame;
+    }
 }
 
 void Lcd1602Display::write4(std::uint8_t value, bool rs) {
@@ -103,7 +142,21 @@ void Lcd1602Display::pulse(std::uint8_t value) {
 bool Lcd1602Display::writeExpander(std::uint8_t value) {
     Wire.beginTransmission(address_);
     Wire.write(value);
-    return Wire.endTransmission() == 0;
+    const bool ok = Wire.endTransmission() == 0;
+    if (!ok) {
+        busFailed_ = true;
+    }
+    return ok;
+}
+
+void Lcd1602Display::markBusFailure() {
+    present_ = false;
+    busFailed_ = true;
+    lastRetryMs_ = millis();
+}
+
+bool Lcd1602Display::shouldReinitialize(std::uint32_t nowMs, const DisplayFrame& frame) const {
+    return frame.on && nowMs - lastInitMs_ >= kHealthyReinitMs;
 }
 
 void Lcd1602Display::setBacklight(bool on) {

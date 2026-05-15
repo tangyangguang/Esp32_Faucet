@@ -28,9 +28,18 @@ const char* stateText(WaterResult result) {
     }
 }
 
+void formatLitersValue(char* out, std::size_t len, std::uint32_t ml, bool withUnit) {
+    const std::uint32_t centiliters = (ml + 5UL) / 10UL;
+    std::snprintf(out, len, withUnit ? "%lu.%02luL" : "%lu.%02lu", static_cast<unsigned long>(centiliters / 100UL),
+                  static_cast<unsigned long>(centiliters % 100UL));
+}
+
 void formatLiters(char* out, std::size_t len, std::uint32_t ml) {
-    std::snprintf(out, len, "%lu.%01luL", static_cast<unsigned long>(ml / 1000UL),
-                  static_cast<unsigned long>((ml % 1000UL) / 100UL));
+    formatLitersValue(out, len, ml, true);
+}
+
+void formatLitersNumber(char* out, std::size_t len, std::uint32_t ml) {
+    formatLitersValue(out, len, ml, false);
 }
 
 void formatClock(char* out, std::size_t len, std::uint32_t seconds) {
@@ -92,9 +101,9 @@ DisplayFrame DisplayPresenter::render(const AppSnapshot& snapshot, std::uint32_t
             if (snapshot.water.mode == WaterMode::Volume) {
                 char target[8]{};
                 formatLiters(target, sizeof(target), snapshot.water.targetValue);
-                std::snprintf(line1, sizeof(line1), "Set %s S%lu.%lu", target,
-                              static_cast<unsigned long>(snapshot.adjustmentStepMl / 1000UL),
-                              static_cast<unsigned long>((snapshot.adjustmentStepMl % 1000UL) / 100UL));
+                char step[8]{};
+                formatLitersNumber(step, sizeof(step), snapshot.adjustmentStepMl);
+                std::snprintf(line1, sizeof(line1), "Set %s S%s", target, step);
                 std::snprintf(line2, sizeof(line2), "+/- Adj OK Go");
             } else {
                 std::snprintf(line1, sizeof(line1), "Set %lus", static_cast<unsigned long>(snapshot.water.targetValue));
@@ -117,22 +126,24 @@ DisplayFrame DisplayPresenter::render(const AppSnapshot& snapshot, std::uint32_t
                 formatClock(clock, sizeof(clock), snapshot.water.elapsedSec);
                 std::snprintf(line1, sizeof(line1), "Lft %lus %s", static_cast<unsigned long>(remain), clock);
             }
-            {
+            if (snapshot.water.mode == WaterMode::Volume) {
                 char out[8]{};
                 formatLiters(out, sizeof(out), snapshot.water.volumeMl);
-                std::snprintf(line2, sizeof(line2), "Out %s OK Pause", out);
+                std::snprintf(line2, sizeof(line2), "Out %s OK", out);
+            } else {
+                std::snprintf(line2, sizeof(line2), "OK Pause");
             }
             return makeFrame(DisplayPage::Running, true, line1, line2);
         case WaterState::Paused:
             if (snapshot.water.mode == WaterMode::Volume) {
                 char out[8]{};
                 char target[8]{};
-                formatLiters(out, sizeof(out), snapshot.water.volumeMl);
-                formatLiters(target, sizeof(target), snapshot.water.targetValue);
-                std::snprintf(line1, sizeof(line1), "Pause %s/%s", out, target);
-                std::snprintf(line2, sizeof(line2), "S%lu.%lu +/- OK",
-                              static_cast<unsigned long>(snapshot.adjustmentStepMl / 1000UL),
-                              static_cast<unsigned long>((snapshot.adjustmentStepMl % 1000UL) / 100UL));
+                char step[8]{};
+                formatLitersNumber(out, sizeof(out), snapshot.water.volumeMl);
+                formatLitersNumber(target, sizeof(target), snapshot.water.targetValue);
+                formatLitersNumber(step, sizeof(step), snapshot.adjustmentStepMl);
+                std::snprintf(line1, sizeof(line1), "Paus %s/%s", out, target);
+                std::snprintf(line2, sizeof(line2), "Step%s +/-OK", step);
             } else {
                 std::snprintf(line1, sizeof(line1), "Paused");
                 std::snprintf(line2, sizeof(line2), "OK Resume");

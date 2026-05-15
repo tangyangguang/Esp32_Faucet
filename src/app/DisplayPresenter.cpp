@@ -70,12 +70,22 @@ DisplayFrame DisplayPresenter::render(const AppSnapshot& snapshot, std::uint32_t
         char line1[kDisplayLineLength]{};
         char line2[kDisplayLineLength]{};
         char volume[8]{};
-        char clock[6]{};
         formatLiters(volume, sizeof(volume), snapshot.water.volumeMl);
-        formatClock(clock, sizeof(clock), snapshot.water.elapsedSec);
         std::snprintf(line1, sizeof(line1), "%s %s", stateText(snapshot.water.lastResult), volume);
-        std::snprintf(line2, sizeof(line2), "%s", clock);
+        std::snprintf(line2, sizeof(line2), snapshot.calibrationReady ? "Hold OK Cal" : "OK Back");
         return makeFrame(DisplayPage::Result, true, line1, line2);
+    }
+
+    if (snapshot.localMode == LocalUiMode::Calibration) {
+        char actual[8]{};
+        char step[8]{};
+        formatLiters(actual, sizeof(actual), snapshot.calibrationActualMl);
+        formatLitersNumber(step, sizeof(step), snapshot.calibrationStepMl);
+        char line1[kDisplayLineLength]{};
+        char line2[kDisplayLineLength]{};
+        std::snprintf(line1, sizeof(line1), "Actual %s", actual);
+        std::snprintf(line2, sizeof(line2), "S%s +/- OK", step);
+        return makeFrame(DisplayPage::Calibration, true, line1, line2);
     }
 
     if (sleepTimeoutMs_ > 0 && elapsedAtLeast(nowMs, lastWakeMs_, sleepTimeoutMs_) &&

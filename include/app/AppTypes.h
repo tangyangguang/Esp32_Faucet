@@ -53,9 +53,15 @@ struct FilterRecord {
 struct WaterLogRecord {
     std::uint32_t startTime;
     std::uint32_t volumeMl;
+    std::uint32_t targetValue;
+    std::uint32_t pulseCount;
+    std::uint32_t rejectedPulseCount;
     std::uint16_t durationSec;
     WaterMode mode;
     WaterResult result;
+    std::uint8_t selectedPreset;
+    std::uint8_t reserved0;
+    float pulsePerMlAtRun;
     std::uint8_t reserved[4];
 };
 

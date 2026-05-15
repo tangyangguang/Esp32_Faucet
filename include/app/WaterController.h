@@ -20,7 +20,9 @@ struct WaterTaskResult {
     WaterMode mode;
     WaterResult result;
     std::uint32_t volumeMl;
+    std::uint32_t targetValue;
     std::uint16_t durationSec;
+    std::uint8_t selectedPreset;
 };
 
 struct WaterSnapshot {

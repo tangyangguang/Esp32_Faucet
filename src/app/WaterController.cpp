@@ -266,7 +266,9 @@ void WaterController::finish(std::uint32_t nowMs, WaterResult result, WaterState
     lastResult_.mode = state_ == WaterState::Idle ? (preset ? modeFromPreset(*preset) : WaterMode::Volume) : activeMode_;
     lastResult_.result = result;
     lastResult_.volumeMl = volumeMl_;
+    lastResult_.targetValue = targetValue_;
     lastResult_.durationSec = static_cast<std::uint16_t>(std::min<std::uint32_t>(activeElapsedMs(nowMs) / 1000UL, 65535));
+    lastResult_.selectedPreset = selectedPreset_ < 255 ? static_cast<std::uint8_t>(selectedPreset_) : 255;
     lastError_ = result;
     lastElapsedSec_ = activeElapsedMs(nowMs) / 1000UL;
 

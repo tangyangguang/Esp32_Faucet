@@ -7,7 +7,7 @@ namespace faucet {
 namespace {
 
 constexpr std::uint32_t kLogMagic = 0x464C5746UL;  // FWLF
-constexpr std::uint16_t kLogVersion = 1;
+constexpr std::uint16_t kLogVersion = 2;
 
 struct LogHeader {
     std::uint32_t magic;

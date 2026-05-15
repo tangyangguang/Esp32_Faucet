@@ -38,7 +38,7 @@
 | `WaterLogStore` | 出水日志写入、滚动、分页 |
 | `StatisticsStore` | 今日、本周、本月、总累计 |
 | `FilterStore` | 最多 6 个滤芯的配置、已用天数、已用流量和重置 |
-| `CalibrationController` | 校准采样算法保留为独立逻辑；当前本地四键不进入校准向导 |
+| `CalibrationController` | 校准算法保留为独立逻辑；本地结果页 5 秒长按 OK 可基于最新出水记录现场校准 |
 | `FaucetWeb` | 业务页面和 `/api/faucet/...` API |
 
 ## 状态机草案
@@ -66,7 +66,7 @@
 | --- | --- | --- |
 | `KeyCancelDown` | `CANCEL` ISR/tick | 出水中最高优先级软件停止 |
 | `KeyOkShort` | 四键输入 | 确认、启动、暂停、继续 |
-| `KeyOkLong` | 四键输入 | 在确认/暂停页切换 0.5L 与 0.1L 调整步进 |
+| `KeyOkLong` | 四键输入 | 在确认/暂停页切换 0.10L 与 0.50L 调整步进；结果页按住 OK 超过 5 秒进入现场校准 |
 | `KeyPlusShort` | 四键输入 | 待机选择下一个预设；确认/暂停页增加本次目标水量 |
 | `KeyMinusShort` | 四键输入 | 待机选择上一个预设；确认/暂停页减少本次目标水量 |
 | `ConfirmTimeout` | timer | 二次确认超时 |
@@ -95,11 +95,11 @@
 - 应用 NVS namespace 使用 `faucet_cfg`、`faucet_stat`、`faucet_run`，不得使用 `eb_` 前缀。
 - 配置使用版本化结构。已知旧版本必须迁移到当前结构，保护用户已保存的预设、滤芯名称、启用状态、寿命、校准系数和候选容量等配置；新增字段使用当前默认值补齐。
 - 只有没有配置版本、未知未来版本或无法识别的数据，才加载当前默认配置。固件升级不得静默清空可识别的用户配置。
-- 日志放 LittleFS，分页读取，单次最多 200 条。
+- 日志放 LittleFS，分页读取，单次最多 200 条；记录目标值、原始脉冲数、过滤脉冲数和当时流量系数。
 - 统计放 NVS，出水完成后立即更新，周期性数据按日期变化重置。
 - 运行快照默认只用于安全恢复判断，重启后默认不继续出水。
 - 滤芯数据放 NVS，记录每个滤芯的启用状态、名称、建议更换天数、最长使用天数、寿命流量、开始时间和累计流量。
-- 校准系数和最多 4 个候选容量放 NVS；容量为 0 表示停用该候选项，当前只能通过 Web 保存参数。
+- 校准系数和最多 4 个候选容量放 NVS；容量为 0 表示停用该候选项。校准系数可由本地结果页或 Web 最新记录页基于原始脉冲保存。
 
 ## Web 草案
 
@@ -109,7 +109,7 @@
 - 配置写入、恢复出厂、重启等操作使用 POST，并需要 Basic Auth。
 - 日志、统计、配置接口必须分页或小响应，避免大内存拼接。
 - Web 端不得注册启动出水、暂停出水、继续出水、停止出水 API 或按钮。
-- Web 端校准页面允许按量杯实测换算或手动保存每升信号数和本地候选容量，不允许远程打开电磁阀。
+- Web 端记录页允许基于最新一条真实出水记录输入量杯实际水量并保存校准；校准页面只保留手动保存每升信号数和本地候选容量，不允许远程打开电磁阀。
 - Web 默认认证通过 Esp32Base `setDefaultAuth()` 设置为 `admin/admin`；用户可通过 `/esp32base/auth` 修改认证，已保存认证优先于应用默认值。
 - WebOTA 目标地址和凭据不写入仓库；本地复制 `platformio.ini.example` 为 `platformio.ini.local` 后填写 `custom_esp32base_webota_*`。
 - 当前构建将 Esp32Base 串口日志等级设为 DEBUG，文件日志等级设为 INFO，用于保留更完整的启动和现场诊断信息。文件日志等级在启动后显式应用为 INFO，避免设备 NVS 中旧的 `eb_log.level` 覆盖当前项目策略。注意：基础库 INFO 日志会输出 WiFi/Web 认证明文凭据，调试日志和文件日志需要按敏感信息管理。
@@ -125,7 +125,7 @@
 | 统计 | `/faucet/stats` | 今日、本周、本月、总累计 |
 | 滤芯 | `/faucet/filters` | 最多 6 个滤芯的已用天数、已用流量、寿命范围、状态、设置入口和重置 |
 | 滤芯设置 | `/faucet/filters/edit?index=N` | 单个滤芯的启用状态、名称、建议更换周期、最长使用周期、寿命流量和上次更换日期配置；隐藏路由，不进入导航 |
-| 校准 | `/faucet/calibration` | 按量杯实测换算或手动保存每升信号数和 4 个本地候选容量；不出水 |
+| 校准 | `/faucet/calibration` | 查看校准说明，手动保存每升信号数和 4 个本地候选容量；不出水 |
 
 ### Web API
 
@@ -174,10 +174,15 @@ struct FilterRecord {
 struct WaterLogRecord {
     uint32_t startTime;    // UTC seconds or relative seconds when time is unknown
     uint32_t volumeMl;
+    uint32_t targetValue;  // ml for Volume, seconds for Time
+    uint32_t pulseCount;
+    uint32_t rejectedPulseCount;
     uint16_t durationSec;
     uint8_t mode;          // volume/time/calibration
     uint8_t result;        // completed/stopped/safety/error/pause_timeout
-    uint8_t reserved[2];
+    uint8_t selectedPreset;
+    float pulsePerMlAtRun;
+    uint8_t reserved[4];   // boot id when time is boot-relative
 };
 
 struct StatisticsRecord {
@@ -210,9 +215,11 @@ struct StatisticsRecord {
 
 ## 校准参数方案
 
-- 当前本地四键不进入校准向导，避免常用出水操作复杂化。
-- Web 允许查看和手动保存每升信号数，仍不提供远程打开电磁阀的能力。
-- `CalibrationController` 保留纯算法测试能力，后续如果重新设计现场校准流程，应先完整评估交互和安全边界。
+- 校准主流程基于最后一次真实本地出水记录：目标停止或手工停止均可，记录原始脉冲后由用户输入量杯实际水量。
+- 结果页 `OK` 按住超过 5 秒进入本地校准，不等松开；校准实际水量默认本次显示量，默认步进 0.10L，长按 `OK` 切换 0.10L / 0.01L。
+- Web 记录页只允许最新一条带原始脉冲且结果为完成或手动停止的记录执行校准；容量目标和时间目标都可校准。
+- 校准公式为 `newPulsePerMl = pulseCount / actualMl`；不使用显示水量反推。
+- 新系数必须在允许范围内，且相对旧系数偏差超过 30% 时拒绝保存，提示重新测量。
 
 ## 已确认实现决策
 

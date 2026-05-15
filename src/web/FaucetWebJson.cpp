@@ -256,13 +256,19 @@ bool writeWaterLogsJson(const WaterLogRecord* records,
     for (std::size_t i = 0; i < recordCount; ++i) {
         const WaterLogRecord& record = records[i];
         writer.append("%s{\"startTime\":%lu,\"volumeMl\":%lu,\"durationSec\":%u,"
-                      "\"mode\":\"%s\",\"result\":\"%s\"}",
+                      "\"mode\":\"%s\",\"result\":\"%s\",\"targetValue\":%lu,\"selectedPreset\":%u,"
+                      "\"pulseCount\":%lu,\"rejectedPulseCount\":%lu,\"pulsePerMlAtRun\":%.3f}",
                       i == 0 ? "" : ",",
                       static_cast<unsigned long>(record.startTime),
                       static_cast<unsigned long>(record.volumeMl),
                       static_cast<unsigned>(record.durationSec),
                       waterModeName(record.mode),
-                      waterResultName(record.result));
+                      waterResultName(record.result),
+                      static_cast<unsigned long>(record.targetValue),
+                      static_cast<unsigned>(record.selectedPreset),
+                      static_cast<unsigned long>(record.pulseCount),
+                      static_cast<unsigned long>(record.rejectedPulseCount),
+                      static_cast<double>(record.pulsePerMlAtRun));
     }
     writer.append("]}");
     return writer.ok();

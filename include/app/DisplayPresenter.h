@@ -16,6 +16,7 @@ enum class DisplayPage : std::uint8_t {
     Result = 4,
     Error = 5,
     Sleep = 6,
+    Calibration = 7,
 };
 
 struct DisplayFrame {

@@ -10,9 +10,15 @@ WaterLogRecord makeRecord(std::uint32_t startTime, std::uint32_t volumeMl) {
     return WaterLogRecord{
         startTime,
         volumeMl,
+        1500,
+        volumeMl,
+        0,
         12,
         WaterMode::Volume,
         WaterResult::Completed,
+        0,
+        0,
+        1.0f,
         {0, 0, 0, 0},
     };
 }

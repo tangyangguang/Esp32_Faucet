@@ -33,7 +33,7 @@ constexpr const char* kDefaultWebUser = "admin";
 constexpr const char* kDefaultWebPassword = "admin";
 constexpr std::size_t kRamLogCapacity = 128;
 constexpr std::size_t kWaterLogCapacity = 20000;
-constexpr const char* kWaterLogPath = "/faucet_water_v2.bin";
+constexpr const char* kWaterLogPath = "/faucet_water_v3.bin";
 
 class PersistentLogWriter : public faucet::AppLogWriter, public faucet::WaterLogReader {
 public:

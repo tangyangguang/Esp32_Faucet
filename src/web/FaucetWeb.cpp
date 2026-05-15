@@ -180,6 +180,19 @@ void sendLiters(std::uint32_t ml) {
     Esp32BaseWeb::sendChunk(text);
 }
 
+void sendTargetValue(const WaterLogRecord& record) {
+    if (record.mode == WaterMode::Time) {
+        sendFmt("%lu 秒", static_cast<unsigned long>(record.targetValue));
+        return;
+    }
+    sendLiters(record.targetValue);
+}
+
+bool logRecordCanCalibrate(const WaterLogRecord& record) {
+    return record.pulseCount > 0 &&
+           (record.result == WaterResult::Completed || record.result == WaterResult::StoppedByUser);
+}
+
 void sendMetricCard(const char* label, const char* value) {
     Esp32BaseWeb::sendChunk("<section class='metric-card'><span>");
     Esp32BaseWeb::sendChunk(label);
@@ -416,6 +429,10 @@ void sendNoticeFromQuery() {
         message = "日期格式无效，请重新选择日期。";
     } else if (std::strcmp(text, "save_failed") == 0) {
         message = "保存失败，请稍后重试。";
+    } else if (std::strcmp(text, "no_calibration_record") == 0) {
+        message = "最新记录没有可用的原始脉冲，不能用于校准。";
+    } else if (std::strcmp(text, "calibration_drift") == 0) {
+        message = "新系数和旧系数偏差过大，请重新接水测量。";
     }
     Esp32BaseWeb::sendChunk("<p class='err'>");
     Esp32BaseWeb::sendChunk(message);
@@ -847,7 +864,9 @@ void handleLogsPage() {
         page = maxPage;
     }
     const std::size_t count = ready ? g_context.logs->readPage(page, pageSize, records, pageSize) : 0;
-    Esp32BaseWeb::sendChunk("<h2>记录</h2><div class='pager'><div class='pager-links'>");
+    Esp32BaseWeb::sendChunk("<h2>记录</h2>");
+    sendNoticeFromQuery();
+    Esp32BaseWeb::sendChunk("<div class='pager'><div class='pager-links'>");
     const bool hasPrev = ready && total > 0 && page > 0;
     const bool hasNext = ready && total > 0 && page < maxPage;
     if (hasPrev) {
@@ -888,18 +907,40 @@ void handleLogsPage() {
     } else if (total == 0) {
         Esp32BaseWeb::sendChunk("<p class='ok'>暂无出水记录。</p>");
     }
-    Esp32BaseWeb::sendChunk("<table><tr><th>开始时间</th><th>出水量 (L)</th><th>持续时间 (s)</th><th>预设模式</th><th>结束原因</th></tr>");
+    Esp32BaseWeb::sendChunk("<table><tr><th>开始时间</th><th>目标</th><th>出水量 (L)</th><th>脉冲数</th>"
+                            "<th>过滤脉冲</th><th>当时系数</th><th>持续时间 (s)</th><th>预设模式</th><th>结束原因</th><th>操作</th></tr>");
     for (std::size_t i = 0; i < count; ++i) {
         char startTime[40]{};
         formatWaterLogTime(records[i], startTime, sizeof(startTime));
+        const bool latestRecord = page == 0 && i == 0;
+        const bool canCalibrate = latestRecord && logRecordCanCalibrate(records[i]);
         Esp32BaseWeb::sendChunk("<tr><td>");
         Esp32BaseWeb::sendChunk(startTime);
         Esp32BaseWeb::sendChunk("</td><td>");
+        sendTargetValue(records[i]);
+        Esp32BaseWeb::sendChunk("</td><td>");
         sendLiters(records[i].volumeMl);
-        sendFmt("</td><td>%u s</td><td>%s</td><td>%s</td></tr>",
+        sendFmt("</td><td>%lu</td><td>%lu</td><td>%.3f</td><td>%u s</td><td>%s</td><td>%s</td><td>",
+                static_cast<unsigned long>(records[i].pulseCount),
+                static_cast<unsigned long>(records[i].rejectedPulseCount),
+                static_cast<double>(records[i].pulsePerMlAtRun),
                 static_cast<unsigned>(records[i].durationSec),
                 modeText(records[i].mode),
                 resultText(records[i].result));
+        if (canCalibrate) {
+            sendFmt("<form method='post' action='/api/faucet/calibration' onsubmit='return once(this)'>"
+                    "<input type='hidden' name='source' value='latest_log'>"
+                    "<input name='actual_ml' type='number' min='%lu' max='%lu' step='10' value='%lu'>"
+                    "<input type='submit' value='校准'></form>",
+                    static_cast<unsigned long>(kMinCalibrationTargetMl),
+                    static_cast<unsigned long>(kMaxCalibrationTargetMl),
+                    static_cast<unsigned long>(records[i].volumeMl));
+        } else if (!latestRecord) {
+            Esp32BaseWeb::sendChunk("<span class='muted'>仅最新记录</span>");
+        } else {
+            Esp32BaseWeb::sendChunk("<span class='muted'>不可校准</span>");
+        }
+        Esp32BaseWeb::sendChunk("</td></tr>");
     }
     Esp32BaseWeb::sendChunk("</table>");
     sendPageEnd();
@@ -1051,16 +1092,9 @@ void handleCalibrationPage() {
 
     sendNoticeFromQuery();
     const float pulsePerLiter = g_context.config->pulsePerMl * 1000.0f;
-    const std::uint32_t targetMl = firstEnabledCalibrationTarget(g_context.config->calibrationTargetsMl);
-    const std::uint32_t defaultTargetMl = targetMl == kDisabledCalibrationTargetMl ? 1500UL : targetMl;
-
-    Esp32BaseWeb::sendChunk("<h2>流量校准</h2><section class='panel'><h3>量杯校准</h3>"
-                            "<p class='hint'>用本地按键按目标量出水到量杯，只在这里填写量杯实际水量并保存系数。</p>"
-                            "<form method='post' action='/api/faucet/calibration' onsubmit='return once(this)'>"
-                            "<input type='hidden' name='mode' value='measured'><div class='form-grid'>");
-    sendVolumeInput("设定出水量（ml）", "targetMl", defaultTargetMl);
-    sendVolumeInput("量杯实际水量（ml）", "actualMl", defaultTargetMl);
-    Esp32BaseWeb::sendChunk("</div><div class='form-actions'><input type='submit' value='按实测保存'></div></form></section>");
+    Esp32BaseWeb::sendChunk("<h2>流量校准</h2><section class='panel'><h3>现场校准</h3>"
+                            "<p class='hint'>先用本地按键实际出水，目标停止或手工停止都可以；完成后到最新一条出水记录输入量杯实际水量保存校准。</p>"
+                            "<div class='form-actions'><a href='/faucet/logs'>查看出水记录</a></div></section>");
 
     sendFmt("<section class='panel'><h3>手动参数</h3>"
             "<form method='post' action='/api/faucet/calibration' onsubmit='return once(this)'>"
@@ -1341,12 +1375,45 @@ void handleCalibrationApi() {
         sendJsonBuffer(writeCalibrationJson(*g_context.config, json, sizeof(json)), json);
         return;
     }
+
+    char text[32]{};
+    if (getParam("source", text, sizeof(text)) && std::strcmp(text, "latest_log") == 0) {
+        WaterLogRecord record{};
+        if (!g_context.logs || !g_context.logs->ready() || g_context.logs->readPage(0, 1, &record, 1) != 1 ||
+            !logRecordCanCalibrate(record)) {
+            Esp32BaseWeb::redirectSeeOther("/faucet/logs?error=no_calibration_record");
+            return;
+        }
+        std::uint32_t actualMl = 0;
+        if (!getParam("actual_ml", text, sizeof(text)) || !parseU32(text, actualMl)) {
+            Esp32BaseWeb::redirectSeeOther("/faucet/logs?error=invalid_value");
+            return;
+        }
+        const CalibrationApplyResult result = g_context.app->applyCalibrationFromRecord(record, actualMl);
+        if (result == CalibrationApplyResult::Saved) {
+            *g_context.config = g_context.app->config();
+            if (!g_context.configStore->saveSystemConfig(*g_context.config)) {
+                Esp32BaseWeb::redirectSeeOther("/faucet/logs?error=save_failed");
+                return;
+            }
+            Esp32BaseWeb::redirectSeeOther("/faucet/logs?saved=1");
+            return;
+        }
+        const char* error = result == CalibrationApplyResult::TooMuchDrift       ? "calibration_drift"
+                            : result == CalibrationApplyResult::NotAvailable    ? "busy"
+                            : result == CalibrationApplyResult::InvalidRecord   ? "no_calibration_record"
+                                                                                 : "invalid_value";
+        char url[80]{};
+        std::snprintf(url, sizeof(url), "/faucet/logs?error=%s", error);
+        Esp32BaseWeb::redirectSeeOther(url);
+        return;
+    }
+
     if (!g_context.app->canApplyConfig()) {
         Esp32BaseWeb::redirectSeeOther("/faucet/calibration?error=busy");
         return;
     }
 
-    char text[32]{};
     if (!getParam("mode", text, sizeof(text))) {
         Esp32BaseWeb::redirectSeeOther("/faucet/calibration?error=invalid_value");
         return;
@@ -1357,26 +1424,7 @@ void handleCalibrationApi() {
         Esp32BaseWeb::redirectSeeOther("/faucet/calibration?error=save_failed");
         return;
     }
-    if (std::strcmp(text, "measured") == 0) {
-        std::uint32_t targetMl = 0;
-        std::uint32_t actualMl = 0;
-        char value[24]{};
-        if (!getParam("targetMl", value, sizeof(value)) || !parseU32(value, targetMl) ||
-            !getParam("actualMl", value, sizeof(value)) || !parseU32(value, actualMl) ||
-            !isValidCalibrationTarget(targetMl) || !isValidCalibrationTarget(actualMl)) {
-            delete candidate;
-            Esp32BaseWeb::redirectSeeOther("/faucet/calibration?error=invalid_value");
-            return;
-        }
-        const float proposed =
-            candidate->pulsePerMl * (static_cast<float>(targetMl) / static_cast<float>(actualMl));
-        if (!std::isfinite(proposed) || proposed < kMinPulsePerMl || proposed > kMaxPulsePerMl) {
-            delete candidate;
-            Esp32BaseWeb::redirectSeeOther("/faucet/calibration?error=invalid_value");
-            return;
-        }
-        candidate->pulsePerMl = proposed;
-    } else if (std::strcmp(text, "manual") == 0) {
+    if (std::strcmp(text, "manual") == 0) {
         float pulsePerLiter = 0.0f;
         if (!getParam("pulsePerLiter", text, sizeof(text)) || !parseFloat(text, pulsePerLiter)) {
             delete candidate;

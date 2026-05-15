@@ -42,6 +42,7 @@ bool FilterStore::resetFilter(std::size_t index, std::uint32_t nowSeconds) {
     }
     records_[index].startTime = nowSeconds;
     records_[index].usedMl = 0;
+    records_[index].startBootId = 0;
     return true;
 }
 

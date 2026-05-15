@@ -24,6 +24,22 @@ bool WaterLogStore::append(const WaterLogRecord& record) {
     return true;
 }
 
+std::size_t WaterLogStore::rewriteBootRelativeTimes(std::uint16_t bootId, std::uint32_t bootStartRealSec) {
+    if (!records_ || bootId == 0) {
+        return 0;
+    }
+    std::size_t changed = 0;
+    for (std::size_t offset = 0; offset < count_; ++offset) {
+        WaterLogRecord& record = records_[physicalIndexFromNewestOffset(offset)];
+        if (waterLogHasBootRelativeTime(record) && waterLogBootId(record) == bootId) {
+            record.startTime = bootStartRealSec + record.startTime;
+            clearWaterLogBootId(record);
+            ++changed;
+        }
+    }
+    return changed;
+}
+
 std::size_t WaterLogStore::readPage(std::size_t pageIndex,
                                     std::uint16_t pageSize,
                                     WaterLogRecord* output,

@@ -348,6 +348,8 @@ void ConfigStore::loadFilterRuntime(FilterRecord (&records)[kFilterCount]) {
         records[i].startTime = getU32(backend_, kRunNs, key, records[i].startTime);
         filterKey(key, sizeof(key), i, "used");
         records[i].usedMl = getU32(backend_, kRunNs, key, records[i].usedMl);
+        filterKey(key, sizeof(key), i, "boot");
+        records[i].startBootId = static_cast<std::uint16_t>(getU32(backend_, kRunNs, key, records[i].startBootId));
     }
 }
 
@@ -359,12 +361,25 @@ bool ConfigStore::saveFilterRuntime(const FilterRecord (&records)[kFilterCount])
         ok = okAll(ok, setU32(backend_, kRunNs, key, records[i].startTime));
         filterKey(key, sizeof(key), i, "used");
         ok = okAll(ok, setU32(backend_, kRunNs, key, records[i].usedMl));
+        filterKey(key, sizeof(key), i, "boot");
+        ok = okAll(ok, setU32(backend_, kRunNs, key, records[i].startBootId));
     }
     return ok;
 }
 
 bool ConfigStore::resetFilterRuntime() {
     return backend_.clearNamespace(kRunNs);
+}
+
+std::uint16_t ConfigStore::allocateBootId() {
+    constexpr std::uint16_t kMaxBootId = 0xFFFFU;
+    const std::uint32_t previous = getU32(backend_, kRunNs, "boot_id", 0);
+    std::uint16_t next = static_cast<std::uint16_t>((previous % kMaxBootId) + 1U);
+    if (next == 0) {
+        next = 1;
+    }
+    setU32(backend_, kRunNs, "boot_id", next);
+    return next;
 }
 
 }  // namespace faucet

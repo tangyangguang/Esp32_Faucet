@@ -33,6 +33,7 @@ void setFilter(FilterRecord& filter, bool enabled, const char* name) {
     filter.lifeMl = 0;
     filter.startTime = 0;
     filter.usedMl = 0;
+    filter.startBootId = 0;
     copyName(filter.name, name);
 }
 

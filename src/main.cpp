@@ -23,6 +23,7 @@
 #include "web/FaucetWeb.h"
 
 #include <new>
+#include <time.h>
 
 namespace {
 constexpr const char* kFirmwareName = "esp32-faucet";
@@ -47,6 +48,13 @@ public:
             return true;
         }
         return ramStore_.append(record);
+    }
+
+    std::size_t rewriteBootRelativeTimes(std::uint16_t bootId, std::uint32_t bootStartRealSec) {
+        if (fileStore_ && fileStore_->ready()) {
+            return fileStore_->rewriteBootRelativeTimes(bootId, bootStartRealSec);
+        }
+        return ramStore_.rewriteBootRelativeTimes(bootId, bootStartRealSec);
     }
 
     std::size_t readPage(std::size_t pageIndex,
@@ -101,6 +109,15 @@ bool g_persistenceFailureLogged = false;
 std::uint32_t g_lastDisplayMs = 0;
 std::uint32_t g_lastDroppedPulsesLogged = 0;
 std::uint32_t g_lastDroppedPulsesLogMs = 0;
+std::uint16_t g_bootId = 0;
+bool g_bootRelativeTimesRewritten = false;
+
+struct TimeSnapshot {
+    bool synced;
+    std::uint32_t seconds;
+    std::uint32_t uptimeSeconds;
+    std::uint16_t bootId;
+};
 
 void configureBase() {
     Esp32Base::setFirmwareInfo(kFirmwareName, kFirmwareVersion, __DATE__ " " __TIME__);
@@ -196,28 +213,49 @@ std::uint32_t daysSince2000(std::uint16_t year, std::uint8_t month, std::uint8_t
     return days + dayOfYear(year, month, day);
 }
 
+std::uint32_t localSecondsFromUnix(std::uint32_t timestamp) {
+    time_t value = static_cast<time_t>(timestamp);
+    struct tm localTime {};
+    localtime_r(&value, &localTime);
+    const std::uint16_t year = static_cast<std::uint16_t>(localTime.tm_year + 1900);
+    const std::uint8_t month = static_cast<std::uint8_t>(localTime.tm_mon + 1);
+    const std::uint8_t day = static_cast<std::uint8_t>(localTime.tm_mday);
+    return daysSince2000(year, month, day) * 86400UL + static_cast<std::uint32_t>(localTime.tm_hour) * 3600UL +
+           static_cast<std::uint32_t>(localTime.tm_min) * 60UL + static_cast<std::uint32_t>(localTime.tm_sec);
+}
+
 faucet::PeriodKeys makeFallbackPeriodKeys(std::uint32_t nowSeconds) {
     const std::uint32_t day = nowSeconds / 86400UL;
     return faucet::PeriodKeys{day, day / 7UL, day / 31UL};
 }
 
-std::uint32_t currentSeconds() {
+TimeSnapshot currentTimeSnapshot() {
+    const std::uint32_t uptimeSeconds = millis() / 1000UL;
     const faucet::RtcDateTime now = g_rtc.readNow();
     if (!now.valid) {
 #if ESP32BASE_ENABLE_NTP
         if (Esp32BaseNtp::isTimeSynced()) {
             const std::uint32_t timestamp = Esp32BaseNtp::timestamp();
             if (timestamp >= kUnixSecondsAt2000) {
-                return timestamp - kUnixSecondsAt2000;
+                return TimeSnapshot{true, localSecondsFromUnix(timestamp), uptimeSeconds, g_bootId};
             }
         }
 #endif
-        return millis() / 1000UL;
+        return TimeSnapshot{false, uptimeSeconds, uptimeSeconds, g_bootId};
     }
 
     const std::uint32_t days = daysSince2000(now.year, now.month, now.day);
-    return days * 86400UL + static_cast<std::uint32_t>(now.hour) * 3600UL +
-           static_cast<std::uint32_t>(now.minute) * 60UL + now.second;
+    const std::uint32_t seconds = days * 86400UL + static_cast<std::uint32_t>(now.hour) * 3600UL +
+                                  static_cast<std::uint32_t>(now.minute) * 60UL + now.second;
+    return TimeSnapshot{true, seconds, uptimeSeconds, g_bootId};
+}
+
+std::uint32_t currentSeconds() {
+    return currentTimeSnapshot().seconds;
+}
+
+std::uint16_t currentBootId() {
+    return g_bootId;
 }
 
 void applyRuntimeSettings(const faucet::SystemConfig& config) {
@@ -230,6 +268,37 @@ void applyRuntimeSettings(const faucet::SystemConfig& config) {
 }
 
 faucet::PeriodKeys currentPeriodKeys(std::uint32_t nowSeconds) {
+    if (nowSeconds >= faucet::kMinRealDateSeconds) {
+        std::uint32_t day = nowSeconds / 86400UL;
+        std::uint16_t year = 2000;
+        while (true) {
+            const std::uint16_t yearDays = isLeapYear(year) ? 366 : 365;
+            if (day < yearDays) {
+                break;
+            }
+            day -= yearDays;
+            ++year;
+        }
+        std::uint8_t month = 1;
+        static constexpr std::uint8_t kMonthDays[] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+        while (month <= 12) {
+            std::uint8_t monthDays = kMonthDays[month - 1];
+            if (month == 2 && isLeapYear(year)) {
+                monthDays = 29;
+            }
+            if (day < monthDays) {
+                break;
+            }
+            day -= monthDays;
+            ++month;
+        }
+        const std::uint8_t monthDay = static_cast<std::uint8_t>(day + 1);
+        const std::uint32_t dayKey =
+            static_cast<std::uint32_t>(year) * 10000UL + static_cast<std::uint32_t>(month) * 100UL + monthDay;
+        const std::uint32_t weekKey = nowSeconds / 86400UL / 7UL;
+        const std::uint32_t monthKey = static_cast<std::uint32_t>(year) * 100UL + month;
+        return faucet::PeriodKeys{dayKey, weekKey, monthKey};
+    }
     const faucet::RtcDateTime now = g_rtc.readNow();
     if (!now.valid) {
         return makeFallbackPeriodKeys(nowSeconds);
@@ -245,12 +314,13 @@ faucet::PeriodKeys currentPeriodKeys(std::uint32_t nowSeconds) {
 
 void initializeApplication() {
     g_rtc.begin();
+    g_bootId = g_configStore.allocateBootId();
     g_config = g_configStore.loadSystemConfig();
     logSystemConfigStatus();
     g_logs.setFileStore(g_waterLogFile.begin() ? &g_waterLogFile : nullptr);
     checkFileSystemCapacity();
-    const std::uint32_t nowSec = currentSeconds();
-    g_statistics = faucet::StatisticsStore(g_configStore.loadStatistics(currentPeriodKeys(nowSec)));
+    const TimeSnapshot time = currentTimeSnapshot();
+    g_statistics = faucet::StatisticsStore(g_configStore.loadStatistics(currentPeriodKeys(time.seconds)));
     g_configStore.loadFilterRuntime(g_config.filters);
     g_filters = new (std::nothrow) faucet::FilterStore(g_config.filters);
     if (!g_filters) {
@@ -267,7 +337,7 @@ void initializeApplication() {
         ESP32BASE_LOG_W("app", "display presenter allocation failed, lcd disabled");
     }
     faucet::setFaucetWebContext(
-        faucet::FaucetWebContext{&g_config, &g_configStore, g_app, g_filters, &g_logs, currentSeconds, applyRuntimeSettings});
+        faucet::FaucetWebContext{&g_config, &g_configStore, g_app, g_filters, &g_logs, currentSeconds, currentBootId, applyRuntimeSettings});
     faucet::setFaucetAppConfigContext(
         faucet::FaucetAppConfigContext{&g_config, &g_configStore, g_app, applyRuntimeSettings});
 
@@ -290,6 +360,38 @@ void initializeApplication() {
                     g_waterLogFile.ready() ? "file" : "ram");
 }
 
+void rewriteCurrentBootRelativeTimes(const TimeSnapshot& time) {
+    if (!time.synced || g_bootRelativeTimesRewritten || time.bootId == 0 || time.seconds < time.uptimeSeconds) {
+        return;
+    }
+    const std::uint32_t bootStartRealSec = time.seconds - time.uptimeSeconds;
+    const std::size_t logCount = g_logs.rewriteBootRelativeTimes(time.bootId, bootStartRealSec);
+    bool filtersChanged = false;
+    if (g_filters) {
+        for (std::size_t i = 0; i < faucet::kFilterCount; ++i) {
+            faucet::FilterRecord record = g_filters->record(i);
+            if (record.startBootId == time.bootId && record.startTime > 0 &&
+                record.startTime < faucet::kMinRealDateSeconds) {
+                record.startTime = bootStartRealSec + record.startTime;
+                record.startBootId = 0;
+                g_filters->updateFilter(i, record);
+                filtersChanged = true;
+            }
+        }
+    }
+    if (filtersChanged && !g_configStore.saveFilterRuntime(g_filters->records())) {
+        ESP32BASE_LOG_E("app", "filter time correction persistence failed");
+    }
+    if (logCount > 0 || filtersChanged) {
+        ESP32BASE_LOG_I("app",
+                        "boot_relative_times_rewritten boot_id=%u logs=%lu filters=%s",
+                        static_cast<unsigned>(time.bootId),
+                        static_cast<unsigned long>(logCount),
+                        filtersChanged ? "yes" : "no");
+    }
+    g_bootRelativeTimesRewritten = true;
+}
+
 void runApplicationTick() {
     if (!g_app) {
         return;
@@ -297,7 +399,8 @@ void runApplicationTick() {
 
     const std::uint32_t nowMs = millis();
     const std::uint32_t nowUs = micros();
-    const std::uint32_t nowSec = currentSeconds();
+    const TimeSnapshot time = currentTimeSnapshot();
+    rewriteCurrentBootRelativeTimes(time);
     const faucet::ButtonLevels levels = g_buttons.read();
     if (g_buttons.consumeCancelInterrupt() || levels.cancelPressed) {
         g_app->emergencyStop(nowMs);
@@ -324,8 +427,10 @@ void runApplicationTick() {
         levels,
         nowMs,
         nowUs,
-        nowSec,
-        currentPeriodKeys(nowSec),
+        time.seconds,
+        currentPeriodKeys(time.seconds),
+        time.synced,
+        time.bootId,
     };
     g_app->tick(input);
     const faucet::BeepPattern beep = g_app->consumeBeepPattern();
@@ -369,7 +474,7 @@ void runApplicationTick() {
         ESP32BASE_LOG_W("app", "factory reset requested from local buttons");
         g_valveHardware.apply(faucet::ValveOutput{faucet::ValveState::Closed, false, 0});
         g_configStore.resetSystemConfig();
-        g_configStore.resetStatistics(currentPeriodKeys(nowSec));
+        g_configStore.resetStatistics(currentPeriodKeys(time.seconds));
         g_configStore.resetFilterRuntime();
         g_waterLogFile.clear();
         delay(200);

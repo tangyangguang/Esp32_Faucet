@@ -11,6 +11,7 @@ constexpr std::size_t kNameLength = 16;
 constexpr std::size_t kPresetNameLength = kNameLength;
 constexpr std::size_t kFilterNameMaxChars = 30;
 constexpr std::size_t kFilterNameLength = kFilterNameMaxChars * 3 + 1;
+constexpr std::uint32_t kMinRealDateSeconds = 631152000UL;  // 2020-01-01 in seconds since 2000-01-01.
 
 enum class PresetType : std::uint8_t {
     Volume = 0,
@@ -46,6 +47,7 @@ struct FilterRecord {
     std::uint32_t lifeMl;
     std::uint32_t startTime;
     std::uint32_t usedMl;
+    std::uint16_t startBootId;
 };
 
 struct WaterLogRecord {
@@ -56,6 +58,28 @@ struct WaterLogRecord {
     WaterResult result;
     std::uint8_t reserved[2];
 };
+
+inline std::uint16_t waterLogBootId(const WaterLogRecord& record) {
+    return static_cast<std::uint16_t>(record.reserved[0]) |
+           static_cast<std::uint16_t>(static_cast<std::uint16_t>(record.reserved[1]) << 8U);
+}
+
+inline void markWaterLogBootId(WaterLogRecord& record, std::uint16_t bootId) {
+    record.reserved[0] = static_cast<std::uint8_t>(bootId & 0xFFU);
+    record.reserved[1] = static_cast<std::uint8_t>((bootId >> 8U) & 0xFFU);
+}
+
+inline void clearWaterLogBootId(WaterLogRecord& record) {
+    markWaterLogBootId(record, 0);
+}
+
+inline bool waterLogHasRealTime(const WaterLogRecord& record) {
+    return record.startTime >= kMinRealDateSeconds && waterLogBootId(record) == 0;
+}
+
+inline bool waterLogHasBootRelativeTime(const WaterLogRecord& record) {
+    return record.startTime > 0 && record.startTime < kMinRealDateSeconds && waterLogBootId(record) != 0;
+}
 
 struct StatisticsRecord {
     std::uint32_t todayMl;

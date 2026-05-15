@@ -20,7 +20,7 @@
 namespace faucet {
 namespace {
 
-constexpr std::uint32_t kMinFilterDateSeconds = 631152000UL;  // 2020-01-01 in seconds since 2000-01-01.
+constexpr std::uint32_t kChartDays = 14;
 FaucetWebContext g_context{};
 
 bool requireContext();
@@ -76,6 +76,44 @@ void formatLiters(std::uint32_t ml, char* out, std::size_t len) {
     const std::uint32_t centiliters = (ml + 5UL) / 10UL;
     std::snprintf(out, len, "%lu.%02lu L", static_cast<unsigned long>(centiliters / 100UL),
                   static_cast<unsigned long>(centiliters % 100UL));
+}
+
+bool isLeapYear(std::uint16_t year) {
+    return (year % 4U == 0 && year % 100U != 0) || year % 400U == 0;
+}
+
+void dateFromDayIndex(std::uint32_t day, std::uint16_t& year, std::uint8_t& month, std::uint8_t& monthDay) {
+    year = 2000;
+    while (true) {
+        const std::uint16_t yearDays = isLeapYear(year) ? 366 : 365;
+        if (day < yearDays) {
+            break;
+        }
+        day -= yearDays;
+        ++year;
+    }
+    static constexpr std::uint8_t monthDays[] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+    month = 1;
+    while (month <= 12) {
+        std::uint8_t days = monthDays[month - 1];
+        if (month == 2 && isLeapYear(year)) {
+            days = 29;
+        }
+        if (day < days) {
+            break;
+        }
+        day -= days;
+        ++month;
+    }
+    monthDay = static_cast<std::uint8_t>(day + 1);
+}
+
+void formatDayLabel(std::uint32_t day, char* out, std::size_t len) {
+    std::uint16_t year = 0;
+    std::uint8_t month = 0;
+    std::uint8_t monthDay = 0;
+    dateFromDayIndex(day, year, month, monthDay);
+    std::snprintf(out, len, "%02u-%02u", static_cast<unsigned>(month), static_cast<unsigned>(monthDay));
 }
 
 std::uint32_t filterProgressPercent(const FilterRecord& filter, std::uint32_t usedDays) {
@@ -165,11 +203,166 @@ void sendStatBar(const char* label, const char* value, std::uint32_t percent) {
             static_cast<unsigned long>(percent));
 }
 
+struct DailyBucket {
+    std::uint32_t dayIndex = 0;
+    std::uint32_t volumeMl = 0;
+    std::uint32_t durationSec = 0;
+};
+
+struct LogAggregates {
+    DailyBucket days[kChartDays]{};
+    std::uint32_t todayMl = 0;
+    std::uint32_t weekMl = 0;
+    std::uint32_t monthMl = 0;
+    std::uint32_t totalMl = 0;
+    std::uint32_t unknownMl = 0;
+    std::uint32_t unknownDurationSec = 0;
+    std::uint32_t unknownCount = 0;
+};
+
+void addSaturating(std::uint32_t& target, std::uint32_t value) {
+    const std::uint32_t max = UINT32_MAX;
+    target = max - target < value ? max : target + value;
+}
+
+LogAggregates aggregateLogs(std::uint32_t nowSeconds) {
+    LogAggregates aggregates{};
+    if (!g_context.logs || !g_context.logs->ready()) {
+        return aggregates;
+    }
+    const bool hasRealNow = nowSeconds >= kMinRealDateSeconds;
+    const std::uint32_t todayDay = hasRealNow ? nowSeconds / 86400UL : 0;
+    const std::uint32_t firstChartDay = hasRealNow && todayDay >= kChartDays - 1 ? todayDay - (kChartDays - 1) : 0;
+    for (std::size_t i = 0; i < kChartDays; ++i) {
+        aggregates.days[i].dayIndex = firstChartDay + i;
+    }
+
+    WaterLogRecord records[kMaxLogPageSize]{};
+    const std::size_t total = g_context.logs->count();
+    for (std::size_t offset = 0; offset < total; offset += kMaxLogPageSize) {
+        const std::size_t page = offset / kMaxLogPageSize;
+        const std::size_t count = g_context.logs->readPage(page, kMaxLogPageSize, records, kMaxLogPageSize);
+        if (count == 0) {
+            break;
+        }
+        for (std::size_t i = 0; i < count; ++i) {
+            const WaterLogRecord& record = records[i];
+            if (!waterLogHasRealTime(record)) {
+                ++aggregates.unknownCount;
+                addSaturating(aggregates.unknownMl, record.volumeMl);
+                addSaturating(aggregates.unknownDurationSec, record.durationSec);
+                continue;
+            }
+            addSaturating(aggregates.totalMl, record.volumeMl);
+            if (!hasRealNow) {
+                continue;
+            }
+            const std::uint32_t day = record.startTime / 86400UL;
+            if (day == todayDay) {
+                addSaturating(aggregates.todayMl, record.volumeMl);
+            }
+            if (day <= todayDay && todayDay - day < 7) {
+                addSaturating(aggregates.weekMl, record.volumeMl);
+            }
+            if (day <= todayDay && todayDay - day < 30) {
+                addSaturating(aggregates.monthMl, record.volumeMl);
+            }
+            if (day >= firstChartDay && day <= todayDay) {
+                DailyBucket& bucket = aggregates.days[day - firstChartDay];
+                addSaturating(bucket.volumeMl, record.volumeMl);
+                addSaturating(bucket.durationSec, record.durationSec);
+            }
+        }
+    }
+    return aggregates;
+}
+
+std::uint32_t sumRealLogVolumeSince(std::uint32_t startTime) {
+    if (!g_context.logs || !g_context.logs->ready() || startTime < kMinRealDateSeconds) {
+        return 0;
+    }
+    std::uint32_t total = 0;
+    WaterLogRecord records[kMaxLogPageSize]{};
+    const std::size_t count = g_context.logs->count();
+    for (std::size_t offset = 0; offset < count; offset += kMaxLogPageSize) {
+        const std::size_t page = offset / kMaxLogPageSize;
+        const std::size_t read = g_context.logs->readPage(page, kMaxLogPageSize, records, kMaxLogPageSize);
+        if (read == 0) {
+            break;
+        }
+        for (std::size_t i = 0; i < read; ++i) {
+            if (waterLogHasRealTime(records[i]) && records[i].startTime >= startTime && records[i].volumeMl > 0) {
+                addSaturating(total, records[i].volumeMl);
+            }
+        }
+    }
+    return total;
+}
+
+void sendDailyChart(const DailyBucket (&days)[kChartDays]) {
+    std::uint32_t maxVolume = 0;
+    std::uint32_t maxDuration = 0;
+    for (const DailyBucket& day : days) {
+        if (day.volumeMl > maxVolume) {
+            maxVolume = day.volumeMl;
+        }
+        if (day.durationSec > maxDuration) {
+            maxDuration = day.durationSec;
+        }
+    }
+    Esp32BaseWeb::sendChunk("<section class='daily-chart'><h3>最近 14 天出水趋势</h3>"
+                            "<p class='hint'>柱状图为每日出水量 L，折线为每日出水总时长。</p>"
+                            "<svg viewBox='0 0 700 260' role='img' aria-label='最近14天出水趋势'>");
+    constexpr std::uint32_t chartTop = 20;
+    constexpr std::uint32_t chartHeight = 150;
+    constexpr std::uint32_t baseY = chartTop + chartHeight;
+    constexpr std::uint32_t left = 36;
+    constexpr std::uint32_t step = 46;
+    constexpr std::uint32_t barWidth = 22;
+    Esp32BaseWeb::sendChunk("<line class='axis' x1='30' y1='170' x2='680' y2='170'></line>");
+    char points[360]{};
+    points[0] = '\0';
+    for (std::size_t i = 0; i < kChartDays; ++i) {
+        const std::uint32_t x = left + static_cast<std::uint32_t>(i) * step;
+        const std::uint32_t barHeight = maxVolume == 0 ? 0 : (days[i].volumeMl * chartHeight) / maxVolume;
+        const std::uint32_t y = baseY - barHeight;
+        sendFmt("<rect class='bar' x='%lu' y='%lu' width='%lu' height='%lu'></rect>",
+                static_cast<unsigned long>(x),
+                static_cast<unsigned long>(y),
+                static_cast<unsigned long>(barWidth),
+                static_cast<unsigned long>(barHeight));
+        char label[8]{};
+        formatDayLabel(days[i].dayIndex, label, sizeof(label));
+        sendFmt("<text class='x-label' x='%lu' y='202'>%s</text>",
+                static_cast<unsigned long>(x + barWidth / 2),
+                label);
+        const std::uint32_t lineY =
+            maxDuration == 0 ? baseY : baseY - ((days[i].durationSec * chartHeight) / maxDuration);
+        char point[24]{};
+        std::snprintf(point,
+                      sizeof(point),
+                      "%s%lu,%lu",
+                      i == 0 ? "" : " ",
+                      static_cast<unsigned long>(x + barWidth / 2),
+                      static_cast<unsigned long>(lineY));
+        std::strncat(points, point, sizeof(points) - std::strlen(points) - 1);
+    }
+    Esp32BaseWeb::sendChunk("<polyline class='duration-line' points='");
+    Esp32BaseWeb::sendChunk(points);
+    Esp32BaseWeb::sendChunk("'></polyline></svg></section>");
+}
+
+void sendTimeUnsyncedChartNotice() {
+    Esp32BaseWeb::sendChunk("<section class='daily-chart'><h3>最近 14 天出水趋势</h3>"
+                            "<p class='hint'>时间未同步，暂不生成按真实日期统计的图表；同步后会自动显示今日往前 14 天。</p>"
+                            "</section>");
+}
+
 void formatLogTime(std::uint32_t seconds, char* out, std::size_t len) {
     if (!out || len == 0) {
         return;
     }
-    if (seconds >= kMinFilterDateSeconds) {
+    if (seconds >= kMinRealDateSeconds) {
         char date[16]{};
         formatDate(seconds, date, sizeof(date));
         const std::uint32_t daySecond = seconds % 86400UL;
@@ -181,6 +374,21 @@ void formatLogTime(std::uint32_t seconds, char* out, std::size_t len) {
         return;
     }
     std::snprintf(out, len, "开机+%lu s", static_cast<unsigned long>(seconds));
+}
+
+void formatWaterLogTime(const WaterLogRecord& record, char* out, std::size_t len) {
+    if (!out || len == 0) {
+        return;
+    }
+    if (waterLogHasRealTime(record)) {
+        formatLogTime(record.startTime, out, len);
+        return;
+    }
+    if (waterLogHasBootRelativeTime(record)) {
+        std::snprintf(out, len, "未知时间 / 本次开机+%lu s", static_cast<unsigned long>(record.startTime));
+        return;
+    }
+    std::snprintf(out, len, "历史未知时间");
 }
 
 void sendNoticeFromQuery() {
@@ -255,6 +463,8 @@ void sendAppStyles() {
                             ".stat-bar{margin:0 0 10px}.stat-bar:last-child{margin-bottom:0}"
                             ".stat-bar-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:4px;color:#56616b;font-size:.86rem}"
                             ".stat-bar-head strong{color:#202428}"
+                            ".daily-chart{grid-column:1/-1;background:#fff;border:1px solid #e1e7e5;border-radius:8px;padding:10px;box-shadow:0 1px 2px rgba(21,35,34,.04)}"
+                            ".daily-chart svg{display:block;width:100%;height:auto;max-height:300px}.daily-chart .bar{fill:#6b9b96}.daily-chart .duration-line{fill:none;stroke:#c77f2f;stroke-width:3;stroke-linejoin:round;stroke-linecap:round}.daily-chart .axis{stroke:#d9e0df;stroke-width:1}.daily-chart .x-label{font-size:11px;text-anchor:middle;fill:#69727a}"
                             ".filter-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px;margin:0 0 10px}"
                             ".filter-card{background:#fff;border:1px solid #e1e7e5;border-radius:8px;padding:8px 10px;box-shadow:0 1px 2px rgba(21,35,34,.04)}"
                             ".filter-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px}"
@@ -381,7 +591,7 @@ void sendMonthInput(const char* label, const char* name, std::uint32_t days) {
 
 void sendDateInput(const char* label, const char* name, std::uint32_t seconds) {
     char date[16]{};
-    formatDate(seconds >= kMinFilterDateSeconds ? seconds : 0, date, sizeof(date));
+    formatDate(seconds >= kMinRealDateSeconds ? seconds : 0, date, sizeof(date));
     sendFmt("<label class='field'><span>%s</span><input type='date' name='%s' value='%s'></label>",
             label,
             name,
@@ -440,7 +650,7 @@ void handleFaucetPage() {
         }
         anyFilter = true;
         const std::uint32_t usedDays =
-            filter.startTime >= kMinFilterDateSeconds ? g_context.filters->usedDays(i, g_context.nowSeconds()) : 0;
+            filter.startTime >= kMinRealDateSeconds ? g_context.filters->usedDays(i, g_context.nowSeconds()) : 0;
         char life[32]{};
         formatLifeRange(filter, life, sizeof(life));
         char usedFlow[24]{};
@@ -562,19 +772,28 @@ void handleStatsPage() {
         sendPageEnd();
         return;
     }
-    const StatisticsRecord& stats = g_context.app->snapshot().statistics;
+    const std::uint32_t now = g_context.nowSeconds();
+    const LogAggregates aggregates = aggregateLogs(now);
     char today[24]{};
     char week[24]{};
     char month[24]{};
     char total[24]{};
     char weekAvg[24]{};
     char monthAvg[24]{};
-    formatLiters(stats.todayMl, today, sizeof(today));
-    formatLiters(stats.weekMl, week, sizeof(week));
-    formatLiters(stats.monthMl, month, sizeof(month));
-    formatLiters(stats.totalMl, total, sizeof(total));
-    formatLiters((stats.weekMl + 3UL) / 7UL, weekAvg, sizeof(weekAvg));
-    formatLiters((stats.monthMl + 14UL) / 30UL, monthAvg, sizeof(monthAvg));
+    char unknown[24]{};
+    char unknownDuration[24]{};
+    formatLiters(aggregates.todayMl, today, sizeof(today));
+    formatLiters(aggregates.weekMl, week, sizeof(week));
+    formatLiters(aggregates.monthMl, month, sizeof(month));
+    formatLiters(g_context.app->snapshot().statistics.totalMl, total, sizeof(total));
+    formatLiters((aggregates.weekMl + 3UL) / 7UL, weekAvg, sizeof(weekAvg));
+    formatLiters((aggregates.monthMl + 14UL) / 30UL, monthAvg, sizeof(monthAvg));
+    formatLiters(aggregates.unknownMl, unknown, sizeof(unknown));
+    std::snprintf(unknownDuration,
+                  sizeof(unknownDuration),
+                  "%lu s / %lu 条",
+                  static_cast<unsigned long>(aggregates.unknownDurationSec),
+                  static_cast<unsigned long>(aggregates.unknownCount));
     Esp32BaseWeb::sendChunk("<h2>统计</h2><div class='stats-layout'><div><div class='metric-grid'>");
     sendMetricCard("今日", today);
     sendMetricCard("本周", week);
@@ -585,31 +804,19 @@ void handleStatsPage() {
     sendMetricCard("本月日均", monthAvg);
     char todayWeek[16]{};
     char weekMonth[16]{};
-    std::snprintf(todayWeek, sizeof(todayWeek), "%lu%%", static_cast<unsigned long>(percentOf(stats.todayMl, stats.weekMl)));
-    std::snprintf(weekMonth, sizeof(weekMonth), "%lu%%", static_cast<unsigned long>(percentOf(stats.weekMl, stats.monthMl)));
+    std::snprintf(todayWeek, sizeof(todayWeek), "%lu%%", static_cast<unsigned long>(percentOf(aggregates.todayMl, aggregates.weekMl)));
+    std::snprintf(weekMonth, sizeof(weekMonth), "%lu%%", static_cast<unsigned long>(percentOf(aggregates.weekMl, aggregates.monthMl)));
     sendMetricCard("今日占本周", todayWeek);
     sendMetricCard("本周占本月", weekMonth);
-    Esp32BaseWeb::sendChunk("</div></div><section class='stat-bars'><h3>最近出水量趋势</h3>"
-                            "<p class='hint'>按最新记录显示每次出水量，单位 L，用于观察近期用水是否集中或异常。</p>");
-    WaterLogRecord records[8]{};
-    const std::size_t count = g_context.logs && g_context.logs->ready() ? g_context.logs->readPage(0, 8, records, 8) : 0;
-    std::uint32_t maxVolume = 0;
-    for (std::size_t i = 0; i < count; ++i) {
-        if (records[i].volumeMl > maxVolume) {
-            maxVolume = records[i].volumeMl;
-        }
+    sendMetricCard("未知时间出水量", unknown);
+    sendMetricCard("未知时间时长", unknownDuration);
+    Esp32BaseWeb::sendChunk("</div></div>");
+    if (now >= kMinRealDateSeconds) {
+        sendDailyChart(aggregates.days);
+    } else {
+        sendTimeUnsyncedChartNotice();
     }
-    if (count == 0) {
-        Esp32BaseWeb::sendChunk("<p class='ok'>暂无出水记录，产生记录后显示趋势。</p>");
-    }
-    for (std::size_t i = 0; i < count; ++i) {
-        char label[40]{};
-        char value[24]{};
-        formatLogTime(records[i].startTime, label, sizeof(label));
-        formatLiters(records[i].volumeMl, value, sizeof(value));
-        sendStatBar(label, value, percentOf(records[i].volumeMl, maxVolume));
-    }
-    Esp32BaseWeb::sendChunk("</section></div>");
+    Esp32BaseWeb::sendChunk("</div>");
     sendPageEnd();
 }
 
@@ -683,7 +890,7 @@ void handleLogsPage() {
     Esp32BaseWeb::sendChunk("<table><tr><th>开始时间</th><th>出水量 (L)</th><th>持续时间 (s)</th><th>预设模式</th><th>结束原因</th></tr>");
     for (std::size_t i = 0; i < count; ++i) {
         char startTime[40]{};
-        formatLogTime(records[i].startTime, startTime, sizeof(startTime));
+        formatWaterLogTime(records[i], startTime, sizeof(startTime));
         Esp32BaseWeb::sendChunk("<tr><td>");
         Esp32BaseWeb::sendChunk(startTime);
         Esp32BaseWeb::sendChunk("</td><td>");
@@ -706,15 +913,18 @@ void handleFiltersPage() {
         return;
     }
     const std::uint32_t now = g_context.nowSeconds();
+    char todayDate[16]{};
+    formatDate(now >= kMinRealDateSeconds ? now : 0, todayDate, sizeof(todayDate));
     sendNoticeFromQuery();
     Esp32BaseWeb::sendChunk("<h2>滤芯</h2><table class='filters-table'><tr><th>名称</th><th>启用状态</th><th>已用天数 (天)</th><th>已用流量 (L)</th><th>寿命规则</th><th>状态</th><th>操作</th></tr>");
     for (std::size_t i = 0; i < kFilterCount; ++i) {
         const FilterRecord& filter = g_context.filters->record(i);
-        const std::uint32_t usedDays = filter.startTime >= kMinFilterDateSeconds ? g_context.filters->usedDays(i, now) : 0;
+        const std::uint32_t usedDays = filter.startTime >= kMinRealDateSeconds ? g_context.filters->usedDays(i, now) : 0;
         char life[32]{};
         formatLifeRange(filter, life, sizeof(life));
-        sendFmt("<tr data-filter-start='%lu' data-filter-enabled='%u' data-filter-recommend-days='%lu' data-filter-max-days='%lu' data-filter-life-ml='%lu' data-filter-used-ml='%lu'><td>",
+        sendFmt("<tr data-filter-start='%lu' data-filter-boot='%u' data-filter-enabled='%u' data-filter-recommend-days='%lu' data-filter-max-days='%lu' data-filter-life-ml='%lu' data-filter-used-ml='%lu'><td>",
                 static_cast<unsigned long>(filter.startTime),
+                static_cast<unsigned>(filter.startBootId),
                 filter.enabled ? 1U : 0U,
                 static_cast<unsigned long>(filter.recommendDays),
                 static_cast<unsigned long>(filter.maxDays),
@@ -735,16 +945,28 @@ void handleFiltersPage() {
         sendFmt("</td><td><span class='status-pill filter-status'>%s</span></td><td><div class='row-actions'><a href='/faucet/filters/edit?index=%u'>设置</a>",
                 filterDisplayStatusText(filter, usedDays),
                 static_cast<unsigned>(i));
-        Esp32BaseWeb::sendChunk("<form method='post' action='/api/faucet/filters/reset' "
-                                "onsubmit=\"return confirm('确认重置滤芯？')&&once(this)\">");
+        Esp32BaseWeb::sendChunk("<form method='post' action='/api/faucet/filters/reset' data-filter-name='");
+        sendHtmlAttrEscaped(filter.name);
+        Esp32BaseWeb::sendChunk("' data-reset-date='");
+        sendHtmlAttrEscaped(todayDate);
+        Esp32BaseWeb::sendChunk("' onsubmit=\"return confirmFilterReset(this)&&once(this)\">");
         sendFmt("<input type='hidden' name='index' value='%u'>", static_cast<unsigned>(i));
         Esp32BaseWeb::sendChunk("<input class='secondary' type='submit' value='重置'></form></div></td></tr>");
     }
     Esp32BaseWeb::sendChunk("</table><script>"
+                            "function confirmFilterReset(form){"
+                            "var name=form.getAttribute('data-filter-name')||'滤芯';"
+                            "var date=form.getAttribute('data-reset-date')||'';"
+                            "var msg=date?('确认将【'+name+'】更换日期重置为 '+date+'，并清空已用流量？'):"
+                            "('当前时间未同步。确认将【'+name+'】更换日期记录为本次开机未知时间，并清空已用流量？');"
+                            "return confirm(msg);"
+                            "}"
                             "(function(){"
                             "var unix2000=946684800;"
                             "document.querySelectorAll('tr[data-filter-start]').forEach(function(row){"
                             "var start=parseInt(row.getAttribute('data-filter-start')||'0',10);"
+                            "var boot=parseInt(row.getAttribute('data-filter-boot')||'0',10);"
+                            "if(boot){return;}"
                             "if(!start){return;}"
                             "var now=Math.floor(Date.now()/1000)-unix2000;"
                             "if(!isFinite(now)||now<=start){return;}"
@@ -1065,14 +1287,18 @@ void handleFiltersApi() {
             record.maxDays = monthsToDays(months);
         }
         applyU32Param("lifeMl", record.lifeMl);
-        if (getParam("startDate", text, sizeof(text)) && !parseDate(text, record.startTime)) {
-            char location[80]{};
-            std::snprintf(location,
-                          sizeof(location),
-                          "/faucet/filters/edit?index=%lu&error=invalid_date",
-                          static_cast<unsigned long>(index));
-            Esp32BaseWeb::redirectSeeOther(location);
-            return;
+        if (getParam("startDate", text, sizeof(text))) {
+            if (!parseDate(text, record.startTime)) {
+                char location[80]{};
+                std::snprintf(location,
+                              sizeof(location),
+                              "/faucet/filters/edit?index=%lu&error=invalid_date",
+                              static_cast<unsigned long>(index));
+                Esp32BaseWeb::redirectSeeOther(location);
+                return;
+            }
+            record.startBootId = 0;
+            record.usedMl = sumRealLogVolumeSince(record.startTime);
         }
         record.name[kFilterNameLength - 1] = '\0';
 
@@ -1097,7 +1323,11 @@ void handleFiltersResetApi() {
     }
 
     const std::uint32_t now = g_context.nowSeconds();
-    if (!g_context.filters->resetFilter(index, now >= kMinFilterDateSeconds ? now : 0)) {
+    FilterRecord record = g_context.filters->record(index);
+    record.startTime = now;
+    record.usedMl = 0;
+    record.startBootId = now >= kMinRealDateSeconds ? 0 : (g_context.bootId ? g_context.bootId() : 0);
+    if (!g_context.filters->updateFilter(index, record)) {
         Esp32BaseWeb::sendJson(500, "{\"error\":\"reset_failed\"}");
         return;
     }

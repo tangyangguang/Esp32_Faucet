@@ -236,6 +236,27 @@ void test_file_log_header_failure_rolls_back_runtime_state() {
     TEST_ASSERT_EQUAL_UINT32(100, page[0].startTime);
 }
 
+void test_file_log_rewrites_current_boot_relative_times() {
+    MemoryFileBackend backend;
+    WaterLogFileStore store(backend, "/water.bin", 4);
+    TEST_ASSERT_TRUE(store.begin());
+    WaterLogRecord current = makeRecord(21, 1500);
+    markWaterLogBootId(current, 12);
+    WaterLogRecord old = makeRecord(31, 500);
+    markWaterLogBootId(old, 11);
+
+    TEST_ASSERT_TRUE(store.append(current));
+    TEST_ASSERT_TRUE(store.append(old));
+
+    TEST_ASSERT_EQUAL_size_t(1, store.rewriteBootRelativeTimes(12, 815500000));
+    WaterLogRecord page[2]{};
+    TEST_ASSERT_EQUAL_size_t(2, store.readPage(0, 2, page, 2));
+    TEST_ASSERT_EQUAL_UINT32(31, page[0].startTime);
+    TEST_ASSERT_EQUAL_UINT16(11, waterLogBootId(page[0]));
+    TEST_ASSERT_EQUAL_UINT32(815500021, page[1].startTime);
+    TEST_ASSERT_EQUAL_UINT16(0, waterLogBootId(page[1]));
+}
+
 int main(int argc, char** argv) {
     (void)argc;
     (void)argv;
@@ -251,5 +272,6 @@ int main(int argc, char** argv) {
     RUN_TEST(test_file_log_reports_backend_failures);
     RUN_TEST(test_file_log_append_failure_keeps_runtime_state);
     RUN_TEST(test_file_log_header_failure_rolls_back_runtime_state);
+    RUN_TEST(test_file_log_rewrites_current_boot_relative_times);
     return UNITY_END();
 }

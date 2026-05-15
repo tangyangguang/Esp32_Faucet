@@ -101,6 +101,24 @@ void test_log_clear_resets_count_and_order() {
     TEST_ASSERT_NULL(store.newest(0));
 }
 
+void test_log_rewrites_current_boot_relative_times() {
+    WaterLogRecord records[4]{};
+    WaterLogStore store(records, 4);
+    WaterLogRecord current = makeRecord(21, 1500);
+    markWaterLogBootId(current, 9);
+    WaterLogRecord previous = makeRecord(30, 500);
+    markWaterLogBootId(previous, 8);
+
+    TEST_ASSERT_TRUE(store.append(current));
+    TEST_ASSERT_TRUE(store.append(previous));
+
+    TEST_ASSERT_EQUAL_size_t(1, store.rewriteBootRelativeTimes(9, 815500000));
+    TEST_ASSERT_EQUAL_UINT32(30, store.newest(0)->startTime);
+    TEST_ASSERT_EQUAL_UINT16(8, waterLogBootId(*store.newest(0)));
+    TEST_ASSERT_EQUAL_UINT32(815500021, store.newest(1)->startTime);
+    TEST_ASSERT_EQUAL_UINT16(0, waterLogBootId(*store.newest(1)));
+}
+
 int main(int argc, char** argv) {
     (void)argc;
     (void)argv;
@@ -112,5 +130,6 @@ int main(int argc, char** argv) {
     RUN_TEST(test_log_page_size_is_sanitized_and_limited_by_output);
     RUN_TEST(test_log_rejects_missing_storage);
     RUN_TEST(test_log_clear_resets_count_and_order);
+    RUN_TEST(test_log_rewrites_current_boot_relative_times);
     return UNITY_END();
 }

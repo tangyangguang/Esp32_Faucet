@@ -63,6 +63,7 @@ void test_default_filters_support_six_lightweight_records() {
     TEST_ASSERT_EQUAL_UINT32(0, config.filters[0].lifeMl);
     TEST_ASSERT_EQUAL_UINT32(0, config.filters[0].startTime);
     TEST_ASSERT_EQUAL_UINT32(0, config.filters[0].usedMl);
+    TEST_ASSERT_EQUAL_UINT16(0, config.filters[0].startBootId);
 
     for (std::size_t i = 1; i < kFilterCount; ++i) {
         char name[kFilterNameLength]{};
@@ -74,6 +75,7 @@ void test_default_filters_support_six_lightweight_records() {
         TEST_ASSERT_EQUAL_UINT32(0, config.filters[i].lifeMl);
         TEST_ASSERT_EQUAL_UINT32(0, config.filters[i].startTime);
         TEST_ASSERT_EQUAL_UINT32(0, config.filters[i].usedMl);
+        TEST_ASSERT_EQUAL_UINT16(0, config.filters[i].startBootId);
     }
 }
 

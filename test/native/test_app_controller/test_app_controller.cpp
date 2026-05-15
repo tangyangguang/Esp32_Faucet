@@ -29,6 +29,20 @@ AppTickInput input(ButtonLevels levels, std::uint32_t nowMs, std::uint32_t nowUs
         nowUs,
         nowSeconds,
         {20260506, 202619, 202605},
+        nowSeconds >= kMinRealDateSeconds,
+        7,
+    };
+}
+
+AppTickInput offlineInput(ButtonLevels levels, std::uint32_t nowMs, std::uint32_t nowUs, std::uint32_t uptimeSeconds) {
+    return AppTickInput{
+        levels,
+        nowMs,
+        nowUs,
+        uptimeSeconds,
+        {0, 0, 0},
+        false,
+        42,
     };
 }
 
@@ -119,6 +133,61 @@ void test_app_controller_completion_writes_log_statistics_and_filters() {
     TEST_ASSERT_EQUAL_UINT32(1500, filters.record(0).usedMl);
     TEST_ASSERT_TRUE(app.consumePersistenceDirty());
     TEST_ASSERT_FALSE(app.consumePersistenceDirty());
+}
+
+void test_app_controller_offline_completion_marks_unknown_time_with_boot_id() {
+    SystemConfig config = makeDefaultConfig();
+    config.pulsePerMl = 1.0f;
+    MemoryLogWriter logs;
+    StatisticsStore statistics;
+    FilterStore filters(config.filters);
+    AppController app(config, statistics, filters, logs);
+
+    app.resetInputs({false, false, false, false}, 0);
+    app.tick(offlineInput({false, true, false, false}, 100, 100000, 1));
+    app.tick(offlineInput({false, true, false, false}, 100 + kButtonDebounceMs, (100 + kButtonDebounceMs) * 1000UL, 1));
+    app.tick(offlineInput({false, false, false, false}, 160, 160000, 1));
+    app.tick(offlineInput({false, false, false, false}, 160 + kButtonDebounceMs, (160 + kButtonDebounceMs) * 1000UL, 1));
+    app.tick(offlineInput({false, true, false, false}, 300, 300000, 1));
+    app.tick(offlineInput({false, true, false, false}, 300 + kButtonDebounceMs, (300 + kButtonDebounceMs) * 1000UL, 1));
+    app.tick(offlineInput({false, false, false, false}, 360, 360000, 1));
+    app.tick(offlineInput({false, false, false, false}, 360 + kButtonDebounceMs, (360 + kButtonDebounceMs) * 1000UL, 1));
+    for (std::uint32_t i = 0; i < 1500; ++i) {
+        app.onFlowPulse(2000000UL + i * 2000UL);
+    }
+    app.tick(offlineInput({false, false, false, false}, 5000, 5000000, 5));
+
+    TEST_ASSERT_EQUAL_size_t(1, logs.records.size());
+    TEST_ASSERT_EQUAL_UINT32(1500, logs.records[0].volumeMl);
+    TEST_ASSERT_EQUAL_UINT32(1, logs.records[0].startTime);
+    TEST_ASSERT_EQUAL_UINT16(42, waterLogBootId(logs.records[0]));
+}
+
+void test_app_controller_offline_start_sync_before_completion_writes_real_time() {
+    SystemConfig config = makeDefaultConfig();
+    config.pulsePerMl = 1.0f;
+    MemoryLogWriter logs;
+    StatisticsStore statistics;
+    FilterStore filters(config.filters);
+    AppController app(config, statistics, filters, logs);
+
+    app.resetInputs({false, false, false, false}, 0);
+    app.tick(offlineInput({false, true, false, false}, 1000, 1000000, 1));
+    app.tick(offlineInput({false, true, false, false}, 1000 + kButtonDebounceMs, (1000 + kButtonDebounceMs) * 1000UL, 1));
+    app.tick(offlineInput({false, false, false, false}, 1060, 1060000, 1));
+    app.tick(offlineInput({false, false, false, false}, 1060 + kButtonDebounceMs, (1060 + kButtonDebounceMs) * 1000UL, 1));
+    app.tick(offlineInput({false, true, false, false}, 1300, 1300000, 1));
+    app.tick(offlineInput({false, true, false, false}, 1300 + kButtonDebounceMs, (1300 + kButtonDebounceMs) * 1000UL, 1));
+    app.tick(offlineInput({false, false, false, false}, 1360, 1360000, 1));
+    app.tick(offlineInput({false, false, false, false}, 1360 + kButtonDebounceMs, (1360 + kButtonDebounceMs) * 1000UL, 1));
+    for (std::uint32_t i = 0; i < 1500; ++i) {
+        app.onFlowPulse(2000000UL + i * 2000UL);
+    }
+    app.tick(input({false, false, false, false}, 5000, 5000000, 815500004));
+
+    TEST_ASSERT_EQUAL_size_t(1, logs.records.size());
+    TEST_ASSERT_EQUAL_UINT32(815500000, logs.records[0].startTime);
+    TEST_ASSERT_EQUAL_UINT16(0, waterLogBootId(logs.records[0]));
 }
 
 void test_app_controller_pause_resume_then_completion_updates_persistence_once() {
@@ -339,6 +408,8 @@ int main(int argc, char** argv) {
     UNITY_BEGIN();
     RUN_TEST(test_app_controller_starts_after_double_ok_and_opens_valve);
     RUN_TEST(test_app_controller_completion_writes_log_statistics_and_filters);
+    RUN_TEST(test_app_controller_offline_completion_marks_unknown_time_with_boot_id);
+    RUN_TEST(test_app_controller_offline_start_sync_before_completion_writes_real_time);
     RUN_TEST(test_app_controller_pause_resume_then_completion_updates_persistence_once);
     RUN_TEST(test_app_controller_stop_down_closes_valve_and_records_user_stop);
     RUN_TEST(test_app_controller_emergency_stop_closes_valve_without_debounce);

@@ -11,6 +11,7 @@ class WaterLogReader;
 struct SystemConfig;
 
 using FaucetNowSeconds = std::uint32_t (*)();
+using FaucetBootId = std::uint16_t (*)();
 using FaucetApplySettings = void (*)(const SystemConfig&);
 
 struct FaucetWebContext {
@@ -20,6 +21,7 @@ struct FaucetWebContext {
     FilterStore* filters;
     const WaterLogReader* logs;
     FaucetNowSeconds nowSeconds;
+    FaucetBootId bootId;
     FaucetApplySettings applySettings;
 };
 

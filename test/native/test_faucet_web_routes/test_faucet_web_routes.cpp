@@ -115,8 +115,9 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "data-filter-start"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "开始时间"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "出水量 (L)"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "stat-bars"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "最近出水量趋势"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "daily-chart"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "最近 14 天出水趋势"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "未知时间出水量"));
 }
 
 void test_app_config_source_uses_clear_business_labels_and_help() {

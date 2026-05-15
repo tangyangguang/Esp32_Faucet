@@ -945,7 +945,7 @@ void handleFiltersPage() {
         sendFmt("</td><td><span class='status-pill filter-status'>%s</span></td><td><div class='row-actions'><a href='/faucet/filters/edit?index=%u'>设置</a>",
                 filterDisplayStatusText(filter, usedDays),
                 static_cast<unsigned>(i));
-        Esp32BaseWeb::sendChunk("<form method='post' action='/api/faucet/filters/reset' data-filter-name='");
+        Esp32BaseWeb::sendChunk("<form method='post' action='/faucet/filters/reset' data-filter-name='");
         sendHtmlAttrEscaped(filter.name);
         Esp32BaseWeb::sendChunk("' data-reset-date='");
         sendHtmlAttrEscaped(todayDate);
@@ -1012,7 +1012,7 @@ void handleFilterEditPage() {
     const FilterRecord& filter = g_context.filters->record(index);
     sendNoticeFromQuery();
     sendFmt("<h2>第 %u 级滤芯设置</h2>"
-            "<section class='panel'><form method='post' action='/api/faucet/filters' onsubmit='return once(this)'>"
+            "<section class='panel'><form method='post' action='/faucet/filters/save' onsubmit='return once(this)'>"
             "<input type='hidden' name='index' value='%u'><div class='form-grid'>",
             static_cast<unsigned>(index + 1),
             static_cast<unsigned>(index));
@@ -1359,6 +1359,12 @@ Esp32BaseWeb::Handler handlerFor(const FaucetWebRoute& route) {
     }
     if (std::strcmp(route.path, "/faucet/filters/edit") == 0) {
         return handleFilterEditPage;
+    }
+    if (std::strcmp(route.path, "/faucet/filters/save") == 0) {
+        return handleFiltersApi;
+    }
+    if (std::strcmp(route.path, "/faucet/filters/reset") == 0) {
+        return handleFiltersResetApi;
     }
     if (std::strcmp(route.path, "/api/faucet/presets") == 0) {
         return handlePresetsApi;

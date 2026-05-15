@@ -52,10 +52,11 @@ private:
         std::uint32_t rawChangedMs;
         std::uint32_t pressedMs;
         bool cancelDownEmitted;
+        bool longEmitted;
     };
 
     ButtonEvent updateButton(ButtonId id, ButtonState& state, bool rawPressed, std::uint32_t nowMs);
-    static ButtonEvent shortOrLongEvent(ButtonId id, std::uint32_t heldMs);
+    static ButtonEvent buttonEvent(ButtonId id, bool longPress);
     static ButtonEvent none();
 
     ButtonState cancel_;

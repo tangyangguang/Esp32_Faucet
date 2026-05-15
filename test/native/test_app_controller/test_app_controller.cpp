@@ -42,6 +42,9 @@ void pressAndReleaseOk(AppController& app, std::uint32_t baseMs) {
 void longPressOk(AppController& app, std::uint32_t baseMs) {
     app.tick(input({false, true, false, false}, baseMs, baseMs * 1000UL, 1000));
     app.tick(input({false, true, false, false}, baseMs + kButtonDebounceMs, (baseMs + kButtonDebounceMs) * 1000UL, 1000));
+    app.tick(input({false, true, false, false}, baseMs + kButtonDebounceMs + kButtonLongPressMs,
+                   (baseMs + kButtonDebounceMs + kButtonLongPressMs) * 1000UL,
+                   1001));
     app.tick(input({false, false, false, false}, baseMs + kButtonDebounceMs + kButtonLongPressMs + 20,
                    (baseMs + kButtonDebounceMs + kButtonLongPressMs + 20) * 1000UL,
                    1001));

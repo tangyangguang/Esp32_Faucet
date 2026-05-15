@@ -9,10 +9,10 @@ ButtonInput::ButtonInput() {
 }
 
 void ButtonInput::reset(ButtonLevels levels, std::uint32_t nowMs) {
-    cancel_ = {levels.cancelPressed, levels.cancelPressed, nowMs, levels.cancelPressed ? nowMs : 0, false};
-    ok_ = {levels.okPressed, levels.okPressed, nowMs, levels.okPressed ? nowMs : 0, false};
-    plus_ = {levels.plusPressed, levels.plusPressed, nowMs, levels.plusPressed ? nowMs : 0, false};
-    minus_ = {levels.minusPressed, levels.minusPressed, nowMs, levels.minusPressed ? nowMs : 0, false};
+    cancel_ = {levels.cancelPressed, levels.cancelPressed, nowMs, levels.cancelPressed ? nowMs : 0, false, false};
+    ok_ = {levels.okPressed, levels.okPressed, nowMs, levels.okPressed ? nowMs : 0, false, false};
+    plus_ = {levels.plusPressed, levels.plusPressed, nowMs, levels.plusPressed ? nowMs : 0, false, false};
+    minus_ = {levels.minusPressed, levels.minusPressed, nowMs, levels.minusPressed ? nowMs : 0, false, false};
 }
 
 ButtonEvent ButtonInput::update(ButtonLevels levels, std::uint32_t nowMs) {
@@ -43,13 +43,23 @@ ButtonEvent ButtonInput::updateButton(ButtonId id, ButtonState& state, bool rawP
         return none();
     }
 
-    if (rawPressed == state.stablePressed || !elapsedAtLeast(nowMs, state.rawChangedMs, kButtonDebounceMs)) {
+    if (rawPressed == state.stablePressed) {
+        if (state.stablePressed && !state.longEmitted &&
+            elapsedAtLeast(nowMs, state.pressedMs, kButtonLongPressMs)) {
+            state.longEmitted = true;
+            return buttonEvent(id, true);
+        }
+        return none();
+    }
+
+    if (!elapsedAtLeast(nowMs, state.rawChangedMs, kButtonDebounceMs)) {
         return none();
     }
 
     state.stablePressed = rawPressed;
     if (state.stablePressed) {
         state.pressedMs = nowMs;
+        state.longEmitted = false;
         if (id == ButtonId::Cancel && !state.cancelDownEmitted) {
             state.cancelDownEmitted = true;
             return {ButtonEventType::CancelDown, id};
@@ -57,13 +67,15 @@ ButtonEvent ButtonInput::updateButton(ButtonId id, ButtonState& state, bool rawP
         return none();
     }
 
-    const std::uint32_t heldMs = elapsedSince(nowMs, state.pressedMs);
     state.cancelDownEmitted = false;
-    return shortOrLongEvent(id, heldMs);
+    if (state.longEmitted) {
+        state.longEmitted = false;
+        return none();
+    }
+    return buttonEvent(id, false);
 }
 
-ButtonEvent ButtonInput::shortOrLongEvent(ButtonId id, std::uint32_t heldMs) {
-    const bool longPress = heldMs >= kButtonLongPressMs;
+ButtonEvent ButtonInput::buttonEvent(ButtonId id, bool longPress) {
     switch (id) {
         case ButtonId::Cancel:
             return {longPress ? ButtonEventType::CancelLong : ButtonEventType::CancelShort, id};

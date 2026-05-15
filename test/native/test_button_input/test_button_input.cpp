@@ -45,8 +45,10 @@ void test_ok_plus_and_minus_events() {
 
     updateAt(input, false, false, true, false, 1000);
     updateAt(input, false, false, true, false, 1030);
-    updateAt(input, false, false, false, false, 2500);
     TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(ButtonEventType::PlusLong),
+                            static_cast<unsigned>(updateAt(input, false, false, true, false, 2030).type));
+    updateAt(input, false, false, false, false, 2500);
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(ButtonEventType::None),
                             static_cast<unsigned>(updateAt(input, false, false, false, false, 2530).type));
 
     updateAt(input, false, false, false, true, 3000);
@@ -54,6 +56,23 @@ void test_ok_plus_and_minus_events() {
     updateAt(input, false, false, false, false, 3200);
     TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(ButtonEventType::MinusShort),
                             static_cast<unsigned>(updateAt(input, false, false, false, false, 3230).type));
+}
+
+void test_ok_long_emits_when_threshold_is_reached_before_release() {
+    ButtonInput input;
+    updateAt(input, false, true, false, false, 100);
+    updateAt(input, false, true, false, false, 130);
+
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(ButtonEventType::None),
+                            static_cast<unsigned>(updateAt(input, false, true, false, false, 1129).type));
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(ButtonEventType::OkLong),
+                            static_cast<unsigned>(updateAt(input, false, true, false, false, 1130).type));
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(ButtonEventType::None),
+                            static_cast<unsigned>(updateAt(input, false, true, false, false, 1500).type));
+
+    updateAt(input, false, false, false, false, 1600);
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(ButtonEventType::None),
+                            static_cast<unsigned>(updateAt(input, false, false, false, false, 1630).type));
 }
 
 void test_bounce_shorter_than_debounce_is_ignored() {
@@ -85,6 +104,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_cancel_down_emits_after_debounce_without_waiting_for_release);
     RUN_TEST(test_cancel_short_emits_on_release);
     RUN_TEST(test_ok_plus_and_minus_events);
+    RUN_TEST(test_ok_long_emits_when_threshold_is_reached_before_release);
     RUN_TEST(test_bounce_shorter_than_debounce_is_ignored);
     RUN_TEST(test_debounce_survives_millis_wrap);
     return UNITY_END();

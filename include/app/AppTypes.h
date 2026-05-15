@@ -8,6 +8,9 @@ namespace faucet {
 constexpr std::size_t kPresetCount = 9;
 constexpr std::size_t kFilterCount = 6;
 constexpr std::size_t kNameLength = 16;
+constexpr std::size_t kPresetNameLength = kNameLength;
+constexpr std::size_t kFilterNameMaxChars = 30;
+constexpr std::size_t kFilterNameLength = kFilterNameMaxChars * 3 + 1;
 
 enum class PresetType : std::uint8_t {
     Volume = 0,
@@ -32,12 +35,12 @@ struct PresetConfig {
     bool enabled;
     PresetType type;
     std::uint32_t value;
-    char name[kNameLength];
+    char name[kPresetNameLength];
 };
 
 struct FilterRecord {
     bool enabled;
-    char name[kNameLength];
+    char name[kFilterNameLength];
     std::uint32_t recommendDays;
     std::uint32_t maxDays;
     std::uint32_t lifeMl;

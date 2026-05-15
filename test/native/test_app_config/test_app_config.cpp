@@ -65,7 +65,7 @@ void test_default_filters_support_six_lightweight_records() {
     TEST_ASSERT_EQUAL_UINT32(0, config.filters[0].usedMl);
 
     for (std::size_t i = 1; i < kFilterCount; ++i) {
-        char name[kNameLength]{};
+        char name[kFilterNameLength]{};
         std::snprintf(name, sizeof(name), "第%u级滤芯", static_cast<unsigned>(i + 1));
         TEST_ASSERT_FALSE(config.filters[i].enabled);
         TEST_ASSERT_EQUAL_STRING(name, config.filters[i].name);
@@ -153,8 +153,8 @@ void test_sanitize_config_clamps_preset_values_by_type() {
     TEST_ASSERT_EQUAL_UINT32(kMaxVolumePresetMl, config.presets[1].value);
     TEST_ASSERT_EQUAL_UINT32(kMinTimePresetSec, config.presets[2].value);
     TEST_ASSERT_EQUAL_UINT32(kMaxTimePresetSec, config.presets[3].value);
-    TEST_ASSERT_EQUAL_CHAR('\0', config.presets[4].name[kNameLength - 1]);
-    TEST_ASSERT_EQUAL_CHAR('\0', config.filters[0].name[kNameLength - 1]);
+    TEST_ASSERT_EQUAL_CHAR('\0', config.presets[4].name[kPresetNameLength - 1]);
+    TEST_ASSERT_EQUAL_CHAR('\0', config.filters[0].name[kFilterNameLength - 1]);
     TEST_ASSERT_EQUAL_UINT32(kMaxFilterLifeDays, config.filters[0].recommendDays);
     TEST_ASSERT_EQUAL_UINT32(kMaxFilterLifeDays, config.filters[0].maxDays);
     TEST_ASSERT_EQUAL_UINT32(kMaxFilterLifeMl, config.filters[0].lifeMl);

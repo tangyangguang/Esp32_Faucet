@@ -13,9 +13,10 @@ T clampValue(T value, T minValue, T maxValue) {
     return std::min(std::max(value, minValue), maxValue);
 }
 
-void copyName(char (&dest)[kNameLength], const char* src) {
-    std::strncpy(dest, src, kNameLength - 1);
-    dest[kNameLength - 1] = '\0';
+template <std::size_t N>
+void copyName(char (&dest)[N], const char* src) {
+    std::strncpy(dest, src, N - 1);
+    dest[N - 1] = '\0';
 }
 
 void setPreset(PresetConfig& preset, bool enabled, PresetType type, std::uint32_t value, const char* name) {
@@ -66,7 +67,7 @@ SystemConfig makeDefaultConfig() {
 
     setFilter(config.filters[0], true, "第1级滤芯");
     for (std::size_t i = 1; i < kFilterCount; ++i) {
-        char name[kNameLength]{};
+        char name[kFilterNameLength]{};
         std::snprintf(name, sizeof(name), "第%u级滤芯", static_cast<unsigned>(i + 1));
         setFilter(config.filters[i], false, name);
     }
@@ -126,11 +127,11 @@ void sanitizeConfig(SystemConfig& config) {
         } else {
             preset.value = clampValue<std::uint32_t>(preset.value, kMinTimePresetSec, kMaxTimePresetSec);
         }
-        preset.name[kNameLength - 1] = '\0';
+        preset.name[kPresetNameLength - 1] = '\0';
     }
 
     for (auto& filter : config.filters) {
-        filter.name[kNameLength - 1] = '\0';
+        filter.name[kFilterNameLength - 1] = '\0';
         filter.recommendDays = clampValue<std::uint32_t>(filter.recommendDays, 0, kMaxFilterLifeDays);
         filter.maxDays = clampValue<std::uint32_t>(filter.maxDays, 0, kMaxFilterLifeDays);
         if (filter.recommendDays == 0) {

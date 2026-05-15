@@ -24,7 +24,7 @@ bool WaterLogStore::append(const WaterLogRecord& record) {
     return true;
 }
 
-std::size_t WaterLogStore::rewriteBootRelativeTimes(std::uint16_t bootId, std::uint32_t bootStartRealSec) {
+std::size_t WaterLogStore::rewriteBootRelativeTimes(std::uint32_t bootId, std::uint32_t bootStartRealSec) {
     if (!records_ || bootId == 0) {
         return 0;
     }

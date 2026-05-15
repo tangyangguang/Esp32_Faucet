@@ -922,9 +922,9 @@ void handleFiltersPage() {
         const std::uint32_t usedDays = filter.startTime >= kMinRealDateSeconds ? g_context.filters->usedDays(i, now) : 0;
         char life[32]{};
         formatLifeRange(filter, life, sizeof(life));
-        sendFmt("<tr data-filter-start='%lu' data-filter-boot='%u' data-filter-enabled='%u' data-filter-recommend-days='%lu' data-filter-max-days='%lu' data-filter-life-ml='%lu' data-filter-used-ml='%lu'><td>",
+        sendFmt("<tr data-filter-start='%lu' data-filter-boot='%lu' data-filter-enabled='%u' data-filter-recommend-days='%lu' data-filter-max-days='%lu' data-filter-life-ml='%lu' data-filter-used-ml='%lu'><td>",
                 static_cast<unsigned long>(filter.startTime),
-                static_cast<unsigned>(filter.startBootId),
+                static_cast<unsigned long>(filter.startBootId),
                 filter.enabled ? 1U : 0U,
                 static_cast<unsigned long>(filter.recommendDays),
                 static_cast<unsigned long>(filter.maxDays),

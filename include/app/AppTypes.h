@@ -47,7 +47,7 @@ struct FilterRecord {
     std::uint32_t lifeMl;
     std::uint32_t startTime;
     std::uint32_t usedMl;
-    std::uint16_t startBootId;
+    std::uint32_t startBootId;
 };
 
 struct WaterLogRecord {
@@ -56,17 +56,21 @@ struct WaterLogRecord {
     std::uint16_t durationSec;
     WaterMode mode;
     WaterResult result;
-    std::uint8_t reserved[2];
+    std::uint8_t reserved[4];
 };
 
-inline std::uint16_t waterLogBootId(const WaterLogRecord& record) {
-    return static_cast<std::uint16_t>(record.reserved[0]) |
-           static_cast<std::uint16_t>(static_cast<std::uint16_t>(record.reserved[1]) << 8U);
+inline std::uint32_t waterLogBootId(const WaterLogRecord& record) {
+    return static_cast<std::uint32_t>(record.reserved[0]) |
+           (static_cast<std::uint32_t>(record.reserved[1]) << 8U) |
+           (static_cast<std::uint32_t>(record.reserved[2]) << 16U) |
+           (static_cast<std::uint32_t>(record.reserved[3]) << 24U);
 }
 
-inline void markWaterLogBootId(WaterLogRecord& record, std::uint16_t bootId) {
+inline void markWaterLogBootId(WaterLogRecord& record, std::uint32_t bootId) {
     record.reserved[0] = static_cast<std::uint8_t>(bootId & 0xFFU);
     record.reserved[1] = static_cast<std::uint8_t>((bootId >> 8U) & 0xFFU);
+    record.reserved[2] = static_cast<std::uint8_t>((bootId >> 16U) & 0xFFU);
+    record.reserved[3] = static_cast<std::uint8_t>((bootId >> 24U) & 0xFFU);
 }
 
 inline void clearWaterLogBootId(WaterLogRecord& record) {

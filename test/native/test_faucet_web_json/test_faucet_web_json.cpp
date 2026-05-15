@@ -107,8 +107,8 @@ void test_calibration_json_forbids_remote_calibration_start() {
 
 void test_water_logs_json_is_paged_and_read_only() {
     WaterLogRecord records[2]{
-        {100, 1500, 30, WaterMode::Volume, WaterResult::Completed, {0, 0}},
-        {200, 300, 10, WaterMode::Time, WaterResult::StoppedByUser, {0, 0}},
+        {100, 1500, 30, WaterMode::Volume, WaterResult::Completed, {0, 0, 0, 0}},
+        {200, 300, 10, WaterMode::Time, WaterResult::StoppedByUser, {0, 0, 0, 0}},
     };
     char json[512]{};
 

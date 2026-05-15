@@ -26,7 +26,7 @@ struct AppTickInput {
     std::uint32_t nowSeconds;
     PeriodKeys periodKeys;
     bool timeSynced;
-    std::uint16_t bootId;
+    std::uint32_t bootId;
 };
 
 enum class LocalUiMode : std::uint8_t {
@@ -72,13 +72,13 @@ private:
                            std::uint32_t nowMs,
                            std::uint32_t nowSeconds,
                            bool timeSynced,
-                           std::uint16_t bootId);
-    void startSelectedPreset(std::uint32_t nowMs, std::uint32_t nowSeconds, bool timeSynced, std::uint16_t bootId);
+                           std::uint32_t bootId);
+    void startSelectedPreset(std::uint32_t nowMs, std::uint32_t nowSeconds, bool timeSynced, std::uint32_t bootId);
     void exitResultDisplay(std::uint32_t nowMs);
     void toggleAdjustmentStep();
     void syncFlow(std::uint32_t nowUs);
     void syncValve(std::uint32_t nowMs);
-    void processResult(std::uint32_t startTime, const PeriodKeys& periodKeys, bool startTimeSynced, std::uint16_t bootId);
+    void processResult(std::uint32_t startTime, const PeriodKeys& periodKeys, bool startTimeSynced, std::uint32_t bootId);
 
     SystemConfig config_;
     WaterController water_;
@@ -93,7 +93,7 @@ private:
     std::uint32_t lastFlowVolumeMl_;
     std::uint32_t activeStartTimeSec_;
     bool activeStartTimeSynced_;
-    std::uint16_t activeStartBootId_;
+    std::uint32_t activeStartBootId_;
     bool lastValveDesiredOpen_;
     bool calibrationValveOpen_;
     bool lastLogWriteOk_;

@@ -26,7 +26,7 @@ public:
     WaterLogStore(WaterLogRecord* records, std::size_t capacity);
 
     bool append(const WaterLogRecord& record);
-    std::size_t rewriteBootRelativeTimes(std::uint16_t bootId, std::uint32_t bootStartRealSec);
+    std::size_t rewriteBootRelativeTimes(std::uint32_t bootId, std::uint32_t bootStartRealSec);
     std::size_t readPage(std::size_t pageIndex,
                          std::uint16_t pageSize,
                          WaterLogRecord* output,

@@ -73,7 +73,7 @@ void AppController::tick(const AppTickInput& input) {
         }
         std::uint32_t resultStartTime = activeStartTimeSec_;
         bool resultStartSynced = activeStartTimeSynced_;
-        std::uint16_t resultBootId = activeStartBootId_;
+        std::uint32_t resultBootId = activeStartBootId_;
         const std::uint32_t uptimeSec = input.nowMs / 1000UL;
         if (!resultStartSynced && input.timeSynced && input.nowSeconds >= uptimeSec) {
             resultStartTime = input.nowSeconds - uptimeSec + activeStartTimeSec_;
@@ -167,7 +167,7 @@ void AppController::handleButtonEvent(ButtonEvent event,
                                       std::uint32_t nowMs,
                                       std::uint32_t nowSeconds,
                                       bool timeSynced,
-                                      std::uint16_t bootId) {
+                                      std::uint32_t bootId) {
     if (localMode_ == LocalUiMode::Result && event.type != ButtonEventType::None) {
         if ((event.type == ButtonEventType::CancelDown || event.type == ButtonEventType::CancelShort ||
              event.type == ButtonEventType::CancelLong) &&
@@ -252,7 +252,7 @@ void AppController::handleButtonEvent(ButtonEvent event,
 void AppController::startSelectedPreset(std::uint32_t nowMs,
                                         std::uint32_t nowSeconds,
                                         bool timeSynced,
-                                        std::uint16_t bootId) {
+                                        std::uint32_t bootId) {
     if (water_.confirmStart(nowMs)) {
         activeStartTimeSec_ = nowSeconds;
         activeStartTimeSynced_ = timeSynced;
@@ -300,7 +300,7 @@ void AppController::syncValve(std::uint32_t nowMs) {
 void AppController::processResult(std::uint32_t startTime,
                                   const PeriodKeys& periodKeys,
                                   bool startTimeSynced,
-                                  std::uint16_t bootId) {
+                                  std::uint32_t bootId) {
     const WaterTaskResult result = water_.result();
     if (!result.valid) {
         return;
@@ -312,7 +312,7 @@ void AppController::processResult(std::uint32_t startTime,
         result.durationSec,
         result.mode,
         result.result,
-        {0, 0},
+        {0, 0, 0, 0},
     };
     if (!startTimeSynced) {
         markWaterLogBootId(record, bootId);

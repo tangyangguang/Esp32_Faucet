@@ -160,7 +160,7 @@ void test_app_controller_offline_completion_marks_unknown_time_with_boot_id() {
     TEST_ASSERT_EQUAL_size_t(1, logs.records.size());
     TEST_ASSERT_EQUAL_UINT32(1500, logs.records[0].volumeMl);
     TEST_ASSERT_EQUAL_UINT32(1, logs.records[0].startTime);
-    TEST_ASSERT_EQUAL_UINT16(42, waterLogBootId(logs.records[0]));
+    TEST_ASSERT_EQUAL_UINT32(42, waterLogBootId(logs.records[0]));
 }
 
 void test_app_controller_offline_start_sync_before_completion_writes_real_time() {
@@ -187,7 +187,7 @@ void test_app_controller_offline_start_sync_before_completion_writes_real_time()
 
     TEST_ASSERT_EQUAL_size_t(1, logs.records.size());
     TEST_ASSERT_EQUAL_UINT32(815500000, logs.records[0].startTime);
-    TEST_ASSERT_EQUAL_UINT16(0, waterLogBootId(logs.records[0]));
+    TEST_ASSERT_EQUAL_UINT32(0, waterLogBootId(logs.records[0]));
 }
 
 void test_app_controller_pause_resume_then_completion_updates_persistence_once() {

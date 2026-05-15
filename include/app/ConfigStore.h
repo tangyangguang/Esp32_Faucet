@@ -46,7 +46,6 @@ public:
     void loadFilterRuntime(FilterRecord (&records)[kFilterCount]);
     bool saveFilterRuntime(const FilterRecord (&records)[kFilterCount]);
     bool resetFilterRuntime();
-    std::uint16_t allocateBootId();
 
 private:
     ConfigBackend& backend_;

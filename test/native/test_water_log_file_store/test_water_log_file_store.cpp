@@ -91,7 +91,7 @@ WaterLogRecord makeRecord(std::uint32_t startTime, std::uint32_t volumeMl) {
         10,
         WaterMode::Volume,
         WaterResult::Completed,
-        {0, 0},
+        {0, 0, 0, 0},
     };
 }
 
@@ -252,9 +252,9 @@ void test_file_log_rewrites_current_boot_relative_times() {
     WaterLogRecord page[2]{};
     TEST_ASSERT_EQUAL_size_t(2, store.readPage(0, 2, page, 2));
     TEST_ASSERT_EQUAL_UINT32(31, page[0].startTime);
-    TEST_ASSERT_EQUAL_UINT16(11, waterLogBootId(page[0]));
+    TEST_ASSERT_EQUAL_UINT32(11, waterLogBootId(page[0]));
     TEST_ASSERT_EQUAL_UINT32(815500021, page[1].startTime);
-    TEST_ASSERT_EQUAL_UINT16(0, waterLogBootId(page[1]));
+    TEST_ASSERT_EQUAL_UINT32(0, waterLogBootId(page[1]));
 }
 
 int main(int argc, char** argv) {

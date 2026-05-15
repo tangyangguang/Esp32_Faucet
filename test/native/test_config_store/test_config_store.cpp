@@ -359,10 +359,10 @@ void test_filter_runtime_round_trips_start_and_used_only() {
     store.loadFilterRuntime(loaded.filters);
     TEST_ASSERT_EQUAL_UINT32(111, loaded.filters[0].startTime);
     TEST_ASSERT_EQUAL_UINT32(4000000000UL, loaded.filters[0].usedMl);
-    TEST_ASSERT_EQUAL_UINT16(9, loaded.filters[0].startBootId);
+    TEST_ASSERT_EQUAL_UINT32(9, loaded.filters[0].startBootId);
     TEST_ASSERT_EQUAL_UINT32(222, loaded.filters[1].startTime);
     TEST_ASSERT_EQUAL_UINT32(333, loaded.filters[1].usedMl);
-    TEST_ASSERT_EQUAL_UINT16(10, loaded.filters[1].startBootId);
+    TEST_ASSERT_EQUAL_UINT32(10, loaded.filters[1].startBootId);
     TEST_ASSERT_EQUAL_STRING("第1级滤芯", loaded.filters[0].name);
     TEST_ASSERT_EQUAL_UINT32(180, loaded.filters[0].recommendDays);
     TEST_ASSERT_EQUAL_UINT32(180, loaded.filters[0].maxDays);

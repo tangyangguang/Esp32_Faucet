@@ -16,7 +16,7 @@ constexpr std::uint8_t kCols = 16;
 constexpr std::uint8_t kRows = 2;
 constexpr std::uint8_t kLineAddress[kRows] = {0x00, 0x40};
 constexpr std::uint32_t kReconnectRetryMs = 3000;
-constexpr std::uint32_t kHealthyReinitMs = 15000;
+constexpr std::uint32_t kHealthyReinitMs = 5000;
 
 bool sameFrame(const DisplayFrame& a, const DisplayFrame& b) {
     return a.page == b.page && a.on == b.on && std::strncmp(a.line1, b.line1, kDisplayLineLength) == 0 &&

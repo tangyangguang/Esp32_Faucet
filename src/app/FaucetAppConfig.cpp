@@ -145,7 +145,7 @@ bool addCoreFields(const SystemConfig& defaults) {
     ok = Esp32BaseAppConfig::addInt({kGroupLocal, kConfigNs, kKeyLcdAddress, "LCD I2C 地址", defaults.lcdI2cAddress, 0x03, 0x77, 1, nullptr, "保存后需重启，重启后重新探测 LCD。", true, nullptr}) && ok;
     ok = Esp32BaseAppConfig::addBool({kGroupLocal, kConfigNs, kKeyBeep, "蜂鸣器提示音", defaults.beepEnabled, "控制按键、完成和异常提示音。立即生效。", false, nullptr}) && ok;
 
-    ok = Esp32BaseAppConfig::addDecimal({kGroupMetering, kConfigNs, kKeyPulseMilli, "流量计校准系数", static_cast<std::int32_t>(defaults.pulsePerMl * 1000.0f), static_cast<std::int32_t>(kMinPulsePerMl * 1000.0f), static_cast<std::int32_t>(kMaxPulsePerMl * 1000.0f), 1, 0, "脉冲/L", "每升水对应的流量计脉冲数。通常通过出水记录校准自动更新；也可在确认规格或校准结果后手动修正。", false, nullptr}) && ok;
+    ok = Esp32BaseAppConfig::addDecimal({kGroupMetering, kConfigNs, kKeyPulseMilli, "流量计校准系数", static_cast<std::int32_t>(defaults.pulsePerMl * 1000.0f), static_cast<std::int32_t>(kMinPulsePerMl * 1000.0f), static_cast<std::int32_t>(kMaxPulsePerMl * 1000.0f), 1, 0, "脉冲/L", "每升水对应的脉冲数；通常由记录校准更新，也可手动修正。", false, nullptr}) && ok;
 
     return ok;
 }

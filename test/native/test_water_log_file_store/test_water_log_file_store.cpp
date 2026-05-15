@@ -160,6 +160,20 @@ void test_file_log_persists_header_and_records_across_instances() {
     TEST_ASSERT_EQUAL_UINT32(100, page[1].startTime);
 }
 
+void test_file_log_reinitializes_capacity_mismatch() {
+    MemoryFileBackend backend;
+    {
+        WaterLogFileStore store(backend, "/water.bin", 5);
+        TEST_ASSERT_TRUE(store.begin());
+        TEST_ASSERT_TRUE(store.append(makeRecord(100, 1000)));
+    }
+
+    WaterLogFileStore loaded(backend, "/water.bin", 4);
+    TEST_ASSERT_TRUE(loaded.begin());
+    TEST_ASSERT_EQUAL_size_t(0, loaded.count());
+    TEST_ASSERT_EQUAL_size_t(4, loaded.capacity());
+}
+
 void test_file_log_reinitializes_corrupt_header() {
     MemoryFileBackend backend;
     const std::uint8_t bad[4] = {1, 2, 3, 4};
@@ -290,6 +304,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_file_log_appends_and_reads_newest_first);
     RUN_TEST(test_file_log_rolls_after_capacity);
     RUN_TEST(test_file_log_persists_header_and_records_across_instances);
+    RUN_TEST(test_file_log_reinitializes_capacity_mismatch);
     RUN_TEST(test_file_log_reinitializes_corrupt_header);
     RUN_TEST(test_file_log_clear_keeps_file_ready);
     RUN_TEST(test_file_log_reports_zero_after_external_remove_and_recovers_on_append);

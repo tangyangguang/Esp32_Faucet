@@ -64,13 +64,15 @@ void test_config_json_contains_safety_and_display_settings() {
 void test_presets_json_escapes_names_and_lists_nine_presets() {
     char json[1400]{};
     SystemConfig config = makeDefaultConfig();
-    std::strncpy(config.presets[2].name, "A\"B", sizeof(config.presets[2].name) - 1);
+    std::strncpy(config.presets[2].name, "A\"B\nC\t", sizeof(config.presets[2].name) - 1);
 
     TEST_ASSERT_TRUE(writePresetsJson(config.presets, json, sizeof(json)));
 
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"presets\""));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"index\":8"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "A\\\"B"));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\\nC\\t"));
+    TEST_ASSERT_NULL(std::strchr(json, '\n'));
 }
 
 void test_filters_json_contains_runtime_fields() {

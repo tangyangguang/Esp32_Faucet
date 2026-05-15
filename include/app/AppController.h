@@ -25,6 +25,7 @@ struct AppTickInput {
     std::uint32_t nowUs;
     std::uint32_t nowSeconds;
     PeriodKeys periodKeys;
+    bool periodKeysValid;
     bool timeSynced;
     std::uint32_t bootId;
 };
@@ -78,7 +79,11 @@ private:
     void toggleAdjustmentStep();
     void syncFlow(std::uint32_t nowUs);
     void syncValve(std::uint32_t nowMs);
-    void processResult(std::uint32_t startTime, const PeriodKeys& periodKeys, bool startTimeSynced, std::uint32_t bootId);
+    void processResult(std::uint32_t startTime,
+                       const PeriodKeys& periodKeys,
+                       bool periodKeysValid,
+                       bool startTimeSynced,
+                       std::uint32_t bootId);
 
     SystemConfig config_;
     WaterController water_;

@@ -342,6 +342,24 @@ void test_statistics_runtime_rolls_loaded_periods() {
     TEST_ASSERT_EQUAL_UINT32(20260506, loaded.lastDayKey);
 }
 
+void test_statistics_runtime_future_version_uses_defaults_without_erasing_storage() {
+    FakeConfigBackend backend;
+    backend.setInt("faucet_stat", "ver", 255);
+    backend.setStr("faucet_stat", "today", "123");
+    backend.setStr("faucet_stat", "total", "456");
+    ConfigStore store(backend);
+
+    const StatisticsRecord loaded = store.loadStatistics({20260506, 202619, 202605});
+
+    TEST_ASSERT_EQUAL_UINT32(0, loaded.todayMl);
+    TEST_ASSERT_EQUAL_UINT32(0, loaded.totalMl);
+    TEST_ASSERT_EQUAL_UINT32(20260506, loaded.lastDayKey);
+    TEST_ASSERT_EQUAL_INT32(255, backend.getInt("faucet_stat", "ver", 0));
+    char text[16]{};
+    TEST_ASSERT_TRUE(backend.getStr("faucet_stat", "today", text, sizeof(text), ""));
+    TEST_ASSERT_EQUAL_STRING("123", text);
+}
+
 void test_filter_runtime_round_trips_start_and_used_only() {
     FakeConfigBackend backend;
     ConfigStore store(backend);
@@ -369,6 +387,23 @@ void test_filter_runtime_round_trips_start_and_used_only() {
     TEST_ASSERT_EQUAL_UINT32(0, loaded.filters[0].lifeMl);
 }
 
+void test_filter_runtime_future_version_keeps_current_records_and_storage() {
+    FakeConfigBackend backend;
+    backend.setInt("faucet_run", "ver", 255);
+    backend.setStr("faucet_run", "f0_used", "123456");
+    ConfigStore store(backend);
+    SystemConfig config = makeDefaultConfig();
+    config.filters[0].usedMl = 77;
+
+    store.loadFilterRuntime(config.filters);
+
+    TEST_ASSERT_EQUAL_UINT32(77, config.filters[0].usedMl);
+    TEST_ASSERT_EQUAL_INT32(255, backend.getInt("faucet_run", "ver", 0));
+    char text[16]{};
+    TEST_ASSERT_TRUE(backend.getStr("faucet_run", "f0_used", text, sizeof(text), ""));
+    TEST_ASSERT_EQUAL_STRING("123456", text);
+}
+
 int main(int argc, char** argv) {
     (void)argc;
     (void)argv;
@@ -384,6 +419,8 @@ int main(int argc, char** argv) {
     RUN_TEST(test_config_save_reports_backend_failures);
     RUN_TEST(test_statistics_runtime_round_trips_uint32_values);
     RUN_TEST(test_statistics_runtime_rolls_loaded_periods);
+    RUN_TEST(test_statistics_runtime_future_version_uses_defaults_without_erasing_storage);
     RUN_TEST(test_filter_runtime_round_trips_start_and_used_only);
+    RUN_TEST(test_filter_runtime_future_version_keeps_current_records_and_storage);
     return UNITY_END();
 }

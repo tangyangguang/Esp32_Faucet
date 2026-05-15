@@ -80,11 +80,13 @@ void AppController::tick(const AppTickInput& input) {
             resultStartSynced = true;
             resultBootId = 0;
         }
-        processResult(resultStartTime, input.periodKeys, resultStartSynced, resultBootId);
+        processResult(resultStartTime, input.periodKeys, input.periodKeysValid, resultStartSynced, resultBootId);
         water_.clearResult();
     }
 
-    statistics_.rollPeriods(input.periodKeys);
+    if (input.periodKeysValid) {
+        statistics_.rollPeriods(input.periodKeys);
+    }
 }
 
 AppSnapshot AppController::snapshot() const {
@@ -299,6 +301,7 @@ void AppController::syncValve(std::uint32_t nowMs) {
 
 void AppController::processResult(std::uint32_t startTime,
                                   const PeriodKeys& periodKeys,
+                                  bool periodKeysValid,
                                   bool startTimeSynced,
                                   std::uint32_t bootId) {
     const WaterTaskResult result = water_.result();
@@ -319,7 +322,9 @@ void AppController::processResult(std::uint32_t startTime,
     }
 
     lastLogWriteOk_ = logs_.append(record);
-    statistics_.addWater(result.volumeMl, periodKeys);
+    if (periodKeysValid) {
+        statistics_.addWater(result.volumeMl, periodKeys);
+    }
     filters_.addWater(result.volumeMl);
     persistenceDirty_ = true;
     pendingBeep_ = result.result == WaterResult::Completed ? BeepPattern::Done : BeepPattern::Error;

@@ -18,6 +18,8 @@ std::uint32_t dutyFromPercent(std::uint8_t percent) {
 PwmValveHardware::PwmValveHardware(std::uint8_t pin, std::uint8_t channel) : pin_(pin), channel_(channel) {}
 
 void PwmValveHardware::begin() {
+    pinMode(pin_, OUTPUT);
+    digitalWrite(pin_, LOW);
     ledcSetup(channel_, kValvePwmFrequencyHz, kLedcResolutionBits);
     ledcAttachPin(pin_, channel_);
     ledcWrite(channel_, 0);

@@ -95,10 +95,34 @@ const char* presetTypeName(PresetType type) {
 void appendEscaped(JsonWriter& writer, const char* text) {
     writer.append("\"");
     for (const char* p = text ? text : ""; *p; ++p) {
-        if (*p == '"' || *p == '\\') {
-            writer.append("\\%c", *p);
-        } else if (static_cast<unsigned char>(*p) >= 0x20) {
-            writer.append("%c", *p);
+        const unsigned char ch = static_cast<unsigned char>(*p);
+        switch (ch) {
+            case '"':
+            case '\\':
+                writer.append("\\%c", ch);
+                break;
+            case '\b':
+                writer.append("\\b");
+                break;
+            case '\f':
+                writer.append("\\f");
+                break;
+            case '\n':
+                writer.append("\\n");
+                break;
+            case '\r':
+                writer.append("\\r");
+                break;
+            case '\t':
+                writer.append("\\t");
+                break;
+            default:
+                if (ch < 0x20) {
+                    writer.append("\\u%04x", static_cast<unsigned>(ch));
+                } else {
+                    writer.append("%c", ch);
+                }
+                break;
         }
     }
     writer.append("\"");

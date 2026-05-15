@@ -1,5 +1,7 @@
 #include "drivers/Lcd1602Display.h"
 
+#include "app/TimeUtils.h"
+
 #include <Arduino.h>
 #include <Wire.h>
 
@@ -38,7 +40,6 @@ Lcd1602Display::Lcd1602Display(std::uint8_t sdaPin, std::uint8_t sclPin)
 
 bool Lcd1602Display::begin(std::uint8_t address) {
     address_ = address;
-    Wire.begin(sdaPin_, sclPin_);
     return initialize();
 }
 
@@ -79,7 +80,7 @@ bool Lcd1602Display::present() const {
 void Lcd1602Display::apply(const DisplayFrame& frame) {
     const std::uint32_t nowMs = millis();
     if (!present_) {
-        if (nowMs - lastRetryMs_ >= kReconnectRetryMs) {
+        if (elapsedAtLeast(nowMs, lastRetryMs_, kReconnectRetryMs)) {
             lastRetryMs_ = nowMs;
             initialize();
         }
@@ -156,7 +157,7 @@ void Lcd1602Display::markBusFailure() {
 }
 
 bool Lcd1602Display::shouldReinitialize(std::uint32_t nowMs, const DisplayFrame& frame) const {
-    return frame.on && nowMs - lastInitMs_ >= kHealthyReinitMs;
+    return frame.on && elapsedAtLeast(nowMs, lastInitMs_, kHealthyReinitMs);
 }
 
 void Lcd1602Display::setBacklight(bool on) {

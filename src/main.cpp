@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include <Esp32Base.h>
+#include <Wire.h>
 
 #include "app/AppController.h"
 #include "app/BeepDriver.h"
@@ -136,6 +137,10 @@ void applyFileLogPolicy() {
 #endif
 }
 
+void initializeI2cBus() {
+    Wire.begin(faucet::kPinI2cSda, faucet::kPinI2cScl);
+}
+
 const char* configLoadStatusName(faucet::ConfigStore::LoadStatus status) {
     switch (status) {
         case faucet::ConfigStore::LoadStatus::DefaultsNoVersion:
@@ -215,11 +220,6 @@ std::uint32_t localSecondsFromUnix(std::uint32_t timestamp) {
            static_cast<std::uint32_t>(localTime.tm_min) * 60UL + static_cast<std::uint32_t>(localTime.tm_sec);
 }
 
-faucet::PeriodKeys makeFallbackPeriodKeys(std::uint32_t nowSeconds) {
-    const std::uint32_t day = nowSeconds / 86400UL;
-    return faucet::PeriodKeys{day, day / 7UL, day / 31UL};
-}
-
 std::uint32_t currentSeconds() {
 #if ESP32BASE_ENABLE_NTP
     const Esp32BaseNtp::TimeSnapshot time = Esp32BaseNtp::snapshot();
@@ -249,7 +249,7 @@ void applyRuntimeSettings(const faucet::SystemConfig& config) {
     g_lcd.begin(config.lcdI2cAddress);
 }
 
-faucet::PeriodKeys currentPeriodKeys(std::uint32_t nowSeconds) {
+bool currentPeriodKeys(std::uint32_t nowSeconds, faucet::PeriodKeys& keys) {
     if (nowSeconds >= faucet::kMinRealDateSeconds) {
         std::uint32_t day = nowSeconds / 86400UL;
         std::uint16_t year = 2000;
@@ -279,17 +279,20 @@ faucet::PeriodKeys currentPeriodKeys(std::uint32_t nowSeconds) {
             static_cast<std::uint32_t>(year) * 10000UL + static_cast<std::uint32_t>(month) * 100UL + monthDay;
         const std::uint32_t weekKey = nowSeconds / 86400UL / 7UL;
         const std::uint32_t monthKey = static_cast<std::uint32_t>(year) * 100UL + month;
-        return faucet::PeriodKeys{dayKey, weekKey, monthKey};
+        keys = faucet::PeriodKeys{dayKey, weekKey, monthKey};
+        return true;
     }
     const faucet::RtcDateTime now = g_rtc.readNow();
     if (!now.valid) {
-        return makeFallbackPeriodKeys(nowSeconds);
+        keys = faucet::PeriodKeys{0, 0, 0};
+        return false;
     }
     const std::uint32_t rtcSeconds =
         daysSince2000(now.year, now.month, now.day) * 86400UL + static_cast<std::uint32_t>(now.hour) * 3600UL +
         static_cast<std::uint32_t>(now.minute) * 60UL + static_cast<std::uint32_t>(now.second);
     if (rtcSeconds < faucet::kMinRealDateSeconds) {
-        return makeFallbackPeriodKeys(nowSeconds);
+        keys = faucet::PeriodKeys{0, 0, 0};
+        return false;
     }
 
     const std::uint32_t dayKey = static_cast<std::uint32_t>(now.year) * 10000UL +
@@ -297,19 +300,23 @@ faucet::PeriodKeys currentPeriodKeys(std::uint32_t nowSeconds) {
     const std::uint32_t weekKey = daysSince2000(now.year, now.month, now.day) / 7UL;
     const std::uint32_t monthKey =
         static_cast<std::uint32_t>(now.year) * 100UL + static_cast<std::uint32_t>(now.month);
-    return faucet::PeriodKeys{dayKey, weekKey, monthKey};
+    keys = faucet::PeriodKeys{dayKey, weekKey, monthKey};
+    return true;
 }
 
 void handleTimeSynced(const Esp32BaseNtp::TimeSnapshot& time);
 
 void initializeApplication() {
+    initializeI2cBus();
     g_rtc.begin();
     g_config = g_configStore.loadSystemConfig();
     logSystemConfigStatus();
     g_logs.setFileStore(g_waterLogFile.begin() ? &g_waterLogFile : nullptr);
     checkFileSystemCapacity();
     const std::uint32_t nowSeconds = currentSeconds();
-    g_statistics = faucet::StatisticsStore(g_configStore.loadStatistics(currentPeriodKeys(nowSeconds)));
+    faucet::PeriodKeys periodKeys{};
+    currentPeriodKeys(nowSeconds, periodKeys);
+    g_statistics = faucet::StatisticsStore(g_configStore.loadStatistics(periodKeys));
     g_configStore.loadFilterRuntime(g_config.filters);
     g_filters = new (std::nothrow) faucet::FilterStore(g_config.filters);
     if (!g_filters) {
@@ -426,12 +433,15 @@ void runApplicationTick() {
     }
 
     const std::uint32_t nowSeconds = currentSeconds();
+    faucet::PeriodKeys periodKeys{};
+    const bool periodKeysValid = currentPeriodKeys(nowSeconds, periodKeys);
     const faucet::AppTickInput input{
         levels,
         nowMs,
         nowUs,
         nowSeconds,
-        currentPeriodKeys(nowSeconds),
+        periodKeys,
+        periodKeysValid,
         nowSeconds >= faucet::kMinRealDateSeconds,
         currentBootId(),
     };
@@ -477,7 +487,9 @@ void runApplicationTick() {
         ESP32BASE_LOG_W("app", "factory reset requested from local buttons");
         g_valveHardware.apply(faucet::ValveOutput{faucet::ValveState::Closed, false, 0});
         g_configStore.resetSystemConfig();
-        g_configStore.resetStatistics(currentPeriodKeys(currentSeconds()));
+        faucet::PeriodKeys periodKeys{};
+        currentPeriodKeys(currentSeconds(), periodKeys);
+        g_configStore.resetStatistics(periodKeys);
         g_configStore.resetFilterRuntime();
         g_waterLogFile.clear();
         delay(200);

@@ -36,15 +36,15 @@ void StatisticsStore::addWater(std::uint32_t volumeMl, const PeriodKeys& keys) {
 }
 
 void StatisticsStore::rollPeriods(const PeriodKeys& keys) {
-    if (record_.lastDayKey != keys.dayKey) {
+    if (keys.dayKey > record_.lastDayKey) {
         record_.todayMl = 0;
         record_.lastDayKey = keys.dayKey;
     }
-    if (record_.lastWeekKey != keys.weekKey) {
+    if (keys.weekKey > record_.lastWeekKey) {
         record_.weekMl = 0;
         record_.lastWeekKey = keys.weekKey;
     }
-    if (record_.lastMonthKey != keys.monthKey) {
+    if (keys.monthKey > record_.lastMonthKey) {
         record_.monthMl = 0;
         record_.lastMonthKey = keys.monthKey;
     }

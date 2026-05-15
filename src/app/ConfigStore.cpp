@@ -63,6 +63,10 @@ bool isKnownSystemConfigVersion(std::int32_t version) {
     return version >= 1 && version <= kConfigVersion;
 }
 
+bool isReadableRuntimeVersion(std::int32_t version) {
+    return version >= 1 && version <= kRuntimeVersion;
+}
+
 void loadCommonSystemConfig(ConfigBackend& backend, SystemConfig& config) {
     config.confirmTimeoutSec =
         static_cast<std::uint32_t>(backend.getInt(kConfigNs, "confirm_s", toInt(config.confirmTimeoutSec)));
@@ -300,7 +304,8 @@ StatisticsRecord ConfigStore::loadStatistics(const PeriodKeys& defaultKeys) {
     record.lastDayKey = defaultKeys.dayKey;
     record.lastWeekKey = defaultKeys.weekKey;
     record.lastMonthKey = defaultKeys.monthKey;
-    if (backend_.getInt(kStatNs, "ver", 0) != kRuntimeVersion) {
+    const std::int32_t version = backend_.getInt(kStatNs, "ver", 0);
+    if (!isReadableRuntimeVersion(version)) {
         return record;
     }
 
@@ -314,7 +319,11 @@ StatisticsRecord ConfigStore::loadStatistics(const PeriodKeys& defaultKeys) {
 
     StatisticsStore store(record);
     store.rollPeriods(defaultKeys);
-    return store.record();
+    record = store.record();
+    if (version != kRuntimeVersion) {
+        saveStatistics(record);
+    }
+    return record;
 }
 
 bool ConfigStore::saveStatistics(const StatisticsRecord& record) {
@@ -338,7 +347,8 @@ bool ConfigStore::resetStatistics(const PeriodKeys& keys) {
 }
 
 void ConfigStore::loadFilterRuntime(FilterRecord (&records)[kFilterCount]) {
-    if (backend_.getInt(kRunNs, "ver", 0) != kRuntimeVersion) {
+    const std::int32_t version = backend_.getInt(kRunNs, "ver", 0);
+    if (!isReadableRuntimeVersion(version)) {
         return;
     }
 
@@ -350,6 +360,9 @@ void ConfigStore::loadFilterRuntime(FilterRecord (&records)[kFilterCount]) {
         records[i].usedMl = getU32(backend_, kRunNs, key, records[i].usedMl);
         filterKey(key, sizeof(key), i, "boot");
         records[i].startBootId = getU32(backend_, kRunNs, key, records[i].startBootId);
+    }
+    if (version != kRuntimeVersion) {
+        saveFilterRuntime(records);
     }
 }
 

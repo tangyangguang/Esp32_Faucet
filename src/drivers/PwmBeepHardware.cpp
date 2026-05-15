@@ -17,6 +17,8 @@ PwmBeepHardware::PwmBeepHardware(std::uint8_t pin, std::uint8_t channel)
     : pin_(pin), channel_(channel), currentFrequencyHz_(0) {}
 
 void PwmBeepHardware::begin() {
+    pinMode(pin_, OUTPUT);
+    digitalWrite(pin_, LOW);
     ledcSetup(channel_, 2000, kLedcResolutionBits);
     ledcAttachPin(pin_, channel_);
     ledcWrite(channel_, 0);

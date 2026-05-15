@@ -29,6 +29,7 @@ AppTickInput input(ButtonLevels levels, std::uint32_t nowMs, std::uint32_t nowUs
         nowUs,
         nowSeconds,
         {20260506, 202619, 202605},
+        true,
         nowSeconds >= kMinRealDateSeconds,
         7,
     };
@@ -41,6 +42,7 @@ AppTickInput offlineInput(ButtonLevels levels, std::uint32_t nowMs, std::uint32_
         nowUs,
         uptimeSeconds,
         {0, 0, 0},
+        false,
         false,
         42,
     };
@@ -161,6 +163,9 @@ void test_app_controller_offline_completion_marks_unknown_time_with_boot_id() {
     TEST_ASSERT_EQUAL_UINT32(1500, logs.records[0].volumeMl);
     TEST_ASSERT_EQUAL_UINT32(1, logs.records[0].startTime);
     TEST_ASSERT_EQUAL_UINT32(42, waterLogBootId(logs.records[0]));
+    TEST_ASSERT_EQUAL_UINT32(0, statistics.record().todayMl);
+    TEST_ASSERT_EQUAL_UINT32(0, statistics.record().totalMl);
+    TEST_ASSERT_EQUAL_UINT32(1500, filters.record(0).usedMl);
 }
 
 void test_app_controller_offline_start_sync_before_completion_writes_real_time() {

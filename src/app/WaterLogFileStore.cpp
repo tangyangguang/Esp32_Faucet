@@ -200,7 +200,7 @@ bool WaterLogFileStore::loadHeader() {
     }
 
     if (header.magic != kLogMagic || header.version != kLogVersion ||
-        header.recordSize != sizeof(WaterLogRecord) || header.capacity == 0 ||
+        header.recordSize != sizeof(WaterLogRecord) || header.capacity == 0 || header.capacity != capacity_ ||
         header.count > header.capacity || header.oldestIndex >= header.capacity) {
         return false;
     }

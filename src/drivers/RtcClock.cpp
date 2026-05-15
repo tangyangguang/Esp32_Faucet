@@ -43,7 +43,6 @@ RtcClock::RtcClock(std::uint8_t sdaPin, std::uint8_t sclPin)
     : sdaPin_(sdaPin), sclPin_(sclPin), present_(false) {}
 
 bool RtcClock::begin() {
-    Wire.begin(sdaPin_, sclPin_);
     Wire.beginTransmission(kDs3231Address);
     present_ = Wire.endTransmission() == 0;
     return present_;

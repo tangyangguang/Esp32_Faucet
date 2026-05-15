@@ -45,6 +45,27 @@ void test_statistics_rolls_day_week_and_month_independently() {
     TEST_ASSERT_EQUAL_UINT32(10000, store.record().totalMl);
 }
 
+void test_statistics_ignores_period_keys_that_move_backwards() {
+    StatisticsRecord record{};
+    record.todayMl = 100;
+    record.weekMl = 200;
+    record.monthMl = 300;
+    record.totalMl = 400;
+    record.lastDayKey = 20260506;
+    record.lastWeekKey = 202619;
+    record.lastMonthKey = 202605;
+    StatisticsStore store(record);
+
+    store.rollPeriods({20260505, 202618, 202604});
+
+    TEST_ASSERT_EQUAL_UINT32(100, store.record().todayMl);
+    TEST_ASSERT_EQUAL_UINT32(200, store.record().weekMl);
+    TEST_ASSERT_EQUAL_UINT32(300, store.record().monthMl);
+    TEST_ASSERT_EQUAL_UINT32(20260506, store.record().lastDayKey);
+    TEST_ASSERT_EQUAL_UINT32(202619, store.record().lastWeekKey);
+    TEST_ASSERT_EQUAL_UINT32(202605, store.record().lastMonthKey);
+}
+
 void test_statistics_saturates_total_and_periods() {
     StatisticsRecord record{};
     record.todayMl = std::numeric_limits<std::uint32_t>::max() - 1;
@@ -134,6 +155,7 @@ int main(int argc, char** argv) {
     UNITY_BEGIN();
     RUN_TEST(test_statistics_adds_water_to_all_periods);
     RUN_TEST(test_statistics_rolls_day_week_and_month_independently);
+    RUN_TEST(test_statistics_ignores_period_keys_that_move_backwards);
     RUN_TEST(test_statistics_saturates_total_and_periods);
     RUN_TEST(test_filter_adds_water_only_to_enabled_filters);
     RUN_TEST(test_filter_reset_sets_start_time_and_clears_flow);

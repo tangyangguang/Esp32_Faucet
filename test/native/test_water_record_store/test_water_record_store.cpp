@@ -6,6 +6,60 @@ using namespace faucet;
 
 namespace {
 
+class SpyRecordReader : public WaterRecordReader {
+public:
+    std::size_t maxRequestedPageSize = 0;
+    std::size_t calls = 0;
+    bool oldRecords = false;
+
+    std::size_t readPage(std::size_t pageIndex,
+                         std::uint16_t pageSize,
+                         WaterRecord* output,
+                         std::size_t outputCapacity) const override {
+        ++const_cast<SpyRecordReader*>(this)->calls;
+        if (pageSize > maxRequestedPageSize) {
+            const_cast<SpyRecordReader*>(this)->maxRequestedPageSize = pageSize;
+        }
+        if (!oldRecords || !output || outputCapacity == 0 || pageIndex > 1) {
+            return 0;
+        }
+        const std::size_t count = pageSize < outputCapacity ? pageSize : outputCapacity;
+        for (std::size_t i = 0; i < count; ++i) {
+            output[i] = makeRecord(pageIndex == 0 && i == 0 ? 832032000UL : 820000000UL, 1000);
+        }
+        return count;
+    }
+
+    static WaterRecord makeRecord(std::uint32_t startTime, std::uint32_t volumeMl) {
+        return WaterRecord{
+            startTime,
+            volumeMl,
+            1500,
+            volumeMl,
+            0,
+            12,
+            WaterMode::Volume,
+            WaterResult::Completed,
+            0,
+            0,
+            1.0f,
+            {0, 0, 0, 0},
+        };
+    }
+
+    std::size_t count() const override {
+        return 400;
+    }
+
+    bool ready() const override {
+        return true;
+    }
+
+    const char* storageName() const override {
+        return "spy";
+    }
+};
+
 WaterRecord makeRecord(std::uint32_t startTime, std::uint32_t volumeMl) {
     return WaterRecord{
         startTime,
@@ -21,6 +75,18 @@ WaterRecord makeRecord(std::uint32_t startTime, std::uint32_t volumeMl) {
         1.0f,
         {0, 0, 0, 0},
     };
+}
+
+WaterRecord makeRecord(std::uint32_t startTime,
+                       std::uint32_t volumeMl,
+                       std::uint16_t durationSec,
+                       std::uint8_t selectedPreset,
+                       WaterResult result) {
+    WaterRecord record = makeRecord(startTime, volumeMl);
+    record.durationSec = durationSec;
+    record.selectedPreset = selectedPreset;
+    record.result = result;
+    return record;
 }
 
 }  // namespace
@@ -125,6 +191,59 @@ void test_record_rewrites_current_boot_relative_times() {
     TEST_ASSERT_EQUAL_UINT32(0, waterRecordBootId(*store.newest(1)));
 }
 
+void test_record_aggregate_uses_calendar_month_and_real_daily_buckets() {
+    WaterRecord records[8]{};
+    WaterRecordStore store(records, 8);
+    TEST_ASSERT_TRUE(store.append(makeRecord(832032000UL, 12000, 60, 1, WaterResult::Completed)));      // 2026-05-16 00:00
+    TEST_ASSERT_TRUE(store.append(makeRecord(831686400UL, 6000, 30, 2, WaterResult::StoppedByUser)));  // 2026-05-12 00:00
+    TEST_ASSERT_TRUE(store.append(makeRecord(830995200UL, 5000, 25, 1, WaterResult::FlowError)));      // 2026-05-04 00:00
+    TEST_ASSERT_TRUE(store.append(makeRecord(829612800UL, 7000, 40, 0, WaterResult::Completed)));      // 2026-04-18 00:00
+    WaterRecord unknown = makeRecord(20, 900, 7, 3, WaterResult::SafetyStopped);
+    markWaterRecordBootId(unknown, 42);
+    TEST_ASSERT_TRUE(store.append(unknown));
+
+    const WaterUsageSummary summary = aggregateWaterRecords(store, 832032000UL, 30);
+
+    TEST_ASSERT_EQUAL_UINT32(12000, summary.todayMl);
+    TEST_ASSERT_EQUAL_UINT32(23000, summary.monthMl);
+    TEST_ASSERT_EQUAL_UINT32(30000, summary.last30DaysMl);
+    TEST_ASSERT_EQUAL_UINT32(1000, summary.last30DaysDailyAverageMl);
+    TEST_ASSERT_EQUAL_UINT32(30000, summary.totalMl);
+    TEST_ASSERT_EQUAL_UINT32(900, summary.unknownMl);
+    TEST_ASSERT_EQUAL_UINT32(7, summary.unknownDurationSec);
+    TEST_ASSERT_EQUAL_UINT32(1, summary.unknownCount);
+    TEST_ASSERT_EQUAL_UINT32(30, summary.dayCount);
+    TEST_ASSERT_EQUAL_UINT32(832032000UL / 86400UL - 29UL, summary.days[0].dayIndex);
+    TEST_ASSERT_EQUAL_UINT32(12000, summary.days[29].volumeMl);
+    TEST_ASSERT_EQUAL_UINT32(1, summary.days[29].count);
+    TEST_ASSERT_EQUAL_UINT32(60, summary.days[29].durationSec);
+    TEST_ASSERT_EQUAL_UINT32(17000, summary.presetCounts[1].volumeMl);
+    TEST_ASSERT_EQUAL_UINT32(2, summary.presetCounts[1].count);
+    TEST_ASSERT_EQUAL_UINT32(1, summary.presetCounts[2].count);
+    TEST_ASSERT_EQUAL_UINT32(4, summary.hourBuckets[0].count);
+    TEST_ASSERT_EQUAL_UINT32(1, summary.resultCounts[static_cast<std::size_t>(WaterResult::FlowError)]);
+    TEST_ASSERT_EQUAL_UINT32(4, summary.volumeHist[4].count);
+}
+
+void test_record_aggregate_reads_small_pages_for_web_stack_safety() {
+    SpyRecordReader reader;
+
+    aggregateWaterRecords(reader, 832032000UL, 30);
+
+    TEST_ASSERT_GREATER_THAN_size_t(0, reader.calls);
+    TEST_ASSERT_LESS_OR_EQUAL_size_t(kDefaultRecordPageSize, reader.maxRequestedPageSize);
+}
+
+void test_record_aggregate_stops_after_records_older_than_window() {
+    SpyRecordReader reader;
+    reader.oldRecords = true;
+
+    const WaterUsageSummary summary = aggregateWaterRecords(reader, 832032000UL, 30);
+
+    TEST_ASSERT_LESS_OR_EQUAL_size_t(2, reader.calls);
+    TEST_ASSERT_EQUAL_UINT32(1000, summary.todayMl);
+}
+
 int main(int argc, char** argv) {
     (void)argc;
     (void)argv;
@@ -137,5 +256,8 @@ int main(int argc, char** argv) {
     RUN_TEST(test_record_rejects_missing_storage);
     RUN_TEST(test_record_clear_resets_count_and_order);
     RUN_TEST(test_record_rewrites_current_boot_relative_times);
+    RUN_TEST(test_record_aggregate_uses_calendar_month_and_real_daily_buckets);
+    RUN_TEST(test_record_aggregate_reads_small_pages_for_web_stack_safety);
+    RUN_TEST(test_record_aggregate_stops_after_records_older_than_window);
     return UNITY_END();
 }

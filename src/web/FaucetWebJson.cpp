@@ -156,6 +156,65 @@ bool writeStatsJson(const StatisticsRecord& record, char* out, std::size_t len) 
     return writer.ok();
 }
 
+bool writeUsageSummaryJson(const WaterUsageSummary& summary,
+                           std::uint32_t totalMl,
+                           char* out,
+                           std::size_t len) {
+    JsonWriter writer(out, len);
+    writer.append("{\"todayMl\":%lu,\"monthMl\":%lu,\"totalMl\":%lu,"
+                  "\"last30DaysMl\":%lu,\"last30DaysDailyAverageMl\":%lu,"
+                  "\"unknownCount\":%lu,\"unknownMl\":%lu,\"unknownDurationSec\":%lu,"
+                  "\"todayDay\":%lu,\"monthStartDay\":%lu,\"dailySeries\":[",
+                  static_cast<unsigned long>(summary.todayMl),
+                  static_cast<unsigned long>(summary.monthMl),
+                  static_cast<unsigned long>(totalMl),
+                  static_cast<unsigned long>(summary.last30DaysMl),
+                  static_cast<unsigned long>(summary.last30DaysDailyAverageMl),
+                  static_cast<unsigned long>(summary.unknownCount),
+                  static_cast<unsigned long>(summary.unknownMl),
+                  static_cast<unsigned long>(summary.unknownDurationSec),
+                  static_cast<unsigned long>(summary.todayDay),
+                  static_cast<unsigned long>(summary.monthStartDay));
+    for (std::size_t i = 0; i < summary.dayCount; ++i) {
+        writer.append("%s{\"day\":%lu,\"volumeMl\":%lu,\"durationSec\":%lu,\"count\":%u}",
+                      i == 0 ? "" : ",",
+                      static_cast<unsigned long>(summary.days[i].dayIndex),
+                      static_cast<unsigned long>(summary.days[i].volumeMl),
+                      static_cast<unsigned long>(summary.days[i].durationSec),
+                      static_cast<unsigned>(summary.days[i].count));
+    }
+    writer.append("],\"presetCounts\":[");
+    for (std::size_t i = 0; i < kPresetCount; ++i) {
+        writer.append("%s{\"index\":%u,\"volumeMl\":%lu,\"count\":%u}",
+                      i == 0 ? "" : ",",
+                      static_cast<unsigned>(i),
+                      static_cast<unsigned long>(summary.presetCounts[i].volumeMl),
+                      static_cast<unsigned>(summary.presetCounts[i].count));
+    }
+    writer.append("],\"hourBuckets\":[");
+    for (std::size_t i = 0; i < 24; ++i) {
+        writer.append("%s{\"hour\":%u,\"volumeMl\":%lu,\"count\":%u}",
+                      i == 0 ? "" : ",",
+                      static_cast<unsigned>(i),
+                      static_cast<unsigned long>(summary.hourBuckets[i].volumeMl),
+                      static_cast<unsigned>(summary.hourBuckets[i].count));
+    }
+    writer.append("],\"resultCounts\":[");
+    for (std::size_t i = 0; i < kUsageResultCount; ++i) {
+        writer.append("%s%lu", i == 0 ? "" : ",", static_cast<unsigned long>(summary.resultCounts[i]));
+    }
+    writer.append("],\"volumeHist\":[");
+    for (std::size_t i = 0; i < kUsageVolumeHistCount; ++i) {
+        writer.append("%s{\"bucket\":%u,\"volumeMl\":%lu,\"count\":%u}",
+                      i == 0 ? "" : ",",
+                      static_cast<unsigned>(i),
+                      static_cast<unsigned long>(summary.volumeHist[i].volumeMl),
+                      static_cast<unsigned>(summary.volumeHist[i].count));
+    }
+    writer.append("]}");
+    return writer.ok();
+}
+
 bool writeConfigJson(const SystemConfig& config, char* out, std::size_t len) {
     JsonWriter writer(out, len);
     writer.append("{\"confirmTimeoutSec\":%lu,\"maxOutTimeSec\":%lu,\"maxOutVolumeMl\":%lu,"

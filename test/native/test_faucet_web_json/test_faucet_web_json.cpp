@@ -48,6 +48,37 @@ void test_stats_json_contains_all_periods() {
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"totalMl\":4000000000"));
 }
 
+void test_usage_summary_json_contains_aggregated_series() {
+    WaterUsageSummary summary{};
+    summary.todayMl = 12000;
+    summary.monthMl = 18000;
+    summary.last30DaysMl = 18000;
+    summary.last30DaysDailyAverageMl = 600;
+    summary.unknownCount = 2;
+    summary.todayDay = 9630;
+    summary.monthStartDay = 9615;
+    summary.dayCount = 2;
+    summary.days[0] = DailyUsageBucket{9629, 6000, 30, 3};
+    summary.days[1] = DailyUsageBucket{9630, 12000, 60, 4};
+    summary.presetCounts[1] = CountVolumeBucket{12000, 4};
+    summary.hourBuckets[7] = CountVolumeBucket{6000, 3};
+    summary.resultCounts[static_cast<std::size_t>(WaterResult::FlowError)] = 1;
+    summary.volumeHist[4] = CountVolumeBucket{18000, 7};
+
+    char json[4096]{};
+    TEST_ASSERT_TRUE(writeUsageSummaryJson(summary, 22530, json, sizeof(json)));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"todayMl\":12000"));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"monthMl\":18000"));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"totalMl\":22530"));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"last30DaysDailyAverageMl\":600"));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"dailySeries\""));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"day\":9630"));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"presetCounts\""));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"hour\":7"));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"resultCounts\""));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"volumeHist\""));
+}
+
 void test_config_json_contains_safety_and_display_settings() {
     char json[512]{};
     SystemConfig config = makeDefaultConfig();
@@ -129,6 +160,7 @@ int main(int argc, char** argv) {
     UNITY_BEGIN();
     RUN_TEST(test_status_json_contains_no_remote_control_capability);
     RUN_TEST(test_stats_json_contains_all_periods);
+    RUN_TEST(test_usage_summary_json_contains_aggregated_series);
     RUN_TEST(test_config_json_contains_safety_and_display_settings);
     RUN_TEST(test_presets_json_escapes_names_and_lists_nine_presets);
     RUN_TEST(test_filters_json_contains_runtime_fields);

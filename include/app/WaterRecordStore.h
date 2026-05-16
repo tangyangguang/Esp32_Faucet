@@ -8,6 +8,41 @@
 
 namespace faucet {
 
+constexpr std::size_t kUsageSummaryMaxDays = 30;
+constexpr std::size_t kUsageResultCount = 5;
+constexpr std::size_t kUsageVolumeHistCount = 5;
+
+struct DailyUsageBucket {
+    std::uint32_t dayIndex;
+    std::uint32_t volumeMl;
+    std::uint32_t durationSec;
+    std::uint16_t count;
+};
+
+struct CountVolumeBucket {
+    std::uint32_t volumeMl;
+    std::uint16_t count;
+};
+
+struct WaterUsageSummary {
+    DailyUsageBucket days[kUsageSummaryMaxDays];
+    CountVolumeBucket presetCounts[kPresetCount];
+    CountVolumeBucket hourBuckets[24];
+    CountVolumeBucket volumeHist[kUsageVolumeHistCount];
+    std::uint32_t resultCounts[kUsageResultCount];
+    std::uint32_t todayMl;
+    std::uint32_t monthMl;
+    std::uint32_t last30DaysMl;
+    std::uint32_t last30DaysDailyAverageMl;
+    std::uint32_t totalMl;
+    std::uint32_t unknownMl;
+    std::uint32_t unknownDurationSec;
+    std::uint32_t unknownCount;
+    std::uint32_t monthStartDay;
+    std::uint32_t todayDay;
+    std::uint8_t dayCount;
+};
+
 class WaterRecordReader {
 public:
     virtual ~WaterRecordReader() = default;
@@ -48,5 +83,9 @@ private:
     std::size_t oldestIndex_;
     std::size_t count_;
 };
+
+WaterUsageSummary aggregateWaterRecords(const WaterRecordReader& reader,
+                                        std::uint32_t nowSeconds,
+                                        std::uint8_t dayCount = kUsageSummaryMaxDays);
 
 }  // namespace faucet

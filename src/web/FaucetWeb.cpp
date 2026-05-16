@@ -969,16 +969,16 @@ void handleRecordCalibrationPage() {
             static_cast<double>(record.pulsePerMlAtRun),
             static_cast<unsigned>(record.durationSec),
             resultText(record.result));
-    sendFmt("<section class='panel'><h3>量杯实际水量</h3>"
-            "<form method='post' action='/api/faucet/records/calibration' onsubmit='return once(this)'>"
-            "<label class='field'><span>实际水量 (ml)</span>"
-            "<input name='actualMl' type='number' min='%lu' max='%lu' step='10' value='%lu'></label>"
-            "<p class='hint'>保存后按 脉冲数 / 实际水量 更新流量计校准系数。</p>"
-            "<div class='form-actions'><input type='submit' value='保存校准'>"
-            "<a class='btn-link' href='/faucet/records'>取消</a></div></form></section>",
+    Esp32BaseWeb::sendChunk("<section class='panel'><h3>量杯实际水量</h3>"
+                            "<form method='post' action='/api/faucet/records/calibration' onsubmit='return once(this)'>"
+                            "<label class='field'><span>实际水量 (ml)</span>");
+    sendFmt("<input name='actualMl' type='number' min='%lu' max='%lu' step='10' value='%lu'></label>",
             static_cast<unsigned long>(kMinVolumePresetMl),
             static_cast<unsigned long>(kMaxVolumePresetMl),
             static_cast<unsigned long>(record.volumeMl));
+    Esp32BaseWeb::sendChunk("<p class='hint'>保存后按 脉冲数 / 实际水量 更新流量计校准系数。</p>"
+                            "<div class='form-actions'><input type='submit' value='保存校准'>"
+                            "<a class='btn-link' href='/faucet/records'>取消</a></div></form></section>");
     sendPageEnd();
 }
 

@@ -164,6 +164,8 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "href='/faucet/records/calibration'"));
     TEST_ASSERT_NULL(std::strstr(buffer, "/api/faucet/calibration"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "量杯实际水量"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "sendFmt(\"<section class='panel'><h3>量杯实际水量</h3>\""));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "sendChunk(\"<section class='panel'><h3>量杯实际水量</h3>\""));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "已用天数 (天)"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "data-filter-start"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "开始时间"));

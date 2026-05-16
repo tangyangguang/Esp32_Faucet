@@ -1,5 +1,10 @@
 # 变更记录
 
+## 2026-05-16 原型评审收口
+
+- P2-15：正式文档补充出水记录时间回溯不依赖 32 位 `uptimeMs`；未同步时间只保存启动内相对秒和 boot id，NTP 同步后通过 Esp32Base boot event 回写真实时间。
+- P2-18：26/27/28 原型评审结论并入正式文档，不再把独立评审稿作为实现依据；records 首版必须支持时间范围筛选，并在 `docs/03-software-architecture.md` 与 `docs/06-implementation-plan.md` 中作为正式范围维护。
+
 ## 2026-05-15 Records 重整与校准入口收敛
 
 - 统一产品概念为出水记录 `records`，业务页面从 `/faucet/logs` 改为 `/faucet/records`。

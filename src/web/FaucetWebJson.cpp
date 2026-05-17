@@ -130,11 +130,12 @@ void appendEscaped(JsonWriter& writer, const char* text) {
 
 bool writeStatusJson(const AppSnapshot& snapshot, char* out, std::size_t len) {
     JsonWriter writer(out, len);
-    writer.append("{\"state\":\"%s\",\"valveOpen\":%s,\"volumeMl\":%lu,\"targetValue\":%lu,"
+    writer.append("{\"state\":\"%s\",\"valveOpen\":%s,\"volumeMl\":%lu,\"elapsedSec\":%lu,\"targetValue\":%lu,"
                   "\"mode\":\"%s\",\"selectedPreset\":%u,\"flowDroppedPulses\":%lu,\"waterControl\":false}",
                   waterStateName(snapshot.water.state),
                   snapshot.water.valveOpen ? "true" : "false",
                   static_cast<unsigned long>(snapshot.water.volumeMl),
+                  static_cast<unsigned long>(snapshot.water.elapsedSec),
                   static_cast<unsigned long>(snapshot.water.targetValue),
                   waterModeName(snapshot.water.mode),
                   static_cast<unsigned>(snapshot.water.selectedPreset),

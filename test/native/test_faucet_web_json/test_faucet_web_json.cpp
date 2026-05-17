@@ -12,7 +12,7 @@ namespace {
 
 AppSnapshot makeSnapshot() {
     AppSnapshot snapshot{
-        WaterSnapshot{WaterState::Running, 1, true, 250, 0, WaterResult::Completed, WaterMode::Volume, 1500},
+        WaterSnapshot{WaterState::Running, 1, true, 250, 42, WaterResult::Completed, WaterMode::Volume, 1500},
         ValveOutput{ValveState::OpeningFullPower, true, 100},
         StatisticsRecord{1000, 2000, 3000, 4000, 20260506, 202619, 202605},
     };
@@ -30,6 +30,10 @@ void test_status_json_contains_no_remote_control_capability() {
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"state\":\"running\""));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"valveOpen\":true"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"volumeMl\":250"));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"elapsedSec\":42"));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"targetValue\":1500"));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"mode\":\"volume\""));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"selectedPreset\":1"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"flowDroppedPulses\":7"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"waterControl\":false"));
     TEST_ASSERT_NULL(std::strstr(json, "start"));

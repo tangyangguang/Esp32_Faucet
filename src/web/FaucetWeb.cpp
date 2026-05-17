@@ -274,6 +274,13 @@ void sendMetricCard(const char* label, const char* value) {
     Esp32BaseWeb::sendChunk("</strong></section>");
 }
 
+void formatSecondsValue(std::uint32_t seconds, char* out, std::size_t len) {
+    if (!out || len == 0) {
+        return;
+    }
+    std::snprintf(out, len, "%lu 秒", static_cast<unsigned long>(seconds));
+}
+
 void formatDurationShort(std::uint32_t seconds, char* out, std::size_t len) {
     if (!out || len == 0) {
         return;
@@ -799,13 +806,33 @@ void handleFaucetPage() {
     }
     const AppSnapshot snapshot = g_context.app->snapshot();
     char currentPreset[16]{};
-    std::snprintf(currentPreset, sizeof(currentPreset), "%u", static_cast<unsigned>(snapshot.water.selectedPreset + 1));
+    std::snprintf(currentPreset,
+                  sizeof(currentPreset),
+                  "%u / %s",
+                  static_cast<unsigned>(snapshot.water.selectedPreset + 1),
+                  modeText(snapshot.water.mode));
     char targetValue[24]{};
     if (snapshot.water.mode == WaterMode::Time) {
-        std::snprintf(targetValue, sizeof(targetValue), "%lu 秒", static_cast<unsigned long>(snapshot.water.targetValue));
+        formatSecondsValue(snapshot.water.targetValue, targetValue, sizeof(targetValue));
     } else {
         formatLiters(snapshot.water.targetValue, targetValue, sizeof(targetValue));
     }
+    char outValue[24]{};
+    formatLiters(snapshot.water.volumeMl, outValue, sizeof(outValue));
+    char remainingValue[24]{};
+    const std::uint32_t remaining =
+        snapshot.water.mode == WaterMode::Time
+            ? (snapshot.water.targetValue > snapshot.water.elapsedSec ? snapshot.water.targetValue - snapshot.water.elapsedSec : 0)
+            : (snapshot.water.targetValue > snapshot.water.volumeMl ? snapshot.water.targetValue - snapshot.water.volumeMl : 0);
+    if (snapshot.water.mode == WaterMode::Time) {
+        formatSecondsValue(remaining, remainingValue, sizeof(remainingValue));
+    } else {
+        formatLiters(remaining, remainingValue, sizeof(remainingValue));
+    }
+    char elapsedValue[24]{};
+    formatSecondsValue(snapshot.water.elapsedSec, elapsedValue, sizeof(elapsedValue));
+    char droppedPulses[24]{};
+    std::snprintf(droppedPulses, sizeof(droppedPulses), "%lu", static_cast<unsigned long>(snapshot.flowDroppedPulses));
     char today[24]{};
     char month[24]{};
     char total[24]{};
@@ -817,6 +844,14 @@ void handleFaucetPage() {
     sendMetricCard("运行状态", stateText(snapshot.water.state));
     sendMetricCard("当前预设", currentPreset);
     sendMetricCard("目标值", targetValue);
+    sendMetricCard("已出水", outValue);
+    if (snapshot.water.state == WaterState::Running || snapshot.water.state == WaterState::Paused) {
+        sendMetricCard(snapshot.water.mode == WaterMode::Time ? "剩余时间" : "剩余量", remainingValue);
+        sendMetricCard("已运行", elapsedValue);
+    }
+    if (snapshot.flowDroppedPulses > 0) {
+        sendMetricCard("丢弃脉冲", droppedPulses);
+    }
     Esp32BaseWeb::sendChunk("</div><h2>统计</h2><div class='metric-grid'>");
     sendMetricCard("今日", today);
     sendMetricCard("本月", month);

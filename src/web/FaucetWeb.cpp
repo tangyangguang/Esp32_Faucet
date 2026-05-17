@@ -21,7 +21,7 @@
 namespace faucet {
 namespace {
 
-constexpr std::uint32_t kChartDays = 14;
+constexpr std::uint32_t kChartDays = kUsageSummaryMaxDays;
 FaucetWebContext g_context{};
 
 bool requireContext();
@@ -68,6 +68,62 @@ void sendHtmlAttrEscaped(const char* text) {
                 break;
             default:
                 sendFmt("%c", *p);
+                break;
+        }
+    }
+}
+
+void sendHtmlAttrEscapedBounded(const char* text, std::size_t maxLen) {
+    if (!text) {
+        return;
+    }
+    for (std::size_t i = 0; i < maxLen && text[i] != '\0'; ++i) {
+        switch (text[i]) {
+            case '&':
+                Esp32BaseWeb::sendChunk("&amp;");
+                break;
+            case '<':
+                Esp32BaseWeb::sendChunk("&lt;");
+                break;
+            case '>':
+                Esp32BaseWeb::sendChunk("&gt;");
+                break;
+            case '"':
+                Esp32BaseWeb::sendChunk("&quot;");
+                break;
+            case '\'':
+                Esp32BaseWeb::sendChunk("&#39;");
+                break;
+            default:
+                sendFmt("%c", text[i]);
+                break;
+        }
+    }
+}
+
+void sendHtmlEscapedBounded(const char* text, std::size_t maxLen) {
+    if (!text) {
+        return;
+    }
+    for (std::size_t i = 0; i < maxLen && text[i] != '\0'; ++i) {
+        switch (text[i]) {
+            case '&':
+                Esp32BaseWeb::sendChunk("&amp;");
+                break;
+            case '<':
+                Esp32BaseWeb::sendChunk("&lt;");
+                break;
+            case '>':
+                Esp32BaseWeb::sendChunk("&gt;");
+                break;
+            case '"':
+                Esp32BaseWeb::sendChunk("&quot;");
+                break;
+            case '\'':
+                Esp32BaseWeb::sendChunk("&#39;");
+                break;
+            default:
+                sendFmt("%c", text[i]);
                 break;
         }
     }
@@ -123,6 +179,23 @@ std::uint32_t filterProgressPercent(const FilterRecord& filter, std::uint32_t us
     }
     const std::uint64_t percent = (static_cast<std::uint64_t>(usedDays) * 100ULL) / filter.recommendDays;
     return percent > 100ULL ? 100UL : static_cast<std::uint32_t>(percent);
+}
+
+std::uint32_t filterFlowProgressPercent(const FilterRecord& filter) {
+    if (filter.lifeMl == 0) {
+        return 0;
+    }
+    const std::uint64_t percent = (static_cast<std::uint64_t>(filter.usedMl) * 100ULL) / filter.lifeMl;
+    return percent > 100ULL ? 100UL : static_cast<std::uint32_t>(percent);
+}
+
+const char* filterTriggerText(const FilterRecord& filter, std::uint32_t usedDays) {
+    const std::uint32_t dayProgress = filterProgressPercent(filter, usedDays);
+    const std::uint32_t flowProgress = filterFlowProgressPercent(filter);
+    if (dayProgress < 100UL && flowProgress < 100UL) {
+        return "正常";
+    }
+    return dayProgress >= flowProgress ? "天数到期" : "流量到期";
 }
 
 std::uint32_t daysToMonths(std::uint32_t days) {
@@ -201,6 +274,28 @@ void sendMetricCard(const char* label, const char* value) {
     Esp32BaseWeb::sendChunk("</strong></section>");
 }
 
+void formatSecondsValue(std::uint32_t seconds, char* out, std::size_t len) {
+    if (!out || len == 0) {
+        return;
+    }
+    std::snprintf(out, len, "%lu 秒", static_cast<unsigned long>(seconds));
+}
+
+void formatDurationShort(std::uint32_t seconds, char* out, std::size_t len) {
+    if (!out || len == 0) {
+        return;
+    }
+    if (seconds >= 3600UL) {
+        std::snprintf(out, len, "%luh %lum", static_cast<unsigned long>(seconds / 3600UL),
+                      static_cast<unsigned long>((seconds / 60UL) % 60UL));
+    } else if (seconds >= 60UL) {
+        std::snprintf(out, len, "%lum %lus", static_cast<unsigned long>(seconds / 60UL),
+                      static_cast<unsigned long>(seconds % 60UL));
+    } else {
+        std::snprintf(out, len, "%lus", static_cast<unsigned long>(seconds));
+    }
+}
+
 std::uint32_t percentOf(std::uint32_t value, std::uint32_t total) {
     if (total == 0) {
         return 0;
@@ -217,82 +312,9 @@ void sendStatBar(const char* label, const char* value, std::uint32_t percent) {
             static_cast<unsigned long>(percent));
 }
 
-struct DailyBucket {
-    std::uint32_t dayIndex = 0;
-    std::uint32_t volumeMl = 0;
-    std::uint32_t durationSec = 0;
-};
-
-struct RecordAggregates {
-    DailyBucket days[kChartDays]{};
-    std::uint32_t todayMl = 0;
-    std::uint32_t weekMl = 0;
-    std::uint32_t monthMl = 0;
-    std::uint32_t totalMl = 0;
-    std::uint32_t unknownMl = 0;
-    std::uint32_t unknownDurationSec = 0;
-    std::uint32_t unknownCount = 0;
-};
-
 void addSaturating(std::uint32_t& target, std::uint32_t value) {
     const std::uint32_t max = UINT32_MAX;
     target = max - target < value ? max : target + value;
-}
-
-RecordAggregates aggregateRecords(std::uint32_t nowSeconds) {
-    RecordAggregates aggregates{};
-    if (!g_context.records || !g_context.records->ready()) {
-        return aggregates;
-    }
-    const bool hasRealNow = nowSeconds >= kMinRealDateSeconds;
-    const std::uint32_t todayDay = hasRealNow ? nowSeconds / 86400UL : 0;
-    const std::uint32_t firstChartDay = hasRealNow && todayDay >= kChartDays - 1 ? todayDay - (kChartDays - 1) : 0;
-    for (std::size_t i = 0; i < kChartDays; ++i) {
-        aggregates.days[i].dayIndex = firstChartDay + i;
-    }
-
-    WaterRecord* records = new (std::nothrow) WaterRecord[kMaxRecordPageSize]{};
-    if (!records) {
-        return aggregates;
-    }
-    const std::size_t total = g_context.records->count();
-    for (std::size_t offset = 0; offset < total; offset += kMaxRecordPageSize) {
-        const std::size_t page = offset / kMaxRecordPageSize;
-        const std::size_t count = g_context.records->readPage(page, kMaxRecordPageSize, records, kMaxRecordPageSize);
-        if (count == 0) {
-            break;
-        }
-        for (std::size_t i = 0; i < count; ++i) {
-            const WaterRecord& record = records[i];
-            if (!waterRecordHasRealTime(record)) {
-                ++aggregates.unknownCount;
-                addSaturating(aggregates.unknownMl, record.volumeMl);
-                addSaturating(aggregates.unknownDurationSec, record.durationSec);
-                continue;
-            }
-            addSaturating(aggregates.totalMl, record.volumeMl);
-            if (!hasRealNow) {
-                continue;
-            }
-            const std::uint32_t day = record.startTime / 86400UL;
-            if (day == todayDay) {
-                addSaturating(aggregates.todayMl, record.volumeMl);
-            }
-            if (day <= todayDay && todayDay - day < 7) {
-                addSaturating(aggregates.weekMl, record.volumeMl);
-            }
-            if (day <= todayDay && todayDay - day < 30) {
-                addSaturating(aggregates.monthMl, record.volumeMl);
-            }
-            if (day >= firstChartDay && day <= todayDay) {
-                DailyBucket& bucket = aggregates.days[day - firstChartDay];
-                addSaturating(bucket.volumeMl, record.volumeMl);
-                addSaturating(bucket.durationSec, record.durationSec);
-            }
-        }
-    }
-    delete[] records;
-    return aggregates;
 }
 
 std::uint32_t sumRealRecordVolumeSince(std::uint32_t startTime) {
@@ -321,62 +343,92 @@ std::uint32_t sumRealRecordVolumeSince(std::uint32_t startTime) {
     return total;
 }
 
-void sendDailyChart(const DailyBucket (&days)[kChartDays]) {
+void sendDailyChart(const WaterUsageSummary& summary) {
     std::uint32_t maxVolume = 0;
     std::uint32_t maxDuration = 0;
-    for (const DailyBucket& day : days) {
-        if (day.volumeMl > maxVolume) {
-            maxVolume = day.volumeMl;
+    for (std::size_t i = 0; i < summary.dayCount; ++i) {
+        if (summary.days[i].volumeMl > maxVolume) {
+            maxVolume = summary.days[i].volumeMl;
         }
-        if (day.durationSec > maxDuration) {
-            maxDuration = day.durationSec;
+        if (summary.days[i].durationSec > maxDuration) {
+            maxDuration = summary.days[i].durationSec;
         }
     }
-    Esp32BaseWeb::sendChunk("<section class='daily-chart'><h3>最近 14 天出水趋势</h3>"
-                            "<p class='hint'>柱状图为每日出水量 L，折线为每日出水总时长。</p>"
-                            "<svg viewBox='0 0 700 260' role='img' aria-label='最近14天出水趋势'>");
-    constexpr std::uint32_t chartTop = 20;
-    constexpr std::uint32_t chartHeight = 150;
-    constexpr std::uint32_t baseY = chartTop + chartHeight;
-    constexpr std::uint32_t left = 36;
-    constexpr std::uint32_t step = 46;
-    constexpr std::uint32_t barWidth = 22;
-    Esp32BaseWeb::sendChunk("<line class='axis' x1='30' y1='170' x2='680' y2='170'></line>");
-    char points[360]{};
-    points[0] = '\0';
-    for (std::size_t i = 0; i < kChartDays; ++i) {
+    Esp32BaseWeb::sendChunk("<section class='daily-chart'><div class='chart-head'><h3>最近 30 天</h3>"
+                            "<span class='chart-key volume-key'>出水量</span><span class='chart-key duration-key'>出水时长</span></div>"
+                            "<p class='hint'>上下两图共用日期轴，灰色短线表示当天无记录。</p>"
+                            "<svg viewBox='0 0 1000 210' role='img' aria-label='最近30天每日出水量和出水时长'>");
+    constexpr std::uint32_t volumeTop = 14;
+    constexpr std::uint32_t durationTop = 114;
+    constexpr std::uint32_t chartHeight = 58;
+    constexpr std::uint32_t volumeBaseY = volumeTop + chartHeight;
+    constexpr std::uint32_t durationBaseY = durationTop + chartHeight;
+    constexpr std::uint32_t left = 46;
+    constexpr std::uint32_t step = 31;
+    constexpr std::uint32_t barWidth = 14;
+    char maxText[24]{};
+    formatLiters(maxVolume, maxText, sizeof(maxText));
+    char maxDurationText[24]{};
+    formatDurationShort(maxDuration, maxDurationText, sizeof(maxDurationText));
+    Esp32BaseWeb::sendChunk("<line class='axis' x1='40' y1='72' x2='975' y2='72'></line>");
+    sendFmt("<text class='y-label' x='38' y='12'>%s</text>", maxText);
+    for (std::size_t i = 0; i < summary.dayCount; ++i) {
         const std::uint32_t x = left + static_cast<std::uint32_t>(i) * step;
-        const std::uint32_t barHeight = maxVolume == 0 ? 0 : (days[i].volumeMl * chartHeight) / maxVolume;
-        const std::uint32_t y = baseY - barHeight;
-        sendFmt("<rect class='bar' x='%lu' y='%lu' width='%lu' height='%lu'></rect>",
+        const DailyUsageBucket& day = summary.days[i];
+        const std::uint32_t barHeight = maxVolume == 0 ? 0 : (day.volumeMl * chartHeight) / maxVolume;
+        const std::uint32_t y = volumeBaseY - barHeight;
+        char volume[24]{};
+        formatLiters(day.volumeMl, volume, sizeof(volume));
+        char duration[24]{};
+        formatDurationShort(day.durationSec, duration, sizeof(duration));
+        const std::uint32_t avgMl = day.count == 0 ? 0 : day.volumeMl / day.count;
+        sendFmt("<rect class='%s' x='%lu' y='%lu' width='%lu' height='%lu'><title>",
+                day.count == 0 ? "bar empty-bar" : "bar",
                 static_cast<unsigned long>(x),
-                static_cast<unsigned long>(y),
+                static_cast<unsigned long>(barHeight == 0 ? volumeBaseY - 2 : y),
                 static_cast<unsigned long>(barWidth),
-                static_cast<unsigned long>(barHeight));
+                static_cast<unsigned long>(barHeight == 0 ? 2 : barHeight));
         char label[8]{};
-        formatDayLabel(days[i].dayIndex, label, sizeof(label));
-        sendFmt("<text class='x-label' x='%lu' y='202'>%s</text>",
-                static_cast<unsigned long>(x + barWidth / 2),
-                label);
-        const std::uint32_t lineY =
-            maxDuration == 0 ? baseY : baseY - ((days[i].durationSec * chartHeight) / maxDuration);
-        char point[24]{};
-        std::snprintf(point,
-                      sizeof(point),
-                      "%s%lu,%lu",
-                      i == 0 ? "" : " ",
-                      static_cast<unsigned long>(x + barWidth / 2),
-                      static_cast<unsigned long>(lineY));
-        std::strncat(points, point, sizeof(points) - std::strlen(points) - 1);
+        formatDayLabel(day.dayIndex, label, sizeof(label));
+        sendFmt("%s：%s · %s · %u 次 · 平均 %lu ml/次</title></rect>",
+                label,
+                volume,
+                duration,
+                static_cast<unsigned>(day.count),
+                static_cast<unsigned long>(avgMl));
     }
-    Esp32BaseWeb::sendChunk("<polyline class='duration-line' points='");
-    Esp32BaseWeb::sendChunk(points);
-    Esp32BaseWeb::sendChunk("'></polyline></svg></section>");
+    Esp32BaseWeb::sendChunk("<line class='axis' x1='40' y1='172' x2='975' y2='172'></line>");
+    sendFmt("<text class='y-label' x='38' y='112'>%s</text>", maxDurationText);
+    for (std::size_t i = 0; i < summary.dayCount; ++i) {
+        const std::uint32_t x = left + static_cast<std::uint32_t>(i) * step;
+        const DailyUsageBucket& day = summary.days[i];
+        const std::uint32_t barHeight = maxDuration == 0 ? 0 : (day.durationSec * chartHeight) / maxDuration;
+        const std::uint32_t y = durationBaseY - barHeight;
+        char label[8]{};
+        char duration[24]{};
+        formatDayLabel(day.dayIndex, label, sizeof(label));
+        formatDurationShort(day.durationSec, duration, sizeof(duration));
+        sendFmt("<rect class='%s' x='%lu' y='%lu' width='%lu' height='%lu'><title>%s：%s · %u 次</title></rect>",
+                day.count == 0 ? "duration-bar empty-bar" : "duration-bar",
+                static_cast<unsigned long>(x),
+                static_cast<unsigned long>(barHeight == 0 ? durationBaseY - 2 : y),
+                static_cast<unsigned long>(barWidth),
+                static_cast<unsigned long>(barHeight == 0 ? 2 : barHeight),
+                label,
+                duration,
+                static_cast<unsigned>(day.count));
+        if (i % 5 == 0 || i + 1 == summary.dayCount) {
+            sendFmt("<text class='x-label' x='%lu' y='204'>%s</text>",
+                    static_cast<unsigned long>(x + barWidth / 2),
+                    label);
+        }
+    }
+    Esp32BaseWeb::sendChunk("</svg></section>");
 }
 
 void sendTimeUnsyncedChartNotice() {
-    Esp32BaseWeb::sendChunk("<section class='daily-chart'><h3>最近 14 天出水趋势</h3>"
-                            "<p class='hint'>时间未同步，暂不生成按真实日期统计的图表；同步后会自动显示今日往前 14 天。</p>"
+    Esp32BaseWeb::sendChunk("<section class='daily-chart'><h3>最近 30 天出水量</h3>"
+                            "<p class='hint'>时间未同步，暂不生成按真实日期统计的图表；同步后会自动显示今日往前 30 天。</p>"
                             "</section>");
 }
 
@@ -448,73 +500,32 @@ void sendNoticeFromQuery() {
 }
 
 void sendAppStyles() {
-    Esp32BaseWeb::sendChunk("<style>"
-                            "body{background:#f4f7f6;color:#202428;max-width:1080px;padding:10px 14px 14px;line-height:1.45;font-size:14px}"
-                            "h1,h2{color:#111;font-size:1rem;font-weight:500;margin:0 0 10px}"
-                            "h3{font-size:.94rem;font-weight:500;margin:0;color:#111}"
-                            "p{margin:5px 0}"
-                            "nav{display:flex;align-items:center;gap:5px;margin:0 0 12px;padding:10px 12px;background:#fff;border:1px solid #e1e7e5;border-radius:8px;box-shadow:0 1px 2px rgba(21,35,34,.04);overflow-x:auto}"
-                            "nav a{display:inline-flex;align-items:center;min-height:34px;padding:0 11px;margin:0;background:transparent;color:#2f3947;border-radius:8px;text-decoration:none;font-size:.98rem;font-weight:600;white-space:nowrap}"
-                            "nav a.active{background:#e9f3ef;color:#226b5f}"
-                            "a{background:transparent;color:#2d6f7a;padding:0;margin:0;text-decoration:none}"
-                            "button,input[type=submit],input[type=button]{display:inline-flex;align-items:center;justify-content:center;min-height:34px;padding:0 14px;background:#2f6f73;border:1px solid #2f6f73;color:#fff;cursor:pointer;font-size:.92rem;line-height:1.2;box-sizing:border-box;vertical-align:middle}"
-                            "input:not([type]),input[type=text],input[type=password],input[type=number],input[type=email],input[type=url],input[type=tel],input[type=search],input[type=date],select{width:100%;height:30px;padding:4px 8px;margin:0;border:1px solid #d7dde2;border-radius:4px;box-sizing:border-box;background:#fbfcfc;color:#202428;font-size:.94rem}"
-                            "button,input[type=submit],input[type=button],select,a{border-radius:4px;box-shadow:none}"
-                            ".panel{border:1px solid #e1e7e5;border-radius:8px;padding:8px 10px;margin:0 0 8px;background:#fff;box-shadow:0 1px 2px rgba(21,35,34,.04)}"
-                            ".panel h3{padding-bottom:6px;margin-bottom:7px;border-bottom:1px solid #edf0f2}"
-                            ".panel-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:7px;padding-bottom:6px;border-bottom:1px solid #edf0f2}"
-                            ".panel-head h3{padding:0;margin:0;border:0}"
-                            ".grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:7px 10px}"
-                            ".form-grid{display:grid;grid-template-columns:repeat(12,1fr);gap:9px 12px;align-items:start}"
-                            ".span-2{grid-column:span 2}.span-3{grid-column:span 3}.span-4{grid-column:span 4}.span-5{grid-column:span 5}.span-6{grid-column:span 6}.span-8{grid-column:span 8}.span-12{grid-column:1/-1}"
-                            ".field span{display:block;font-size:.82em;color:#56616b;margin-bottom:3px}"
-                            ".hint{display:block;color:#69727a;font-size:.76em;margin:2px 0 0}"
-                            ".status-pill{display:inline-block;padding:1px 7px;border-radius:999px;background:#f2f5f4;color:#4c565d;font-size:.76rem;line-height:1.35;white-space:nowrap}"
-                            ".muted{color:#69727a}"
-                            ".metric-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:7px;margin:0 0 10px}"
-                            ".metric-card{background:#fff;border:1px solid #e1e7e5;border-radius:8px;padding:7px 9px;box-shadow:0 1px 2px rgba(21,35,34,.04)}"
-                            ".metric-card span{display:block;color:#69727a;font-size:.8rem;margin-bottom:2px}"
-                            ".metric-card strong{display:block;color:#202428;font-size:.94rem;line-height:1.3}"
-                            ".stats-layout{display:grid;grid-template-columns:minmax(0,1fr) minmax(240px,.75fr);gap:10px;align-items:start}"
-                            ".stat-bars{background:#fff;border:1px solid #e1e7e5;border-radius:8px;padding:10px;box-shadow:0 1px 2px rgba(21,35,34,.04)}"
-                            ".stat-bar{margin:0 0 10px}"
-                            ".stat-bar-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:4px;color:#56616b;font-size:.86rem}"
-                            ".stat-bar-head strong{color:#202428}"
-                            ".daily-chart{grid-column:1/-1;background:#fff;border:1px solid #e1e7e5;border-radius:8px;padding:10px;box-shadow:0 1px 2px rgba(21,35,34,.04)}"
-                            ".daily-chart svg{display:block;width:100%;height:auto;max-height:300px}.daily-chart .bar{fill:#6b9b96}.daily-chart .duration-line{fill:none;stroke:#c77f2f;stroke-width:3;stroke-linejoin:round;stroke-linecap:round}.daily-chart .axis{stroke:#d9e0df;stroke-width:1}.daily-chart .x-label{font-size:11px;text-anchor:middle;fill:#69727a}"
-                            ".filter-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px;margin:0 0 10px}"
-                            ".filter-card{background:#fff;border:1px solid #e1e7e5;border-radius:8px;padding:8px 10px;box-shadow:0 1px 2px rgba(21,35,34,.04)}"
-                            ".filter-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px}"
-                            ".filter-meta{display:grid;grid-template-columns:1fr 1fr;gap:3px 8px;color:#56616b;font-size:.82rem;margin-top:6px}"
-                            ".progress{height:5px;background:#e4e9ed;border-radius:999px;overflow:hidden}"
-                            ".progress span{display:block;height:100%;background:#4f8a86;border-radius:999px}"
-                            ".check-title{display:block;font-size:.82em;color:#56616b;margin-bottom:3px}"
-                            ".check-line{display:inline-flex;align-items:center;gap:6px;min-height:28px;padding:0 8px;border:1px solid #d7dde2;border-radius:4px;background:#fff;box-sizing:border-box;color:#202428;font-size:.92rem;white-space:nowrap}"
-                            ".check-line input[type=checkbox]{margin:0;flex:0 0 auto}"
-                            ".form-actions{display:flex;align-items:center;justify-content:flex-start;gap:6px;margin-top:8px;flex-wrap:wrap}"
-                            ".form-actions form{margin:0}"
-                            "form input[type=submit]{min-height:34px;padding:0 14px;margin:0;font-size:.92rem;line-height:1.2}"
-                            ".form-actions a,.btn-link{display:inline-flex;align-items:center;justify-content:center;min-height:34px;padding:0 12px;border:1px solid #d7dde2;border-radius:4px;background:#f7f9fa;color:#355e66;font-size:.92rem;line-height:1.2;box-sizing:border-box}"
-                            ".form-actions input.secondary{background:#f7f9fa;border-color:#d7dde2;color:#4c565d}"
-                            ".filters-table th:first-child{width:22%}.filters-table th:last-child{width:150px}"
-                            ".row-actions{display:flex;gap:5px;align-items:center;justify-content:flex-start;flex-wrap:wrap}"
-                            ".row-actions a,.row-actions input[type=submit]{display:inline-flex;align-items:center;justify-content:center;min-width:48px;min-height:30px;padding:0 10px;border:1px solid #d7dde2;border-radius:4px;background:#f7f9fa;color:#355e66;font-size:.86rem;box-sizing:border-box}"
-                            "table{width:100%;border-collapse:collapse;margin:0 0 10px;background:#fff;border:1px solid #e1e7e5;border-radius:8px;overflow:hidden;font-size:.92rem;box-shadow:0 1px 2px rgba(21,35,34,.04)}"
-                            "td,th{padding:5px 8px;border-bottom:1px solid #edf0f2;text-align:left;vertical-align:middle}"
-                            "th{background:#fafafa;color:#56616b}"
-                            ".pager{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin:0 0 8px}"
-                            ".pager-links{display:flex;align-items:center;gap:5px;flex-wrap:wrap}"
-                            ".page-link,.page-current{display:inline-flex;align-items:center;justify-content:center;min-height:30px;padding:0 10px;border:1px solid #d7dde2;border-radius:4px;background:#fff;color:#355e66;font-size:.88rem;box-sizing:border-box}"
-                            ".page-current{background:#e9f3ef;color:#226b5f;border-color:#cfe4dc}"
-                            ".page-disabled{color:#9aa3aa;background:#f4f6f6;pointer-events:none}"
-                            ".page-size{display:flex;align-items:center;gap:6px;color:#56616b;font-size:.86rem}.page-size select{width:auto;min-width:80px}"
-                            ".kv{margin:0 0 10px;background:#fff;border:1px solid #e1e7e5;border-radius:8px;box-shadow:0 1px 2px rgba(21,35,34,.04);overflow:hidden}"
-                            ".kv th,.kv td{padding:5px 8px;border-bottom:1px solid #edf0f2}.kv th{width:26%;color:#56616b;background:#fbfcfc}"
-                            ".ok,.err{display:block;background:#fff;border:1px solid #e1e7e5;border-radius:8px;padding:6px 10px;margin:0 0 8px;box-shadow:0 1px 2px rgba(21,35,34,.04)}"
-                            ".footerbar{margin-top:10px;padding:6px 10px;background:#fff;border:1px solid #e1e7e5;border-radius:8px;box-shadow:0 1px 2px rgba(21,35,34,.04)}"
-                            "@media(max-width:720px){.stats-layout{grid-template-columns:1fr}.form-grid{grid-template-columns:1fr}.span-2,.span-3,.span-4,.span-5,.span-6,.span-8,.span-12{grid-column:1/-1}}"
-                            "@media(max-width:520px){body{padding:8px 10px 12px}nav{padding:8px 10px}.grid,.metric-grid,.filter-cards{grid-template-columns:1fr}.panel{padding:8px}.form-actions{gap:5px}.kv th{width:34%}.pager{align-items:flex-start}.page-size{width:100%}}"
-                            "</style>");
+    Esp32BaseWeb::sendChunk("<style>");
+    Esp32BaseWeb::sendChunk(":root{--bg:#f7f9f8;--surface:#fff;--line:#dde5e3;--text:#17202a;--muted:#68747d;--accent:#2f756f;--accent-soft:#e3f1ed;--warn:#a36b10}"
+                            "body{max-width:1280px;background:var(--bg);color:var(--text);font-size:14px;line-height:1.42;padding:14px 18px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,'PingFang SC','Microsoft YaHei',sans-serif}"
+                            "h1,h2,h3{letter-spacing:0;color:var(--text)}h2{font-size:18px;margin:18px 0 10px}h3{font-size:15px;margin:0 0 8px}.page{margin:0}p{margin:0 0 8px}");
+    Esp32BaseWeb::sendChunk("nav,.footerbar,.panel,.metric-card,.filter-card,.daily-chart,.usage-panel,table{background:var(--surface);border:1px solid var(--line);border-radius:8px;box-shadow:0 1px 2px rgba(16,24,40,.035)}"
+                            "nav{display:flex;align-items:center;gap:6px;margin:0 0 18px;padding:8px 10px;overflow-x:auto}nav a{font-size:15px;font-weight:650;padding:8px 12px;margin:0;border-radius:7px;color:#25313f}.brand{font-weight:750}nav a.active{background:var(--accent-soft);color:#17635b}"
+                            ".footerbar{margin-top:18px;padding:9px 12px}.syslinks a{background:#f1f4f4;color:var(--muted)}.heap{color:var(--muted)}");
+    Esp32BaseWeb::sendChunk(".muted{color:var(--muted)}.hint{display:block;color:var(--muted);font-size:12px;margin:3px 0 0}.panel{padding:12px;margin:12px 0}.panel h3{padding-bottom:6px;margin-bottom:8px;border-bottom:1px solid #eef2f1}"
+                            ".panel-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px;padding-bottom:7px;border-bottom:1px solid #eef2f1}.panel-head h3{padding:0;margin:0;border:0}");
+    Esp32BaseWeb::sendChunk(".grid,.metric-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin:0 0 12px}"
+                            ".metric-card{padding:12px 14px;min-height:54px}.metric-card span{display:block;color:var(--muted);font-size:13px;font-weight:600;margin-bottom:4px}.metric-card strong{display:block;color:var(--text);font-size:18px;line-height:1.2;font-weight:750}");
+    Esp32BaseWeb::sendChunk(".filter-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:10px;margin:0 0 12px}.filter-card{padding:12px 14px;min-height:128px}.filter-head{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:8px}.filter-head strong{font-size:16px;line-height:1.25;font-weight:750}"
+                            ".filter-meta{display:grid;gap:4px;color:var(--muted);font-size:13px;margin-top:10px}.dual-progress{display:grid;gap:4px;margin:8px 0}.dual-progress span{display:block;height:5px;border-radius:999px}.day-progress{background:var(--accent)}.flow-progress{background:#c9822c}");
+    Esp32BaseWeb::sendChunk(".status-pill{display:inline-flex;align-items:center;min-height:22px;padding:0 9px;border-radius:999px;background:#eef2f2;color:#55616a;font-size:12px;font-weight:650;line-height:1;white-space:nowrap}.warn{display:inline-block;background:#fff8e6;border:1px solid #ead28b;border-radius:8px;padding:7px 9px;color:#6b4a12;margin:0 0 10px}.filter-used-days{font-variant-numeric:tabular-nums}");
+    Esp32BaseWeb::sendChunk(".stats-layout{display:grid;grid-template-columns:minmax(0,1fr);gap:10px;align-items:start}.daily-chart{padding:14px 16px;margin:0 0 12px;overflow-x:auto}.chart-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:2px}.chart-head h3{margin:0 4px 0 0}.chart-key{font-size:12px;color:var(--muted);font-weight:650}.chart-key:before{content:'';display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5px}.volume-key:before{background:var(--accent)}.duration-key:before{background:#7c8fae}");
+    Esp32BaseWeb::sendChunk(".daily-chart svg{display:block;width:100%;height:auto;min-width:720px;margin-top:6px}.daily-chart .bar{fill:var(--accent)}.daily-chart .duration-bar{fill:#7c8fae}.daily-chart .empty-bar{fill:#cfd7d5}.daily-chart .axis{stroke:#d9e0df;stroke-width:1}.daily-chart .x-label,.daily-chart .y-label{font-size:11px;text-anchor:middle;fill:var(--muted)}");
+    Esp32BaseWeb::sendChunk(".usage-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:10px;margin:0 0 12px}.usage-panel{padding:12px 14px}.usage-panel h3{margin-bottom:9px}.usage-row{display:grid;grid-template-columns:minmax(72px,1fr) auto;gap:5px 8px;align-items:center;margin:0 0 8px;color:var(--muted);font-size:13px}.usage-row strong{color:var(--text);font-weight:650}.usage-bar{grid-column:1/-1;height:5px;background:#e6ecea;border-radius:999px;overflow:hidden}.usage-bar i{display:block;height:100%;background:var(--accent);border-radius:999px}");
+    Esp32BaseWeb::sendChunk(".form-grid{display:grid;grid-template-columns:repeat(12,1fr);gap:10px 12px;align-items:start}.span-2{grid-column:span 2}.span-3{grid-column:span 3}.span-4{grid-column:span 4}.span-5{grid-column:span 5}.span-6{grid-column:span 6}.span-8{grid-column:span 8}.span-12{grid-column:1/-1}"
+                            ".field span,.check-title{display:block;font-size:12px;color:var(--muted);font-weight:650;margin-bottom:4px}.field input,.field select{margin-bottom:0}.check-line{display:inline-flex;align-items:center;gap:6px;min-height:32px;padding:0 8px;border:1px solid var(--line);border-radius:6px;background:#fff;color:var(--text);font-size:14px;white-space:nowrap}.check-line input{margin:0}");
+    Esp32BaseWeb::sendChunk(".form-actions{display:flex;align-items:center;justify-content:flex-start;gap:6px;margin-top:10px;flex-wrap:wrap}.form-actions form{margin:0}.form-actions a,.btn-link,.page-link,.page-current,.row-actions a{display:inline-flex;align-items:center;justify-content:center;min-height:32px;padding:0 10px;border:1px solid var(--line);border-radius:6px;background:#f7f9fa;color:#355e66;font-size:13px;line-height:1.2;box-sizing:border-box}input.secondary{background:#f7f9fa;border:1px solid var(--line);color:#4c565d}.row-actions{display:flex;gap:5px;align-items:center;flex-wrap:wrap}");
+    Esp32BaseWeb::sendChunk("table{width:100%;border-collapse:separate;border-spacing:0;margin:0 0 12px;overflow:hidden;font-size:13px}td,th{padding:8px 10px;border-bottom:1px solid #edf1f0;text-align:left;vertical-align:middle}tr:last-child td{border-bottom:0}th{background:#f8faf9;color:var(--muted);font-weight:700}.filters-table th:first-child{width:22%}.filters-table th:last-child{width:150px}.kv th{width:26%}");
+    Esp32BaseWeb::sendChunk(".pager{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin:0 0 10px}.pager-links{display:flex;align-items:center;gap:5px;flex-wrap:wrap}.page-current{background:var(--accent-soft);color:#17635b;border-color:#cfe4dc}.page-disabled{color:#9aa3aa;background:#f4f6f6;pointer-events:none}.page-size{display:flex;align-items:center;gap:6px;color:var(--muted);font-size:13px}.page-size select{width:auto;min-width:80px}");
+    Esp32BaseWeb::sendChunk(".disabled-row{background:#f7f8f8;color:#8a949b}.disabled-row td{color:#8a949b}.disabled-row .status-pill{background:#eef0f0;color:#7b858d}.disabled-row a{color:#6f7a82}"
+                            "@media(max-width:720px){body{padding:10px}.form-grid{grid-template-columns:1fr}.span-2,.span-3,.span-4,.span-5,.span-6,.span-8,.span-12{grid-column:1/-1}.usage-grid{grid-template-columns:1fr}.daily-chart svg{min-width:680px}}"
+                            "@media(max-width:520px){.grid,.metric-grid,.filter-cards{grid-template-columns:1fr}.metric-card{min-height:0}.pager{align-items:flex-start}.page-size{width:100%}.kv th{width:34%}}");
+    Esp32BaseWeb::sendChunk("</style>");
 }
 
 bool sendPageStart(const char* title) {
@@ -608,6 +619,183 @@ void sendCheckbox(const char* label, const char* name, bool checked) {
             checked ? " checked" : "");
 }
 
+void formatMonthRange(const WaterUsageSummary& summary, char* out, std::size_t len) {
+    if (!out || len == 0 || summary.monthStartDay == 0 || summary.todayDay == 0) {
+        return;
+    }
+    std::uint16_t year = 0;
+    std::uint8_t month = 0;
+    std::uint8_t day = 0;
+    dateFromDayIndex(summary.monthStartDay, year, month, day);
+    std::uint16_t endYear = 0;
+    std::uint8_t endMonth = 0;
+    std::uint8_t endDay = 0;
+    dateFromDayIndex(summary.todayDay, endYear, endMonth, endDay);
+    std::snprintf(out,
+                  len,
+                  "%u 月 %u ~ %u 日",
+                  static_cast<unsigned>(month),
+                  static_cast<unsigned>(day),
+                  static_cast<unsigned>(endDay));
+}
+
+std::uint32_t maxCountVolume(const CountVolumeBucket* buckets, std::size_t count) {
+    std::uint32_t max = 0;
+    for (std::size_t i = 0; i < count; ++i) {
+        if (buckets[i].volumeMl > max) {
+            max = buckets[i].volumeMl;
+        }
+    }
+    return max;
+}
+
+std::uint32_t maxResultCount(const std::uint32_t* values, std::size_t count) {
+    std::uint32_t max = 0;
+    for (std::size_t i = 0; i < count; ++i) {
+        if (values[i] > max) {
+            max = values[i];
+        }
+    }
+    return max;
+}
+
+void sendUsageBar(const char* label, std::uint32_t volumeMl, std::uint32_t count, std::uint32_t maxVolume) {
+    char volume[24]{};
+    formatLiters(volumeMl, volume, sizeof(volume));
+    const std::uint32_t percent = maxVolume == 0 ? 0 : (volumeMl * 100UL) / maxVolume;
+    sendFmt("<div class='usage-row'><span>%s</span><strong>%s · %lu 次</strong>"
+            "<div class='usage-bar'><i style='width:%lu%%'></i></div></div>",
+            label,
+            volume,
+            static_cast<unsigned long>(count),
+            static_cast<unsigned long>(percent));
+}
+
+void sendCountBar(const char* label, std::uint32_t count, std::uint32_t maxCount) {
+    const std::uint32_t percent = maxCount == 0 ? 0 : (count * 100UL) / maxCount;
+    sendFmt("<div class='usage-row'><span>%s</span><strong>%lu 次</strong>"
+            "<div class='usage-bar'><i style='width:%lu%%'></i></div></div>",
+            label,
+            static_cast<unsigned long>(count),
+            static_cast<unsigned long>(percent));
+}
+
+const char* resultLabel(std::size_t index) {
+    switch (static_cast<WaterResult>(index)) {
+        case WaterResult::Completed:
+            return "正常完成";
+        case WaterResult::StoppedByUser:
+            return "用户停止";
+        case WaterResult::SafetyStopped:
+            return "安全停止";
+        case WaterResult::FlowError:
+            return "流量异常";
+        case WaterResult::PauseTimeout:
+            return "暂停超时";
+    }
+    return "未知";
+}
+
+void sendUsagePatterns(const WaterUsageSummary& summary, const SystemConfig& config) {
+    Esp32BaseWeb::sendChunk("<section class='usage-panel'><h3>按预设分布</h3>");
+    const std::uint32_t maxPreset = maxCountVolume(summary.presetCounts, kPresetCount);
+    for (std::size_t i = 0; i < kPresetCount; ++i) {
+        if (summary.presetCounts[i].count == 0) {
+            continue;
+        }
+        char label[40]{};
+        char name[kPresetNameLength]{};
+        std::strncpy(name, config.presets[i].name, sizeof(name) - 1);
+        std::snprintf(label, sizeof(label), "%u %s", static_cast<unsigned>(i + 1), name);
+        sendUsageBar(label, summary.presetCounts[i].volumeMl, summary.presetCounts[i].count, maxPreset);
+    }
+    if (maxPreset == 0) {
+        Esp32BaseWeb::sendChunk("<p class='hint'>最近 30 天没有可聚合的真实时间记录。</p>");
+    }
+    Esp32BaseWeb::sendChunk("</section><section class='usage-panel'><h3>按时段分布</h3>");
+    CountVolumeBucket timeRanges[6]{};
+    static constexpr const char* rangeLabels[6] = {"深夜", "早晨", "上午", "中午", "下午", "晚上"};
+    for (std::size_t h = 0; h < 24; ++h) {
+        const std::size_t index = h < 6 ? 0 : h < 9 ? 1 : h < 12 ? 2 : h < 14 ? 3 : h < 18 ? 4 : 5;
+        addSaturating(timeRanges[index].volumeMl, summary.hourBuckets[h].volumeMl);
+        if (timeRanges[index].count <= UINT16_MAX - summary.hourBuckets[h].count) {
+            timeRanges[index].count = static_cast<std::uint16_t>(timeRanges[index].count + summary.hourBuckets[h].count);
+        } else {
+            timeRanges[index].count = UINT16_MAX;
+        }
+    }
+    const std::uint32_t maxTime = maxCountVolume(timeRanges, 6);
+    for (std::size_t i = 0; i < 6; ++i) {
+        sendUsageBar(rangeLabels[i], timeRanges[i].volumeMl, timeRanges[i].count, maxTime);
+    }
+    Esp32BaseWeb::sendChunk("</section><section class='usage-panel'><h3>完成结果</h3>");
+    const std::uint32_t maxResult = maxResultCount(summary.resultCounts, kUsageResultCount);
+    for (std::size_t i = 0; i < kUsageResultCount; ++i) {
+        sendCountBar(resultLabel(i), summary.resultCounts[i], maxResult);
+    }
+    Esp32BaseWeb::sendChunk("</section><section class='usage-panel'><h3>单次出水分布</h3>");
+    static constexpr const char* histLabels[kUsageVolumeHistCount] = {"<100 ml", "100-300 ml", "300-500 ml", "500-1000 ml", ">1000 ml"};
+    const std::uint32_t maxHist = maxCountVolume(summary.volumeHist, kUsageVolumeHistCount);
+    for (std::size_t i = 0; i < kUsageVolumeHistCount; ++i) {
+        sendUsageBar(histLabels[i], summary.volumeHist[i].volumeMl, summary.volumeHist[i].count, maxHist);
+    }
+    Esp32BaseWeb::sendChunk("</section>");
+}
+
+void sendFilterCards(std::uint32_t now) {
+    Esp32BaseWeb::sendChunk("<h2>滤芯</h2><div class='filter-cards'>");
+    std::uint32_t usedDaysByIndex[kFilterCount]{};
+    std::size_t enabledCount = 0;
+    for (std::size_t i = 0; i < kFilterCount; ++i) {
+        const FilterRecord& filter = g_context.filters->record(i);
+        if (!filter.enabled) {
+            continue;
+        }
+        usedDaysByIndex[i] = filter.startTime >= kMinRealDateSeconds ? g_context.filters->usedDays(i, now) : 0;
+        ++enabledCount;
+    }
+    for (std::size_t i = 0; i < kFilterCount; ++i) {
+        const FilterRecord& filter = g_context.filters->record(i);
+        if (!filter.enabled) {
+            continue;
+        }
+        const std::uint32_t usedDays = usedDaysByIndex[i];
+        const std::uint32_t dayProgress = filterProgressPercent(filter, usedDays);
+        const std::uint32_t flowProgress = filterFlowProgressPercent(filter);
+        char usedFlow[24]{};
+        char lifeFlow[24]{};
+        char startDate[16]{};
+        formatLiters(filter.usedMl, usedFlow, sizeof(usedFlow));
+        formatLiters(filter.lifeMl, lifeFlow, sizeof(lifeFlow));
+        formatDate(filter.startTime, startDate, sizeof(startDate));
+
+        Esp32BaseWeb::sendChunk("<section class='filter-card'><div class='filter-head'><strong>");
+        sendHtmlEscapedBounded(filter.name, sizeof(filter.name));
+        sendFmt("</strong><span class='status-pill'>%s</span></div>"
+                "<div class='dual-progress'><span class='day-progress' style='width:%lu%%'></span>"
+                "<span class='flow-progress' style='width:%lu%%'></span></div>",
+                filterDisplayStatusText(filter, usedDays),
+                static_cast<unsigned long>(dayProgress),
+                static_cast<unsigned long>(flowProgress));
+        Esp32BaseWeb::sendChunk("<div class='filter-meta'>");
+        if (filter.recommendDays > 0) {
+            sendFmt("<span>已用 %lu 天 / 上限 %lu 天</span>",
+                    static_cast<unsigned long>(usedDays),
+                    static_cast<unsigned long>(filter.recommendDays));
+        } else {
+            sendFmt("<span>已用 %lu 天 / 未设置天数</span>", static_cast<unsigned long>(usedDays));
+        }
+        sendFmt("<span>已用 %s / 寿命 %s</span><span>上次更换 %s</span></div></section>",
+                usedFlow,
+                filter.lifeMl == 0 ? "未设置" : lifeFlow,
+                startDate[0] ? startDate : "未设置");
+    }
+    if (enabledCount == 0) {
+        Esp32BaseWeb::sendChunk("<section class='filter-card muted'>当前没有启用的滤芯。</section>");
+    }
+    Esp32BaseWeb::sendChunk("</div>");
+}
+
 void handleFaucetPage() {
     if (!sendPageStart("出水龙头")) {
         return;
@@ -618,19 +806,37 @@ void handleFaucetPage() {
     }
     const AppSnapshot snapshot = g_context.app->snapshot();
     char currentPreset[16]{};
-    std::snprintf(currentPreset, sizeof(currentPreset), "%u", static_cast<unsigned>(snapshot.water.selectedPreset + 1));
+    std::snprintf(currentPreset,
+                  sizeof(currentPreset),
+                  "%u / %s",
+                  static_cast<unsigned>(snapshot.water.selectedPreset + 1),
+                  modeText(snapshot.water.mode));
     char targetValue[24]{};
     if (snapshot.water.mode == WaterMode::Time) {
-        std::snprintf(targetValue, sizeof(targetValue), "%lu 秒", static_cast<unsigned long>(snapshot.water.targetValue));
+        formatSecondsValue(snapshot.water.targetValue, targetValue, sizeof(targetValue));
     } else {
         formatLiters(snapshot.water.targetValue, targetValue, sizeof(targetValue));
     }
+    char outValue[24]{};
+    formatLiters(snapshot.water.volumeMl, outValue, sizeof(outValue));
+    char remainingValue[24]{};
+    const std::uint32_t remaining =
+        snapshot.water.mode == WaterMode::Time
+            ? (snapshot.water.targetValue > snapshot.water.elapsedSec ? snapshot.water.targetValue - snapshot.water.elapsedSec : 0)
+            : (snapshot.water.targetValue > snapshot.water.volumeMl ? snapshot.water.targetValue - snapshot.water.volumeMl : 0);
+    if (snapshot.water.mode == WaterMode::Time) {
+        formatSecondsValue(remaining, remainingValue, sizeof(remainingValue));
+    } else {
+        formatLiters(remaining, remainingValue, sizeof(remainingValue));
+    }
+    char elapsedValue[24]{};
+    formatSecondsValue(snapshot.water.elapsedSec, elapsedValue, sizeof(elapsedValue));
+    char droppedPulses[24]{};
+    std::snprintf(droppedPulses, sizeof(droppedPulses), "%lu", static_cast<unsigned long>(snapshot.flowDroppedPulses));
     char today[24]{};
-    char week[24]{};
     char month[24]{};
     char total[24]{};
     formatLiters(snapshot.statistics.todayMl, today, sizeof(today));
-    formatLiters(snapshot.statistics.weekMl, week, sizeof(week));
     formatLiters(snapshot.statistics.monthMl, month, sizeof(month));
     formatLiters(snapshot.statistics.totalMl, total, sizeof(total));
 
@@ -638,51 +844,20 @@ void handleFaucetPage() {
     sendMetricCard("运行状态", stateText(snapshot.water.state));
     sendMetricCard("当前预设", currentPreset);
     sendMetricCard("目标值", targetValue);
-    sendMetricCard("今日用水", today);
+    sendMetricCard("已出水", outValue);
+    if (snapshot.water.state == WaterState::Running || snapshot.water.state == WaterState::Paused) {
+        sendMetricCard(snapshot.water.mode == WaterMode::Time ? "剩余时间" : "剩余量", remainingValue);
+        sendMetricCard("已运行", elapsedValue);
+    }
+    if (snapshot.flowDroppedPulses > 0) {
+        sendMetricCard("丢弃脉冲", droppedPulses);
+    }
     Esp32BaseWeb::sendChunk("</div><h2>统计</h2><div class='metric-grid'>");
     sendMetricCard("今日", today);
-    sendMetricCard("本周", week);
     sendMetricCard("本月", month);
     sendMetricCard("总累计", total);
-    Esp32BaseWeb::sendChunk("</div><h2>滤芯</h2><div class='filter-cards'>");
-    bool anyFilter = false;
-    for (std::size_t i = 0; i < kFilterCount; ++i) {
-        const FilterRecord& filter = g_context.filters->record(i);
-        if (!filter.enabled) {
-            continue;
-        }
-        anyFilter = true;
-        const std::uint32_t usedDays =
-            filter.startTime >= kMinRealDateSeconds ? g_context.filters->usedDays(i, g_context.nowSeconds()) : 0;
-        char life[32]{};
-        formatLifeRange(filter, life, sizeof(life));
-        char usedFlow[24]{};
-        formatLiters(filter.usedMl, usedFlow, sizeof(usedFlow));
-        const std::uint32_t progress = filterProgressPercent(filter, usedDays);
-        Esp32BaseWeb::sendChunk("<section class='filter-card'><div class='filter-head'><strong>");
-        Esp32BaseWeb::writeHtmlEscaped(filter.name);
-        sendFmt("</strong><span class='status-pill'>%s</span></div>",
-                filterDisplayStatusText(filter, usedDays));
-        if (filter.recommendDays > 0) {
-            sendFmt("<div class='progress'><span style='width:%lu%%'></span></div>",
-                    static_cast<unsigned long>(progress));
-            sendFmt("<div class='filter-meta'><span>已用 %lu 天</span><span>寿命 %s</span><span>流量 %s</span><span>进度 %lu%%</span></div></section>",
-                    static_cast<unsigned long>(usedDays),
-                    life,
-                    usedFlow,
-                    static_cast<unsigned long>(progress));
-        } else {
-            Esp32BaseWeb::sendChunk("<p class='hint'>未设置周期</p>");
-            sendFmt("<div class='filter-meta'><span>已用 %lu 天</span><span>寿命 %s</span><span>流量 %s</span></div></section>",
-                    static_cast<unsigned long>(usedDays),
-                    life,
-                    usedFlow);
-        }
-    }
-    if (!anyFilter) {
-        Esp32BaseWeb::sendChunk("<section class='filter-card muted'>当前没有启用的滤芯。</section>");
-    }
     Esp32BaseWeb::sendChunk("</div>");
+    sendFilterCards(g_context.nowSeconds());
     sendPageEnd();
 }
 
@@ -713,7 +888,7 @@ void handlePresetsPage() {
         Esp32BaseWeb::sendChunk("<div class='span-2'>");
         sendCheckbox("启用", "enabled", preset.enabled);
         Esp32BaseWeb::sendChunk("</div><label class='field span-5'><span>名称</span><input name='name' maxlength='15' value='");
-        sendHtmlAttrEscaped(preset.name);
+        sendHtmlAttrEscapedBounded(preset.name, sizeof(preset.name));
         Esp32BaseWeb::sendChunk("'><small class='hint'>最多 15 个字符</small></label><label class='field span-2'><span>类型</span><select id='presetType' name='type' onchange='presetTypeChanged()'>");
         sendFmt("<option value='volume'%s>容量</option>", preset.type == PresetType::Volume ? " selected" : "");
         sendFmt("<option value='time'%s>时间</option>", preset.type == PresetType::Time ? " selected" : "");
@@ -748,9 +923,10 @@ void handlePresetsPage() {
                             "<th>序号</th><th>名称</th><th>类型</th><th>数值</th><th>状态</th><th>操作</th></tr>");
     for (std::size_t i = 0; i < kPresetCount; ++i) {
         const PresetConfig& preset = g_context.config->presets[i];
-        sendFmt("<tr><td>%u</td><td>",
+        sendFmt("<tr%s><td>%u</td><td>",
+                preset.enabled ? "" : " class='disabled-row'",
                 static_cast<unsigned>(i + 1));
-        Esp32BaseWeb::writeHtmlEscaped(preset.name);
+        sendHtmlEscapedBounded(preset.name, sizeof(preset.name));
         sendFmt("</td><td>%s</td><td>",
                 preset.type == PresetType::Time ? "时间" : "容量");
         if (preset.type == PresetType::Time) {
@@ -775,50 +951,39 @@ void handleStatsPage() {
         return;
     }
     const std::uint32_t now = g_context.nowSeconds();
-    const RecordAggregates aggregates = aggregateRecords(now);
+    const WaterUsageSummary summary = aggregateWaterRecords(*g_context.records, now, kChartDays);
+    const AppSnapshot snapshot = g_context.app->snapshot();
     char today[24]{};
-    char week[24]{};
     char month[24]{};
     char total[24]{};
-    char weekAvg[24]{};
-    char monthAvg[24]{};
-    char unknown[24]{};
-    char unknownDuration[24]{};
-    formatLiters(aggregates.todayMl, today, sizeof(today));
-    formatLiters(aggregates.weekMl, week, sizeof(week));
-    formatLiters(aggregates.monthMl, month, sizeof(month));
-    formatLiters(g_context.app->snapshot().statistics.totalMl, total, sizeof(total));
-    formatLiters((aggregates.weekMl + 3UL) / 7UL, weekAvg, sizeof(weekAvg));
-    formatLiters((aggregates.monthMl + 14UL) / 30UL, monthAvg, sizeof(monthAvg));
-    formatLiters(aggregates.unknownMl, unknown, sizeof(unknown));
-    std::snprintf(unknownDuration,
-                  sizeof(unknownDuration),
-                  "%lu s / %lu 条",
-                  static_cast<unsigned long>(aggregates.unknownDurationSec),
-                  static_cast<unsigned long>(aggregates.unknownCount));
+    char average30[24]{};
+    char monthRange[32]{};
+    formatLiters(summary.todayMl, today, sizeof(today));
+    formatLiters(summary.monthMl, month, sizeof(month));
+    formatLiters(snapshot.statistics.totalMl, total, sizeof(total));
+    formatLiters(summary.last30DaysDailyAverageMl, average30, sizeof(average30));
+    formatMonthRange(summary, monthRange, sizeof(monthRange));
     Esp32BaseWeb::sendHeader("用水统计");
-    Esp32BaseWeb::sendChunk("<h2>统计</h2><div class='stats-layout'><div><div class='metric-grid'>");
+    Esp32BaseWeb::sendChunk("<h2>统计</h2>");
+    if (summary.unknownCount > 0) {
+        sendFmt("<p class='warn'>⚠ 含 %lu 条无时间记录，未纳入按日期图表。</p>",
+                static_cast<unsigned long>(summary.unknownCount));
+    }
+    Esp32BaseWeb::sendChunk("<div class='stats-layout'><div><div class='metric-grid'>");
     sendMetricCard("今日", today);
-    sendMetricCard("本周", week);
-    sendMetricCard("本月", month);
+    char monthTitle[48]{};
+    std::snprintf(monthTitle, sizeof(monthTitle), "本月%s%s", monthRange[0] ? " " : "", monthRange);
+    sendMetricCard(monthTitle, month);
+    sendMetricCard("过去 30 天日均", average30);
     sendMetricCard("总累计", total);
-    Esp32BaseWeb::sendChunk("</div><div class='metric-grid'>");
-    sendMetricCard("本周日均", weekAvg);
-    sendMetricCard("本月日均", monthAvg);
-    char todayWeek[16]{};
-    char weekMonth[16]{};
-    std::snprintf(todayWeek, sizeof(todayWeek), "%lu%%", static_cast<unsigned long>(percentOf(aggregates.todayMl, aggregates.weekMl)));
-    std::snprintf(weekMonth, sizeof(weekMonth), "%lu%%", static_cast<unsigned long>(percentOf(aggregates.weekMl, aggregates.monthMl)));
-    sendMetricCard("今日占本周", todayWeek);
-    sendMetricCard("本周占本月", weekMonth);
-    sendMetricCard("未知时间出水量", unknown);
-    sendMetricCard("未知时间时长", unknownDuration);
     Esp32BaseWeb::sendChunk("</div></div>");
     if (now >= kMinRealDateSeconds) {
-        sendDailyChart(aggregates.days);
+        sendDailyChart(summary);
     } else {
         sendTimeUnsyncedChartNotice();
     }
+    Esp32BaseWeb::sendChunk("</div><div class='usage-grid'>");
+    sendUsagePatterns(summary, *g_context.config);
     Esp32BaseWeb::sendChunk("</div>");
     sendPageEnd();
 }
@@ -1000,7 +1165,8 @@ void handleFiltersPage() {
         const std::uint32_t usedDays = filter.startTime >= kMinRealDateSeconds ? g_context.filters->usedDays(i, now) : 0;
         char life[32]{};
         formatLifeRange(filter, life, sizeof(life));
-        sendFmt("<tr data-filter-start='%lu' data-filter-boot='%lu' data-filter-enabled='%u' data-filter-recommend-days='%lu' data-filter-max-days='%lu' data-filter-life-ml='%lu' data-filter-used-ml='%lu'><td>",
+        sendFmt("<tr%s data-filter-start='%lu' data-filter-boot='%lu' data-filter-enabled='%u' data-filter-recommend-days='%lu' data-filter-max-days='%lu' data-filter-life-ml='%lu' data-filter-used-ml='%lu'><td>",
+                filter.enabled ? "" : " class='disabled-row'",
                 static_cast<unsigned long>(filter.startTime),
                 static_cast<unsigned long>(filter.startBootId),
                 filter.enabled ? 1U : 0U,
@@ -1008,7 +1174,7 @@ void handleFiltersPage() {
                 static_cast<unsigned long>(filter.maxDays),
                 static_cast<unsigned long>(filter.lifeMl),
                 static_cast<unsigned long>(filter.usedMl));
-        Esp32BaseWeb::writeHtmlEscaped(filter.name);
+        sendHtmlEscapedBounded(filter.name, sizeof(filter.name));
         sendFmt("</td><td>%s</td><td class='filter-used-days'>%lu 天</td><td>",
                 filter.enabled ? "启用" : "停用",
                 static_cast<unsigned long>(usedDays));
@@ -1024,7 +1190,7 @@ void handleFiltersPage() {
                 filterDisplayStatusText(filter, usedDays),
                 static_cast<unsigned>(i));
         Esp32BaseWeb::sendChunk("<form method='post' action='/api/faucet/filters/reset' data-filter-name='");
-        sendHtmlAttrEscaped(filter.name);
+        sendHtmlAttrEscapedBounded(filter.name, sizeof(filter.name));
         Esp32BaseWeb::sendChunk("' data-reset-date='");
         sendHtmlAttrEscaped(todayDate);
         Esp32BaseWeb::sendChunk("' onsubmit=\"return confirmFilterReset(this)&&once(this)\">");
@@ -1100,7 +1266,7 @@ void handleFilterEditPage() {
     Esp32BaseWeb::sendChunk("</div><label class='field span-6'><span>名称</span><input name='name' maxlength='");
     sendFmt("%u", static_cast<unsigned>(kFilterNameMaxChars));
     Esp32BaseWeb::sendChunk("' value='");
-    sendHtmlAttrEscaped(filter.name);
+    sendHtmlAttrEscapedBounded(filter.name, sizeof(filter.name));
     Esp32BaseWeb::sendChunk("'><small class='hint'>最多 30 个字符，用于列表和状态页显示</small></label>"
                             "<div class='span-4'></div>");
     Esp32BaseWeb::sendChunk("<div class='span-3'>");
@@ -1353,8 +1519,15 @@ void handleStatsApi() {
     if (!Esp32BaseWeb::checkAuth() || !requireContext()) {
         return;
     }
-    char json[256]{};
-    sendJsonBuffer(writeStatsJson(g_context.app->snapshot().statistics, json, sizeof(json)), json);
+    char* json = new (std::nothrow) char[8192]{};
+    if (!json) {
+        Esp32BaseWeb::sendJson(500, "{\"error\":\"oom\"}");
+        return;
+    }
+    const WaterUsageSummary summary = aggregateWaterRecords(*g_context.records, g_context.nowSeconds(), kChartDays);
+    const std::uint32_t totalMl = g_context.app->snapshot().statistics.totalMl;
+    sendJsonBuffer(writeUsageSummaryJson(summary, totalMl, json, 8192), json);
+    delete[] json;
 }
 
 void handleRecordCalibrationApi() {

@@ -978,6 +978,7 @@ void handleFaucetPage() {
     } else {
         std::snprintf(pulsePerLiter, sizeof(pulsePerLiter), "未校准");
     }
+    const char* valveStatus = snapshot.water.valveOpen ? "开" : "关";
     char droppedPulses[24]{};
     std::snprintf(droppedPulses, sizeof(droppedPulses), "%lu", static_cast<unsigned long>(snapshot.flowDroppedPulses));
     char today[24]{};
@@ -991,7 +992,8 @@ void handleFaucetPage() {
     sendMetricCard("本地页面", localPageText(snapshot));
     sendMetricCard("主显示", localMain);
     sendMetricCard("辅助提示", localAuxiliary);
-    Esp32BaseWeb::sendChunk("</div><h2>出水详情</h2><div class='metric-grid'>");
+    sendMetricCard("流量计校准系数", pulsePerLiter);
+    sendMetricCard("阀门状态", valveStatus);
     sendMetricCard("运行状态", stateText(snapshot.water.state));
     sendMetricCard("当前预设", currentPreset);
     sendMetricCard("目标值", targetValue);
@@ -1003,7 +1005,6 @@ void handleFaucetPage() {
     if (snapshot.water.state == WaterState::Running || snapshot.water.state == WaterState::Paused) {
         sendMetricCard("已运行", elapsedValue);
     }
-    sendMetricCard("流量计", pulsePerLiter);
     if (snapshot.flowDroppedPulses > 0) {
         sendMetricCard("丢弃脉冲", droppedPulses);
     }

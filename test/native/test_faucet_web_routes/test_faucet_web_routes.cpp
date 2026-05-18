@@ -188,8 +188,9 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "本地页面"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "主显示"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "辅助提示"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "<h2>出水详情</h2><div class='metric-grid'>"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "流量计"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "<h2>出水详情</h2><div class='metric-grid'>"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "流量计校准系数"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "阀门状态"));
 }
 
 void test_app_config_source_uses_clear_business_labels_and_help() {

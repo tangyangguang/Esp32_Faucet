@@ -501,7 +501,7 @@ void sendNoticeFromQuery() {
 
 void sendAppStyles() {
     Esp32BaseWeb::sendChunk("<style>");
-    Esp32BaseWeb::sendChunk(":root{--bg:#f7f9f8;--surface:#fff;--line:#dde5e3;--text:#17202a;--muted:#68747d;--accent:#2f756f;--accent-soft:#e3f1ed;--warn:#a36b10}"
+    Esp32BaseWeb::sendChunk(":root{--bg:#fff;--surface:#fff;--line:#dde5e3;--text:#17202a;--muted:#68747d;--accent:#2f756f;--accent-soft:#e3f1ed;--warn:#a36b10}"
                             "body{max-width:1280px;background:var(--bg);color:var(--text);font-size:14px;line-height:1.42;padding:14px 18px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,'PingFang SC','Microsoft YaHei',sans-serif}"
                             "h1,h2,h3{letter-spacing:0;color:var(--text)}h2{font-size:18px;margin:18px 0 10px}h3{font-size:15px;margin:0 0 8px}.page{margin:0}p{margin:0 0 8px}");
     Esp32BaseWeb::sendChunk("nav,.footerbar,.panel,.metric-card,.filter-card,.daily-chart,.usage-panel,table{background:var(--surface);border:1px solid var(--line);border-radius:8px;box-shadow:0 1px 2px rgba(16,24,40,.035)}"

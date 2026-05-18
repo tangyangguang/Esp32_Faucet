@@ -184,13 +184,27 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NULL(std::strstr(buffer, "filter.lifeMl == 0 ? \"未设置\" : lifeFlow"));
     TEST_ASSERT_NULL(std::strstr(buffer, "未知时间出水量"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "sendPageStart(\"智能出水\")"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "<h2>状态</h2><div class='metric-grid'>"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "<h2>当前状态</h2><div class='status-grid'>"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "本地面板提示"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "仅设备按键操作"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "<h2>本次任务</h2><div class='metric-grid'>"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "<h2>安全状态</h2><div class='metric-grid'>"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "<h2>今日概览</h2><div class='metric-grid'>"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "filter-progress-label"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "status-ok"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "status-warn"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "status-error"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "目标值"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "本地页面"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "主显示"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "辅助提示"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "辅助提示"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "<h2>状态</h2><div class='metric-grid'>"));
     TEST_ASSERT_NULL(std::strstr(buffer, "<h2>出水详情</h2><div class='metric-grid'>"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "流量计校准系数"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "阀门状态"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "设备不在待机状态，请回到待机后再保存配置。"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "<th>目标值</th>"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "<th>诊断</th>"));
 }
 
 void test_app_config_source_uses_clear_business_labels_and_help() {

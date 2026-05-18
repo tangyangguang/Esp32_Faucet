@@ -247,6 +247,36 @@ const char* filterDisplayStatusText(const FilterRecord& filter, std::uint32_t us
     return filterStatusText(filterLifeStatus(filter, usedDays));
 }
 
+const char* filterStatusClass(const FilterRecord& filter, std::uint32_t usedDays) {
+    if (!filter.enabled) {
+        return "status-muted";
+    }
+    switch (filterLifeStatus(filter, usedDays)) {
+        case FilterLifeStatus::RecommendReplace:
+            return "status-warn";
+        case FilterLifeStatus::Expired:
+            return "status-error";
+        case FilterLifeStatus::Normal:
+        default:
+            return "status-ok";
+    }
+}
+
+const char* resultStatusClass(WaterResult result) {
+    switch (result) {
+        case WaterResult::Completed:
+            return "status-ok";
+        case WaterResult::StoppedByUser:
+            return "status-muted";
+        case WaterResult::PauseTimeout:
+            return "status-warn";
+        case WaterResult::SafetyStopped:
+        case WaterResult::FlowError:
+        default:
+            return "status-error";
+    }
+}
+
 void sendLiters(std::uint32_t ml) {
     char text[24]{};
     formatLiters(ml, text, sizeof(text));
@@ -268,6 +298,14 @@ bool waterRecordCanCalibrate(const WaterRecord& record) {
 
 void sendMetricCard(const char* label, const char* value) {
     Esp32BaseWeb::sendChunk("<section class='metric-card'><span>");
+    Esp32BaseWeb::sendChunk(label);
+    Esp32BaseWeb::sendChunk("</span><strong>");
+    Esp32BaseWeb::sendChunk(value);
+    Esp32BaseWeb::sendChunk("</strong></section>");
+}
+
+void sendMetricCardClass(const char* label, const char* value, const char* className) {
+    sendFmt("<section class='metric-card %s'><span>", className ? className : "");
     Esp32BaseWeb::sendChunk(label);
     Esp32BaseWeb::sendChunk("</span><strong>");
     Esp32BaseWeb::sendChunk(value);
@@ -480,7 +518,7 @@ void sendNoticeFromQuery() {
     }
     const char* message = "操作失败，请检查输入后重试。";
     if (std::strcmp(text, "busy") == 0) {
-        message = "设备正在出水或显示结果，请回到待机后再保存。";
+        message = "设备不在待机状态，请回到待机后再保存配置。";
     } else if (std::strcmp(text, "invalid_index") == 0) {
         message = "编号无效，请返回列表重新选择。";
     } else if (std::strcmp(text, "invalid_value") == 0) {
@@ -509,11 +547,12 @@ void sendAppStyles() {
                             ".footerbar{margin-top:18px;padding:9px 12px}.syslinks a{background:#f1f4f4;color:var(--muted)}.heap{color:var(--muted)}");
     Esp32BaseWeb::sendChunk(".muted{color:var(--muted)}.hint{display:block;color:var(--muted);font-size:12px;margin:3px 0 0}.panel{padding:12px;margin:12px 0}.panel h3{padding-bottom:6px;margin-bottom:8px;border-bottom:1px solid #eef2f1}"
                             ".panel-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px;padding-bottom:7px;border-bottom:1px solid #eef2f1}.panel-head h3{padding:0;margin:0;border:0}");
-    Esp32BaseWeb::sendChunk(".grid,.metric-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin:0 0 12px}"
-                            ".metric-card{padding:12px 14px;min-height:54px}.metric-card span{display:block;color:var(--muted);font-size:13px;font-weight:600;margin-bottom:4px}.metric-card strong{display:block;color:var(--text);font-size:18px;line-height:1.2;font-weight:750}");
+    Esp32BaseWeb::sendChunk(".grid,.metric-grid,.status-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin:0 0 12px}"
+                            ".status-grid{grid-template-columns:minmax(220px,1.4fr) repeat(auto-fit,minmax(170px,1fr))}"
+                            ".metric-card{padding:12px 14px;min-height:54px}.metric-card.primary{border-color:#b8d7cf;background:#f7fbfa}.metric-card span{display:block;color:var(--muted);font-size:13px;font-weight:600;margin-bottom:4px}.metric-card strong{display:block;color:var(--text);font-size:18px;line-height:1.2;font-weight:750}");
     Esp32BaseWeb::sendChunk(".filter-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:10px;margin:0 0 12px}.filter-card{padding:12px 14px;min-height:128px}.filter-head{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:8px}.filter-head strong{font-size:16px;line-height:1.25;font-weight:750}"
                             ".filter-meta{display:grid;gap:4px;color:var(--muted);font-size:13px;margin-top:10px}.dual-progress{display:grid;gap:4px;margin:8px 0}.dual-progress span{display:block;height:5px;border-radius:999px}.day-progress{background:var(--accent)}.flow-progress{background:#c9822c}");
-    Esp32BaseWeb::sendChunk(".status-pill{display:inline-flex;align-items:center;min-height:22px;padding:0 9px;border-radius:999px;background:#eef2f2;color:#55616a;font-size:12px;font-weight:650;line-height:1;white-space:nowrap}.warn{display:inline-block;background:#fff8e6;border:1px solid #ead28b;border-radius:8px;padding:7px 9px;color:#6b4a12;margin:0 0 10px}.filter-used-days{font-variant-numeric:tabular-nums}");
+    Esp32BaseWeb::sendChunk(".status-pill{display:inline-flex;align-items:center;min-height:22px;padding:0 9px;border-radius:999px;background:#eef2f2;color:#55616a;font-size:12px;font-weight:650;line-height:1;white-space:nowrap}.status-ok{background:#e8f4ee;color:#21634c;border-color:#bdddcf}.status-warn{background:#fff7e6;color:#7a520e;border-color:#eed28f}.status-error{background:#fff0ee;color:#9b3328;border-color:#efc1ba}.status-muted{background:#eef2f2;color:#66737c;border-color:#d8e0df}.warn{display:inline-block;background:#fff8e6;border:1px solid #ead28b;border-radius:8px;padding:7px 9px;color:#6b4a12;margin:0 0 10px}.filter-used-days{font-variant-numeric:tabular-nums}.filter-progress-label{display:grid;grid-template-columns:48px 1fr;gap:6px;align-items:center;color:var(--muted);font-size:12px}");
     Esp32BaseWeb::sendChunk(".stats-layout{display:grid;grid-template-columns:minmax(0,1fr);gap:10px;align-items:start}.daily-chart{padding:14px 16px;margin:0 0 12px;overflow-x:auto}.chart-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:2px}.chart-head h3{margin:0 4px 0 0}.chart-key{font-size:12px;color:var(--muted);font-weight:650}.chart-key:before{content:'';display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5px}.volume-key:before{background:var(--accent)}.duration-key:before{background:#7c8fae}");
     Esp32BaseWeb::sendChunk(".daily-chart svg{display:block;width:100%;height:auto;min-width:720px;margin-top:6px}.daily-chart .bar{fill:var(--accent)}.daily-chart .duration-bar{fill:#7c8fae}.daily-chart .empty-bar{fill:#cfd7d5}.daily-chart .axis{stroke:#d9e0df;stroke-width:1}.daily-chart .x-label,.daily-chart .y-label{font-size:11px;text-anchor:middle;fill:var(--muted)}");
     Esp32BaseWeb::sendChunk(".usage-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:10px;margin:0 0 12px}.usage-panel{padding:12px 14px}.usage-panel h3{margin-bottom:9px}.usage-row{display:grid;grid-template-columns:minmax(72px,1fr) auto;gap:5px 8px;align-items:center;margin:0 0 8px;color:var(--muted);font-size:13px}.usage-row strong{color:var(--text);font-weight:650}.usage-bar{grid-column:1/-1;height:5px;background:#e6ecea;border-radius:999px;overflow:hidden}.usage-bar i{display:block;height:100%;background:var(--accent);border-radius:999px}");
@@ -523,7 +562,7 @@ void sendAppStyles() {
     Esp32BaseWeb::sendChunk("table{width:100%;border-collapse:separate;border-spacing:0;margin:0 0 12px;overflow:hidden;font-size:13px}td,th{padding:8px 10px;border-bottom:1px solid #edf1f0;text-align:left;vertical-align:middle}tr:last-child td{border-bottom:0}th{background:#f8faf9;color:var(--muted);font-weight:700}.filters-table th:first-child{width:22%}.filters-table th:last-child{width:150px}.kv th{width:26%}");
     Esp32BaseWeb::sendChunk(".pager{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin:0 0 10px}.pager-links{display:flex;align-items:center;gap:5px;flex-wrap:wrap}.page-current{background:var(--accent-soft);color:#17635b;border-color:#cfe4dc}.page-disabled{color:#9aa3aa;background:#f4f6f6;pointer-events:none}.page-size{display:flex;align-items:center;gap:6px;color:var(--muted);font-size:13px}.page-size select{width:auto;min-width:80px}");
     Esp32BaseWeb::sendChunk(".disabled-row{background:#f7f8f8;color:#8a949b}.disabled-row td{color:#8a949b}.disabled-row .status-pill{background:#eef0f0;color:#7b858d}.disabled-row a{color:#6f7a82}"
-                            "@media(max-width:720px){body{padding:10px}.form-grid{grid-template-columns:1fr}.span-2,.span-3,.span-4,.span-5,.span-6,.span-8,.span-12{grid-column:1/-1}.usage-grid{grid-template-columns:1fr}.daily-chart svg{min-width:680px}}"
+                            "@media(max-width:720px){body{padding:10px}.form-grid{grid-template-columns:1fr}.span-2,.span-3,.span-4,.span-5,.span-6,.span-8,.span-12{grid-column:1/-1}.usage-grid{grid-template-columns:1fr}.daily-chart svg{min-width:680px}.status-grid{grid-template-columns:1fr}}"
                             "@media(max-width:520px){.grid,.metric-grid,.filter-cards{grid-template-columns:1fr}.metric-card{min-height:0}.pager{align-items:flex-start}.page-size{width:100%}.kv th{width:34%}}");
     Esp32BaseWeb::sendChunk("</style>");
 }
@@ -906,9 +945,10 @@ void sendFilterCards(std::uint32_t now) {
 
         Esp32BaseWeb::sendChunk("<section class='filter-card'><div class='filter-head'><strong>");
         sendHtmlEscapedBounded(filter.name, sizeof(filter.name));
-        sendFmt("</strong><span class='status-pill'>%s</span></div>"
-                "<div class='dual-progress'><span class='day-progress' style='width:%lu%%'></span>"
-                "<span class='flow-progress' style='width:%lu%%'></span></div>",
+        sendFmt("</strong><span class='status-pill %s'>%s</span></div>"
+                "<div class='dual-progress'><div class='filter-progress-label'><b>天数</b><span class='day-progress' style='width:%lu%%'></span></div>"
+                "<div class='filter-progress-label'><b>流量</b><span class='flow-progress' style='width:%lu%%'></span></div></div>",
+                filterStatusClass(filter, usedDays),
                 filterDisplayStatusText(filter, usedDays),
                 static_cast<unsigned long>(dayProgress),
                 static_cast<unsigned long>(flowProgress));
@@ -982,19 +1022,15 @@ void handleFaucetPage() {
     char droppedPulses[24]{};
     std::snprintf(droppedPulses, sizeof(droppedPulses), "%lu", static_cast<unsigned long>(snapshot.flowDroppedPulses));
     char today[24]{};
-    char month[24]{};
-    char total[24]{};
     formatLiters(snapshot.statistics.todayMl, today, sizeof(today));
-    formatLiters(snapshot.statistics.monthMl, month, sizeof(month));
-    formatLiters(snapshot.statistics.totalMl, total, sizeof(total));
 
-    Esp32BaseWeb::sendChunk("<h2>状态</h2><div class='metric-grid'>");
+    Esp32BaseWeb::sendChunk("<h2>当前状态</h2><div class='status-grid'>");
+    sendMetricCardClass("运行状态", stateText(snapshot.water.state), "primary");
     sendMetricCard("本地页面", localPageText(snapshot));
     sendMetricCard("主显示", localMain);
-    sendMetricCard("辅助提示", localAuxiliary);
-    sendMetricCard("流量计校准系数", pulsePerLiter);
-    sendMetricCard("阀门状态", valveStatus);
-    sendMetricCard("运行状态", stateText(snapshot.water.state));
+    sendMetricCard("本地面板提示", localAuxiliary);
+    Esp32BaseWeb::sendChunk("<section class='metric-card'><span>操作边界</span><strong>仅设备按键操作</strong></section>");
+    Esp32BaseWeb::sendChunk("</div><h2>本次任务</h2><div class='metric-grid'>");
     sendMetricCard("当前预设", currentPreset);
     sendMetricCard("目标值", targetValue);
     sendMetricCard("已出水", outValue);
@@ -1005,13 +1041,17 @@ void handleFaucetPage() {
     if (snapshot.water.state == WaterState::Running || snapshot.water.state == WaterState::Paused) {
         sendMetricCard("已运行", elapsedValue);
     }
+    Esp32BaseWeb::sendChunk("</div><h2>安全状态</h2><div class='metric-grid'>");
+    sendMetricCard("阀门状态", valveStatus);
+    if (snapshot.water.state == WaterState::Error || snapshot.localMode == LocalUiMode::Result) {
+        sendMetricCardClass("结束原因", resultText(snapshot.water.lastResult), resultStatusClass(snapshot.water.lastResult));
+    }
+    sendMetricCard("流量计校准系数", pulsePerLiter);
     if (snapshot.flowDroppedPulses > 0) {
         sendMetricCard("丢弃脉冲", droppedPulses);
     }
-    Esp32BaseWeb::sendChunk("</div><h2>统计</h2><div class='metric-grid'>");
+    Esp32BaseWeb::sendChunk("</div><h2>今日概览</h2><div class='metric-grid'>");
     sendMetricCard("今日", today);
-    sendMetricCard("本月", month);
-    sendMetricCard("总累计", total);
     Esp32BaseWeb::sendChunk("</div>");
     sendFilterCards(g_context.nowSeconds());
     sendPageEnd();
@@ -1076,7 +1116,7 @@ void handlePresetsPage() {
 
     sendNoticeFromQuery();
     Esp32BaseWeb::sendChunk("<h2>预设</h2><table class='compact-table'><tr>"
-                            "<th>序号</th><th>名称</th><th>类型</th><th>数值</th><th>状态</th><th>操作</th></tr>");
+                            "<th>序号</th><th>名称</th><th>类型</th><th>目标值</th><th>状态</th><th>操作</th></tr>");
     for (std::size_t i = 0; i < kPresetCount; ++i) {
         const PresetConfig& preset = g_context.config->presets[i];
         sendFmt("<tr%s><td>%u</td><td>",
@@ -1217,8 +1257,8 @@ void handleRecordsPage() {
     } else if (total == 0) {
         Esp32BaseWeb::sendChunk("<p class='ok'>暂无出水记录。</p>");
     }
-    Esp32BaseWeb::sendChunk("<table><tr><th>开始时间</th><th>目标</th><th>出水量 (L)</th><th>脉冲数</th>"
-                            "<th>过滤脉冲</th><th>当时系数</th><th>持续时间 (s)</th><th>预设模式</th><th>结束原因</th><th>操作</th></tr>");
+    Esp32BaseWeb::sendChunk("<table><tr><th>开始时间</th><th>目标值</th><th>出水量 (L)</th>"
+                            "<th>持续时间</th><th>预设模式</th><th>结束原因</th><th>诊断</th><th>操作</th></tr>");
     for (std::size_t i = 0; i < count; ++i) {
         char startTime[40]{};
         formatWaterRecordTime(records[i], startTime, sizeof(startTime));
@@ -1230,13 +1270,15 @@ void handleRecordsPage() {
         sendTargetValue(records[i]);
         Esp32BaseWeb::sendChunk("</td><td>");
         sendLiters(records[i].volumeMl);
-        sendFmt("</td><td>%lu</td><td>%lu</td><td>%.3f</td><td>%u s</td><td>%s</td><td>%s</td><td>",
-                static_cast<unsigned long>(records[i].pulseCount),
-                static_cast<unsigned long>(records[i].rejectedPulseCount),
-                static_cast<double>(records[i].pulsePerMlAtRun),
+        sendFmt("</td><td>%u s</td><td>%s</td><td><span class='status-pill %s'>%s</span></td>"
+                "<td><span class='muted'>脉冲 %lu / 过滤 %lu / 系数 %.3f</span></td><td>",
                 static_cast<unsigned>(records[i].durationSec),
                 modeText(records[i].mode),
-                resultText(records[i].result));
+                resultStatusClass(records[i].result),
+                resultText(records[i].result),
+                static_cast<unsigned long>(records[i].pulseCount),
+                static_cast<unsigned long>(records[i].rejectedPulseCount),
+                static_cast<double>(records[i].pulsePerMlAtRun));
         if (canCalibrate) {
             Esp32BaseWeb::sendChunk("<a class='btn-link' href='/faucet/records/calibration'>校准</a>");
         } else if (!latestRecord) {
@@ -1342,7 +1384,8 @@ void handleFiltersPage() {
         } else {
             Esp32BaseWeb::sendChunk("未设置流量");
         }
-        sendFmt("</td><td><span class='status-pill filter-status'>%s</span></td><td><div class='row-actions'><a href='/faucet/filters/edit?index=%u'>设置</a>",
+        sendFmt("</td><td><span class='status-pill filter-status %s'>%s</span></td><td><div class='row-actions'><a href='/faucet/filters/edit?index=%u'>设置</a>",
+                filterStatusClass(filter, usedDays),
                 filterDisplayStatusText(filter, usedDays),
                 static_cast<unsigned>(i));
         Esp32BaseWeb::sendChunk("<form method='post' action='/api/faucet/filters/reset' data-filter-name='");
@@ -1381,10 +1424,14 @@ void handleFiltersPage() {
                             "var life=parseInt(row.getAttribute('data-filter-life-ml')||'0',10);"
                             "var flow=parseInt(row.getAttribute('data-filter-used-ml')||'0',10);"
                             "var text='正常';"
+                            "var cls='status-ok';"
                             "if(!enabled){text='停用';}"
-                            "else if((life>0&&flow>=life)||(max>0&&days>=max)){text='已超期';}"
-                            "else if(rec>0&&days>=rec){text='建议更换';}"
+                            "if(!enabled){cls='status-muted';}"
+                            "else if((life>0&&flow>=life)||(max>0&&days>=max)){text='已超期';cls='status-error';}"
+                            "else if(rec>0&&days>=rec){text='建议更换';cls='status-warn';}"
                             "status.textContent=text;"
+                            "status.classList.remove('status-ok','status-warn','status-error','status-muted');"
+                            "status.classList.add(cls);"
                             "});"
                             "})();"
                             "</script>");

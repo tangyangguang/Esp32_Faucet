@@ -130,7 +130,7 @@ void test_records_page_and_calibration_api_are_available() {
 void test_web_page_source_has_no_remote_water_control_forms() {
     FILE* file = std::fopen("src/web/FaucetWeb.cpp", "rb");
     TEST_ASSERT_NOT_NULL(file);
-    static char buffer[70000]{};
+    static char buffer[100000]{};
     const std::size_t read = std::fread(buffer, 1, sizeof(buffer) - 1, file);
     std::fclose(file);
     TEST_ASSERT_GREATER_THAN_size_t(0, read);
@@ -148,7 +148,7 @@ void test_web_page_source_has_no_remote_water_control_forms() {
 void test_web_page_source_contains_expected_ui_improvements() {
     FILE* file = std::fopen("src/web/FaucetWeb.cpp", "rb");
     TEST_ASSERT_NOT_NULL(file);
-    static char buffer[80000]{};
+    static char buffer[100000]{};
     const std::size_t read = std::fread(buffer, 1, sizeof(buffer) - 1, file);
     std::fclose(file);
     TEST_ASSERT_GREATER_THAN_size_t(0, read);
@@ -183,6 +183,13 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "sendFmt(\"<span>已用 %s</span>\", usedFlow);"));
     TEST_ASSERT_NULL(std::strstr(buffer, "filter.lifeMl == 0 ? \"未设置\" : lifeFlow"));
     TEST_ASSERT_NULL(std::strstr(buffer, "未知时间出水量"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "sendPageStart(\"智能出水\")"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "<h2>状态</h2><div class='metric-grid'>"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "本地页面"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "主显示"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "辅助提示"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "<h2>出水详情</h2><div class='metric-grid'>"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "流量计"));
 }
 
 void test_app_config_source_uses_clear_business_labels_and_help() {

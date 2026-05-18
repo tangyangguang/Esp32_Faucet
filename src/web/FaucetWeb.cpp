@@ -582,6 +582,16 @@ const char* resultText(WaterResult result) {
     return "未知";
 }
 
+const char* localPageText(const AppSnapshot& snapshot) {
+    if (snapshot.localMode == LocalUiMode::Result) {
+        return "结果";
+    }
+    if (snapshot.localMode == LocalUiMode::Calibration) {
+        return "校准";
+    }
+    return stateText(snapshot.water.state);
+}
+
 void sendTextInput(const char* label, const char* name, unsigned long value) {
     sendFmt("<label class='field'><span>%s</span><input name='%s' value='%lu'></label>", label, name, value);
 }
@@ -742,6 +752,131 @@ void sendUsagePatterns(const WaterUsageSummary& summary, const SystemConfig& con
     Esp32BaseWeb::sendChunk("</section>");
 }
 
+void formatHomeMainDisplay(const AppSnapshot& snapshot, char* out, std::size_t len) {
+    if (!out || len == 0) {
+        return;
+    }
+    out[0] = '\0';
+    if (snapshot.localMode == LocalUiMode::Result) {
+        char volume[24]{};
+        formatLiters(snapshot.water.volumeMl, volume, sizeof(volume));
+        std::snprintf(out, len, "%s · %s", resultText(snapshot.water.lastResult), volume);
+        return;
+    }
+    if (snapshot.localMode == LocalUiMode::Calibration) {
+        char actual[24]{};
+        formatLiters(snapshot.calibrationActualMl, actual, sizeof(actual));
+        std::snprintf(out, len, "实际水量 %s", actual);
+        return;
+    }
+
+    switch (snapshot.water.state) {
+        case WaterState::Idle:
+            if (snapshot.water.mode == WaterMode::Time) {
+                char target[24]{};
+                formatSecondsValue(snapshot.water.targetValue, target, sizeof(target));
+                std::snprintf(out, len, "预设 %u · %s", static_cast<unsigned>(snapshot.water.selectedPreset + 1), target);
+            } else {
+                char target[24]{};
+                formatLiters(snapshot.water.targetValue, target, sizeof(target));
+                std::snprintf(out, len, "预设 %u · %s", static_cast<unsigned>(snapshot.water.selectedPreset + 1), target);
+            }
+            break;
+        case WaterState::Confirm:
+            if (snapshot.water.mode == WaterMode::Time) {
+                char target[24]{};
+                formatSecondsValue(snapshot.water.targetValue, target, sizeof(target));
+                std::snprintf(out, len, "确认 %s", target);
+            } else {
+                char target[24]{};
+                formatLiters(snapshot.water.targetValue, target, sizeof(target));
+                std::snprintf(out, len, "确认 %s", target);
+            }
+            break;
+        case WaterState::Running:
+            if (snapshot.water.mode == WaterMode::Time) {
+                const std::uint32_t remaining =
+                    snapshot.water.targetValue > snapshot.water.elapsedSec ? snapshot.water.targetValue - snapshot.water.elapsedSec : 0;
+                char remain[24]{};
+                formatSecondsValue(remaining, remain, sizeof(remain));
+                std::snprintf(out, len, "剩余时间 %s", remain);
+            } else {
+                const std::uint32_t remaining =
+                    snapshot.water.targetValue > snapshot.water.volumeMl ? snapshot.water.targetValue - snapshot.water.volumeMl : 0;
+                char remain[24]{};
+                formatLiters(remaining, remain, sizeof(remain));
+                std::snprintf(out, len, "剩余量 %s", remain);
+            }
+            break;
+        case WaterState::Paused:
+            if (snapshot.water.mode == WaterMode::Time) {
+                std::snprintf(out, len, "已暂停");
+            } else {
+                char outValue[24]{};
+                char target[24]{};
+                formatLiters(snapshot.water.volumeMl, outValue, sizeof(outValue));
+                formatLiters(snapshot.water.targetValue, target, sizeof(target));
+                std::snprintf(out, len, "%s / %s", outValue, target);
+            }
+            break;
+        case WaterState::Error:
+        default:
+            std::snprintf(out, len, "异常 · %s", resultText(snapshot.water.lastResult));
+            break;
+    }
+}
+
+void formatHomeAuxiliaryDisplay(const AppSnapshot& snapshot, char* out, std::size_t len) {
+    if (!out || len == 0) {
+        return;
+    }
+    out[0] = '\0';
+    if (snapshot.localMode == LocalUiMode::Result) {
+        std::snprintf(out, len, "%s", snapshot.calibrationReady ? "长按 OK 进入校准" : "OK 返回");
+        return;
+    }
+    if (snapshot.localMode == LocalUiMode::Calibration) {
+        char step[24]{};
+        formatLiters(snapshot.calibrationStepMl, step, sizeof(step));
+        std::snprintf(out, len, "步进 %s，+/- 调整，OK 保存", step);
+        return;
+    }
+
+    switch (snapshot.water.state) {
+        case WaterState::Idle:
+            std::snprintf(out, len, "+/- 选择预设，OK 确认");
+            break;
+        case WaterState::Confirm:
+            std::snprintf(out,
+                          len,
+                          "%s",
+                          snapshot.water.mode == WaterMode::Time ? "OK 开始，CANCEL 返回" : "+/- 调整，OK 开始");
+            break;
+        case WaterState::Running:
+            if (snapshot.water.mode == WaterMode::Volume) {
+                char outValue[24]{};
+                formatLiters(snapshot.water.volumeMl, outValue, sizeof(outValue));
+                std::snprintf(out, len, "已出水 %s，OK 暂停", outValue);
+            } else {
+                std::snprintf(out, len, "OK 暂停");
+            }
+            break;
+        case WaterState::Paused:
+            if (snapshot.water.mode == WaterMode::Volume) {
+                char step[24]{};
+                formatLiters(snapshot.adjustmentStepMl, step, sizeof(step));
+                std::snprintf(out, len, "步进 %s，+/- 调整，OK 继续", step);
+            } else {
+                std::snprintf(out, len, "OK 继续");
+            }
+            break;
+        case WaterState::Error:
+        default:
+            std::snprintf(out, len, "%s", resultText(snapshot.water.lastResult));
+            break;
+    }
+}
+
 void sendFilterCards(std::uint32_t now) {
     Esp32BaseWeb::sendChunk("<h2>滤芯</h2><div class='filter-cards'>");
     std::uint32_t usedDaysByIndex[kFilterCount]{};
@@ -799,7 +934,7 @@ void sendFilterCards(std::uint32_t now) {
 }
 
 void handleFaucetPage() {
-    if (!sendPageStart("出水龙头")) {
+    if (!sendPageStart("智能出水")) {
         return;
     }
     if (!requireContext()) {
@@ -813,6 +948,10 @@ void handleFaucetPage() {
                   "%u / %s",
                   static_cast<unsigned>(snapshot.water.selectedPreset + 1),
                   modeText(snapshot.water.mode));
+    char localMain[48]{};
+    char localAuxiliary[64]{};
+    formatHomeMainDisplay(snapshot, localMain, sizeof(localMain));
+    formatHomeAuxiliaryDisplay(snapshot, localAuxiliary, sizeof(localAuxiliary));
     char targetValue[24]{};
     if (snapshot.water.mode == WaterMode::Time) {
         formatSecondsValue(snapshot.water.targetValue, targetValue, sizeof(targetValue));
@@ -833,6 +972,12 @@ void handleFaucetPage() {
     }
     char elapsedValue[24]{};
     formatSecondsValue(snapshot.water.elapsedSec, elapsedValue, sizeof(elapsedValue));
+    char pulsePerLiter[24]{};
+    if (snapshot.pulsePerLiter > 0) {
+        std::snprintf(pulsePerLiter, sizeof(pulsePerLiter), "%lu 脉冲/L", static_cast<unsigned long>(snapshot.pulsePerLiter));
+    } else {
+        std::snprintf(pulsePerLiter, sizeof(pulsePerLiter), "未校准");
+    }
     char droppedPulses[24]{};
     std::snprintf(droppedPulses, sizeof(droppedPulses), "%lu", static_cast<unsigned long>(snapshot.flowDroppedPulses));
     char today[24]{};
@@ -843,14 +988,22 @@ void handleFaucetPage() {
     formatLiters(snapshot.statistics.totalMl, total, sizeof(total));
 
     Esp32BaseWeb::sendChunk("<h2>状态</h2><div class='metric-grid'>");
+    sendMetricCard("本地页面", localPageText(snapshot));
+    sendMetricCard("主显示", localMain);
+    sendMetricCard("辅助提示", localAuxiliary);
+    Esp32BaseWeb::sendChunk("</div><h2>出水详情</h2><div class='metric-grid'>");
     sendMetricCard("运行状态", stateText(snapshot.water.state));
     sendMetricCard("当前预设", currentPreset);
     sendMetricCard("目标值", targetValue);
     sendMetricCard("已出水", outValue);
-    if (snapshot.water.state == WaterState::Running || snapshot.water.state == WaterState::Paused) {
+    if (snapshot.water.state == WaterState::Running || snapshot.water.state == WaterState::Paused ||
+        snapshot.water.state == WaterState::Confirm) {
         sendMetricCard(snapshot.water.mode == WaterMode::Time ? "剩余时间" : "剩余量", remainingValue);
+    }
+    if (snapshot.water.state == WaterState::Running || snapshot.water.state == WaterState::Paused) {
         sendMetricCard("已运行", elapsedValue);
     }
+    sendMetricCard("流量计", pulsePerLiter);
     if (snapshot.flowDroppedPulses > 0) {
         sendMetricCard("丢弃脉冲", droppedPulses);
     }

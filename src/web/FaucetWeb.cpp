@@ -785,10 +785,12 @@ void sendFilterCards(std::uint32_t now) {
         } else {
             sendFmt("<span>已用 %lu 天 / 未设置天数</span>", static_cast<unsigned long>(usedDays));
         }
-        sendFmt("<span>已用 %s / 寿命 %s</span><span>上次更换 %s</span></div></section>",
-                usedFlow,
-                filter.lifeMl == 0 ? "未设置" : lifeFlow,
-                startDate[0] ? startDate : "未设置");
+        if (filter.lifeMl > 0) {
+            sendFmt("<span>已用 %s / 寿命 %s</span>", usedFlow, lifeFlow);
+        } else {
+            sendFmt("<span>已用 %s</span>", usedFlow);
+        }
+        sendFmt("<span>上次更换 %s</span></div></section>", startDate[0] ? startDate : "未设置");
     }
     if (enabledCount == 0) {
         Esp32BaseWeb::sendChunk("<section class='filter-card muted'>当前没有启用的滤芯。</section>");

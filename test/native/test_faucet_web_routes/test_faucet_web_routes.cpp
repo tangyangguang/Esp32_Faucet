@@ -180,6 +180,8 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "按预设分布"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "--bg:#fff"));
     TEST_ASSERT_NULL(std::strstr(buffer, "--bg:#f7f9f8"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "sendFmt(\"<span>已用 %s</span>\", usedFlow);"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "filter.lifeMl == 0 ? \"未设置\" : lifeFlow"));
     TEST_ASSERT_NULL(std::strstr(buffer, "未知时间出水量"));
 }
 

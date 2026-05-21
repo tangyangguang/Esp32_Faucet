@@ -40,7 +40,7 @@ Esp32BaseWeb::Method toBaseMethod(FaucetWebMethod method) {
 }
 
 void sendFmt(const char* fmt, ...) {
-    char buffer[256]{};
+    char buffer[512]{};
     va_list args;
     va_start(args, fmt);
     std::vsnprintf(buffer, sizeof(buffer), fmt, args);
@@ -550,7 +550,7 @@ void sendAppStyles() {
     Esp32BaseWeb::sendChunk(".grid,.metric-grid,.status-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin:0 0 12px}"
                             ".status-grid{grid-template-columns:minmax(220px,1.4fr) repeat(auto-fit,minmax(170px,1fr))}"
                             ".metric-card{padding:12px 14px;min-height:54px}.metric-card.primary{border-color:#b8d7cf;background:#f7fbfa}.metric-card span{display:block;color:var(--muted);font-size:13px;font-weight:600;margin-bottom:4px}.metric-card strong{display:block;color:var(--text);font-size:18px;line-height:1.2;font-weight:750}"
-                            ".local-display-card{grid-column:1/-1;max-width:320px}.local-display-card pre{margin:0;padding:10px 12px;border:1px solid #d7e6e1;border-radius:6px;background:#f7fbfa;color:var(--text);font:700 18px/1.35 ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,'Liberation Mono',monospace;white-space:pre;overflow:auto}");
+                            ".local-display-card pre{margin:0;padding:10px 12px;border:1px solid #d7e6e1;border-radius:6px;background:#f7fbfa;color:var(--text);font:700 16px/1.35 ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,'Liberation Mono',monospace;white-space:pre;overflow:auto}");
     Esp32BaseWeb::sendChunk(".filter-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:10px;margin:0 0 12px}.filter-card{padding:12px 14px;min-height:128px}.filter-head{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:8px}.filter-head strong{font-size:16px;line-height:1.25;font-weight:750}"
                             ".filter-meta{display:grid;gap:4px;color:var(--muted);font-size:13px;margin-top:10px}.dual-progress{display:grid;gap:4px;margin:8px 0}.dual-progress span{display:block;height:5px;border-radius:999px}.day-progress{background:var(--accent)}.flow-progress{background:#c9822c}");
     Esp32BaseWeb::sendChunk(".status-pill{display:inline-flex;align-items:center;min-height:22px;padding:0 9px;border-radius:999px;background:#eef2f2;color:#55616a;font-size:12px;font-weight:650;line-height:1;white-space:nowrap}.status-ok{background:#e8f4ee;color:#21634c;border-color:#bdddcf}.status-warn{background:#fff7e6;color:#7a520e;border-color:#eed28f}.status-error{background:#fff0ee;color:#9b3328;border-color:#efc1ba}.status-muted{background:#eef2f2;color:#66737c;border-color:#d8e0df}.warn{display:inline-block;background:#fff8e6;border:1px solid #ead28b;border-radius:8px;padding:7px 9px;color:#6b4a12;margin:0 0 10px}.filter-used-days{font-variant-numeric:tabular-nums}.filter-progress-label{display:grid;grid-template-columns:48px 1fr;gap:6px;align-items:center;color:var(--muted);font-size:12px}");

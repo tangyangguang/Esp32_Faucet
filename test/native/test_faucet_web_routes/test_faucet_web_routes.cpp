@@ -188,6 +188,8 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "本地显示"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "local-display-card"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "white-space:pre"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "char buffer[512]"));
+    TEST_ASSERT_NULL(std::strstr(buffer, ".local-display-card{grid-column:1/-1;max-width:320px}"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "仅设备按键操作"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "<h2>本次任务</h2><div class='metric-grid'>"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "<h2>安全状态</h2><div class='metric-grid'>"));
@@ -210,6 +212,19 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "设备不在待机状态，请回到待机后再保存配置。"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "<th>目标值</th>"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "<th>诊断</th>"));
+}
+
+void test_main_source_renders_live_display_frame_for_web() {
+    FILE* file = std::fopen("src/main.cpp", "rb");
+    TEST_ASSERT_NOT_NULL(file);
+    static char buffer[64000]{};
+    const std::size_t read = std::fread(buffer, 1, sizeof(buffer) - 1, file);
+    std::fclose(file);
+    TEST_ASSERT_GREATER_THAN_size_t(0, read);
+
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "faucet::DisplayFrame currentDisplayFrame()"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "g_display->render(g_app->snapshot(), millis())"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "return g_lastDisplayFrame;"));
 }
 
 void test_app_config_source_uses_clear_business_labels_and_help() {
@@ -248,6 +263,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_records_page_and_calibration_api_are_available);
     RUN_TEST(test_web_page_source_has_no_remote_water_control_forms);
     RUN_TEST(test_web_page_source_contains_expected_ui_improvements);
+    RUN_TEST(test_main_source_renders_live_display_frame_for_web);
     RUN_TEST(test_app_config_source_uses_clear_business_labels_and_help);
     return UNITY_END();
 }

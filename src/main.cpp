@@ -242,7 +242,12 @@ std::uint32_t currentBootId() {
 }
 
 faucet::DisplayFrame currentDisplayFrame() {
-    return g_lastDisplayFrame;
+    faucet::DisplayFrame frame = g_lastDisplayFrame;
+    if (g_display && g_app) {
+        frame = g_display->render(g_app->snapshot(), millis());
+        g_lastDisplayFrame = frame;
+    }
+    return frame;
 }
 
 void applyRuntimeSettings(const faucet::SystemConfig& config) {

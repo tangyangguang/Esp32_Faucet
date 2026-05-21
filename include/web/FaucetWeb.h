@@ -1,5 +1,7 @@
 #pragma once
 
+#include "app/DisplayPresenter.h"
+
 #include <cstdint>
 
 namespace faucet {
@@ -13,6 +15,7 @@ struct SystemConfig;
 using FaucetNowSeconds = std::uint32_t (*)();
 using FaucetBootId = std::uint32_t (*)();
 using FaucetApplySettings = void (*)(const SystemConfig&);
+using FaucetCurrentDisplayFrame = DisplayFrame (*)();
 
 struct FaucetWebContext {
     SystemConfig* config;
@@ -23,6 +26,7 @@ struct FaucetWebContext {
     FaucetNowSeconds nowSeconds;
     FaucetBootId bootId;
     FaucetApplySettings applySettings;
+    FaucetCurrentDisplayFrame currentDisplayFrame;
 };
 
 void setFaucetWebContext(const FaucetWebContext& context);

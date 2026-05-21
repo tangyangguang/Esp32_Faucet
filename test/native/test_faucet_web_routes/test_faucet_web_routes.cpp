@@ -185,7 +185,9 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NULL(std::strstr(buffer, "未知时间出水量"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "sendPageStart(\"智能出水\")"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "<h2>当前状态</h2><div class='status-grid'>"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "本地面板提示"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "本地显示"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "local-display-card"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "white-space:pre"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "仅设备按键操作"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "<h2>本次任务</h2><div class='metric-grid'>"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "<h2>安全状态</h2><div class='metric-grid'>"));
@@ -195,9 +197,12 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "status-warn"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "status-error"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "目标值"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "本地页面"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "主显示"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "本地页面"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "主显示"));
     TEST_ASSERT_NULL(std::strstr(buffer, "辅助提示"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "本地面板提示"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "formatHomeMainDisplay"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "formatHomeAuxiliaryDisplay"));
     TEST_ASSERT_NULL(std::strstr(buffer, "<h2>状态</h2><div class='metric-grid'>"));
     TEST_ASSERT_NULL(std::strstr(buffer, "<h2>出水详情</h2><div class='metric-grid'>"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "流量计校准系数"));

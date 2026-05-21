@@ -105,6 +105,7 @@ faucet::PwmBeepHardware g_beepHardware(faucet::kPinBeep, faucet::kLedcChannelBee
 faucet::RtcClock g_rtc(faucet::kPinI2cSda, faucet::kPinI2cScl);
 faucet::Lcd1602Display g_lcd(faucet::kPinI2cSda, faucet::kPinI2cScl);
 faucet::DisplayPresenter* g_display = nullptr;
+faucet::DisplayFrame g_lastDisplayFrame{faucet::DisplayPage::Sleep, false, {}, {}};
 bool g_persistenceFailureLogged = false;
 std::uint32_t g_lastDisplayMs = 0;
 std::uint32_t g_lastDroppedPulsesLogged = 0;
@@ -240,6 +241,10 @@ std::uint32_t currentBootId() {
 #endif
 }
 
+faucet::DisplayFrame currentDisplayFrame() {
+    return g_lastDisplayFrame;
+}
+
 void applyRuntimeSettings(const faucet::SystemConfig& config) {
     g_beep.setEnabled(config.beepEnabled);
     if (g_display) {
@@ -333,7 +338,15 @@ void initializeApplication() {
         ESP32BASE_LOG_W("app", "display presenter allocation failed, lcd disabled");
     }
     faucet::setFaucetWebContext(
-        faucet::FaucetWebContext{&g_config, &g_configStore, g_app, g_filters, &g_records, currentSeconds, currentBootId, applyRuntimeSettings});
+        faucet::FaucetWebContext{&g_config,
+                                 &g_configStore,
+                                 g_app,
+                                 g_filters,
+                                 &g_records,
+                                 currentSeconds,
+                                 currentBootId,
+                                 applyRuntimeSettings,
+                                 currentDisplayFrame});
     faucet::setFaucetAppConfigContext(
         faucet::FaucetAppConfigContext{&g_config, &g_configStore, g_app, applyRuntimeSettings});
 #if ESP32BASE_ENABLE_NTP
@@ -350,6 +363,7 @@ void initializeApplication() {
     g_app->resetInputs(g_buttons.read(), millis());
     if (g_display) {
         g_display->wake(millis());
+        g_lastDisplayFrame = g_display->render(g_app->snapshot(), millis());
     }
 
     ESP32BASE_LOG_I("app",
@@ -460,7 +474,8 @@ void runApplicationTick() {
             g_display->wake(nowMs);
         }
         if (faucet::elapsedAtLeast(nowMs, g_lastDisplayMs, 200UL)) {
-            g_lcd.apply(g_display->render(snapshot, nowMs));
+            g_lastDisplayFrame = g_display->render(snapshot, nowMs);
+            g_lcd.apply(g_lastDisplayFrame);
             g_lastDisplayMs = nowMs;
         }
     }

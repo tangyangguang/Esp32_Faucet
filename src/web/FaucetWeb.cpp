@@ -549,7 +549,8 @@ void sendAppStyles() {
                             ".panel-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px;padding-bottom:7px;border-bottom:1px solid #eef2f1}.panel-head h3{padding:0;margin:0;border:0}");
     Esp32BaseWeb::sendChunk(".grid,.metric-grid,.status-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin:0 0 12px}"
                             ".status-grid{grid-template-columns:minmax(220px,1.4fr) repeat(auto-fit,minmax(170px,1fr))}"
-                            ".metric-card{padding:12px 14px;min-height:54px}.metric-card.primary{border-color:#b8d7cf;background:#f7fbfa}.metric-card span{display:block;color:var(--muted);font-size:13px;font-weight:600;margin-bottom:4px}.metric-card strong{display:block;color:var(--text);font-size:18px;line-height:1.2;font-weight:750}");
+                            ".metric-card{padding:12px 14px;min-height:54px}.metric-card.primary{border-color:#b8d7cf;background:#f7fbfa}.metric-card span{display:block;color:var(--muted);font-size:13px;font-weight:600;margin-bottom:4px}.metric-card strong{display:block;color:var(--text);font-size:18px;line-height:1.2;font-weight:750}"
+                            ".local-display-card{grid-column:1/-1;max-width:320px}.local-display-card pre{margin:0;padding:10px 12px;border:1px solid #d7e6e1;border-radius:6px;background:#f7fbfa;color:var(--text);font:700 18px/1.35 ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,'Liberation Mono',monospace;white-space:pre;overflow:auto}");
     Esp32BaseWeb::sendChunk(".filter-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:10px;margin:0 0 12px}.filter-card{padding:12px 14px;min-height:128px}.filter-head{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:8px}.filter-head strong{font-size:16px;line-height:1.25;font-weight:750}"
                             ".filter-meta{display:grid;gap:4px;color:var(--muted);font-size:13px;margin-top:10px}.dual-progress{display:grid;gap:4px;margin:8px 0}.dual-progress span{display:block;height:5px;border-radius:999px}.day-progress{background:var(--accent)}.flow-progress{background:#c9822c}");
     Esp32BaseWeb::sendChunk(".status-pill{display:inline-flex;align-items:center;min-height:22px;padding:0 9px;border-radius:999px;background:#eef2f2;color:#55616a;font-size:12px;font-weight:650;line-height:1;white-space:nowrap}.status-ok{background:#e8f4ee;color:#21634c;border-color:#bdddcf}.status-warn{background:#fff7e6;color:#7a520e;border-color:#eed28f}.status-error{background:#fff0ee;color:#9b3328;border-color:#efc1ba}.status-muted{background:#eef2f2;color:#66737c;border-color:#d8e0df}.warn{display:inline-block;background:#fff8e6;border:1px solid #ead28b;border-radius:8px;padding:7px 9px;color:#6b4a12;margin:0 0 10px}.filter-used-days{font-variant-numeric:tabular-nums}.filter-progress-label{display:grid;grid-template-columns:48px 1fr;gap:6px;align-items:center;color:var(--muted);font-size:12px}");
@@ -619,16 +620,6 @@ const char* resultText(WaterResult result) {
             return "暂停超时";
     }
     return "未知";
-}
-
-const char* localPageText(const AppSnapshot& snapshot) {
-    if (snapshot.localMode == LocalUiMode::Result) {
-        return "结果";
-    }
-    if (snapshot.localMode == LocalUiMode::Calibration) {
-        return "校准";
-    }
-    return stateText(snapshot.water.state);
 }
 
 void sendTextInput(const char* label, const char* name, unsigned long value) {
@@ -791,129 +782,12 @@ void sendUsagePatterns(const WaterUsageSummary& summary, const SystemConfig& con
     Esp32BaseWeb::sendChunk("</section>");
 }
 
-void formatHomeMainDisplay(const AppSnapshot& snapshot, char* out, std::size_t len) {
-    if (!out || len == 0) {
-        return;
-    }
-    out[0] = '\0';
-    if (snapshot.localMode == LocalUiMode::Result) {
-        char volume[24]{};
-        formatLiters(snapshot.water.volumeMl, volume, sizeof(volume));
-        std::snprintf(out, len, "%s · %s", resultText(snapshot.water.lastResult), volume);
-        return;
-    }
-    if (snapshot.localMode == LocalUiMode::Calibration) {
-        char actual[24]{};
-        formatLiters(snapshot.calibrationActualMl, actual, sizeof(actual));
-        std::snprintf(out, len, "实际水量 %s", actual);
-        return;
-    }
-
-    switch (snapshot.water.state) {
-        case WaterState::Idle:
-            if (snapshot.water.mode == WaterMode::Time) {
-                char target[24]{};
-                formatSecondsValue(snapshot.water.targetValue, target, sizeof(target));
-                std::snprintf(out, len, "预设 %u · %s", static_cast<unsigned>(snapshot.water.selectedPreset + 1), target);
-            } else {
-                char target[24]{};
-                formatLiters(snapshot.water.targetValue, target, sizeof(target));
-                std::snprintf(out, len, "预设 %u · %s", static_cast<unsigned>(snapshot.water.selectedPreset + 1), target);
-            }
-            break;
-        case WaterState::Confirm:
-            if (snapshot.water.mode == WaterMode::Time) {
-                char target[24]{};
-                formatSecondsValue(snapshot.water.targetValue, target, sizeof(target));
-                std::snprintf(out, len, "确认 %s", target);
-            } else {
-                char target[24]{};
-                formatLiters(snapshot.water.targetValue, target, sizeof(target));
-                std::snprintf(out, len, "确认 %s", target);
-            }
-            break;
-        case WaterState::Running:
-            if (snapshot.water.mode == WaterMode::Time) {
-                const std::uint32_t remaining =
-                    snapshot.water.targetValue > snapshot.water.elapsedSec ? snapshot.water.targetValue - snapshot.water.elapsedSec : 0;
-                char remain[24]{};
-                formatSecondsValue(remaining, remain, sizeof(remain));
-                std::snprintf(out, len, "剩余时间 %s", remain);
-            } else {
-                const std::uint32_t remaining =
-                    snapshot.water.targetValue > snapshot.water.volumeMl ? snapshot.water.targetValue - snapshot.water.volumeMl : 0;
-                char remain[24]{};
-                formatLiters(remaining, remain, sizeof(remain));
-                std::snprintf(out, len, "剩余量 %s", remain);
-            }
-            break;
-        case WaterState::Paused:
-            if (snapshot.water.mode == WaterMode::Time) {
-                std::snprintf(out, len, "已暂停");
-            } else {
-                char outValue[24]{};
-                char target[24]{};
-                formatLiters(snapshot.water.volumeMl, outValue, sizeof(outValue));
-                formatLiters(snapshot.water.targetValue, target, sizeof(target));
-                std::snprintf(out, len, "%s / %s", outValue, target);
-            }
-            break;
-        case WaterState::Error:
-        default:
-            std::snprintf(out, len, "异常 · %s", resultText(snapshot.water.lastResult));
-            break;
-    }
-}
-
-void formatHomeAuxiliaryDisplay(const AppSnapshot& snapshot, char* out, std::size_t len) {
-    if (!out || len == 0) {
-        return;
-    }
-    out[0] = '\0';
-    if (snapshot.localMode == LocalUiMode::Result) {
-        std::snprintf(out, len, "%s", snapshot.calibrationReady ? "长按 OK 进入校准" : "OK 返回");
-        return;
-    }
-    if (snapshot.localMode == LocalUiMode::Calibration) {
-        char step[24]{};
-        formatLiters(snapshot.calibrationStepMl, step, sizeof(step));
-        std::snprintf(out, len, "步进 %s，+/- 调整，OK 保存", step);
-        return;
-    }
-
-    switch (snapshot.water.state) {
-        case WaterState::Idle:
-            std::snprintf(out, len, "+/- 选择预设，OK 确认");
-            break;
-        case WaterState::Confirm:
-            std::snprintf(out,
-                          len,
-                          "%s",
-                          snapshot.water.mode == WaterMode::Time ? "OK 开始，CANCEL 返回" : "+/- 调整，OK 开始");
-            break;
-        case WaterState::Running:
-            if (snapshot.water.mode == WaterMode::Volume) {
-                char outValue[24]{};
-                formatLiters(snapshot.water.volumeMl, outValue, sizeof(outValue));
-                std::snprintf(out, len, "已出水 %s，OK 暂停", outValue);
-            } else {
-                std::snprintf(out, len, "OK 暂停");
-            }
-            break;
-        case WaterState::Paused:
-            if (snapshot.water.mode == WaterMode::Volume) {
-                char step[24]{};
-                formatLiters(snapshot.adjustmentStepMl, step, sizeof(step));
-                std::snprintf(out, len, "步进 %s，+/- 调整，OK 继续", step);
-            } else {
-                std::snprintf(out, len, "OK 继续");
-            }
-            break;
-        case WaterState::Error:
-        default:
-            std::snprintf(out, len, "%s", resultText(snapshot.water.lastResult));
-            break;
-    }
+void sendLocalDisplayCard(const DisplayFrame& frame) {
+    Esp32BaseWeb::sendChunk("<section class='metric-card local-display-card primary'><span>本地显示</span><pre>");
+    sendHtmlEscapedBounded(frame.line1, sizeof(frame.line1));
+    Esp32BaseWeb::sendChunk("\n");
+    sendHtmlEscapedBounded(frame.line2, sizeof(frame.line2));
+    Esp32BaseWeb::sendChunk("</pre></section>");
 }
 
 void sendFilterCards(std::uint32_t now) {
@@ -982,16 +856,14 @@ void handleFaucetPage() {
         return;
     }
     const AppSnapshot snapshot = g_context.app->snapshot();
+    const DisplayFrame displayFrame =
+        g_context.currentDisplayFrame ? g_context.currentDisplayFrame() : DisplayFrame{DisplayPage::Sleep, false, {}, {}};
     char currentPreset[16]{};
     std::snprintf(currentPreset,
                   sizeof(currentPreset),
                   "%u / %s",
                   static_cast<unsigned>(snapshot.water.selectedPreset + 1),
                   modeText(snapshot.water.mode));
-    char localMain[48]{};
-    char localAuxiliary[64]{};
-    formatHomeMainDisplay(snapshot, localMain, sizeof(localMain));
-    formatHomeAuxiliaryDisplay(snapshot, localAuxiliary, sizeof(localAuxiliary));
     char targetValue[24]{};
     if (snapshot.water.mode == WaterMode::Time) {
         formatSecondsValue(snapshot.water.targetValue, targetValue, sizeof(targetValue));
@@ -1025,10 +897,8 @@ void handleFaucetPage() {
     formatLiters(snapshot.statistics.todayMl, today, sizeof(today));
 
     Esp32BaseWeb::sendChunk("<h2>当前状态</h2><div class='status-grid'>");
+    sendLocalDisplayCard(displayFrame);
     sendMetricCardClass("运行状态", stateText(snapshot.water.state), "primary");
-    sendMetricCard("本地页面", localPageText(snapshot));
-    sendMetricCard("主显示", localMain);
-    sendMetricCard("本地面板提示", localAuxiliary);
     Esp32BaseWeb::sendChunk("<section class='metric-card'><span>操作边界</span><strong>仅设备按键操作</strong></section>");
     Esp32BaseWeb::sendChunk("</div><h2>本次任务</h2><div class='metric-grid'>");
     sendMetricCard("当前预设", currentPreset);

@@ -241,13 +241,19 @@ std::uint32_t currentBootId() {
 #endif
 }
 
-faucet::DisplayFrame currentDisplayFrame() {
-    faucet::DisplayFrame frame = g_lastDisplayFrame;
+faucet::FaucetDisplayStatus currentDisplayStatus() {
+    faucet::DisplayFrame physicalFrame = g_lastDisplayFrame;
+    faucet::DisplayFrame logicalFrame = g_lastDisplayFrame;
     if (g_display && g_app) {
-        frame = g_display->render(g_app->snapshot(), millis());
-        g_lastDisplayFrame = frame;
+        const std::uint32_t nowMs = millis();
+        const faucet::AppSnapshot snapshot = g_app->snapshot();
+        physicalFrame = g_display->render(snapshot, nowMs);
+        g_lastDisplayFrame = physicalFrame;
+        faucet::DisplayPresenter awakePresenter(0);
+        awakePresenter.wake(nowMs);
+        logicalFrame = awakePresenter.render(snapshot, nowMs);
     }
-    return frame;
+    return faucet::FaucetDisplayStatus{logicalFrame, physicalFrame.on};
 }
 
 void applyRuntimeSettings(const faucet::SystemConfig& config) {
@@ -351,7 +357,7 @@ void initializeApplication() {
                                  currentSeconds,
                                  currentBootId,
                                  applyRuntimeSettings,
-                                 currentDisplayFrame});
+                                 currentDisplayStatus});
     faucet::setFaucetAppConfigContext(
         faucet::FaucetAppConfigContext{&g_config, &g_configStore, g_app, applyRuntimeSettings});
 #if ESP32BASE_ENABLE_NTP

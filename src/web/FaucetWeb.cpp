@@ -550,7 +550,8 @@ void sendAppStyles() {
     Esp32BaseWeb::sendChunk(".grid,.metric-grid,.status-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin:0 0 12px}"
                             ".status-grid{grid-template-columns:minmax(220px,1.4fr) repeat(auto-fit,minmax(170px,1fr))}"
                             ".metric-card{padding:12px 14px;min-height:54px}.metric-card.primary{border-color:#b8d7cf;background:#f7fbfa}.metric-card span{display:block;color:var(--muted);font-size:13px;font-weight:600;margin-bottom:4px}.metric-card strong{display:block;color:var(--text);font-size:18px;line-height:1.2;font-weight:750}"
-                            ".local-display-card pre{margin:0;padding:10px 12px;border:1px solid #d7e6e1;border-radius:6px;background:#f7fbfa;color:var(--text);font:700 16px/1.35 ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,'Liberation Mono',monospace;white-space:pre;overflow:auto}");
+                            ".local-display-card pre{margin:0;padding:10px 12px;border:1px solid #d7e6e1;border-radius:6px;background:#f7fbfa;color:var(--text);font:700 16px/1.35 ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,'Liberation Mono',monospace;white-space:pre;overflow:auto}"
+                            ".local-display-meta{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:9px}.local-display-meta span{margin:0}.local-display-meta b{display:block;color:var(--muted);font-size:12px}.local-display-meta strong{font-size:15px}");
     Esp32BaseWeb::sendChunk(".filter-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:10px;margin:0 0 12px}.filter-card{padding:12px 14px;min-height:128px}.filter-head{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:8px}.filter-head strong{font-size:16px;line-height:1.25;font-weight:750}"
                             ".filter-meta{display:grid;gap:4px;color:var(--muted);font-size:13px;margin-top:10px}.dual-progress{display:grid;gap:4px;margin:8px 0}.dual-progress span{display:block;height:5px;border-radius:999px}.day-progress{background:var(--accent)}.flow-progress{background:#c9822c}");
     Esp32BaseWeb::sendChunk(".status-pill{display:inline-flex;align-items:center;min-height:22px;padding:0 9px;border-radius:999px;background:#eef2f2;color:#55616a;font-size:12px;font-weight:650;line-height:1;white-space:nowrap}.status-ok{background:#e8f4ee;color:#21634c;border-color:#bdddcf}.status-warn{background:#fff7e6;color:#7a520e;border-color:#eed28f}.status-error{background:#fff0ee;color:#9b3328;border-color:#efc1ba}.status-muted{background:#eef2f2;color:#66737c;border-color:#d8e0df}.warn{display:inline-block;background:#fff8e6;border:1px solid #ead28b;border-radius:8px;padding:7px 9px;color:#6b4a12;margin:0 0 10px}.filter-used-days{font-variant-numeric:tabular-nums}.filter-progress-label{display:grid;grid-template-columns:48px 1fr;gap:6px;align-items:center;color:var(--muted);font-size:12px}");
@@ -782,12 +783,16 @@ void sendUsagePatterns(const WaterUsageSummary& summary, const SystemConfig& con
     Esp32BaseWeb::sendChunk("</section>");
 }
 
-void sendLocalDisplayCard(const DisplayFrame& frame) {
+void sendLocalDisplayCard(const DisplayFrame& frame, WaterState state, bool screenOn) {
     Esp32BaseWeb::sendChunk("<section class='metric-card local-display-card primary'><span>本地显示</span><pre>");
     sendHtmlEscapedBounded(frame.line1, sizeof(frame.line1));
     Esp32BaseWeb::sendChunk("\n");
     sendHtmlEscapedBounded(frame.line2, sizeof(frame.line2));
-    Esp32BaseWeb::sendChunk("</pre></section>");
+    Esp32BaseWeb::sendChunk("</pre><div class='local-display-meta'><span><b>运行状态</b><strong>");
+    Esp32BaseWeb::sendChunk(stateText(state));
+    Esp32BaseWeb::sendChunk("</strong></span><span><b>屏幕状态</b><strong>");
+    Esp32BaseWeb::sendChunk(screenOn ? "亮屏" : "休眠");
+    Esp32BaseWeb::sendChunk("</strong></span></div></section>");
 }
 
 void sendFilterCards(std::uint32_t now) {
@@ -827,17 +832,26 @@ void sendFilterCards(std::uint32_t now) {
                 static_cast<unsigned long>(dayProgress),
                 static_cast<unsigned long>(flowProgress));
         Esp32BaseWeb::sendChunk("<div class='filter-meta'>");
-        if (filter.recommendDays > 0) {
-            sendFmt("<span>已用 %lu 天 / 上限 %lu 天</span>",
+        if (filter.recommendDays > 0 && filter.maxDays > 0) {
+            sendFmt("<span>天数：已用 %lu 天 / 建议 %lu 天 / 最长 %lu 天</span>",
+                    static_cast<unsigned long>(usedDays),
+                    static_cast<unsigned long>(filter.recommendDays),
+                    static_cast<unsigned long>(filter.maxDays));
+        } else if (filter.recommendDays > 0) {
+            sendFmt("<span>天数：已用 %lu 天 / 建议 %lu 天</span>",
                     static_cast<unsigned long>(usedDays),
                     static_cast<unsigned long>(filter.recommendDays));
+        } else if (filter.maxDays > 0) {
+            sendFmt("<span>天数：已用 %lu 天 / 最长 %lu 天</span>",
+                    static_cast<unsigned long>(usedDays),
+                    static_cast<unsigned long>(filter.maxDays));
         } else {
-            sendFmt("<span>已用 %lu 天 / 未设置天数</span>", static_cast<unsigned long>(usedDays));
+            sendFmt("<span>天数：已用 %lu 天</span>", static_cast<unsigned long>(usedDays));
         }
         if (filter.lifeMl > 0) {
-            sendFmt("<span>已用 %s / 寿命 %s</span>", usedFlow, lifeFlow);
+            sendFmt("<span>流量：已用 %s / 寿命 %s</span>", usedFlow, lifeFlow);
         } else {
-            sendFmt("<span>已用 %s</span>", usedFlow);
+            sendFmt("<span>流量：已用 %s</span>", usedFlow);
         }
         sendFmt("<span>上次更换 %s</span></div></section>", startDate[0] ? startDate : "未设置");
     }
@@ -856,8 +870,10 @@ void handleFaucetPage() {
         return;
     }
     const AppSnapshot snapshot = g_context.app->snapshot();
-    const DisplayFrame displayFrame =
-        g_context.currentDisplayFrame ? g_context.currentDisplayFrame() : DisplayFrame{DisplayPage::Sleep, false, {}, {}};
+    const FaucetDisplayStatus displayStatus =
+        g_context.currentDisplayStatus
+            ? g_context.currentDisplayStatus()
+            : FaucetDisplayStatus{DisplayFrame{DisplayPage::Sleep, false, {}, {}}, false};
     char currentPreset[16]{};
     std::snprintf(currentPreset,
                   sizeof(currentPreset),
@@ -897,9 +913,7 @@ void handleFaucetPage() {
     formatLiters(snapshot.statistics.todayMl, today, sizeof(today));
 
     Esp32BaseWeb::sendChunk("<h2>当前状态</h2><div class='status-grid'>");
-    sendLocalDisplayCard(displayFrame);
-    sendMetricCardClass("运行状态", stateText(snapshot.water.state), "primary");
-    Esp32BaseWeb::sendChunk("<section class='metric-card'><span>操作边界</span><strong>仅设备按键操作</strong></section>");
+    sendLocalDisplayCard(displayStatus.logicalFrame, snapshot.water.state, displayStatus.screenOn);
     Esp32BaseWeb::sendChunk("</div><h2>本次任务</h2><div class='metric-grid'>");
     sendMetricCard("当前预设", currentPreset);
     sendMetricCard("目标值", targetValue);

@@ -180,17 +180,24 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "按预设分布"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "--bg:#fff"));
     TEST_ASSERT_NULL(std::strstr(buffer, "--bg:#f7f9f8"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "sendFmt(\"<span>已用 %s</span>\", usedFlow);"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "sendFmt(\"<span>流量：已用 %s</span>\", usedFlow);"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "建议 %lu 天"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "最长 %lu 天"));
     TEST_ASSERT_NULL(std::strstr(buffer, "filter.lifeMl == 0 ? \"未设置\" : lifeFlow"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "未设置流量寿命"));
     TEST_ASSERT_NULL(std::strstr(buffer, "未知时间出水量"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "sendPageStart(\"智能出水\")"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "<h2>当前状态</h2><div class='status-grid'>"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "本地显示"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "local-display-card"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "white-space:pre"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "运行状态"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "屏幕状态"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "local-display-meta"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "char buffer[512]"));
     TEST_ASSERT_NULL(std::strstr(buffer, ".local-display-card{grid-column:1/-1;max-width:320px}"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "仅设备按键操作"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "仅设备按键操作"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "sendMetricCardClass(\"运行状态\""));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "<h2>本次任务</h2><div class='metric-grid'>"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "<h2>安全状态</h2><div class='metric-grid'>"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "<h2>今日概览</h2><div class='metric-grid'>"));
@@ -222,8 +229,8 @@ void test_main_source_renders_live_display_frame_for_web() {
     std::fclose(file);
     TEST_ASSERT_GREATER_THAN_size_t(0, read);
 
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "faucet::DisplayFrame currentDisplayFrame()"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "g_display->render(g_app->snapshot(), millis())"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "faucet::FaucetDisplayStatus currentDisplayStatus()"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "faucet::DisplayPresenter awakePresenter(0)"));
     TEST_ASSERT_NULL(std::strstr(buffer, "return g_lastDisplayFrame;"));
 }
 

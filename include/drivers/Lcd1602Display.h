@@ -23,7 +23,6 @@ private:
     bool writeExpander(std::uint8_t value);
     bool initialize();
     void markBusFailure();
-    bool shouldReinitialize(std::uint32_t nowMs, const DisplayFrame& frame) const;
     void setBacklight(bool on);
     void clear();
     void drawLine(std::uint8_t row, const char* text);

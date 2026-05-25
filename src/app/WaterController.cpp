@@ -29,6 +29,8 @@ WaterController::WaterController(const SystemConfig& config)
       pausedStartMs_(0),
       accumulatedPausedMs_(0),
       volumeMl_(0),
+      noFlowLastVolumeMl_(0),
+      noFlowLastActivityMs_(0),
       activeMode_(WaterMode::Volume),
       targetValue_(0),
       highFlowStartMs_(0),
@@ -155,6 +157,8 @@ bool WaterController::confirmStart(std::uint32_t nowMs) {
     pausedStartMs_ = 0;
     accumulatedPausedMs_ = 0;
     volumeMl_ = 0;
+    noFlowLastVolumeMl_ = 0;
+    noFlowLastActivityMs_ = nowMs;
     highFlowStartMs_ = 0;
     lastElapsedSec_ = 0;
     lastError_ = WaterResult::Completed;
@@ -216,6 +220,8 @@ bool WaterController::togglePause(std::uint32_t nowMs) {
         valveOpen_ = true;
         accumulatedPausedMs_ += elapsedSince(nowMs, pausedStartMs_);
         pausedStartMs_ = 0;
+        noFlowLastActivityMs_ = nowMs;
+        noFlowLastVolumeMl_ = volumeMl_;
         return true;
     }
     return false;
@@ -302,7 +308,11 @@ bool WaterController::checkSafety(std::uint32_t nowMs, std::uint32_t currentFlow
         }
     }
 
-    if (volumeMl_ == 0 && activeElapsedMs(nowMs) >= msFromSeconds(config_.noFlowTimeoutSec)) {
+    if (volumeMl_ > noFlowLastVolumeMl_) {
+        noFlowLastVolumeMl_ = volumeMl_;
+        noFlowLastActivityMs_ = nowMs;
+    }
+    if (elapsedSince(nowMs, noFlowLastActivityMs_) >= msFromSeconds(config_.noFlowTimeoutSec)) {
         finish(nowMs, WaterResult::FlowError, WaterState::Error);
         return true;
     }

@@ -60,16 +60,16 @@ void incrementCount(std::uint16_t& count) {
 }
 
 std::size_t volumeHistIndex(std::uint32_t volumeMl) {
-    if (volumeMl < 100UL) {
+    if (volumeMl < 500UL) {
         return 0;
     }
-    if (volumeMl < 300UL) {
+    if (volumeMl < 2000UL) {
         return 1;
     }
-    if (volumeMl < 500UL) {
+    if (volumeMl < 5000UL) {
         return 2;
     }
-    if (volumeMl < 1000UL) {
+    if (volumeMl < 10000UL) {
         return 3;
     }
     return 4;
@@ -169,6 +169,66 @@ bool WaterRecordStore::full() const {
 
 std::size_t WaterRecordStore::physicalIndexFromNewestOffset(std::size_t offset) const {
     return (oldestIndex_ + count_ - 1 - offset) % capacity_;
+}
+
+std::size_t queryWaterRecords(const WaterRecordReader& reader,
+                              const WaterRecordFilter& filter,
+                              std::size_t pageIndex,
+                              std::uint16_t pageSize,
+                              WaterRecord* output,
+                              std::size_t outputCapacity,
+                              std::size_t* totalMatches) {
+    if (totalMatches) {
+        *totalMatches = 0;
+    }
+    if (!reader.ready() || !output || outputCapacity == 0) {
+        return 0;
+    }
+
+    const std::uint16_t sanitizedPageSize = sanitizeRecordPageSize(pageSize);
+    if (!filter.hasStart && !filter.hasEnd) {
+        if (totalMatches) {
+            *totalMatches = reader.count();
+        }
+        return reader.readPage(pageIndex, sanitizedPageSize, output, outputCapacity);
+    }
+
+    const std::size_t startOffset = pageIndex * static_cast<std::size_t>(sanitizedPageSize);
+    const std::size_t limit = std::min<std::size_t>(sanitizedPageSize, outputCapacity);
+    constexpr std::uint16_t kQueryPageSize = kDefaultRecordPageSize;
+    WaterRecord records[kQueryPageSize]{};
+    std::size_t matched = 0;
+    std::size_t copied = 0;
+    const std::size_t total = reader.count();
+    bool stop = false;
+    for (std::size_t offset = 0; offset < total && !stop; offset += kQueryPageSize) {
+        const std::size_t page = offset / kQueryPageSize;
+        const std::size_t count = reader.readPage(page, kQueryPageSize, records, kQueryPageSize);
+        if (count == 0) {
+            break;
+        }
+        for (std::size_t i = 0; i < count; ++i) {
+            const WaterRecord& record = records[i];
+            if (!waterRecordHasRealTime(record)) {
+                continue;
+            }
+            if (filter.hasEnd && record.startTime > filter.endTime) {
+                continue;
+            }
+            if (filter.hasStart && record.startTime < filter.startTime) {
+                stop = true;
+                break;
+            }
+            if (matched >= startOffset && copied < limit) {
+                output[copied++] = record;
+            }
+            ++matched;
+        }
+    }
+    if (totalMatches) {
+        *totalMatches = matched;
+    }
+    return copied;
 }
 
 WaterUsageSummary aggregateWaterRecords(const WaterRecordReader& reader,

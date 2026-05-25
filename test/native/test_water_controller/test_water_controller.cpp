@@ -142,6 +142,44 @@ void test_no_flow_timeout_enters_error() {
     TEST_ASSERT_FALSE(controller.snapshot().valveOpen);
 }
 
+void test_no_flow_timeout_enters_error_after_initial_flow_stops() {
+    SystemConfig config = makeDefaultConfig();
+    config.noFlowTimeoutSec = 3;
+    WaterController controller(config);
+
+    startSelected(controller, 1000);
+    controller.addVolume(120);
+    controller.tick(2500);
+    TEST_ASSERT_FALSE(controller.hasResult());
+
+    controller.tick(5500);
+
+    TEST_ASSERT_TRUE(controller.hasResult());
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(WaterResult::FlowError), static_cast<unsigned>(controller.result().result));
+    TEST_ASSERT_EQUAL_UINT32(120, controller.result().volumeMl);
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(WaterState::Error), static_cast<unsigned>(controller.snapshot().state));
+    TEST_ASSERT_FALSE(controller.snapshot().valveOpen);
+}
+
+void test_no_flow_timeout_excludes_paused_time_after_resume() {
+    SystemConfig config = makeDefaultConfig();
+    config.noFlowTimeoutSec = 3;
+    WaterController controller(config);
+
+    startSelected(controller, 1000);
+    controller.addVolume(120);
+    controller.tick(2500);
+    TEST_ASSERT_TRUE(controller.togglePause(3000));
+    controller.tick(20000);
+    TEST_ASSERT_FALSE(controller.hasResult());
+
+    TEST_ASSERT_TRUE(controller.togglePause(20000));
+    controller.tick(22000);
+
+    TEST_ASSERT_FALSE(controller.hasResult());
+    TEST_ASSERT_TRUE(controller.snapshot().valveOpen);
+}
+
 void test_max_volume_safety_has_priority_over_normal_completion() {
     SystemConfig config = makeDefaultConfig();
     config.maxOutVolumeMl = 1200;
@@ -218,6 +256,8 @@ int main(int argc, char** argv) {
     RUN_TEST(test_pause_and_resume_excludes_paused_time);
     RUN_TEST(test_pause_timeout_stops_task);
     RUN_TEST(test_no_flow_timeout_enters_error);
+    RUN_TEST(test_no_flow_timeout_enters_error_after_initial_flow_stops);
+    RUN_TEST(test_no_flow_timeout_excludes_paused_time_after_resume);
     RUN_TEST(test_max_volume_safety_has_priority_over_normal_completion);
     RUN_TEST(test_max_out_time_forces_safety_stop);
     RUN_TEST(test_high_flow_must_persist_before_error);

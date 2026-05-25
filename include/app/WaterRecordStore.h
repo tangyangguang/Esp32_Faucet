@@ -84,6 +84,21 @@ private:
     std::size_t count_;
 };
 
+struct WaterRecordFilter {
+    bool hasStart;
+    bool hasEnd;
+    std::uint32_t startTime;
+    std::uint32_t endTime;
+};
+
+std::size_t queryWaterRecords(const WaterRecordReader& reader,
+                              const WaterRecordFilter& filter,
+                              std::size_t pageIndex,
+                              std::uint16_t pageSize,
+                              WaterRecord* output,
+                              std::size_t outputCapacity,
+                              std::size_t* totalMatches = nullptr);
+
 WaterUsageSummary aggregateWaterRecords(const WaterRecordReader& reader,
                                         std::uint32_t nowSeconds,
                                         std::uint8_t dayCount = kUsageSummaryMaxDays);

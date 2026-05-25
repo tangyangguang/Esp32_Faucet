@@ -222,7 +222,30 @@ void test_record_aggregate_uses_calendar_month_and_real_daily_buckets() {
     TEST_ASSERT_EQUAL_UINT32(1, summary.presetCounts[2].count);
     TEST_ASSERT_EQUAL_UINT32(4, summary.hourBuckets[0].count);
     TEST_ASSERT_EQUAL_UINT32(1, summary.resultCounts[static_cast<std::size_t>(WaterResult::FlowError)]);
-    TEST_ASSERT_EQUAL_UINT32(4, summary.volumeHist[4].count);
+    TEST_ASSERT_EQUAL_UINT32(3, summary.volumeHist[3].count);
+    TEST_ASSERT_EQUAL_UINT32(1, summary.volumeHist[4].count);
+}
+
+void test_record_aggregate_uses_practical_volume_histogram_ranges() {
+    WaterRecord records[8]{};
+    WaterRecordStore store(records, 8);
+    constexpr std::uint32_t today = 832032000UL;
+    TEST_ASSERT_TRUE(store.append(makeRecord(today, 499)));
+    TEST_ASSERT_TRUE(store.append(makeRecord(today, 500)));
+    TEST_ASSERT_TRUE(store.append(makeRecord(today, 1999)));
+    TEST_ASSERT_TRUE(store.append(makeRecord(today, 2000)));
+    TEST_ASSERT_TRUE(store.append(makeRecord(today, 4999)));
+    TEST_ASSERT_TRUE(store.append(makeRecord(today, 5000)));
+    TEST_ASSERT_TRUE(store.append(makeRecord(today, 9999)));
+    TEST_ASSERT_TRUE(store.append(makeRecord(today, 10000)));
+
+    const WaterUsageSummary summary = aggregateWaterRecords(store, today, 30);
+
+    TEST_ASSERT_EQUAL_UINT32(1, summary.volumeHist[0].count);
+    TEST_ASSERT_EQUAL_UINT32(2, summary.volumeHist[1].count);
+    TEST_ASSERT_EQUAL_UINT32(2, summary.volumeHist[2].count);
+    TEST_ASSERT_EQUAL_UINT32(2, summary.volumeHist[3].count);
+    TEST_ASSERT_EQUAL_UINT32(1, summary.volumeHist[4].count);
 }
 
 void test_record_aggregate_reads_small_pages_for_web_stack_safety() {
@@ -244,6 +267,36 @@ void test_record_aggregate_stops_after_records_older_than_window() {
     TEST_ASSERT_EQUAL_UINT32(1000, summary.todayMl);
 }
 
+void test_record_query_filters_real_records_by_time_range_and_paginates_matches() {
+    WaterRecord records[6]{};
+    WaterRecordStore store(records, 6);
+    TEST_ASSERT_TRUE(store.append(makeRecord(831686400UL, 1000)));
+    WaterRecord unknown = makeRecord(20, 2000);
+    markWaterRecordBootId(unknown, 7);
+    TEST_ASSERT_TRUE(store.append(unknown));
+    TEST_ASSERT_TRUE(store.append(makeRecord(831772800UL, 3000)));
+    TEST_ASSERT_TRUE(store.append(makeRecord(831859200UL, 4000)));
+    TEST_ASSERT_TRUE(store.append(makeRecord(831945600UL, 5000)));
+    TEST_ASSERT_TRUE(store.append(makeRecord(832032000UL, 6000)));
+
+    WaterRecordFilter filter{};
+    filter.hasStart = true;
+    filter.startTime = 831772800UL;
+    filter.hasEnd = true;
+    filter.endTime = 831945600UL;
+    WaterRecord page[2]{};
+    std::size_t total = 0;
+
+    TEST_ASSERT_EQUAL_size_t(2, queryWaterRecords(store, filter, 0, 2, page, 2, &total));
+    TEST_ASSERT_EQUAL_size_t(3, total);
+    TEST_ASSERT_EQUAL_UINT32(831945600UL, page[0].startTime);
+    TEST_ASSERT_EQUAL_UINT32(831859200UL, page[1].startTime);
+
+    TEST_ASSERT_EQUAL_size_t(1, queryWaterRecords(store, filter, 1, 2, page, 2, &total));
+    TEST_ASSERT_EQUAL_size_t(3, total);
+    TEST_ASSERT_EQUAL_UINT32(831772800UL, page[0].startTime);
+}
+
 int main(int argc, char** argv) {
     (void)argc;
     (void)argv;
@@ -257,7 +310,9 @@ int main(int argc, char** argv) {
     RUN_TEST(test_record_clear_resets_count_and_order);
     RUN_TEST(test_record_rewrites_current_boot_relative_times);
     RUN_TEST(test_record_aggregate_uses_calendar_month_and_real_daily_buckets);
+    RUN_TEST(test_record_aggregate_uses_practical_volume_histogram_ranges);
     RUN_TEST(test_record_aggregate_reads_small_pages_for_web_stack_safety);
     RUN_TEST(test_record_aggregate_stops_after_records_older_than_window);
+    RUN_TEST(test_record_query_filters_real_records_by_time_range_and_paginates_matches);
     return UNITY_END();
 }

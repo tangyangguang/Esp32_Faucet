@@ -18,7 +18,6 @@ constexpr std::uint8_t kCols = 16;
 constexpr std::uint8_t kRows = 2;
 constexpr std::uint8_t kLineAddress[kRows] = {0x00, 0x40};
 constexpr std::uint32_t kReconnectRetryMs = 3000;
-constexpr std::uint32_t kHealthyReinitMs = 5000;
 
 bool sameFrame(const DisplayFrame& a, const DisplayFrame& b) {
     return a.page == b.page && a.on == b.on && std::strncmp(a.line1, b.line1, kDisplayLineLength) == 0 &&
@@ -79,28 +78,35 @@ bool Lcd1602Display::present() const {
 
 void Lcd1602Display::apply(const DisplayFrame& frame) {
     const std::uint32_t nowMs = millis();
-    if (!present_) {
-        if (elapsedAtLeast(nowMs, lastRetryMs_, kReconnectRetryMs)) {
-            lastRetryMs_ = nowMs;
-            initialize();
+    if (!frame.on) {
+        if (present_ && !sameFrame(frame, lastFrame_)) {
+            setBacklight(false);
+            if (busFailed_) {
+                markBusFailure();
+                return;
+            }
+            lastFrame_ = frame;
         }
         return;
     }
 
-    const bool reinitialized = shouldReinitialize(nowMs, frame) && initialize();
     if (!present_) {
-        return;
+        if (elapsedAtLeast(nowMs, lastRetryMs_, kReconnectRetryMs)) {
+            lastRetryMs_ = nowMs;
+            if (!initialize()) {
+                return;
+            }
+        } else {
+            return;
+        }
     }
-    if (!reinitialized && sameFrame(frame, lastFrame_)) {
+
+    if (sameFrame(frame, lastFrame_)) {
         return;
     }
     setBacklight(frame.on);
     if (busFailed_) {
         markBusFailure();
-        return;
-    }
-    if (!frame.on) {
-        lastFrame_ = frame;
         return;
     }
     drawLine(0, frame.line1);
@@ -154,10 +160,6 @@ void Lcd1602Display::markBusFailure() {
     present_ = false;
     busFailed_ = true;
     lastRetryMs_ = millis();
-}
-
-bool Lcd1602Display::shouldReinitialize(std::uint32_t nowMs, const DisplayFrame& frame) const {
-    return frame.on && elapsedAtLeast(nowMs, lastInitMs_, kHealthyReinitMs);
 }
 
 void Lcd1602Display::setBacklight(bool on) {

@@ -34,10 +34,20 @@ void test_status_json_contains_no_remote_control_capability() {
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"targetValue\":1500"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"mode\":\"volume\""));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"selectedPreset\":1"));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"pulsePerLiter\":0"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"flowDroppedPulses\":7"));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"screenOn\":false"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"waterControl\":false"));
     TEST_ASSERT_NULL(std::strstr(json, "start"));
     TEST_ASSERT_NULL(std::strstr(json, "stop"));
+}
+
+void test_status_json_can_report_screen_state() {
+    char json[256]{};
+
+    TEST_ASSERT_TRUE(writeStatusJson(makeSnapshot(), true, json, sizeof(json)));
+
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"screenOn\":true"));
 }
 
 void test_stats_json_contains_all_periods() {
@@ -163,6 +173,7 @@ int main(int argc, char** argv) {
 
     UNITY_BEGIN();
     RUN_TEST(test_status_json_contains_no_remote_control_capability);
+    RUN_TEST(test_status_json_can_report_screen_state);
     RUN_TEST(test_stats_json_contains_all_periods);
     RUN_TEST(test_usage_summary_json_contains_aggregated_series);
     RUN_TEST(test_config_json_contains_safety_and_display_settings);

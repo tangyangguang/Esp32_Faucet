@@ -76,6 +76,8 @@ private:
     std::uint32_t pausedStartMs_;
     std::uint32_t accumulatedPausedMs_;
     std::uint32_t volumeMl_;
+    std::uint32_t noFlowLastVolumeMl_;
+    std::uint32_t noFlowLastActivityMs_;
     WaterMode activeMode_;
     std::uint32_t targetValue_;
     std::uint32_t highFlowStartMs_;

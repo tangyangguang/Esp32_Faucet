@@ -3,6 +3,7 @@
 #include "app/BeepDriver.h"
 #include "app/DisplayPresenter.h"
 
+#include <cstdio>
 #include <cstring>
 
 using namespace faucet;
@@ -213,6 +214,20 @@ void test_beep_patterns_have_distinct_feedback() {
     TEST_ASSERT_EQUAL_UINT16(900, beep.output().frequencyHz);
 }
 
+void test_lcd_driver_does_not_initialize_while_display_frame_is_sleeping() {
+    FILE* file = std::fopen("src/drivers/Lcd1602Display.cpp", "r");
+    TEST_ASSERT_NOT_NULL(file);
+
+    char buffer[12000]{};
+    const std::size_t read = std::fread(buffer, 1, sizeof(buffer) - 1, file);
+    std::fclose(file);
+    TEST_ASSERT_GREATER_THAN_size_t(0, read);
+
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "if (!frame.on)"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "return;"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "shouldReinitialize(nowMs, frame) && initialize()"));
+}
+
 int main(int argc, char** argv) {
     (void)argc;
     (void)argv;
@@ -231,5 +246,6 @@ int main(int argc, char** argv) {
     RUN_TEST(test_beep_duration_survives_millis_wrap);
     RUN_TEST(test_beep_disabled_ignores_patterns_and_stops_active_output);
     RUN_TEST(test_beep_patterns_have_distinct_feedback);
+    RUN_TEST(test_lcd_driver_does_not_initialize_while_display_frame_is_sleeping);
     return UNITY_END();
 }

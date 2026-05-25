@@ -22,7 +22,16 @@ namespace faucet {
 namespace {
 
 constexpr std::uint32_t kChartDays = kUsageSummaryMaxDays;
+constexpr std::size_t kHomeTodayRecordLimit = 5;
 FaucetWebContext g_context{};
+
+struct TodayOverview {
+    bool timeReady = false;
+    std::uint32_t count = 0;
+    std::uint32_t volumeMl = 0;
+    WaterRecord latest[kHomeTodayRecordLimit]{};
+    std::size_t latestCount = 0;
+};
 
 bool requireContext();
 bool getParam(const char* name, char* out, std::size_t len);
@@ -355,6 +364,20 @@ void addSaturating(std::uint32_t& target, std::uint32_t value) {
     target = max - target < value ? max : target + value;
 }
 
+bool waterTaskActive() {
+    if (!g_context.app) {
+        return false;
+    }
+    const WaterState state = g_context.app->snapshot().water.state;
+    return state == WaterState::Confirm || state == WaterState::Running || state == WaterState::Paused;
+}
+
+bool sameWaterRecordIdentity(const WaterRecord& a, const WaterRecord& b) {
+    return a.startTime == b.startTime && a.volumeMl == b.volumeMl && a.targetValue == b.targetValue &&
+           a.pulseCount == b.pulseCount && a.durationSec == b.durationSec && a.selectedPreset == b.selectedPreset &&
+           a.result == b.result;
+}
+
 std::uint32_t sumRealRecordVolumeSince(std::uint32_t startTime) {
     if (!g_context.records || !g_context.records->ready() || startTime < kMinRealDateSeconds) {
         return 0;
@@ -488,6 +511,22 @@ void formatRecordTime(std::uint32_t seconds, char* out, std::size_t len) {
     std::snprintf(out, len, "开机+%lu s", static_cast<unsigned long>(seconds));
 }
 
+void formatRecordTimeOfDay(std::uint32_t seconds, char* out, std::size_t len) {
+    if (!out || len == 0) {
+        return;
+    }
+    if (seconds < kMinRealDateSeconds) {
+        std::snprintf(out, len, "--:--");
+        return;
+    }
+    const std::uint32_t daySecond = seconds % 86400UL;
+    std::snprintf(out,
+                  len,
+                  "%02lu:%02lu",
+                  static_cast<unsigned long>(daySecond / 3600UL),
+                  static_cast<unsigned long>((daySecond / 60UL) % 60UL));
+}
+
 void formatWaterRecordTime(const WaterRecord& record, char* out, std::size_t len) {
     if (!out || len == 0) {
         return;
@@ -547,13 +586,13 @@ void sendAppStyles() {
                             ".footerbar{margin-top:18px;padding:9px 12px}.syslinks a{background:#f1f4f4;color:var(--muted)}.heap{color:var(--muted)}");
     Esp32BaseWeb::sendChunk(".muted{color:var(--muted)}.hint{display:block;color:var(--muted);font-size:12px;margin:3px 0 0}.panel{padding:12px;margin:12px 0}.panel h3{padding-bottom:6px;margin-bottom:8px;border-bottom:1px solid #eef2f1}"
                             ".panel-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px;padding-bottom:7px;border-bottom:1px solid #eef2f1}.panel-head h3{padding:0;margin:0;border:0}");
-    Esp32BaseWeb::sendChunk(".grid,.metric-grid,.status-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin:0 0 12px}"
-                            ".status-grid{grid-template-columns:minmax(220px,1.4fr) repeat(auto-fit,minmax(170px,1fr))}"
+    Esp32BaseWeb::sendChunk(".grid,.metric-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin:0 0 12px}"
                             ".metric-card{padding:12px 14px;min-height:54px}.metric-card.primary{border-color:#b8d7cf;background:#f7fbfa}.metric-card span{display:block;color:var(--muted);font-size:13px;font-weight:600;margin-bottom:4px}.metric-card strong{display:block;color:var(--text);font-size:18px;line-height:1.2;font-weight:750}"
-                            ".local-display-card pre{margin:0;padding:10px 12px;border:1px solid #d7e6e1;border-radius:6px;background:#f7fbfa;color:var(--text);font:700 16px/1.35 ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,'Liberation Mono',monospace;white-space:pre;overflow:auto}"
-                            ".local-display-meta{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:9px}.local-display-meta span{margin:0}.local-display-meta b{display:block;color:var(--muted);font-size:12px}.local-display-meta strong{font-size:15px}");
+                            ".machine-status{padding:14px 16px;margin:0 0 14px;border-color:#c8ddd7;background:#fbfefd}"
+                            ".machine-main{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(260px,.8fr);gap:16px;align-items:start}.machine-main.compact{grid-template-columns:minmax(220px,.42fr) minmax(0,1.58fr);align-items:stretch}.machine-main.compact .machine-title{margin-bottom:0;height:100%}.machine-main.compact .machine-kpis{grid-template-columns:repeat(auto-fit,minmax(150px,1fr));align-content:start}.machine-title{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:12px}.machine-title span{display:block;color:var(--muted);font-size:13px;font-weight:700;margin-bottom:4px}.machine-title strong{display:block;font-size:30px;line-height:1.05;font-weight:800}.machine-title p{margin:6px 0 0;color:var(--muted);font-weight:650}.machine-progress{margin-top:8px}.machine-progress-head{display:flex;align-items:center;justify-content:space-between;gap:10px;color:var(--muted);font-size:13px;font-weight:700;margin-bottom:7px}.progress{height:9px;background:#e7eeec;border-radius:999px;overflow:hidden}.progress span{display:block;height:100%;background:var(--accent);border-radius:999px}.machine-kpis{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.machine-kpi{display:flex;flex-direction:column;justify-content:center;min-height:54px;padding:10px 11px;border:1px solid #edf2f1;border-radius:7px;background:#fff}.machine-kpi span{display:block;color:var(--muted);font-size:12px;font-weight:700;margin-bottom:3px}.machine-kpi strong{display:block;font-size:16px;line-height:1.2;font-weight:750}.machine-kpi.soft strong{font-size:14px;color:#405059}");
+    Esp32BaseWeb::sendChunk(".today-layout{display:grid;grid-template-columns:minmax(220px,.45fr) minmax(0,1.55fr);gap:12px;margin:0 0 14px}.today-summary{display:grid;grid-template-columns:1fr;gap:8px}.today-records{padding:12px 14px}.today-record-list{display:grid;gap:7px;margin-top:8px}.today-record-item{display:grid;grid-template-columns:56px minmax(74px,.7fr) minmax(80px,1fr) auto;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid #edf2f1}.today-record-item:last-child{border-bottom:0}.today-record-item strong{font-size:15px}.today-record-item span{color:var(--muted);font-size:13px;font-weight:650}.today-record-item .status-pill{justify-self:end}");
     Esp32BaseWeb::sendChunk(".filter-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:10px;margin:0 0 12px}.filter-card{padding:12px 14px;min-height:128px}.filter-head{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:8px}.filter-head strong{font-size:16px;line-height:1.25;font-weight:750}"
-                            ".filter-meta{display:grid;gap:4px;color:var(--muted);font-size:13px;margin-top:10px}.dual-progress{display:grid;gap:4px;margin:8px 0}.dual-progress span{display:block;height:5px;border-radius:999px}.day-progress{background:var(--accent)}.flow-progress{background:#c9822c}");
+                            ".filter-meta{display:grid;gap:4px;color:var(--muted);font-size:13px;margin-top:10px}.dual-progress{display:grid;gap:7px;margin:8px 0 10px}.filter-progress-row{display:grid;grid-template-columns:48px 1fr;gap:8px;align-items:center;color:var(--muted);font-size:12px}.filter-track{display:block;height:7px;background:#edf3f1;border:1px solid #d7e3e0;border-radius:999px;overflow:hidden}.filter-progress-fill{display:block;height:100%;border-radius:999px}.day-progress{background:var(--accent)}.flow-progress{background:#c9822c}");
     Esp32BaseWeb::sendChunk(".status-pill{display:inline-flex;align-items:center;min-height:22px;padding:0 9px;border-radius:999px;background:#eef2f2;color:#55616a;font-size:12px;font-weight:650;line-height:1;white-space:nowrap}.status-ok{background:#e8f4ee;color:#21634c;border-color:#bdddcf}.status-warn{background:#fff7e6;color:#7a520e;border-color:#eed28f}.status-error{background:#fff0ee;color:#9b3328;border-color:#efc1ba}.status-muted{background:#eef2f2;color:#66737c;border-color:#d8e0df}.warn{display:inline-block;background:#fff8e6;border:1px solid #ead28b;border-radius:8px;padding:7px 9px;color:#6b4a12;margin:0 0 10px}.filter-used-days{font-variant-numeric:tabular-nums}.filter-progress-label{display:grid;grid-template-columns:48px 1fr;gap:6px;align-items:center;color:var(--muted);font-size:12px}");
     Esp32BaseWeb::sendChunk(".stats-layout{display:grid;grid-template-columns:minmax(0,1fr);gap:10px;align-items:start}.daily-chart{padding:14px 16px;margin:0 0 12px;overflow-x:auto}.chart-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:2px}.chart-head h3{margin:0 4px 0 0}.chart-key{font-size:12px;color:var(--muted);font-weight:650}.chart-key:before{content:'';display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5px}.volume-key:before{background:var(--accent)}.duration-key:before{background:#7c8fae}");
     Esp32BaseWeb::sendChunk(".daily-chart svg{display:block;width:100%;height:auto;min-width:720px;margin-top:6px}.daily-chart .bar{fill:var(--accent)}.daily-chart .duration-bar{fill:#7c8fae}.daily-chart .empty-bar{fill:#cfd7d5}.daily-chart .axis{stroke:#d9e0df;stroke-width:1}.daily-chart .x-label,.daily-chart .y-label{font-size:11px;text-anchor:middle;fill:var(--muted)}");
@@ -564,8 +603,9 @@ void sendAppStyles() {
     Esp32BaseWeb::sendChunk("table{width:100%;border-collapse:separate;border-spacing:0;margin:0 0 12px;overflow:hidden;font-size:13px}td,th{padding:8px 10px;border-bottom:1px solid #edf1f0;text-align:left;vertical-align:middle}tr:last-child td{border-bottom:0}th{background:#f8faf9;color:var(--muted);font-weight:700}.filters-table th:first-child{width:22%}.filters-table th:last-child{width:150px}.kv th{width:26%}");
     Esp32BaseWeb::sendChunk(".pager{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin:0 0 10px}.pager-links{display:flex;align-items:center;gap:5px;flex-wrap:wrap}.page-current{background:var(--accent-soft);color:#17635b;border-color:#cfe4dc}.page-disabled{color:#9aa3aa;background:#f4f6f6;pointer-events:none}.page-size{display:flex;align-items:center;gap:6px;color:var(--muted);font-size:13px}.page-size select{width:auto;min-width:80px}");
     Esp32BaseWeb::sendChunk(".disabled-row{background:#f7f8f8;color:#8a949b}.disabled-row td{color:#8a949b}.disabled-row .status-pill{background:#eef0f0;color:#7b858d}.disabled-row a{color:#6f7a82}"
-                            "@media(max-width:720px){body{padding:10px}.form-grid{grid-template-columns:1fr}.span-2,.span-3,.span-4,.span-5,.span-6,.span-8,.span-12{grid-column:1/-1}.usage-grid{grid-template-columns:1fr}.daily-chart svg{min-width:680px}.status-grid{grid-template-columns:1fr}}"
-                            "@media(max-width:520px){.grid,.metric-grid,.filter-cards{grid-template-columns:1fr}.metric-card{min-height:0}.pager{align-items:flex-start}.page-size{width:100%}.kv th{width:34%}}");
+                            "@media(max-width:820px){.machine-main,.today-layout{grid-template-columns:1fr}.machine-title strong{font-size:26px}}"
+                            "@media(max-width:720px){body{padding:10px}.form-grid{grid-template-columns:1fr}.span-2,.span-3,.span-4,.span-5,.span-6,.span-8,.span-12{grid-column:1/-1}.usage-grid{grid-template-columns:1fr}.daily-chart svg{min-width:680px}}"
+                            "@media(max-width:520px){.grid,.metric-grid,.filter-cards,.machine-kpis,.today-summary{grid-template-columns:1fr}.metric-card{min-height:0}.today-record-item{grid-template-columns:48px 1fr auto}.today-record-item .record-preset{display:none}.pager{align-items:flex-start}.page-size{width:100%}.kv th{width:34%}}");
     Esp32BaseWeb::sendChunk("</style>");
 }
 
@@ -753,29 +793,13 @@ void sendUsagePatterns(const WaterUsageSummary& summary, const SystemConfig& con
     if (maxPreset == 0) {
         Esp32BaseWeb::sendChunk("<p class='hint'>最近 30 天没有可聚合的真实时间记录。</p>");
     }
-    Esp32BaseWeb::sendChunk("</section><section class='usage-panel'><h3>按时段分布</h3>");
-    CountVolumeBucket timeRanges[6]{};
-    static constexpr const char* rangeLabels[6] = {"深夜", "早晨", "上午", "中午", "下午", "晚上"};
-    for (std::size_t h = 0; h < 24; ++h) {
-        const std::size_t index = h < 6 ? 0 : h < 9 ? 1 : h < 12 ? 2 : h < 14 ? 3 : h < 18 ? 4 : 5;
-        addSaturating(timeRanges[index].volumeMl, summary.hourBuckets[h].volumeMl);
-        if (timeRanges[index].count <= UINT16_MAX - summary.hourBuckets[h].count) {
-            timeRanges[index].count = static_cast<std::uint16_t>(timeRanges[index].count + summary.hourBuckets[h].count);
-        } else {
-            timeRanges[index].count = UINT16_MAX;
-        }
-    }
-    const std::uint32_t maxTime = maxCountVolume(timeRanges, 6);
-    for (std::size_t i = 0; i < 6; ++i) {
-        sendUsageBar(rangeLabels[i], timeRanges[i].volumeMl, timeRanges[i].count, maxTime);
-    }
     Esp32BaseWeb::sendChunk("</section><section class='usage-panel'><h3>完成结果</h3>");
     const std::uint32_t maxResult = maxResultCount(summary.resultCounts, kUsageResultCount);
     for (std::size_t i = 0; i < kUsageResultCount; ++i) {
         sendCountBar(resultLabel(i), summary.resultCounts[i], maxResult);
     }
     Esp32BaseWeb::sendChunk("</section><section class='usage-panel'><h3>单次出水分布</h3>");
-    static constexpr const char* histLabels[kUsageVolumeHistCount] = {"<100 ml", "100-300 ml", "300-500 ml", "500-1000 ml", ">1000 ml"};
+    static constexpr const char* histLabels[kUsageVolumeHistCount] = {"< 0.5 L", "0.5 - 2 L", "2 - 5 L", "5 - 10 L", ">= 10 L"};
     const std::uint32_t maxHist = maxCountVolume(summary.volumeHist, kUsageVolumeHistCount);
     for (std::size_t i = 0; i < kUsageVolumeHistCount; ++i) {
         sendUsageBar(histLabels[i], summary.volumeHist[i].volumeMl, summary.volumeHist[i].count, maxHist);
@@ -783,16 +807,208 @@ void sendUsagePatterns(const WaterUsageSummary& summary, const SystemConfig& con
     Esp32BaseWeb::sendChunk("</section>");
 }
 
-void sendLocalDisplayCard(const DisplayFrame& frame, WaterState state, bool screenOn) {
-    Esp32BaseWeb::sendChunk("<section class='metric-card local-display-card primary'><span>本地显示</span><pre>");
-    sendHtmlEscapedBounded(frame.line1, sizeof(frame.line1));
-    Esp32BaseWeb::sendChunk("\n");
-    sendHtmlEscapedBounded(frame.line2, sizeof(frame.line2));
-    Esp32BaseWeb::sendChunk("</pre><div class='local-display-meta'><span><b>运行状态</b><strong>");
-    Esp32BaseWeb::sendChunk(stateText(state));
-    Esp32BaseWeb::sendChunk("</strong></span><span><b>屏幕状态</b><strong>");
-    Esp32BaseWeb::sendChunk(screenOn ? "亮屏" : "休眠");
-    Esp32BaseWeb::sendChunk("</strong></span></div></section>");
+void sendMachineKpi(const char* label, const char* value, bool soft = false) {
+    sendFmt("<div class='machine-kpi%s'><span>%s</span><strong>%s</strong></div>", soft ? " soft" : "", label, value);
+}
+
+void sendMachineKpiId(const char* id, const char* label, const char* value, bool soft = false) {
+    sendFmt("<div class='machine-kpi%s'><span>%s</span><strong id='%s'>%s</strong></div>",
+            soft ? " soft" : "",
+            label,
+            id,
+            value);
+}
+
+void sendMachineStatusCard(const AppSnapshot& snapshot, bool screenOn) {
+    const bool shouldShowProgress = snapshot.water.state == WaterState::Running ||
+                                    snapshot.water.state == WaterState::Paused ||
+                                    snapshot.water.state == WaterState::Confirm;
+    char currentPreset[16]{};
+    std::snprintf(currentPreset,
+                  sizeof(currentPreset),
+                  "%u / %s",
+                  static_cast<unsigned>(snapshot.water.selectedPreset + 1),
+                  modeText(snapshot.water.mode));
+    char targetValue[24]{};
+    if (snapshot.water.mode == WaterMode::Time) {
+        formatSecondsValue(snapshot.water.targetValue, targetValue, sizeof(targetValue));
+    } else {
+        formatLiters(snapshot.water.targetValue, targetValue, sizeof(targetValue));
+    }
+    char outValue[24]{};
+    formatLiters(snapshot.water.volumeMl, outValue, sizeof(outValue));
+    const std::uint32_t progressBase = snapshot.water.mode == WaterMode::Time ? snapshot.water.elapsedSec : snapshot.water.volumeMl;
+    const std::uint32_t progressPercent = percentOf(progressBase, snapshot.water.targetValue);
+    char progressText[48]{};
+    if (snapshot.water.mode == WaterMode::Time) {
+        char elapsed[20]{};
+        formatSecondsValue(snapshot.water.elapsedSec, elapsed, sizeof(elapsed));
+        std::snprintf(progressText, sizeof(progressText), "%s / %s", elapsed, targetValue);
+    } else {
+        std::snprintf(progressText, sizeof(progressText), "%s / %s", outValue, targetValue);
+    }
+    const std::uint32_t remaining =
+        snapshot.water.mode == WaterMode::Time
+            ? (snapshot.water.targetValue > snapshot.water.elapsedSec ? snapshot.water.targetValue - snapshot.water.elapsedSec : 0)
+            : (snapshot.water.targetValue > snapshot.water.volumeMl ? snapshot.water.targetValue - snapshot.water.volumeMl : 0);
+    char remainingValue[24]{};
+    if (snapshot.water.mode == WaterMode::Time) {
+        formatSecondsValue(remaining, remainingValue, sizeof(remainingValue));
+    } else {
+        formatLiters(remaining, remainingValue, sizeof(remainingValue));
+    }
+    char elapsedValue[24]{};
+    formatSecondsValue(snapshot.water.elapsedSec, elapsedValue, sizeof(elapsedValue));
+    char pulsePerLiter[24]{};
+    if (snapshot.pulsePerLiter > 0) {
+        std::snprintf(pulsePerLiter, sizeof(pulsePerLiter), "%lu 脉冲/L", static_cast<unsigned long>(snapshot.pulsePerLiter));
+    } else {
+        std::snprintf(pulsePerLiter, sizeof(pulsePerLiter), "未校准");
+    }
+    char droppedPulses[24]{};
+    std::snprintf(droppedPulses, sizeof(droppedPulses), "%lu", static_cast<unsigned long>(snapshot.flowDroppedPulses));
+
+    const char* machineLayoutClass = shouldShowProgress ? "machine-main" : "machine-main compact";
+    sendFmt("<h2>机器状态</h2><section class='panel machine-status'><div class='%s'><div>"
+            "<div class='machine-title'><div><span>当前状态</span><strong>",
+            machineLayoutClass);
+    Esp32BaseWeb::sendChunk("<span id='machineState'>");
+    Esp32BaseWeb::sendChunk(stateText(snapshot.water.state));
+    sendFmt("</span></strong><p>当前预设 <span id='machinePreset'>%s</span></p></div><span id='valvePill' class='status-pill %s'>%s</span></div>",
+            currentPreset,
+            snapshot.water.valveOpen ? "status-ok" : "status-muted",
+            snapshot.water.valveOpen ? "阀门开" : "阀门关");
+    sendFmt("<div id='machineProgress' class='machine-progress'%s><div class='machine-progress-head'><span>出水进度</span><strong id='machineProgressText'>%s</strong></div>"
+            "<div class='progress'><span id='machineProgressBar' style='width:%lu%%'></span></div></div>",
+            shouldShowProgress ? "" : " style='display:none'",
+            progressText,
+            static_cast<unsigned long>(progressPercent));
+    Esp32BaseWeb::sendChunk("</div><div class='machine-kpis'>");
+    sendMachineKpiId("targetValue", "目标值", targetValue);
+    sendMachineKpiId("outputValue", "已出水", outValue);
+    sendMachineKpiId("valveStatus", "阀门状态", snapshot.water.valveOpen ? "开" : "关");
+    if (snapshot.water.state == WaterState::Running || snapshot.water.state == WaterState::Paused ||
+        snapshot.water.state == WaterState::Confirm) {
+        sendMachineKpi(snapshot.water.mode == WaterMode::Time ? "剩余时间" : "剩余量", remainingValue);
+    }
+    if (snapshot.water.state == WaterState::Running || snapshot.water.state == WaterState::Paused) {
+        sendMachineKpi("已运行", elapsedValue);
+    }
+    if (snapshot.water.state == WaterState::Error || snapshot.localMode == LocalUiMode::Result) {
+        sendMachineKpi("结束原因", resultText(snapshot.water.lastResult));
+    }
+    sendMachineKpiId("pulsePerLiter", "流量计校准系数", pulsePerLiter, true);
+    if (snapshot.flowDroppedPulses > 0) {
+        sendMachineKpi("丢弃脉冲", droppedPulses, true);
+    }
+    sendMachineKpiId("screenStatus", "屏幕状态", screenOn ? "亮屏" : "休眠", true);
+    Esp32BaseWeb::sendChunk("</div></div></section>");
+}
+
+TodayOverview collectTodayOverview(std::uint32_t now, std::uint32_t fallbackTodayMl) {
+    TodayOverview overview{};
+    overview.volumeMl = fallbackTodayMl;
+    if (!g_context.records || !g_context.records->ready() || now < kMinRealDateSeconds || waterTaskActive()) {
+        return overview;
+    }
+    overview.timeReady = true;
+    const std::uint32_t todayStart = (now / 86400UL) * 86400UL;
+    WaterRecord records[kDefaultRecordPageSize]{};
+    const std::size_t total = g_context.records->count();
+    bool stopAfterPage = false;
+    for (std::size_t offset = 0; offset < total && !stopAfterPage; offset += kDefaultRecordPageSize) {
+        const std::size_t page = offset / kDefaultRecordPageSize;
+        const std::size_t read = g_context.records->readPage(page, kDefaultRecordPageSize, records, kDefaultRecordPageSize);
+        if (read == 0) {
+            break;
+        }
+        for (std::size_t i = 0; i < read; ++i) {
+            if (!waterRecordHasRealTime(records[i])) {
+                continue;
+            }
+            if (records[i].startTime > now) {
+                continue;
+            }
+            if (records[i].startTime < todayStart) {
+                stopAfterPage = true;
+                break;
+            }
+            ++overview.count;
+            if (overview.latestCount < kHomeTodayRecordLimit) {
+                overview.latest[overview.latestCount++] = records[i];
+            }
+        }
+    }
+    return overview;
+}
+
+void sendTodayOverview(const TodayOverview& overview) {
+    char today[24]{};
+    formatLiters(overview.volumeMl, today, sizeof(today));
+
+    Esp32BaseWeb::sendChunk("<h2>今日概览</h2><div class='today-layout'><section class='panel'><div class='panel-head'><h3>今日总结</h3></div><div class='today-summary'>");
+    sendMetricCard("今日总量", today);
+    Esp32BaseWeb::sendChunk("</div></section><section class='panel today-records'><div class='panel-head'><h3>今日接水记录</h3><a class='btn-link' href='/faucet/records'>全部记录</a></div>");
+    if (!overview.timeReady) {
+        Esp32BaseWeb::sendChunk("<p class='hint'>时间同步后显示今天的接水时间和水量。</p>");
+    } else if (overview.latestCount == 0) {
+        Esp32BaseWeb::sendChunk("<p class='hint'>今天还没有接水记录。</p>");
+    } else {
+        Esp32BaseWeb::sendChunk("<div class='today-record-list'>");
+        for (std::size_t i = 0; i < overview.latestCount; ++i) {
+            char time[8]{};
+            char volume[24]{};
+            char preset[20]{};
+            formatRecordTimeOfDay(overview.latest[i].startTime, time, sizeof(time));
+            formatLiters(overview.latest[i].volumeMl, volume, sizeof(volume));
+            if (overview.latest[i].selectedPreset < kPresetCount) {
+                std::snprintf(preset,
+                              sizeof(preset),
+                              "预设 %u",
+                              static_cast<unsigned>(overview.latest[i].selectedPreset) + 1U);
+            } else {
+                std::snprintf(preset, sizeof(preset), "未知预设");
+            }
+            sendFmt("<div class='today-record-item'><span>%s</span><strong>%s</strong><span class='record-preset'>%s</span>"
+                    "<span class='status-pill %s'>%s</span></div>",
+                    time,
+                    volume,
+                    preset,
+                    resultStatusClass(overview.latest[i].result),
+                    resultText(overview.latest[i].result));
+        }
+        Esp32BaseWeb::sendChunk("</div>");
+    }
+    Esp32BaseWeb::sendChunk("</section></div>");
+}
+
+void sendHomeAutoRefreshScript() {
+    Esp32BaseWeb::sendChunk("<script>"
+                            "function faucetLiters(ml){var c=Math.round((Number(ml)||0)/10);return Math.floor(c/100)+'.'+String(c%100).padStart(2,'0')+' L';}"
+                            "function faucetSeconds(s){return (Number(s)||0)+' 秒';}"
+                            "function faucetStateText(s){return {idle:'待机',confirm:'确认',running:'出水中',paused:'暂停',error:'异常'}[s]||'未知';}"
+                            "function faucetModeText(m){return m==='time'?'时间':'容量';}"
+                            "function faucetSet(id,text){var e=document.getElementById(id);if(e){e.textContent=text;}}"
+                            "function updateFaucetHomeStatus(){if(document.hidden){return;}"
+                            "fetch('/api/faucet/status',{cache:'no-store'}).then(function(r){return r.json();}).then(function(s){"
+                            "var target=s.mode==='time'?faucetSeconds(s.targetValue):faucetLiters(s.targetValue);"
+                            "var out=faucetLiters(s.volumeMl);"
+                            "var shown=s.state==='running'||s.state==='paused'||s.state==='confirm';"
+                            "faucetSet('machineState',faucetStateText(s.state));"
+                            "faucetSet('machinePreset',(Number(s.selectedPreset)+1)+' / '+faucetModeText(s.mode));"
+                            "faucetSet('targetValue',target);faucetSet('outputValue',out);"
+                            "faucetSet('valveStatus',s.valveOpen?'开':'关');"
+                            "faucetSet('pulsePerLiter',s.pulsePerLiter>0?s.pulsePerLiter+' 脉冲/L':'未校准');"
+                            "faucetSet('screenStatus',s.screenOn?'亮屏':'休眠');"
+                            "var pill=document.getElementById('valvePill');if(pill){pill.textContent=s.valveOpen?'阀门开':'阀门关';pill.className='status-pill '+(s.valveOpen?'status-ok':'status-muted');}"
+                            "var main=document.querySelector('.machine-main');if(main){main.className=shown?'machine-main':'machine-main compact';}"
+                            "var p=document.getElementById('machineProgress');if(p){p.style.display=shown?'block':'none';}"
+                            "if(shown){var base=s.mode==='time'?s.elapsedSec:s.volumeMl;var pct=s.targetValue>0?Math.min(100,Math.floor(base*100/s.targetValue)):0;"
+                            "faucetSet('machineProgressText',(s.mode==='time'?faucetSeconds(s.elapsedSec):out)+' / '+target);"
+                            "var bar=document.getElementById('machineProgressBar');if(bar){bar.style.width=pct+'%';}}"
+                            "}).catch(function(){});}"
+                            "setInterval(updateFaucetHomeStatus,3000);"
+                            "</script>");
 }
 
 void sendFilterCards(std::uint32_t now) {
@@ -825,12 +1041,17 @@ void sendFilterCards(std::uint32_t now) {
         Esp32BaseWeb::sendChunk("<section class='filter-card'><div class='filter-head'><strong>");
         sendHtmlEscapedBounded(filter.name, sizeof(filter.name));
         sendFmt("</strong><span class='status-pill %s'>%s</span></div>"
-                "<div class='dual-progress'><div class='filter-progress-label'><b>天数</b><span class='day-progress' style='width:%lu%%'></span></div>"
-                "<div class='filter-progress-label'><b>流量</b><span class='flow-progress' style='width:%lu%%'></span></div></div>",
+                "<div class='dual-progress'><div class='filter-progress-row filter-progress-label'><b>天数</b>"
+                "<span class='filter-track'><span class='filter-progress-fill day-progress' style='width:%lu%%'></span></span></div>",
                 filterStatusClass(filter, usedDays),
                 filterDisplayStatusText(filter, usedDays),
-                static_cast<unsigned long>(dayProgress),
-                static_cast<unsigned long>(flowProgress));
+                static_cast<unsigned long>(dayProgress));
+        if (filter.lifeMl > 0) {
+            sendFmt("<div class='filter-progress-row filter-progress-label'><b>流量</b>"
+                    "<span class='filter-track'><span class='filter-progress-fill flow-progress' style='width:%lu%%'></span></span></div>",
+                    static_cast<unsigned long>(flowProgress));
+        }
+        Esp32BaseWeb::sendChunk("</div>");
         Esp32BaseWeb::sendChunk("<div class='filter-meta'>");
         if (filter.recommendDays > 0 && filter.maxDays > 0) {
             sendFmt("<span>天数：已用 %lu 天 / 建议 %lu 天 / 最长 %lu 天</span>",
@@ -874,70 +1095,10 @@ void handleFaucetPage() {
         g_context.currentDisplayStatus
             ? g_context.currentDisplayStatus()
             : FaucetDisplayStatus{DisplayFrame{DisplayPage::Sleep, false, {}, {}}, false};
-    char currentPreset[16]{};
-    std::snprintf(currentPreset,
-                  sizeof(currentPreset),
-                  "%u / %s",
-                  static_cast<unsigned>(snapshot.water.selectedPreset + 1),
-                  modeText(snapshot.water.mode));
-    char targetValue[24]{};
-    if (snapshot.water.mode == WaterMode::Time) {
-        formatSecondsValue(snapshot.water.targetValue, targetValue, sizeof(targetValue));
-    } else {
-        formatLiters(snapshot.water.targetValue, targetValue, sizeof(targetValue));
-    }
-    char outValue[24]{};
-    formatLiters(snapshot.water.volumeMl, outValue, sizeof(outValue));
-    char remainingValue[24]{};
-    const std::uint32_t remaining =
-        snapshot.water.mode == WaterMode::Time
-            ? (snapshot.water.targetValue > snapshot.water.elapsedSec ? snapshot.water.targetValue - snapshot.water.elapsedSec : 0)
-            : (snapshot.water.targetValue > snapshot.water.volumeMl ? snapshot.water.targetValue - snapshot.water.volumeMl : 0);
-    if (snapshot.water.mode == WaterMode::Time) {
-        formatSecondsValue(remaining, remainingValue, sizeof(remainingValue));
-    } else {
-        formatLiters(remaining, remainingValue, sizeof(remainingValue));
-    }
-    char elapsedValue[24]{};
-    formatSecondsValue(snapshot.water.elapsedSec, elapsedValue, sizeof(elapsedValue));
-    char pulsePerLiter[24]{};
-    if (snapshot.pulsePerLiter > 0) {
-        std::snprintf(pulsePerLiter, sizeof(pulsePerLiter), "%lu 脉冲/L", static_cast<unsigned long>(snapshot.pulsePerLiter));
-    } else {
-        std::snprintf(pulsePerLiter, sizeof(pulsePerLiter), "未校准");
-    }
-    const char* valveStatus = snapshot.water.valveOpen ? "开" : "关";
-    char droppedPulses[24]{};
-    std::snprintf(droppedPulses, sizeof(droppedPulses), "%lu", static_cast<unsigned long>(snapshot.flowDroppedPulses));
-    char today[24]{};
-    formatLiters(snapshot.statistics.todayMl, today, sizeof(today));
-
-    Esp32BaseWeb::sendChunk("<h2>当前状态</h2><div class='status-grid'>");
-    sendLocalDisplayCard(displayStatus.logicalFrame, snapshot.water.state, displayStatus.screenOn);
-    Esp32BaseWeb::sendChunk("</div><h2>本次任务</h2><div class='metric-grid'>");
-    sendMetricCard("当前预设", currentPreset);
-    sendMetricCard("目标值", targetValue);
-    sendMetricCard("已出水", outValue);
-    if (snapshot.water.state == WaterState::Running || snapshot.water.state == WaterState::Paused ||
-        snapshot.water.state == WaterState::Confirm) {
-        sendMetricCard(snapshot.water.mode == WaterMode::Time ? "剩余时间" : "剩余量", remainingValue);
-    }
-    if (snapshot.water.state == WaterState::Running || snapshot.water.state == WaterState::Paused) {
-        sendMetricCard("已运行", elapsedValue);
-    }
-    Esp32BaseWeb::sendChunk("</div><h2>安全状态</h2><div class='metric-grid'>");
-    sendMetricCard("阀门状态", valveStatus);
-    if (snapshot.water.state == WaterState::Error || snapshot.localMode == LocalUiMode::Result) {
-        sendMetricCardClass("结束原因", resultText(snapshot.water.lastResult), resultStatusClass(snapshot.water.lastResult));
-    }
-    sendMetricCard("流量计校准系数", pulsePerLiter);
-    if (snapshot.flowDroppedPulses > 0) {
-        sendMetricCard("丢弃脉冲", droppedPulses);
-    }
-    Esp32BaseWeb::sendChunk("</div><h2>今日概览</h2><div class='metric-grid'>");
-    sendMetricCard("今日", today);
-    Esp32BaseWeb::sendChunk("</div>");
+    sendMachineStatusCard(snapshot, displayStatus.screenOn);
+    sendTodayOverview(collectTodayOverview(g_context.nowSeconds(), snapshot.statistics.todayMl));
     sendFilterCards(g_context.nowSeconds());
+    sendHomeAutoRefreshScript();
     sendPageEnd();
 }
 
@@ -1030,6 +1191,12 @@ void handleStatsPage() {
     if (!requireContext()) {
         return;
     }
+    if (waterTaskActive()) {
+        sendPageStart("统计");
+        Esp32BaseWeb::sendChunk("<h2>统计</h2><section class='panel'><p class='err'>出水任务进行中，暂不生成统计报表。</p></section>");
+        sendPageEnd();
+        return;
+    }
     const std::uint32_t now = g_context.nowSeconds();
     const WaterUsageSummary summary = aggregateWaterRecords(*g_context.records, now, kChartDays);
     const AppSnapshot snapshot = g_context.app->snapshot();
@@ -1085,48 +1252,109 @@ void handleRecordsPage() {
         parseU32(text, requestedPageSize);
     }
     const std::uint16_t pageSize = sanitizeRecordPageSize(static_cast<std::uint16_t>(requestedPageSize));
+    WaterRecordFilter filter{};
+    char startDate[16]{};
+    char endDate[16]{};
+    if (getParam("startDate", startDate, sizeof(startDate))) {
+        if (!parseDate(startDate, filter.startTime)) {
+            Esp32BaseWeb::redirectSeeOther("/faucet/records?error=invalid_date");
+            return;
+        }
+        filter.hasStart = filter.startTime > 0;
+    }
+    if (getParam("endDate", endDate, sizeof(endDate))) {
+        if (!parseDate(endDate, filter.endTime)) {
+            Esp32BaseWeb::redirectSeeOther("/faucet/records?error=invalid_date");
+            return;
+        }
+        filter.hasEnd = filter.endTime > 0;
+        if (filter.hasEnd) {
+            filter.endTime = UINT32_MAX - filter.endTime < 86399UL ? UINT32_MAX : filter.endTime + 86399UL;
+        }
+    }
+    if (filter.hasStart && filter.hasEnd && filter.endTime < filter.startTime) {
+        Esp32BaseWeb::redirectSeeOther("/faucet/records?error=invalid_date");
+        return;
+    }
+    if ((filter.hasStart || filter.hasEnd) && waterTaskActive()) {
+        Esp32BaseWeb::redirectSeeOther("/faucet/records?error=busy");
+        return;
+    }
+    char filterQuery[96]{};
+    if (filter.hasStart || filter.hasEnd) {
+        char normalizedStart[16]{};
+        char normalizedEnd[16]{};
+        if (filter.hasStart) {
+            formatDate(filter.startTime, normalizedStart, sizeof(normalizedStart));
+        }
+        if (filter.hasEnd) {
+            formatDate(filter.endTime, normalizedEnd, sizeof(normalizedEnd));
+        }
+        std::snprintf(filterQuery,
+                      sizeof(filterQuery),
+                      "&startDate=%s&endDate=%s",
+                      normalizedStart,
+                      normalizedEnd);
+    }
     WaterRecord* records = new (std::nothrow) WaterRecord[pageSize]{};
     if (!records) {
         Esp32BaseWeb::sendJson(500, "{\"error\":\"oom\"}");
         return;
     }
     const bool ready = g_context.records->ready();
-    const std::size_t total = ready ? g_context.records->count() : 0;
-    const std::uint32_t maxPage = total == 0 ? 0 : static_cast<std::uint32_t>((total - 1) / pageSize);
-    if (page > maxPage) {
-        page = maxPage;
+    std::size_t total = ready ? g_context.records->count() : 0;
+    std::size_t count =
+        ready ? queryWaterRecords(*g_context.records, filter, page, pageSize, records, pageSize, &total) : 0;
+    const std::uint32_t filteredMaxPage = total == 0 ? 0 : static_cast<std::uint32_t>((total - 1) / pageSize);
+    if (page > filteredMaxPage) {
+        page = filteredMaxPage;
+        count = ready ? queryWaterRecords(*g_context.records, filter, page, pageSize, records, pageSize, &total) : 0;
     }
-    const std::size_t count = ready ? g_context.records->readPage(page, pageSize, records, pageSize) : 0;
     Esp32BaseWeb::sendHeader("出水记录");
     Esp32BaseWeb::sendChunk("<h2>记录</h2>");
     sendNoticeFromQuery();
     Esp32BaseWeb::sendChunk("<div class='pager'><div class='pager-links'>");
     const bool hasPrev = ready && total > 0 && page > 0;
-    const bool hasNext = ready && total > 0 && page < maxPage;
+    const bool hasNext = ready && total > 0 && page < filteredMaxPage;
     if (hasPrev) {
-        sendFmt("<a class='page-link' href='/faucet/records?page=0&pageSize=%u'>首页</a>"
-                "<a class='page-link' href='/faucet/records?page=%lu&pageSize=%u'>上一页</a>",
+        sendFmt("<a class='page-link' href='/faucet/records?page=0&pageSize=%u%s'>首页</a>"
+                "<a class='page-link' href='/faucet/records?page=%lu&pageSize=%u%s'>上一页</a>",
                 static_cast<unsigned>(pageSize),
+                filterQuery,
                 static_cast<unsigned long>(page - 1),
-                static_cast<unsigned>(pageSize));
+                static_cast<unsigned>(pageSize),
+                filterQuery);
     } else {
         Esp32BaseWeb::sendChunk("<span class='page-link page-disabled'>首页</span><span class='page-link page-disabled'>上一页</span>");
     }
     sendFmt("<span class='page-current'>第 %lu / %lu 页</span>",
             static_cast<unsigned long>(page + 1),
-            static_cast<unsigned long>(maxPage + 1));
+            static_cast<unsigned long>(filteredMaxPage + 1));
     if (hasNext) {
-        sendFmt("<a class='page-link' href='/faucet/records?page=%lu&pageSize=%u'>下一页</a>"
-                "<a class='page-link' href='/faucet/records?page=%lu&pageSize=%u'>末页</a>",
+        sendFmt("<a class='page-link' href='/faucet/records?page=%lu&pageSize=%u%s'>下一页</a>"
+                "<a class='page-link' href='/faucet/records?page=%lu&pageSize=%u%s'>末页</a>",
                 static_cast<unsigned long>(page + 1),
                 static_cast<unsigned>(pageSize),
-                static_cast<unsigned long>(maxPage),
-                static_cast<unsigned>(pageSize));
+                filterQuery,
+                static_cast<unsigned long>(filteredMaxPage),
+                static_cast<unsigned>(pageSize),
+                filterQuery);
     } else {
         Esp32BaseWeb::sendChunk("<span class='page-link page-disabled'>下一页</span><span class='page-link page-disabled'>末页</span>");
     }
+    char shownStart[16]{};
+    char shownEnd[16]{};
+    if (filter.hasStart) {
+        formatDate(filter.startTime, shownStart, sizeof(shownStart));
+    }
+    if (filter.hasEnd) {
+        formatDate(filter.endTime, shownEnd, sizeof(shownEnd));
+    }
     sendFmt("</div><form class='page-size' method='get' action='/faucet/records'>"
-            "<input type='hidden' name='page' value='0'><span>每页</span><select name='pageSize' onchange='this.form.submit()'>");
+            "<input type='hidden' name='page' value='0'><span>开始</span><input type='date' name='startDate' value='%s'>"
+            "<span>结束</span><input type='date' name='endDate' value='%s'><span>每页</span><select name='pageSize' onchange='this.form.submit()'>",
+            shownStart,
+            shownEnd);
     constexpr std::uint16_t sizes[] = {20, 30, 50, 100, 200};
     for (std::uint16_t size : sizes) {
         sendFmt("<option value='%u'%s>%u</option>",
@@ -1134,19 +1362,21 @@ void handleRecordsPage() {
                 pageSize == size ? " selected" : "",
                 static_cast<unsigned>(size));
     }
-    sendFmt("</select><span>条</span></form></div><p class='hint'>共 %lu 条记录</p>",
+    sendFmt("</select><span>条</span><input class='secondary' type='submit' value='筛选'></form></div><p class='hint'>共 %lu 条记录</p>",
             static_cast<unsigned long>(total));
     if (!ready) {
         Esp32BaseWeb::sendChunk("<p class='err'>记录存储不可用。</p>");
     } else if (total == 0) {
         Esp32BaseWeb::sendChunk("<p class='ok'>暂无出水记录。</p>");
     }
+    WaterRecord newestRecord{};
+    const bool newestRecordReady = ready && g_context.records->readPage(0, 1, &newestRecord, 1) == 1;
     Esp32BaseWeb::sendChunk("<table><tr><th>开始时间</th><th>目标值</th><th>出水量 (L)</th>"
                             "<th>持续时间</th><th>预设模式</th><th>结束原因</th><th>诊断</th><th>操作</th></tr>");
     for (std::size_t i = 0; i < count; ++i) {
         char startTime[40]{};
         formatWaterRecordTime(records[i], startTime, sizeof(startTime));
-        const bool latestRecord = page == 0 && i == 0;
+        const bool latestRecord = newestRecordReady && sameWaterRecordIdentity(records[i], newestRecord);
         const bool canCalibrate = latestRecord && waterRecordCanCalibrate(records[i]);
         Esp32BaseWeb::sendChunk("<tr><td>");
         Esp32BaseWeb::sendChunk(startTime);
@@ -1482,8 +1712,12 @@ void handleStatusApi() {
     if (!Esp32BaseWeb::checkAuth() || !requireContext()) {
         return;
     }
-    char json[256]{};
-    sendJsonBuffer(writeStatusJson(g_context.app->snapshot(), json, sizeof(json)), json);
+    const FaucetDisplayStatus displayStatus =
+        g_context.currentDisplayStatus
+            ? g_context.currentDisplayStatus()
+            : FaucetDisplayStatus{DisplayFrame{DisplayPage::Sleep, false, {}, {}}, false};
+    char json[320]{};
+    sendJsonBuffer(writeStatusJson(g_context.app->snapshot(), displayStatus.screenOn, json, sizeof(json)), json);
 }
 
 void handlePresetsApi() {
@@ -1576,6 +1810,33 @@ void handleRecordsApi() {
     if (pageSize > kMaxRecordPageSize) {
         pageSize = kMaxRecordPageSize;
     }
+    WaterRecordFilter filter{};
+    char dateText[16]{};
+    if ((getParam("startDate", dateText, sizeof(dateText)) || getParam("from", dateText, sizeof(dateText)))) {
+        if (!parseDate(dateText, filter.startTime)) {
+            Esp32BaseWeb::sendJson(400, "{\"error\":\"invalid_date\"}");
+            return;
+        }
+        filter.hasStart = filter.startTime > 0;
+    }
+    if ((getParam("endDate", dateText, sizeof(dateText)) || getParam("to", dateText, sizeof(dateText)))) {
+        if (!parseDate(dateText, filter.endTime)) {
+            Esp32BaseWeb::sendJson(400, "{\"error\":\"invalid_date\"}");
+            return;
+        }
+        filter.hasEnd = filter.endTime > 0;
+        if (filter.hasEnd) {
+            filter.endTime = UINT32_MAX - filter.endTime < 86399UL ? UINT32_MAX : filter.endTime + 86399UL;
+        }
+    }
+    if (filter.hasStart && filter.hasEnd && filter.endTime < filter.startTime) {
+        Esp32BaseWeb::sendJson(400, "{\"error\":\"invalid_date\"}");
+        return;
+    }
+    if ((filter.hasStart || filter.hasEnd) && waterTaskActive()) {
+        Esp32BaseWeb::sendJson(409, "{\"error\":\"busy\"}");
+        return;
+    }
 
     const std::uint16_t sanitizedPageSize = sanitizeRecordPageSize(static_cast<std::uint16_t>(pageSize));
     WaterRecord* records = new (std::nothrow) WaterRecord[kMaxRecordPageSize]{};
@@ -1587,8 +1848,9 @@ void handleRecordsApi() {
         return;
     }
     const bool ready = g_context.records->ready();
-    const std::size_t readCount = ready ? g_context.records->readPage(page, sanitizedPageSize, records, kMaxRecordPageSize) : 0;
-    const std::size_t totalCount = ready ? g_context.records->count() : 0;
+    std::size_t totalCount = 0;
+    const std::size_t readCount =
+        ready ? queryWaterRecords(*g_context.records, filter, page, sanitizedPageSize, records, kMaxRecordPageSize, &totalCount) : 0;
     sendJsonBuffer(writeWaterRecordsJson(records,
                                       readCount,
                                       page,
@@ -1604,6 +1866,10 @@ void handleRecordsApi() {
 
 void handleStatsApi() {
     if (!Esp32BaseWeb::checkAuth() || !requireContext()) {
+        return;
+    }
+    if (waterTaskActive()) {
+        Esp32BaseWeb::sendJson(409, "{\"error\":\"busy\"}");
         return;
     }
     char* json = new (std::nothrow) char[8192]{};

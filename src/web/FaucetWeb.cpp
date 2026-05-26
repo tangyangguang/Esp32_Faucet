@@ -984,16 +984,21 @@ void sendTodayOverview(const TodayOverview& overview) {
 
 void sendHomeAutoRefreshScript() {
     Esp32BaseWeb::sendChunk("<script>"
+                            "var faucetIdlePollMs=10000;"
+                            "var faucetActivePollMs=1000;"
+                            "var faucetHomeStatusTimer=0;"
                             "function faucetLiters(ml){var c=Math.round((Number(ml)||0)/10);return Math.floor(c/100)+'.'+String(c%100).padStart(2,'0')+' L';}"
                             "function faucetSeconds(s){return (Number(s)||0)+' 秒';}"
                             "function faucetStateText(s){return {idle:'待机',confirm:'确认',running:'出水中',paused:'暂停',error:'异常'}[s]||'未知';}"
                             "function faucetModeText(m){return m==='time'?'时间':'容量';}"
                             "function faucetSet(id,text){var e=document.getElementById(id);if(e){e.textContent=text;}}"
-                            "function updateFaucetHomeStatus(){if(document.hidden){return;}"
+                            "function faucetIsActiveState(s){return s==='running'||s==='paused'||s==='confirm';}"
+                            "function scheduleFaucetHomeStatus(ms){clearTimeout(faucetHomeStatusTimer);faucetHomeStatusTimer=setTimeout(updateFaucetHomeStatus,ms);}"
+                            "function updateFaucetHomeStatus(){if(document.hidden){scheduleFaucetHomeStatus(faucetIdlePollMs);return;}"
                             "fetch('/api/faucet/status',{cache:'no-store'}).then(function(r){return r.json();}).then(function(s){"
                             "var target=s.mode==='time'?faucetSeconds(s.targetValue):faucetLiters(s.targetValue);"
                             "var out=faucetLiters(s.volumeMl);"
-                            "var shown=s.state==='running'||s.state==='paused'||s.state==='confirm';"
+                            "var shown=faucetIsActiveState(s.state);"
                             "faucetSet('machineState',faucetStateText(s.state));"
                             "faucetSet('machinePreset',(Number(s.selectedPreset)+1)+' / '+faucetModeText(s.mode));"
                             "faucetSet('targetValue',target);faucetSet('outputValue',out);"
@@ -1006,8 +1011,10 @@ void sendHomeAutoRefreshScript() {
                             "if(shown){var base=s.mode==='time'?s.elapsedSec:s.volumeMl;var pct=s.targetValue>0?Math.min(100,Math.floor(base*100/s.targetValue)):0;"
                             "faucetSet('machineProgressText',(s.mode==='time'?faucetSeconds(s.elapsedSec):out)+' / '+target);"
                             "var bar=document.getElementById('machineProgressBar');if(bar){bar.style.width=pct+'%';}}"
-                            "}).catch(function(){});}"
-                            "setInterval(updateFaucetHomeStatus,3000);"
+                            "scheduleFaucetHomeStatus(shown?faucetActivePollMs:faucetIdlePollMs);"
+                            "}).catch(function(){scheduleFaucetHomeStatus(faucetIdlePollMs);});}"
+                            "document.addEventListener('visibilitychange',function(){if(!document.hidden){scheduleFaucetHomeStatus(200);}});"
+                            "scheduleFaucetHomeStatus(1000);"
                             "</script>");
 }
 

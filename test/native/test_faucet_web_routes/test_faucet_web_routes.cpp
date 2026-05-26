@@ -202,8 +202,12 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "今日接水记录"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "今日总结"));
     TEST_ASSERT_NULL(std::strstr(buffer, "location.reload()"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "setInterval(updateFaucetHomeStatus"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "fetch('/api/faucet/status'"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "setInterval(updateFaucetHomeStatus,3000);"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "var faucetIdlePollMs=10000"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "var faucetActivePollMs=1000"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "function scheduleFaucetHomeStatus"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "setTimeout(updateFaucetHomeStatus"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "shouldShowProgress"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "shouldShowProgress ? \"\" : \" style='display:none'\""));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "machine-main compact"));

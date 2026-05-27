@@ -10,7 +10,7 @@ using namespace faucet;
 void test_routes_fit_esp32base_default_route_capacity() {
     TEST_ASSERT_TRUE(faucetWebRoutesFitEsp32Base());
     TEST_ASSERT_LESS_OR_EQUAL_size_t(kFaucetWebMaxRoutes, faucetWebRouteCount());
-    TEST_ASSERT_EQUAL_size_t(14, faucetWebRouteCount());
+    TEST_ASSERT_EQUAL_size_t(15, faucetWebRouteCount());
 }
 
 void test_routes_do_not_register_remote_water_control_paths() {
@@ -31,6 +31,7 @@ void test_route_whitelist_rejects_unknown_and_dangerous_control_aliases() {
     TEST_ASSERT_FALSE(faucetWebRouteAllowed("/api/faucet/water/start"));
     TEST_ASSERT_FALSE(faucetWebRouteAllowed("/api/faucet/water/stop"));
     TEST_ASSERT_FALSE(faucetWebRouteAllowed("/api/faucet/records/export"));
+    TEST_ASSERT_TRUE(faucetWebRouteAllowed("/api/faucet/today"));
     TEST_ASSERT_FALSE(faucetWebRouteAllowed("/faucet/unknown"));
     TEST_ASSERT_FALSE(faucetWebRouteAllowed("api/faucet/status"));
 }
@@ -197,10 +198,48 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "machine-status"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "machine-main"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "machine-kpis"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "machine-hero"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "machine-note"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "machine-preset-line"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "machine-indicator"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "设备可用，等待按键启动"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "id='machineStatusNote'"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "kpiRemaining"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "kpiElapsed"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "kpiResult"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "remainingValue"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "elapsedValue"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "resultStatus"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "function faucetStatusNote"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "function faucetToggle"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "id='valvePill'"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "var pill=document.getElementById('valvePill')"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "today-summary"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "today-records"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "id='todayOverview'"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "fetch('/api/faucet/today'"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "function updateFaucetTodayOverview"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "outerHTML"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "beginResponse(200, \"text/html; charset=utf-8\""));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "今日接水记录"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "今日总结"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "%02lu:%02lu:%02lu"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "record-duration"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "record-cell"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "record-label"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "record-value"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, ">开始</span>"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, ">停止</span>"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, ">用时</span>"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "实际出水"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "预设目标"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "%lu 分 %lu 秒"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "预设 %u · %s"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "record-time-range"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "开始 %s"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "停止 %s"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "用时 %s"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "<strong>%s</strong><span class='record-preset'>%s</span>"));
     TEST_ASSERT_NULL(std::strstr(buffer, "location.reload()"));
     TEST_ASSERT_NULL(std::strstr(buffer, "setInterval(updateFaucetHomeStatus"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "fetch('/api/faucet/status'"));
@@ -247,7 +286,7 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NULL(std::strstr(buffer, "<h2>状态</h2><div class='metric-grid'>"));
     TEST_ASSERT_NULL(std::strstr(buffer, "<h2>出水详情</h2><div class='metric-grid'>"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "流量计校准系数"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "阀门状态"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "阀门"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "设备不在待机状态，请回到待机后再保存配置。"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "<th>目标值</th>"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "<th>诊断</th>"));

@@ -135,13 +135,14 @@ bool writeStatusJson(const AppSnapshot& snapshot, char* out, std::size_t len) {
 bool writeStatusJson(const AppSnapshot& snapshot, bool screenOn, char* out, std::size_t len) {
     JsonWriter writer(out, len);
     writer.append("{\"state\":\"%s\",\"valveOpen\":%s,\"volumeMl\":%lu,\"elapsedSec\":%lu,\"targetValue\":%lu,"
-                  "\"mode\":\"%s\",\"selectedPreset\":%u,\"pulsePerLiter\":%lu,\"flowDroppedPulses\":%lu,"
+                  "\"lastResult\":\"%s\",\"mode\":\"%s\",\"selectedPreset\":%u,\"pulsePerLiter\":%lu,\"flowDroppedPulses\":%lu,"
                   "\"screenOn\":%s,\"waterControl\":false}",
                   waterStateName(snapshot.water.state),
                   snapshot.water.valveOpen ? "true" : "false",
                   static_cast<unsigned long>(snapshot.water.volumeMl),
                   static_cast<unsigned long>(snapshot.water.elapsedSec),
                   static_cast<unsigned long>(snapshot.water.targetValue),
+                  waterResultName(snapshot.water.lastResult),
                   waterModeName(snapshot.water.mode),
                   static_cast<unsigned>(snapshot.water.selectedPreset),
                   static_cast<unsigned long>(snapshot.pulsePerLiter),

@@ -32,6 +32,7 @@ void test_status_json_contains_no_remote_control_capability() {
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"volumeMl\":250"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"elapsedSec\":42"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"targetValue\":1500"));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"lastResult\":\"completed\""));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"mode\":\"volume\""));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"selectedPreset\":1"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"pulsePerLiter\":0"));

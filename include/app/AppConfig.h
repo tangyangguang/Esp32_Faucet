@@ -27,6 +27,13 @@ constexpr std::uint32_t kMinTimeAdjustStepSec = 1;
 constexpr std::uint32_t kMaxTimeAdjustStepSec = 300;
 constexpr std::uint32_t kDefaultStartupCompensationMl = 0;
 constexpr std::uint32_t kMaxStartupCompensationMl = 300;
+constexpr std::uint32_t kDefaultPulseTraceMemoryKb = 50;
+constexpr std::uint32_t kMinPulseTraceMemoryKb = 1;
+constexpr std::uint32_t kMaxPulseTraceMemoryKb = 100;
+constexpr std::uint32_t kMaxSegmentedPulsePerLiter = 5000;
+constexpr std::uint32_t kMaxSegmentedStartupDurationSec = 600;
+constexpr std::uint32_t kMaxSegmentedStartupPulseCount = 100000;
+constexpr std::uint32_t kMaxSegmentedStartupVolumeMl = 20000;
 
 constexpr float kDefaultPulsePerMl = 0.45f;
 constexpr float kMinPulsePerMl = 0.05f;
@@ -64,6 +71,14 @@ struct SystemConfig {
     std::uint32_t volumeAdjustStepMl;
     std::uint32_t timeAdjustStepSec;
     std::uint32_t startupCompensationMl;
+    std::uint32_t pulseTraceMemoryKb;
+    std::uint32_t overallPulsePerLiter;
+    std::uint32_t startupDurationSec;
+    std::uint32_t startupPulseCount;
+    std::uint32_t startupVolumeMl;
+    std::uint32_t startupPulsePerLiter;
+    std::uint32_t stablePulsePerLiter;
+    bool segmentedMeteringCalibrated;
     float pulsePerMl;
     std::uint32_t valveFullPowerSec;
     std::uint8_t valveHoldDutyPercent;

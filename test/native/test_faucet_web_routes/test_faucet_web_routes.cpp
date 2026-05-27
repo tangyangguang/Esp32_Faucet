@@ -10,7 +10,7 @@ using namespace faucet;
 void test_routes_fit_esp32base_default_route_capacity() {
     TEST_ASSERT_TRUE(faucetWebRoutesFitEsp32Base());
     TEST_ASSERT_LESS_OR_EQUAL_size_t(kFaucetWebMaxRoutes, faucetWebRouteCount());
-    TEST_ASSERT_EQUAL_size_t(15, faucetWebRouteCount());
+    TEST_ASSERT_EQUAL_size_t(17, faucetWebRouteCount());
 }
 
 void test_routes_do_not_register_remote_water_control_paths() {
@@ -20,6 +20,19 @@ void test_routes_do_not_register_remote_water_control_paths() {
         TEST_ASSERT_NULL_MESSAGE(std::strstr(routes[i].path, "/api/faucet/water/"), routes[i].path);
         TEST_ASSERT_NOT_EQUAL(0, std::strcmp(routes[i].path, "/api/faucet/start"));
         TEST_ASSERT_NOT_EQUAL(0, std::strcmp(routes[i].path, "/api/faucet/stop"));
+    }
+}
+
+void test_navigation_pages_use_requested_order_and_labels() {
+    const FaucetWebRoute* routes = faucetWebRoutes();
+    const char* expectedPaths[] = {"/faucet", "/faucet/records", "/faucet/stats", "/faucet/presets", "/faucet/filters"};
+    const char* expectedTitles[] = {"首页", "记录", "统计", "预设", "滤芯"};
+
+    for (std::size_t i = 0; i < 5; ++i) {
+        TEST_ASSERT_EQUAL_STRING(expectedPaths[i], routes[i].path);
+        TEST_ASSERT_EQUAL(FaucetWebMethod::Get, routes[i].method);
+        TEST_ASSERT_EQUAL(FaucetWebRouteKind::Page, routes[i].kind);
+        TEST_ASSERT_EQUAL_STRING(expectedTitles[i], routes[i].title);
     }
 }
 
@@ -54,6 +67,8 @@ void test_dual_method_routes_are_merged_to_any() {
     TEST_ASSERT_FALSE(faucetWebRouteAllowed("/api/faucet/config"));
     TEST_ASSERT_TRUE(faucetWebRouteAllowed("/api/faucet/records/calibration"));
     TEST_ASSERT_TRUE(faucetWebRouteAllowed("/faucet/records/calibration"));
+    TEST_ASSERT_TRUE(faucetWebRouteAllowed("/api/faucet/records/trace-calibration"));
+    TEST_ASSERT_TRUE(faucetWebRouteAllowed("/faucet/records/detail"));
     TEST_ASSERT_FALSE(faucetWebRouteAllowed("/api/faucet/calibration"));
     TEST_ASSERT_FALSE(faucetWebRouteAllowed("/api/faucet/records/latest/calibration"));
     TEST_ASSERT_FALSE(faucetWebRouteAllowed("/faucet/config"));
@@ -131,7 +146,7 @@ void test_records_page_and_calibration_api_are_available() {
 void test_web_page_source_has_no_remote_water_control_forms() {
     FILE* file = std::fopen("src/web/FaucetWeb.cpp", "rb");
     TEST_ASSERT_NOT_NULL(file);
-    static char buffer[100000]{};
+    static char buffer[180000]{};
     const std::size_t read = std::fread(buffer, 1, sizeof(buffer) - 1, file);
     std::fclose(file);
     TEST_ASSERT_GREATER_THAN_size_t(0, read);
@@ -149,7 +164,7 @@ void test_web_page_source_has_no_remote_water_control_forms() {
 void test_web_page_source_contains_expected_ui_improvements() {
     FILE* file = std::fopen("src/web/FaucetWeb.cpp", "rb");
     TEST_ASSERT_NOT_NULL(file);
-    static char buffer[100000]{};
+    static char buffer[180000]{};
     const std::size_t read = std::fread(buffer, 1, sizeof(buffer) - 1, file);
     std::fclose(file);
     TEST_ASSERT_GREATER_THAN_size_t(0, read);
@@ -164,21 +179,38 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "action='/api/faucet/records/calibration'"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "href='/faucet/records/calibration'"));
     TEST_ASSERT_NULL(std::strstr(buffer, "/api/faucet/calibration"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "量杯实际水量"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "<th>脉冲</th><th>校准</th><th>操作</th>"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "实测出水量"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "<th>时间</th><th>模式</th><th>目标</th><th>出水</th>"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "<th>用时</th><th>脉冲</th><th>脉冲/升</th><th>结果</th><th>操作</th>"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "脉冲明细缓存"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "明细条数"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "原始轨迹缓存"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "脉冲轨迹"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "当前计量参数"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "records-top-grid"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "trace-badge"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "trace-head-meter"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "pulse-detail-chart"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "pulse-line"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "cum-line"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "detail-data"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "inline-note"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "record-more"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "pulse-cell"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "action='/api/faucet/records/trace-calibration'"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "实测"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "较目标"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "sendTargetDeltaHint(records[i])"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "重校"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "已校准"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "过滤 %lu"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "滤 %luP"));
     TEST_ASSERT_NULL(std::strstr(buffer, "<th>诊断</th>"));
     TEST_ASSERT_NULL(std::strstr(buffer, "脉冲 %lu / 过滤 %lu / 系数 %.3f"));
-    TEST_ASSERT_NULL(std::strstr(buffer, "sendFmt(\"<section class='panel'><h3>量杯实际水量</h3>\""));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "sendChunk(\"<section class='panel'><h3>量杯实际水量</h3>\""));
+    TEST_ASSERT_NULL(std::strstr(buffer, "量杯实际水量"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "保存实测量"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "已用天数 (天)"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "data-filter-start"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "开始时间"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "出水量 (L)"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "实际出水"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "daily-chart"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "最近 30 天出水量"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "filter-cards"));
@@ -201,7 +233,8 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NULL(std::strstr(buffer, "filter.lifeMl == 0 ? \"未设置\" : lifeFlow"));
     TEST_ASSERT_NULL(std::strstr(buffer, "未设置流量寿命"));
     TEST_ASSERT_NULL(std::strstr(buffer, "未知时间出水量"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "sendPageStart(\"智能出水\")"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "sendPageStart(\"首页\")"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "sendPageStart(\"智能出水\")"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "<h2>机器状态</h2>"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "machine-status"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "machine-main"));
@@ -229,24 +262,43 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "function updateFaucetTodayOverview"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "outerHTML"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "beginResponse(200, \"text/html; charset=utf-8\""));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "今日接水记录"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "今日总结"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "今日接水记录"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "今日总结"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "全部记录"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "sendMetricCard(\"今日次数\""));
+    TEST_ASSERT_NULL(std::strstr(buffer, "sendMetricCard(\"今日总量\""));
+    TEST_ASSERT_NULL(std::strstr(buffer, "sendMetricCard(\"总用时\""));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "overview.durationSec"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "today-summary-card"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "today-total-main"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "today-total-meta"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "today-meta-line"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "today-meta-item"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "justify-content:flex-start"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, ".today-summary-label{display:block;color:var(--muted);font-size:13px"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "接水 "));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "用时 "));
+    TEST_ASSERT_NULL(std::strstr(buffer, "共 %s 用时 %s"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "总用时 %s"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "today-record-table"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "<th>开始</th><th>停止</th><th>用时</th><th>实际出水</th><th>预设目标</th><th>结果</th>"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "%02lu:%02lu:%02lu"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "record-duration"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "record-cell"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "record-label"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "record-value"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, ">开始</span>"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, ">停止</span>"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, ">用时</span>"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "实际出水"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "预设目标"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "<td><strong>%s</strong></td>"));
+    TEST_ASSERT_NULL(std::strstr(buffer, ".today-record-table strong"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "%lu 分 %lu 秒"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "预设 %u · %s"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "record-cell"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "record-label"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "record-value"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "today-record-list"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "<div class='today-record-item'>"));
     TEST_ASSERT_NULL(std::strstr(buffer, "record-time-range"));
     TEST_ASSERT_NULL(std::strstr(buffer, "开始 %s"));
     TEST_ASSERT_NULL(std::strstr(buffer, "停止 %s"));
-    TEST_ASSERT_NULL(std::strstr(buffer, "用时 %s"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "用时 %s</span>"));
     TEST_ASSERT_NULL(std::strstr(buffer, "<strong>%s</strong><span class='record-preset'>%s</span>"));
     TEST_ASSERT_NULL(std::strstr(buffer, "location.reload()"));
     TEST_ASSERT_NULL(std::strstr(buffer, "setInterval(updateFaucetHomeStatus"));
@@ -261,7 +313,6 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "justify-content:center"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "id='machineState'"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "screenStatus"));
-    TEST_ASSERT_NULL(std::strstr(buffer, "sendMetricCard(\"今日次数\""));
     TEST_ASSERT_NULL(std::strstr(buffer, "sendMetricCard(\"最近一次\""));
     TEST_ASSERT_NULL(std::strstr(buffer, "sendMetricCard(\"平均单次\""));
     TEST_ASSERT_NULL(std::strstr(buffer, "本地显示"));
@@ -298,7 +349,8 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "设备不在待机状态，请回到待机后再保存配置。"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "<th>目标值</th>"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "<th>脉冲</th>"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "<th>校准</th>"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "<th>脉冲</th><th>轨迹</th>"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "<th>校准</th>"));
     TEST_ASSERT_NULL(std::strstr(buffer, "<th>诊断</th>"));
 }
 
@@ -312,6 +364,8 @@ void test_main_source_renders_live_display_frame_for_web() {
 
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "faucet::FaucetDisplayStatus currentDisplayStatus()"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "faucet::DisplayPresenter awakePresenter(0)"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "Esp32BaseWeb::setDeviceName(\"首页\")"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "Esp32BaseWeb::setDeviceName(\"智能出水\")"));
     TEST_ASSERT_NULL(std::strstr(buffer, "return g_lastDisplayFrame;"));
 }
 
@@ -343,6 +397,7 @@ int main(int argc, char** argv) {
     UNITY_BEGIN();
     RUN_TEST(test_routes_fit_esp32base_default_route_capacity);
     RUN_TEST(test_routes_do_not_register_remote_water_control_paths);
+    RUN_TEST(test_navigation_pages_use_requested_order_and_labels);
     RUN_TEST(test_route_whitelist_rejects_unknown_and_dangerous_control_aliases);
     RUN_TEST(test_dual_method_routes_are_merged_to_any);
     RUN_TEST(test_filter_edit_route_is_hidden_from_navigation);

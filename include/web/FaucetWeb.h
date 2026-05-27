@@ -12,6 +12,7 @@ class FilterStore;
 class WaterRecordCalibrationReader;
 class WaterRecordCalibrationWriter;
 class WaterRecordReader;
+class WaterPulseTraceStore;
 struct SystemConfig;
 
 using FaucetNowSeconds = std::uint32_t (*)();
@@ -33,6 +34,7 @@ struct FaucetWebContext {
     const WaterRecordReader* records;
     const WaterRecordCalibrationReader* recordCalibrations;
     WaterRecordCalibrationWriter* recordCalibrationWriter;
+    WaterPulseTraceStore* pulseTraces;
     FaucetNowSeconds nowSeconds;
     FaucetBootId bootId;
     FaucetApplySettings applySettings;

@@ -95,7 +95,7 @@ void test_usage_summary_json_contains_aggregated_series() {
 }
 
 void test_config_json_contains_safety_and_display_settings() {
-    char json[512]{};
+    char json[1024]{};
     SystemConfig config = makeDefaultConfig();
     config.beepEnabled = false;
 
@@ -106,6 +106,8 @@ void test_config_json_contains_safety_and_display_settings() {
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"volumeAdjustStepMl\":100"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"timeAdjustStepSec\":10"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"startupCompensationMl\":0"));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"pulseTraceMemoryKb\":50"));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"segmentedMeteringCalibrated\":false"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"valveHoldDutyPercent\":70"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"beepEnabled\":false"));
 }

@@ -15,6 +15,7 @@
 #include "app/WaterRecordCalibrationStore.h"
 #include "app/WaterRecordFileStore.h"
 #include "app/WaterRecordStore.h"
+#include "app/WaterPulseTraceStore.h"
 #include "drivers/BoardPins.h"
 #include "drivers/FlowPulseReader.h"
 #include "drivers/GpioButtonReader.h"
@@ -36,6 +37,9 @@ constexpr std::size_t kRamRecordCapacity = 128;
 constexpr std::size_t kRamRecordCalibrationCapacity = 32;
 constexpr std::size_t kWaterRecordCapacity = 20000;
 constexpr std::size_t kWaterRecordCalibrationCapacity = 512;
+constexpr std::size_t kPulseTraceCapacity = 64;
+constexpr std::size_t kPulseTraceMaxSamples =
+    (static_cast<std::size_t>(faucet::kMaxPulseTraceMemoryKb) * 1024U) / sizeof(faucet::WaterPulseTraceSample);
 constexpr const char* kWaterRecordPath = "/faucet_records_v1.bin";
 constexpr const char* kWaterRecordCalibrationPath = "/faucet_record_cal_v1.bin";
 
@@ -144,6 +148,9 @@ faucet::WaterRecordCalibrationFileStore g_recordCalibrationFile(
     kWaterRecordCalibrationCapacity);
 PersistentRecordWriter g_records;
 PersistentRecordCalibrationStore g_recordCalibrations;
+faucet::WaterPulseTrace* g_pulseTraceRecords = nullptr;
+faucet::WaterPulseTraceSample* g_pulseTraceSamples = nullptr;
+faucet::WaterPulseTraceStore* g_pulseTraces = nullptr;
 faucet::AppController* g_app = nullptr;
 faucet::GpioButtonReader g_buttons(faucet::kPinButtonCancel,
                                    faucet::kPinButtonOk,
@@ -168,7 +175,7 @@ void configureBase() {
 
 #if ESP32BASE_ENABLE_WEB
     Esp32BaseWeb::setDefaultAuth(kDefaultWebUser, kDefaultWebPassword);
-    Esp32BaseWeb::setDeviceName("智能出水");
+    Esp32BaseWeb::setDeviceName("首页");
     Esp32BaseWeb::setHomePath("/faucet");
     Esp32BaseWeb::setHomeMode(Esp32BaseWeb::HOME_COMBINED);
     Esp32BaseWeb::setSystemNavMode(Esp32BaseWeb::SYSTEM_NAV_SECTION);
@@ -380,6 +387,19 @@ void initializeApplication() {
     logSystemConfigStatus();
     g_records.setFileStore(g_waterRecordFile.begin() ? &g_waterRecordFile : nullptr);
     g_recordCalibrations.setFileStore(g_recordCalibrationFile.begin() ? &g_recordCalibrationFile : nullptr);
+    g_pulseTraceRecords = new (std::nothrow) faucet::WaterPulseTrace[kPulseTraceCapacity]{};
+    g_pulseTraceSamples = new (std::nothrow) faucet::WaterPulseTraceSample[kPulseTraceMaxSamples]{};
+    if (g_pulseTraceRecords && g_pulseTraceSamples) {
+        g_pulseTraces = new (std::nothrow) faucet::WaterPulseTraceStore(
+            g_pulseTraceRecords,
+            kPulseTraceCapacity,
+            g_pulseTraceSamples,
+            kPulseTraceMaxSamples,
+            static_cast<std::size_t>(g_config.pulseTraceMemoryKb) * 1024U);
+    }
+    if (!g_pulseTraces) {
+        ESP32BASE_LOG_W("app", "pulse trace store allocation failed, trace diagnostics disabled");
+    }
     checkFileSystemCapacity();
     const std::uint32_t nowSeconds = currentSeconds();
     faucet::PeriodKeys periodKeys{};
@@ -391,7 +411,10 @@ void initializeApplication() {
         ESP32BASE_LOG_E("app", "filter store allocation failed");
         return;
     }
-    g_app = new (std::nothrow) faucet::AppController(g_config, g_statistics, *g_filters, g_records);
+    if (g_pulseTraces) {
+        g_pulseTraces->setBudgetBytes(static_cast<std::size_t>(g_config.pulseTraceMemoryKb) * 1024U);
+    }
+    g_app = new (std::nothrow) faucet::AppController(g_config, g_statistics, *g_filters, g_records, g_pulseTraces);
     if (!g_app) {
         ESP32BASE_LOG_E("app", "app controller allocation failed");
         return;
@@ -408,6 +431,7 @@ void initializeApplication() {
                                  &g_records,
                                  &g_recordCalibrations,
                                  &g_recordCalibrations,
+                                 g_pulseTraces,
                                  currentSeconds,
                                  currentBootId,
                                  applyRuntimeSettings,

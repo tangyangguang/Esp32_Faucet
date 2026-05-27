@@ -7,6 +7,7 @@
 #include "app/StatisticsStore.h"
 #include "app/ValveDriver.h"
 #include "app/WaterController.h"
+#include "app/WaterPulseTraceStore.h"
 
 #include <cstdint>
 
@@ -63,7 +64,8 @@ public:
     AppController(const SystemConfig& config,
                   StatisticsStore& statistics,
                   FilterStore& filters,
-                  WaterRecordWriter& records);
+                  WaterRecordWriter& records,
+                  WaterPulseTraceStore* pulseTraces = nullptr);
 
     void resetInputs(ButtonLevels levels, std::uint32_t nowMs);
     void onFlowPulse(std::uint32_t nowUs);
@@ -99,6 +101,8 @@ private:
                                                               std::uint32_t actualMl,
                                                               bool allowLocalCalibration);
     void syncFlow(std::uint32_t nowUs);
+    void samplePulseTrace(std::uint32_t nowMs, const FlowSnapshot& flow);
+    void finishPulseTrace(const WaterRecord& record, WaterPulseTraceState finalState, const FlowSnapshot& flow);
     void syncValve(std::uint32_t nowMs);
     void processResult(std::uint32_t startTime,
                        const PeriodKeys& periodKeys,
@@ -116,6 +120,10 @@ private:
     StatisticsStore& statistics_;
     FilterStore& filters_;
     WaterRecordWriter& records_;
+    WaterPulseTraceStore* pulseTraces_;
+    std::uint32_t activeTraceId_;
+    std::uint32_t lastTraceSampleMs_;
+    std::uint32_t lastTracePulseCount_;
     std::uint32_t lastFlowVolumeMl_;
     std::uint32_t activeStartTimeSec_;
     bool activeStartTimeSynced_;

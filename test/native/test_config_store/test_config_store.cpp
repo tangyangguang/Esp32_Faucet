@@ -126,13 +126,14 @@ void test_config_migrates_v1_without_losing_user_values() {
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(ConfigStore::LoadStatus::MigratedLegacy),
                             static_cast<std::uint8_t>(store.lastSystemConfigLoadStatus()));
     TEST_ASSERT_FALSE(store.systemConfigReadOnly());
-    TEST_ASSERT_EQUAL_INT32(6, backend.getInt("faucet_cfg", "ver", 0));
+    TEST_ASSERT_EQUAL_INT32(7, backend.getInt("faucet_cfg", "ver", 0));
     TEST_ASSERT_EQUAL_INT32(90, backend.getInt("faucet_cfg", "f0_life_min", 0));
     TEST_ASSERT_EQUAL_INT32(90, backend.getInt("faucet_cfg", "f0_life_max", 0));
     TEST_ASSERT_EQUAL_UINT32(22, loaded.confirmTimeoutSec);
     TEST_ASSERT_EQUAL_UINT32(kDefaultVolumeAdjustStepMl, loaded.volumeAdjustStepMl);
     TEST_ASSERT_EQUAL_UINT32(kDefaultTimeAdjustStepSec, loaded.timeAdjustStepSec);
     TEST_ASSERT_EQUAL_UINT32(kDefaultStartupCompensationMl, loaded.startupCompensationMl);
+    TEST_ASSERT_EQUAL_UINT32(kDefaultPulseTraceMemoryKb, loaded.pulseTraceMemoryKb);
     TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.62f, loaded.pulsePerMl);
     TEST_ASSERT_TRUE(loaded.presets[2].enabled);
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(PresetType::Time), static_cast<std::uint8_t>(loaded.presets[2].type));
@@ -161,7 +162,7 @@ void test_config_migrates_v2_filter_ranges_and_single_calibration_target() {
 
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(ConfigStore::LoadStatus::MigratedLegacy),
                             static_cast<std::uint8_t>(store.lastSystemConfigLoadStatus()));
-    TEST_ASSERT_EQUAL_INT32(6, backend.getInt("faucet_cfg", "ver", 0));
+    TEST_ASSERT_EQUAL_INT32(7, backend.getInt("faucet_cfg", "ver", 0));
     TEST_ASSERT_TRUE(loaded.filters[1].enabled);
     TEST_ASSERT_EQUAL_STRING("RO", loaded.filters[1].name);
     TEST_ASSERT_EQUAL_UINT32(360, loaded.filters[1].recommendDays);
@@ -209,6 +210,14 @@ void test_config_save_and_load_round_trips_system_config() {
     config.volumeAdjustStepMl = 250;
     config.timeAdjustStepSec = 15;
     config.startupCompensationMl = 80;
+    config.pulseTraceMemoryKb = 64;
+    config.overallPulsePerLiter = 211;
+    config.startupDurationSec = 5;
+    config.startupPulseCount = 40;
+    config.startupVolumeMl = 553;
+    config.startupPulsePerLiter = 72;
+    config.stablePulsePerLiter = 222;
+    config.segmentedMeteringCalibrated = true;
     config.presets[2].enabled = true;
     config.presets[2].type = PresetType::Time;
     config.presets[2].value = 120;
@@ -232,6 +241,14 @@ void test_config_save_and_load_round_trips_system_config() {
     TEST_ASSERT_EQUAL_UINT32(250, loaded.volumeAdjustStepMl);
     TEST_ASSERT_EQUAL_UINT32(15, loaded.timeAdjustStepSec);
     TEST_ASSERT_EQUAL_UINT32(80, loaded.startupCompensationMl);
+    TEST_ASSERT_EQUAL_UINT32(64, loaded.pulseTraceMemoryKb);
+    TEST_ASSERT_EQUAL_UINT32(211, loaded.overallPulsePerLiter);
+    TEST_ASSERT_EQUAL_UINT32(5, loaded.startupDurationSec);
+    TEST_ASSERT_EQUAL_UINT32(40, loaded.startupPulseCount);
+    TEST_ASSERT_EQUAL_UINT32(553, loaded.startupVolumeMl);
+    TEST_ASSERT_EQUAL_UINT32(72, loaded.startupPulsePerLiter);
+    TEST_ASSERT_EQUAL_UINT32(222, loaded.stablePulsePerLiter);
+    TEST_ASSERT_TRUE(loaded.segmentedMeteringCalibrated);
     TEST_ASSERT_TRUE(loaded.presets[2].enabled);
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(PresetType::Time), static_cast<std::uint8_t>(loaded.presets[2].type));
     TEST_ASSERT_EQUAL_UINT32(120, loaded.presets[2].value);
@@ -253,6 +270,14 @@ void test_config_load_sanitizes_stored_values() {
     config.volumeAdjustStepMl = 999999;
     config.timeAdjustStepSec = 999999;
     config.startupCompensationMl = 999999;
+    config.pulseTraceMemoryKb = 999999;
+    config.overallPulsePerLiter = 999999;
+    config.startupDurationSec = 999999;
+    config.startupPulseCount = 999999;
+    config.startupVolumeMl = 999999;
+    config.startupPulsePerLiter = 999999;
+    config.stablePulsePerLiter = 999999;
+    config.segmentedMeteringCalibrated = true;
     config.presets[0].value = 1;
 
     TEST_ASSERT_TRUE(store.saveSystemConfig(config));
@@ -263,6 +288,14 @@ void test_config_load_sanitizes_stored_values() {
     TEST_ASSERT_EQUAL_UINT32(kMaxVolumeAdjustStepMl, loaded.volumeAdjustStepMl);
     TEST_ASSERT_EQUAL_UINT32(kMaxTimeAdjustStepSec, loaded.timeAdjustStepSec);
     TEST_ASSERT_EQUAL_UINT32(kMaxStartupCompensationMl, loaded.startupCompensationMl);
+    TEST_ASSERT_EQUAL_UINT32(kMaxPulseTraceMemoryKb, loaded.pulseTraceMemoryKb);
+    TEST_ASSERT_EQUAL_UINT32(kMaxSegmentedPulsePerLiter, loaded.overallPulsePerLiter);
+    TEST_ASSERT_EQUAL_UINT32(kMaxSegmentedStartupDurationSec, loaded.startupDurationSec);
+    TEST_ASSERT_EQUAL_UINT32(kMaxSegmentedStartupPulseCount, loaded.startupPulseCount);
+    TEST_ASSERT_EQUAL_UINT32(kMaxSegmentedStartupVolumeMl, loaded.startupVolumeMl);
+    TEST_ASSERT_EQUAL_UINT32(kMaxSegmentedPulsePerLiter, loaded.startupPulsePerLiter);
+    TEST_ASSERT_EQUAL_UINT32(kMaxSegmentedPulsePerLiter, loaded.stablePulsePerLiter);
+    TEST_ASSERT_TRUE(loaded.segmentedMeteringCalibrated);
     TEST_ASSERT_EQUAL_UINT32(kMinVolumePresetMl, loaded.presets[0].value);
 }
 

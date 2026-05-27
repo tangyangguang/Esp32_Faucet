@@ -13,7 +13,7 @@ namespace {
 
 constexpr const char* kConfigNs = "faucet_cfg";
 constexpr const char* kVersionKey = "ver";
-constexpr std::int32_t kConfigVersion = 6;
+constexpr std::int32_t kConfigVersion = 7;
 
 FaucetAppConfigContext g_context{};
 
@@ -34,6 +34,14 @@ const char kKeyPauseTimeout[] = "pause_s";
 const char kKeyVolumeStep[] = "vol_step";
 const char kKeyTimeStep[] = "time_step";
 const char kKeyStartupCompensation[] = "start_ml";
+const char kKeyPulseTraceMemory[] = "trace_kb";
+const char kKeySegmentedOverall[] = "seg_all_p";
+const char kKeySegmentedStartupSeconds[] = "seg_start_s";
+const char kKeySegmentedStartupPulses[] = "seg_start_p";
+const char kKeySegmentedStartupMl[] = "seg_start_ml";
+const char kKeySegmentedStartupPl[] = "seg_start_pl";
+const char kKeySegmentedStablePl[] = "seg_stable_p";
+const char kKeySegmentedCalibrated[] = "seg_cal";
 const char kKeyPulseMilli[] = "pulse_m";
 const char kKeyValveFullPower[] = "valve_s";
 const char kKeyValveHoldDuty[] = "hold_pct";
@@ -152,6 +160,14 @@ bool addCoreFields(const SystemConfig& defaults) {
 
     ok = Esp32BaseAppConfig::addInt({kGroupMetering, kConfigNs, kKeyStartupCompensation, "启动补偿水量", static_cast<std::int32_t>(defaults.startupCompensationMl), 0, static_cast<std::int32_t>(kMaxStartupCompensationMl), 1, "ml", "补偿流量计启动阶段少计的等效水量；收到有效脉冲后才参与估算。", false, nullptr}) && ok;
     ok = Esp32BaseAppConfig::addDecimal({kGroupMetering, kConfigNs, kKeyPulseMilli, "流量计校准系数", static_cast<std::int32_t>(defaults.pulsePerMl * 1000.0f), static_cast<std::int32_t>(kMinPulsePerMl * 1000.0f), static_cast<std::int32_t>(kMaxPulsePerMl * 1000.0f), 1, 0, "脉冲/L", "每升水对应的脉冲数；通常由记录校准更新，也可手动修正。", false, nullptr}) && ok;
+    ok = Esp32BaseAppConfig::addInt({kGroupMetering, kConfigNs, kKeyPulseTraceMemory, "原始轨迹内存上限", static_cast<std::int32_t>(defaults.pulseTraceMemoryKb), static_cast<std::int32_t>(kMinPulseTraceMemoryKb), static_cast<std::int32_t>(kMaxPulseTraceMemoryKb), 1, "KB", "按秒保存最近出水脉冲轨迹，只存 RAM，超限删除最旧轨迹。", false, nullptr}) && ok;
+    ok = Esp32BaseAppConfig::addInt({kGroupMetering, kConfigNs, kKeySegmentedOverall, "全程平均脉冲数", static_cast<std::int32_t>(defaults.overallPulsePerLiter), 0, static_cast<std::int32_t>(kMaxSegmentedPulsePerLiter), 1, "P/L", "分段自动校准保存的全程平均参考值，不直接参与关阀控制。", false, nullptr}) && ok;
+    ok = Esp32BaseAppConfig::addInt({kGroupMetering, kConfigNs, kKeySegmentedStartupSeconds, "启动段时长", static_cast<std::int32_t>(defaults.startupDurationSec), 0, static_cast<std::int32_t>(kMaxSegmentedStartupDurationSec), 1, "s", "分段自动校准识别出的启动阶段长度。", false, nullptr}) && ok;
+    ok = Esp32BaseAppConfig::addInt({kGroupMetering, kConfigNs, kKeySegmentedStartupPulses, "启动段脉冲", static_cast<std::int32_t>(defaults.startupPulseCount), 0, static_cast<std::int32_t>(kMaxSegmentedStartupPulseCount), 1, "P", "启动阶段累计脉冲数。", false, nullptr}) && ok;
+    ok = Esp32BaseAppConfig::addInt({kGroupMetering, kConfigNs, kKeySegmentedStartupMl, "启动段水量", static_cast<std::int32_t>(defaults.startupVolumeMl), 0, static_cast<std::int32_t>(kMaxSegmentedStartupVolumeMl), 1, "ml", "根据实测样本反推的启动阶段水量。", false, nullptr}) && ok;
+    ok = Esp32BaseAppConfig::addInt({kGroupMetering, kConfigNs, kKeySegmentedStartupPl, "启动段 P/L", static_cast<std::int32_t>(defaults.startupPulsePerLiter), 0, static_cast<std::int32_t>(kMaxSegmentedPulsePerLiter), 1, "P/L", "启动阶段的等效脉冲/升，仅作为诊断参考。", false, nullptr}) && ok;
+    ok = Esp32BaseAppConfig::addInt({kGroupMetering, kConfigNs, kKeySegmentedStablePl, "稳态段 P/L", static_cast<std::int32_t>(defaults.stablePulsePerLiter), 0, static_cast<std::int32_t>(kMaxSegmentedPulsePerLiter), 1, "P/L", "分段自动校准得到的稳定阶段脉冲/升，第一版仅展示和保存。", false, nullptr}) && ok;
+    ok = Esp32BaseAppConfig::addBool({kGroupMetering, kConfigNs, kKeySegmentedCalibrated, "分段计量已校准", defaults.segmentedMeteringCalibrated, "标记当前分段计量参数是否来自有效样本自动校准。", false, nullptr}) && ok;
 
     return ok;
 }

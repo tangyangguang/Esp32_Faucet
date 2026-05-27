@@ -31,7 +31,8 @@ bool finitePulsePerMl(float value) {
 AppController::AppController(const SystemConfig& config,
                              StatisticsStore& statistics,
                              FilterStore& filters,
-                             WaterRecordWriter& records)
+                             WaterRecordWriter& records,
+                             WaterPulseTraceStore* pulseTraces)
     : config_(config),
       water_(config_),
       localMode_(LocalUiMode::Normal),
@@ -41,6 +42,10 @@ AppController::AppController(const SystemConfig& config,
       statistics_(statistics),
       filters_(filters),
       records_(records),
+      pulseTraces_(pulseTraces),
+      activeTraceId_(0),
+      lastTraceSampleMs_(0),
+      lastTracePulseCount_(0),
       lastFlowVolumeMl_(0),
       activeStartTimeSec_(0),
       activeStartTimeSynced_(false),
@@ -89,6 +94,7 @@ void AppController::tick(const AppTickInput& input) {
 
     syncFlow(input.nowUs);
     const FlowSnapshot flow = flow_.snapshot(input.nowUs);
+    samplePulseTrace(input.nowMs, flow);
     water_.tick(input.nowMs, flow.currentFlowMlPerMin);
     syncValve(input.nowMs);
 
@@ -194,6 +200,9 @@ bool AppController::applyConfig(const SystemConfig& config) {
     valve_.configure(config_.valveFullPowerSec, config_.valveHoldDutyPercent);
     adjustmentStepMl_ = config_.volumeAdjustStepMl;
     timeAdjustmentStepSec_ = config_.timeAdjustStepSec;
+    if (pulseTraces_) {
+        pulseTraces_->setBudgetBytes(static_cast<std::size_t>(config_.pulseTraceMemoryKb) * 1024U);
+    }
     return true;
 }
 
@@ -383,6 +392,12 @@ void AppController::startSelectedPreset(std::uint32_t nowMs,
         activeStartBootId_ = timeSynced ? 0 : bootId;
         flow_.reset();
         lastFlowVolumeMl_ = 0;
+        if (pulseTraces_) {
+            pulseTraces_->setBudgetBytes(static_cast<std::size_t>(config_.pulseTraceMemoryKb) * 1024U);
+            activeTraceId_ = pulseTraces_->beginTrace(nowSeconds);
+            lastTraceSampleMs_ = nowMs;
+            lastTracePulseCount_ = 0;
+        }
         pendingBeep_ = BeepPattern::Click;
     }
 }
@@ -479,6 +494,36 @@ void AppController::syncFlow(std::uint32_t nowUs) {
     }
 }
 
+void AppController::samplePulseTrace(std::uint32_t nowMs, const FlowSnapshot& flow) {
+    if (!pulseTraces_ || activeTraceId_ == 0 || !elapsedAtLeast(nowMs, lastTraceSampleMs_, 1000UL)) {
+        return;
+    }
+    const WaterState state = water_.snapshot().state;
+    const WaterPulseTraceState traceState =
+        state == WaterState::Paused ? WaterPulseTraceState::Paused : WaterPulseTraceState::Running;
+    const std::uint32_t delta =
+        flow.pulseCount >= lastTracePulseCount_ ? flow.pulseCount - lastTracePulseCount_ : 0;
+    pulseTraces_->appendSecond(activeTraceId_, delta, traceState);
+    lastTraceSampleMs_ = nowMs;
+    lastTracePulseCount_ = flow.pulseCount;
+}
+
+void AppController::finishPulseTrace(const WaterRecord& record,
+                                     WaterPulseTraceState finalState,
+                                     const FlowSnapshot& flow) {
+    if (!pulseTraces_ || activeTraceId_ == 0) {
+        return;
+    }
+    if (flow.pulseCount > lastTracePulseCount_) {
+        pulseTraces_->appendSecond(activeTraceId_, flow.pulseCount - lastTracePulseCount_, finalState);
+        lastTracePulseCount_ = flow.pulseCount;
+    }
+    pulseTraces_->finishTrace(activeTraceId_, record, finalState);
+    activeTraceId_ = 0;
+    lastTraceSampleMs_ = 0;
+    lastTracePulseCount_ = 0;
+}
+
 void AppController::syncValve(std::uint32_t nowMs) {
     const bool desiredOpen = water_.snapshot().valveOpen || calibrationValveOpen_;
     if (desiredOpen && !lastValveDesiredOpen_) {
@@ -518,6 +563,12 @@ void AppController::processResult(std::uint32_t startTime,
     if (!startTimeSynced) {
         markWaterRecordBootId(record, bootId);
     }
+
+    const WaterPulseTraceState traceState =
+        result.result == WaterResult::Completed
+            ? WaterPulseTraceState::Completed
+            : result.result == WaterResult::StoppedByUser ? WaterPulseTraceState::Stopped : WaterPulseTraceState::Error;
+    finishPulseTrace(record, traceState, flow);
 
     lastResultRecord_ = record;
     lastResultRecordValid_ = record.pulseCount > 0 && resultAllowsCalibration(record.result);

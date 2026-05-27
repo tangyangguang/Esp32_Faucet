@@ -11,7 +11,7 @@ namespace {
 constexpr const char* kConfigNs = "faucet_cfg";
 constexpr const char* kStatNs = "faucet_stat";
 constexpr const char* kRunNs = "faucet_run";
-constexpr std::int32_t kConfigVersion = 6;
+constexpr std::int32_t kConfigVersion = 7;
 constexpr std::int32_t kRuntimeVersion = 1;
 
 std::int32_t toInt(std::uint32_t value) {
@@ -87,6 +87,22 @@ void loadCommonSystemConfig(ConfigBackend& backend, SystemConfig& config) {
         static_cast<std::uint32_t>(backend.getInt(kConfigNs, "time_step", toInt(config.timeAdjustStepSec)));
     config.startupCompensationMl =
         static_cast<std::uint32_t>(backend.getInt(kConfigNs, "start_ml", toInt(config.startupCompensationMl)));
+    config.pulseTraceMemoryKb =
+        static_cast<std::uint32_t>(backend.getInt(kConfigNs, "trace_kb", toInt(config.pulseTraceMemoryKb)));
+    config.overallPulsePerLiter =
+        static_cast<std::uint32_t>(backend.getInt(kConfigNs, "seg_all_p", toInt(config.overallPulsePerLiter)));
+    config.startupDurationSec =
+        static_cast<std::uint32_t>(backend.getInt(kConfigNs, "seg_start_s", toInt(config.startupDurationSec)));
+    config.startupPulseCount =
+        static_cast<std::uint32_t>(backend.getInt(kConfigNs, "seg_start_p", toInt(config.startupPulseCount)));
+    config.startupVolumeMl =
+        static_cast<std::uint32_t>(backend.getInt(kConfigNs, "seg_start_ml", toInt(config.startupVolumeMl)));
+    config.startupPulsePerLiter =
+        static_cast<std::uint32_t>(backend.getInt(kConfigNs, "seg_start_pl", toInt(config.startupPulsePerLiter)));
+    config.stablePulsePerLiter =
+        static_cast<std::uint32_t>(backend.getInt(kConfigNs, "seg_stable_p", toInt(config.stablePulsePerLiter)));
+    config.segmentedMeteringCalibrated =
+        backend.getBool(kConfigNs, "seg_cal", config.segmentedMeteringCalibrated);
     config.pulsePerMl = pulseFromMilli(backend.getInt(kConfigNs, "pulse_m", pulseToMilli(config.pulsePerMl)));
     config.valveFullPowerSec =
         static_cast<std::uint32_t>(backend.getInt(kConfigNs, "valve_s", toInt(config.valveFullPowerSec)));
@@ -226,6 +242,14 @@ bool ConfigStore::saveSystemConfig(const SystemConfig& config) {
     ok = okAll(ok, backend_.setInt(kConfigNs, "vol_step", toInt(safe.volumeAdjustStepMl)));
     ok = okAll(ok, backend_.setInt(kConfigNs, "time_step", toInt(safe.timeAdjustStepSec)));
     ok = okAll(ok, backend_.setInt(kConfigNs, "start_ml", toInt(safe.startupCompensationMl)));
+    ok = okAll(ok, backend_.setInt(kConfigNs, "trace_kb", toInt(safe.pulseTraceMemoryKb)));
+    ok = okAll(ok, backend_.setInt(kConfigNs, "seg_all_p", toInt(safe.overallPulsePerLiter)));
+    ok = okAll(ok, backend_.setInt(kConfigNs, "seg_start_s", toInt(safe.startupDurationSec)));
+    ok = okAll(ok, backend_.setInt(kConfigNs, "seg_start_p", toInt(safe.startupPulseCount)));
+    ok = okAll(ok, backend_.setInt(kConfigNs, "seg_start_ml", toInt(safe.startupVolumeMl)));
+    ok = okAll(ok, backend_.setInt(kConfigNs, "seg_start_pl", toInt(safe.startupPulsePerLiter)));
+    ok = okAll(ok, backend_.setInt(kConfigNs, "seg_stable_p", toInt(safe.stablePulsePerLiter)));
+    ok = okAll(ok, backend_.setBool(kConfigNs, "seg_cal", safe.segmentedMeteringCalibrated));
     ok = okAll(ok, backend_.setInt(kConfigNs, "pulse_m", pulseToMilli(safe.pulsePerMl)));
     ok = okAll(ok, backend_.setInt(kConfigNs, "valve_s", toInt(safe.valveFullPowerSec)));
     ok = okAll(ok, backend_.setInt(kConfigNs, "hold_pct", safe.valveHoldDutyPercent));

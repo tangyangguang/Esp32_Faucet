@@ -225,9 +225,9 @@ void test_app_controller_applies_calibration_from_raw_record() {
     AppController app(config, statistics, filters, records);
     WaterRecord record{
         1714502400,
-        1200,
-        1200,
-        1200,
+        7500,
+        7500,
+        9000,
         0,
         10,
         WaterMode::Volume,
@@ -239,8 +239,37 @@ void test_app_controller_applies_calibration_from_raw_record() {
     };
 
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(CalibrationApplyResult::Saved),
-                            static_cast<std::uint8_t>(app.applyCalibrationFromRecord(record, 1000)));
+                            static_cast<std::uint8_t>(app.applyCalibrationFromRecord(record, 7500)));
     TEST_ASSERT_FLOAT_WITHIN(0.001f, 1.2f, app.config().pulsePerMl);
+    TEST_ASSERT_TRUE(app.consumeConfigDirty());
+}
+
+void test_app_controller_small_record_calibration_updates_startup_compensation() {
+    SystemConfig config = makeDefaultConfig();
+    config.pulsePerMl = 1.0f;
+    StatisticsStore statistics;
+    FilterStore filters(config.filters);
+    MemoryRecordWriter records;
+    AppController app(config, statistics, filters, records);
+    WaterRecord record{
+        1714502400,
+        1000,
+        1000,
+        900,
+        0,
+        10,
+        WaterMode::Volume,
+        WaterResult::Completed,
+        0,
+        0,
+        1.0f,
+        {0, 0, 0, 0},
+    };
+
+    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(CalibrationApplyResult::Saved),
+                            static_cast<std::uint8_t>(app.applyCalibrationFromRecord(record, 1000)));
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 1.0f, app.config().pulsePerMl);
+    TEST_ASSERT_EQUAL_UINT32(100, app.config().startupCompensationMl);
     TEST_ASSERT_TRUE(app.consumeConfigDirty());
 }
 
@@ -324,6 +353,9 @@ void test_app_controller_pause_resume_then_completion_updates_persistence_once()
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(WaterState::Paused),
                             static_cast<std::uint8_t>(app.snapshot().water.state));
     TEST_ASSERT_FALSE(app.snapshot().valve.enabled);
+    pressAndReleasePlus(app, 2800);
+    pressAndReleaseMinus(app, 3000);
+    TEST_ASSERT_EQUAL_UINT32(1500, app.snapshot().water.targetValue);
     app.tick(input({false, false, false, false}, 20000, 20000000, 1714502418));
     TEST_ASSERT_EQUAL_size_t(0, records.records.size());
 
@@ -463,8 +495,9 @@ void test_app_controller_reports_record_write_failure_without_losing_statistics(
     TEST_ASSERT_EQUAL_UINT32(1500, filters.record(0).usedMl);
 }
 
-void test_app_controller_adjusts_this_run_target_and_step() {
+void test_app_controller_adjusts_volume_target_with_configured_step_without_ok_long_toggle() {
     SystemConfig config = makeDefaultConfig();
+    config.volumeAdjustStepMl = 250;
     StatisticsStore statistics;
     statistics.reset({20260506, 202619, 202605});
     FilterStore filters(config.filters);
@@ -474,18 +507,79 @@ void test_app_controller_adjusts_this_run_target_and_step() {
     app.resetInputs({false, false, false, false}, 0);
     pressAndReleaseOk(app, 100);
     TEST_ASSERT_EQUAL_UINT32(1500, app.snapshot().water.targetValue);
-    TEST_ASSERT_EQUAL_UINT32(100, app.snapshot().adjustmentStepMl);
+    TEST_ASSERT_EQUAL_UINT32(250, app.snapshot().adjustmentStepMl);
 
     pressAndReleasePlus(app, 300);
-    TEST_ASSERT_EQUAL_UINT32(1600, app.snapshot().water.targetValue);
+    TEST_ASSERT_EQUAL_UINT32(1750, app.snapshot().water.targetValue);
     longPressOk(app, 500);
-    TEST_ASSERT_EQUAL_UINT32(500, app.snapshot().adjustmentStepMl);
+    TEST_ASSERT_EQUAL_UINT32(250, app.snapshot().adjustmentStepMl);
     pressAndReleaseMinus(app, 1700);
-    TEST_ASSERT_EQUAL_UINT32(1100, app.snapshot().water.targetValue);
+    TEST_ASSERT_EQUAL_UINT32(1500, app.snapshot().water.targetValue);
 
     pressAndReleaseOk(app, 1900);
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(WaterState::Running),
                             static_cast<std::uint8_t>(app.snapshot().water.state));
+}
+
+void test_app_controller_adjusts_time_target_with_configured_step() {
+    SystemConfig config = makeDefaultConfig();
+    config.presets[0].type = PresetType::Time;
+    config.presets[0].value = 60;
+    config.timeAdjustStepSec = 15;
+    StatisticsStore statistics;
+    statistics.reset({20260506, 202619, 202605});
+    FilterStore filters(config.filters);
+    MemoryRecordWriter records;
+    AppController app(config, statistics, filters, records);
+
+    app.resetInputs({false, false, false, false}, 0);
+    pressAndReleaseOk(app, 100);
+    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(WaterMode::Time),
+                            static_cast<std::uint8_t>(app.snapshot().water.mode));
+    TEST_ASSERT_EQUAL_UINT32(60, app.snapshot().water.targetValue);
+    TEST_ASSERT_EQUAL_UINT32(15, app.snapshot().timeAdjustmentStepSec);
+
+    pressAndReleasePlus(app, 300);
+    TEST_ASSERT_EQUAL_UINT32(75, app.snapshot().water.targetValue);
+    longPressOk(app, 500);
+    TEST_ASSERT_EQUAL_UINT32(15, app.snapshot().timeAdjustmentStepSec);
+    pressAndReleaseMinus(app, 1700);
+    TEST_ASSERT_EQUAL_UINT32(60, app.snapshot().water.targetValue);
+}
+
+void test_app_controller_stopped_volume_does_not_clamp_next_confirm_adjustment() {
+    SystemConfig config = makeDefaultConfig();
+    config.presets[0].value = 1500;
+    config.presets[1].value = 1000;
+    config.pulsePerMl = 1.0f;
+    config.resultDisplaySec = 0;
+    StatisticsStore statistics;
+    statistics.reset({20260506, 202619, 202605});
+    FilterStore filters(config.filters);
+    MemoryRecordWriter records;
+    AppController app(config, statistics, filters, records);
+
+    app.resetInputs({false, false, false, false}, 0);
+    pressAndReleaseOk(app, 100);
+    pressAndReleaseOk(app, 300);
+    for (std::uint32_t i = 0; i < 1390; ++i) {
+        app.onFlowPulse(1000000UL + i * 2000UL);
+    }
+    app.tick(input({false, false, false, false}, 5000, 5000000, 1714502400));
+    pressAndReleaseOk(app, 5100);
+    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(WaterState::Paused),
+                            static_cast<std::uint8_t>(app.snapshot().water.state));
+    app.tick(input({true, false, false, false}, 5300, 5300000, 1714502401));
+    app.tick(input({true, false, false, false}, 5300 + kButtonDebounceMs, (5300 + kButtonDebounceMs) * 1000UL, 1714502401));
+    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(WaterState::Idle),
+                            static_cast<std::uint8_t>(app.snapshot().water.state));
+
+    pressAndReleasePlus(app, 5500);
+    TEST_ASSERT_EQUAL_size_t(1, app.snapshot().water.selectedPreset);
+    pressAndReleaseOk(app, 5700);
+    TEST_ASSERT_EQUAL_UINT32(1000, app.snapshot().water.targetValue);
+    pressAndReleasePlus(app, 5900);
+    TEST_ASSERT_EQUAL_UINT32(1100, app.snapshot().water.targetValue);
 }
 
 void test_app_controller_result_display_exits_after_configured_timeout() {
@@ -528,10 +622,13 @@ int main(int argc, char** argv) {
     RUN_TEST(test_app_controller_applies_config_only_while_idle);
     RUN_TEST(test_app_controller_emits_beep_patterns_for_actions_and_completion);
     RUN_TEST(test_app_controller_reports_record_write_failure_without_losing_statistics);
-    RUN_TEST(test_app_controller_adjusts_this_run_target_and_step);
+    RUN_TEST(test_app_controller_adjusts_volume_target_with_configured_step_without_ok_long_toggle);
+    RUN_TEST(test_app_controller_adjusts_time_target_with_configured_step);
+    RUN_TEST(test_app_controller_stopped_volume_does_not_clamp_next_confirm_adjustment);
     RUN_TEST(test_app_controller_holds_ok_five_seconds_to_enter_local_calibration);
     RUN_TEST(test_app_controller_ok_saves_local_calibration);
     RUN_TEST(test_app_controller_applies_calibration_from_raw_record);
+    RUN_TEST(test_app_controller_small_record_calibration_updates_startup_compensation);
     RUN_TEST(test_app_controller_result_display_exits_after_configured_timeout);
     return UNITY_END();
 }

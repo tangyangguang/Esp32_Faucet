@@ -13,7 +13,7 @@ namespace {
 
 constexpr const char* kConfigNs = "faucet_cfg";
 constexpr const char* kVersionKey = "ver";
-constexpr std::int32_t kConfigVersion = 5;
+constexpr std::int32_t kConfigVersion = 6;
 
 FaucetAppConfigContext g_context{};
 
@@ -31,6 +31,9 @@ const char kKeyNoFlow[] = "noflow_s";
 const char kKeyHighFlow[] = "high_flow";
 const char kKeyHighDuration[] = "high_s";
 const char kKeyPauseTimeout[] = "pause_s";
+const char kKeyVolumeStep[] = "vol_step";
+const char kKeyTimeStep[] = "time_step";
+const char kKeyStartupCompensation[] = "start_ml";
 const char kKeyPulseMilli[] = "pulse_m";
 const char kKeyValveFullPower[] = "valve_s";
 const char kKeyValveHoldDuty[] = "hold_pct";
@@ -142,9 +145,12 @@ bool addCoreFields(const SystemConfig& defaults) {
 
     ok = Esp32BaseAppConfig::addInt({kGroupLocal, kConfigNs, kKeyDisplaySleep, "LCD 熄屏时间", static_cast<std::int32_t>(defaults.displaySleepSec), 5, 300, 5, "s", "待机无操作超过该时间关闭背光。立即生效。", false, nullptr}) && ok;
     ok = Esp32BaseAppConfig::addInt({kGroupLocal, kConfigNs, kKeyResultDisplay, "结果页显示时间", static_cast<std::int32_t>(defaults.resultDisplaySec), 0, 60, 1, "s", "出水结束后结果页停留时间，0 表示立即返回。", false, nullptr}) && ok;
+    ok = Esp32BaseAppConfig::addInt({kGroupLocal, kConfigNs, kKeyVolumeStep, "本地容量调整步进", static_cast<std::int32_t>(defaults.volumeAdjustStepMl), static_cast<std::int32_t>(kMinVolumeAdjustStepMl), static_cast<std::int32_t>(kMaxVolumeAdjustStepMl), 10, "ml", "确认页 PLUS/MINUS 调整容量目标时使用；本地不可临时切换。", false, nullptr}) && ok;
+    ok = Esp32BaseAppConfig::addInt({kGroupLocal, kConfigNs, kKeyTimeStep, "本地时间调整步进", static_cast<std::int32_t>(defaults.timeAdjustStepSec), static_cast<std::int32_t>(kMinTimeAdjustStepSec), static_cast<std::int32_t>(kMaxTimeAdjustStepSec), 1, "s", "确认页 PLUS/MINUS 调整时间目标时使用；本地不可临时切换。", false, nullptr}) && ok;
     ok = Esp32BaseAppConfig::addInt({kGroupLocal, kConfigNs, kKeyLcdAddress, "LCD I2C 地址", defaults.lcdI2cAddress, 0x03, 0x77, 1, nullptr, "保存后需重启，重启后重新探测 LCD。", true, nullptr}) && ok;
     ok = Esp32BaseAppConfig::addBool({kGroupLocal, kConfigNs, kKeyBeep, "蜂鸣器提示音", defaults.beepEnabled, "控制按键、完成和异常提示音。立即生效。", false, nullptr}) && ok;
 
+    ok = Esp32BaseAppConfig::addInt({kGroupMetering, kConfigNs, kKeyStartupCompensation, "启动补偿水量", static_cast<std::int32_t>(defaults.startupCompensationMl), 0, static_cast<std::int32_t>(kMaxStartupCompensationMl), 1, "ml", "补偿流量计启动阶段少计的等效水量；收到有效脉冲后才参与估算。", false, nullptr}) && ok;
     ok = Esp32BaseAppConfig::addDecimal({kGroupMetering, kConfigNs, kKeyPulseMilli, "流量计校准系数", static_cast<std::int32_t>(defaults.pulsePerMl * 1000.0f), static_cast<std::int32_t>(kMinPulsePerMl * 1000.0f), static_cast<std::int32_t>(kMaxPulsePerMl * 1000.0f), 1, 0, "脉冲/L", "每升水对应的脉冲数；通常由记录校准更新，也可手动修正。", false, nullptr}) && ok;
 
     return ok;

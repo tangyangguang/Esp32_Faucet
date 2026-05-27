@@ -126,10 +126,13 @@ void test_config_migrates_v1_without_losing_user_values() {
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(ConfigStore::LoadStatus::MigratedLegacy),
                             static_cast<std::uint8_t>(store.lastSystemConfigLoadStatus()));
     TEST_ASSERT_FALSE(store.systemConfigReadOnly());
-    TEST_ASSERT_EQUAL_INT32(5, backend.getInt("faucet_cfg", "ver", 0));
+    TEST_ASSERT_EQUAL_INT32(6, backend.getInt("faucet_cfg", "ver", 0));
     TEST_ASSERT_EQUAL_INT32(90, backend.getInt("faucet_cfg", "f0_life_min", 0));
     TEST_ASSERT_EQUAL_INT32(90, backend.getInt("faucet_cfg", "f0_life_max", 0));
     TEST_ASSERT_EQUAL_UINT32(22, loaded.confirmTimeoutSec);
+    TEST_ASSERT_EQUAL_UINT32(kDefaultVolumeAdjustStepMl, loaded.volumeAdjustStepMl);
+    TEST_ASSERT_EQUAL_UINT32(kDefaultTimeAdjustStepSec, loaded.timeAdjustStepSec);
+    TEST_ASSERT_EQUAL_UINT32(kDefaultStartupCompensationMl, loaded.startupCompensationMl);
     TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.62f, loaded.pulsePerMl);
     TEST_ASSERT_TRUE(loaded.presets[2].enabled);
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(PresetType::Time), static_cast<std::uint8_t>(loaded.presets[2].type));
@@ -158,7 +161,7 @@ void test_config_migrates_v2_filter_ranges_and_single_calibration_target() {
 
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(ConfigStore::LoadStatus::MigratedLegacy),
                             static_cast<std::uint8_t>(store.lastSystemConfigLoadStatus()));
-    TEST_ASSERT_EQUAL_INT32(5, backend.getInt("faucet_cfg", "ver", 0));
+    TEST_ASSERT_EQUAL_INT32(6, backend.getInt("faucet_cfg", "ver", 0));
     TEST_ASSERT_TRUE(loaded.filters[1].enabled);
     TEST_ASSERT_EQUAL_STRING("RO", loaded.filters[1].name);
     TEST_ASSERT_EQUAL_UINT32(360, loaded.filters[1].recommendDays);
@@ -203,6 +206,9 @@ void test_config_save_and_load_round_trips_system_config() {
     config.displaySleepSec = 45;
     config.resultDisplaySec = 12;
     config.lcdI2cAddress = 0x3F;
+    config.volumeAdjustStepMl = 250;
+    config.timeAdjustStepSec = 15;
+    config.startupCompensationMl = 80;
     config.presets[2].enabled = true;
     config.presets[2].type = PresetType::Time;
     config.presets[2].value = 120;
@@ -223,6 +229,9 @@ void test_config_save_and_load_round_trips_system_config() {
     TEST_ASSERT_EQUAL_UINT32(45, loaded.displaySleepSec);
     TEST_ASSERT_EQUAL_UINT32(12, loaded.resultDisplaySec);
     TEST_ASSERT_EQUAL_UINT8(0x3F, loaded.lcdI2cAddress);
+    TEST_ASSERT_EQUAL_UINT32(250, loaded.volumeAdjustStepMl);
+    TEST_ASSERT_EQUAL_UINT32(15, loaded.timeAdjustStepSec);
+    TEST_ASSERT_EQUAL_UINT32(80, loaded.startupCompensationMl);
     TEST_ASSERT_TRUE(loaded.presets[2].enabled);
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(PresetType::Time), static_cast<std::uint8_t>(loaded.presets[2].type));
     TEST_ASSERT_EQUAL_UINT32(120, loaded.presets[2].value);
@@ -241,6 +250,9 @@ void test_config_load_sanitizes_stored_values() {
     SystemConfig config = makeDefaultConfig();
     config.confirmTimeoutSec = 1;
     config.pulsePerMl = 99.0f;
+    config.volumeAdjustStepMl = 999999;
+    config.timeAdjustStepSec = 999999;
+    config.startupCompensationMl = 999999;
     config.presets[0].value = 1;
 
     TEST_ASSERT_TRUE(store.saveSystemConfig(config));
@@ -248,6 +260,9 @@ void test_config_load_sanitizes_stored_values() {
     const SystemConfig loaded = store.loadSystemConfig();
     TEST_ASSERT_EQUAL_UINT32(3, loaded.confirmTimeoutSec);
     TEST_ASSERT_FLOAT_WITHIN(0.001f, kMaxPulsePerMl, loaded.pulsePerMl);
+    TEST_ASSERT_EQUAL_UINT32(kMaxVolumeAdjustStepMl, loaded.volumeAdjustStepMl);
+    TEST_ASSERT_EQUAL_UINT32(kMaxTimeAdjustStepSec, loaded.timeAdjustStepSec);
+    TEST_ASSERT_EQUAL_UINT32(kMaxStartupCompensationMl, loaded.startupCompensationMl);
     TEST_ASSERT_EQUAL_UINT32(kMinVolumePresetMl, loaded.presets[0].value);
 }
 

@@ -34,6 +34,11 @@ void assertDisplayLinesFit(const DisplayFrame& frame) {
     TEST_ASSERT_LESS_OR_EQUAL_size_t(16, std::strlen(frame.line2));
 }
 
+void assertPulseLabelFixedRight(const DisplayFrame& frame) {
+    TEST_ASSERT_GREATER_OR_EQUAL_size_t(4, std::strlen(frame.line1));
+    TEST_ASSERT_EQUAL_STRING("450P", frame.line1 + std::strlen(frame.line1) - 4);
+}
+
 }  // namespace
 
 void test_display_idle_shows_preset_and_today_total() {
@@ -44,8 +49,9 @@ void test_display_idle_shows_preset_and_today_total() {
 
     TEST_ASSERT_TRUE(frame.on);
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(DisplayPage::Idle), static_cast<std::uint8_t>(frame.page));
-    TEST_ASSERT_EQUAL_STRING("P1 1.50L    450P", frame.line1);
-    TEST_ASSERT_EQUAL_STRING("+/- Sel OK", frame.line2);
+    TEST_ASSERT_EQUAL_STRING("SEL P1 1.5L 450P", frame.line1);
+    TEST_ASSERT_EQUAL_STRING("TODAY 1.23L", frame.line2);
+    assertPulseLabelFixedRight(frame);
     assertDisplayLinesFit(frame);
 }
 
@@ -84,9 +90,12 @@ void test_display_time_preset_shows_remaining_seconds_and_error_reason() {
     error.water.lastResult = WaterResult::FlowError;
     DisplayFrame errorFrame = presenter.render(error, 500);
 
-    TEST_ASSERT_EQUAL_STRING("Lft 6s      450P", runningFrame.line1);
+    TEST_ASSERT_EQUAL_STRING("RUN 00:04   450P", runningFrame.line1);
+    TEST_ASSERT_EQUAL_STRING("0.00L LFT 6s", runningFrame.line2);
     TEST_ASSERT_EQUAL_STRING("Flow Error", errorFrame.line2);
-    TEST_ASSERT_EQUAL_STRING("Error", errorFrame.line1);
+    TEST_ASSERT_EQUAL_STRING("Error       450P", errorFrame.line1);
+    assertPulseLabelFixedRight(errorFrame);
+    assertPulseLabelFixedRight(runningFrame);
     assertDisplayLinesFit(runningFrame);
     assertDisplayLinesFit(errorFrame);
 }
@@ -97,8 +106,9 @@ void test_display_running_shows_remaining_volume() {
 
     DisplayFrame frame = presenter.render(makeSnapshot(WaterState::Running, 1500, 400), 500);
 
-    TEST_ASSERT_EQUAL_STRING("Lft 1.10L   450P", frame.line1);
-    TEST_ASSERT_EQUAL_STRING("Out 0.40L OK", frame.line2);
+    TEST_ASSERT_EQUAL_STRING("RUN 00:00   450P", frame.line1);
+    TEST_ASSERT_EQUAL_STRING("0.40L LFT 1.10L", frame.line2);
+    assertPulseLabelFixedRight(frame);
     assertDisplayLinesFit(frame);
 }
 
@@ -108,13 +118,23 @@ void test_display_confirm_and_pause_pages_are_short() {
 
     DisplayFrame confirm = presenter.render(makeSnapshot(WaterState::Confirm, 7500), 500);
     DisplayFrame paused = presenter.render(makeSnapshot(WaterState::Paused, 7500, 300), 500);
+    AppSnapshot timeConfirm = makeSnapshot(WaterState::Confirm, 60);
+    timeConfirm.water.mode = WaterMode::Time;
+    timeConfirm.water.targetValue = 60;
+    DisplayFrame timeConfirmFrame = presenter.render(timeConfirm, 500);
 
-    TEST_ASSERT_EQUAL_STRING("Set 7.50L   450P", confirm.line1);
-    TEST_ASSERT_EQUAL_STRING("+/- Adj OK Go", confirm.line2);
-    TEST_ASSERT_EQUAL_STRING("P 0.30/7.50 450P", paused.line1);
-    TEST_ASSERT_EQUAL_STRING("Step0.50 +/-OK", paused.line2);
+    TEST_ASSERT_EQUAL_STRING("GO P1 7.5L  450P", confirm.line1);
+    TEST_ASSERT_EQUAL_STRING("STEP 0.10L", confirm.line2);
+    TEST_ASSERT_EQUAL_STRING("PAU 0.30L   450P", paused.line1);
+    TEST_ASSERT_EQUAL_STRING("CAN=STOP OK=RUN", paused.line2);
+    TEST_ASSERT_EQUAL_STRING("GO P1 60s   450P", timeConfirmFrame.line1);
+    TEST_ASSERT_EQUAL_STRING("STEP 10s", timeConfirmFrame.line2);
+    assertPulseLabelFixedRight(confirm);
+    assertPulseLabelFixedRight(paused);
+    assertPulseLabelFixedRight(timeConfirmFrame);
     assertDisplayLinesFit(confirm);
     assertDisplayLinesFit(paused);
+    assertDisplayLinesFit(timeConfirmFrame);
 }
 
 void test_display_result_page_shows_summary() {
@@ -130,6 +150,7 @@ void test_display_result_page_shows_summary() {
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(DisplayPage::Result), static_cast<std::uint8_t>(frame.page));
     TEST_ASSERT_EQUAL_STRING("Done 7.50L  450P", frame.line1);
     TEST_ASSERT_EQUAL_STRING("OK Back", frame.line2);
+    assertPulseLabelFixedRight(frame);
     assertDisplayLinesFit(frame);
 }
 
@@ -145,8 +166,9 @@ void test_display_local_calibration_page_shows_actual_and_step() {
     DisplayFrame frame = presenter.render(snapshot, 500);
 
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(DisplayPage::Calibration), static_cast<std::uint8_t>(frame.page));
-    TEST_ASSERT_EQUAL_STRING("A1.00L P450/L", frame.line1);
+    TEST_ASSERT_EQUAL_STRING("A1.00L      450P", frame.line1);
     TEST_ASSERT_EQUAL_STRING("S0.10 +/- OK", frame.line2);
+    assertPulseLabelFixedRight(frame);
     assertDisplayLinesFit(frame);
 }
 
@@ -159,8 +181,8 @@ void test_display_omits_pulse_label_when_unavailable() {
     DisplayFrame frame = presenter.render(snapshot, 500);
 
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(DisplayPage::Idle), static_cast<std::uint8_t>(frame.page));
-    TEST_ASSERT_EQUAL_STRING("P1 1.50L", frame.line1);
-    TEST_ASSERT_EQUAL_STRING("+/- Sel OK", frame.line2);
+    TEST_ASSERT_EQUAL_STRING("SEL P1 1.5L", frame.line1);
+    TEST_ASSERT_EQUAL_STRING("TODAY 1.23L", frame.line2);
     assertDisplayLinesFit(frame);
 }
 

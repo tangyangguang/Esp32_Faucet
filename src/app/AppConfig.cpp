@@ -49,6 +49,9 @@ SystemConfig makeDefaultConfig() {
     config.highFlowMlPerMin = kDefaultHighFlowMlPerMin;
     config.highFlowDurationSec = kDefaultHighFlowDurationSec;
     config.pauseTimeoutSec = kDefaultPauseTimeoutSec;
+    config.volumeAdjustStepMl = kDefaultVolumeAdjustStepMl;
+    config.timeAdjustStepSec = kDefaultTimeAdjustStepSec;
+    config.startupCompensationMl = kDefaultStartupCompensationMl;
     config.pulsePerMl = kDefaultPulsePerMl;
     config.valveFullPowerSec = kDefaultValveFullPowerSec;
     config.valveHoldDutyPercent = kDefaultValveHoldDutyPercent;
@@ -82,6 +85,12 @@ void sanitizeConfig(SystemConfig& config) {
     config.highFlowMlPerMin = clampValue<std::uint32_t>(config.highFlowMlPerMin, 1000, 100000);
     config.highFlowDurationSec = clampValue<std::uint32_t>(config.highFlowDurationSec, 1, 30);
     config.pauseTimeoutSec = clampValue<std::uint32_t>(config.pauseTimeoutSec, 10, 3600);
+    config.volumeAdjustStepMl =
+        clampValue<std::uint32_t>(config.volumeAdjustStepMl, kMinVolumeAdjustStepMl, kMaxVolumeAdjustStepMl);
+    config.timeAdjustStepSec =
+        clampValue<std::uint32_t>(config.timeAdjustStepSec, kMinTimeAdjustStepSec, kMaxTimeAdjustStepSec);
+    config.startupCompensationMl =
+        clampValue<std::uint32_t>(config.startupCompensationMl, 0, kMaxStartupCompensationMl);
     config.pulsePerMl = std::isfinite(config.pulsePerMl)
                             ? clampValue<float>(config.pulsePerMl, kMinPulsePerMl, kMaxPulsePerMl)
                             : kDefaultPulsePerMl;

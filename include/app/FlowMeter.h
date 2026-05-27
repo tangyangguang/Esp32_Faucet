@@ -17,10 +17,13 @@ struct FlowSnapshot {
 
 class FlowMeter {
 public:
-    explicit FlowMeter(float pulsePerMl = kDefaultPulsePerMl, std::uint32_t pulseFilterUs = kDefaultPulseFilterUs);
+    explicit FlowMeter(float pulsePerMl = kDefaultPulsePerMl,
+                       std::uint32_t pulseFilterUs = kDefaultPulseFilterUs,
+                       std::uint32_t startupCompensationMl = kDefaultStartupCompensationMl);
 
     void reset();
     bool setPulsePerMl(float pulsePerMl);
+    void setStartupCompensationMl(std::uint32_t startupCompensationMl);
     void setPulseFilterUs(std::uint32_t pulseFilterUs);
     bool onPulse(std::uint32_t nowUs);
     FlowSnapshot snapshot(std::uint32_t nowUs) const;
@@ -31,6 +34,7 @@ private:
 
     float pulsePerMl_;
     std::uint32_t pulseFilterUs_;
+    std::uint32_t startupCompensationMl_;
     std::uint32_t pulseCount_;
     std::uint32_t rejectedPulses_;
     std::uint32_t lastPulseUs_;

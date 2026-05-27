@@ -17,6 +17,15 @@ void test_counts_valid_pulses_and_converts_to_volume() {
     TEST_ASSERT_EQUAL_UINT32(0, snapshot.rejectedPulses);
 }
 
+void test_startup_compensation_applies_only_after_first_valid_pulse() {
+    FlowMeter meter(1.0f, kDefaultPulseFilterUs, 80);
+
+    TEST_ASSERT_EQUAL_UINT32(0, meter.snapshot(1000).volumeMl);
+
+    TEST_ASSERT_TRUE(meter.onPulse(1000));
+    TEST_ASSERT_EQUAL_UINT32(81, meter.snapshot(1000).volumeMl);
+}
+
 void test_filters_pulses_inside_filter_window() {
     FlowMeter meter(0.5f, 1000);
 
@@ -117,6 +126,7 @@ int main(int argc, char** argv) {
 
     UNITY_BEGIN();
     RUN_TEST(test_counts_valid_pulses_and_converts_to_volume);
+    RUN_TEST(test_startup_compensation_applies_only_after_first_valid_pulse);
     RUN_TEST(test_filters_pulses_inside_filter_window);
     RUN_TEST(test_pulse_exactly_at_filter_boundary_is_accepted);
     RUN_TEST(test_current_flow_uses_recent_pulse_interval);

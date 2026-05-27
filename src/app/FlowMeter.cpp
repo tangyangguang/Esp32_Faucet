@@ -15,9 +15,10 @@ bool validPulsePerMl(float value) {
 
 }  // namespace
 
-FlowMeter::FlowMeter(float pulsePerMl, std::uint32_t pulseFilterUs)
+FlowMeter::FlowMeter(float pulsePerMl, std::uint32_t pulseFilterUs, std::uint32_t startupCompensationMl)
     : pulsePerMl_(validPulsePerMl(pulsePerMl) ? pulsePerMl : kDefaultPulsePerMl),
       pulseFilterUs_(pulseFilterUs),
+      startupCompensationMl_(std::min(startupCompensationMl, kMaxStartupCompensationMl)),
       pulseCount_(0),
       rejectedPulses_(0),
       lastPulseUs_(0),
@@ -38,6 +39,10 @@ bool FlowMeter::setPulsePerMl(float pulsePerMl) {
     }
     pulsePerMl_ = pulsePerMl;
     return true;
+}
+
+void FlowMeter::setStartupCompensationMl(std::uint32_t startupCompensationMl) {
+    startupCompensationMl_ = std::min(startupCompensationMl, kMaxStartupCompensationMl);
 }
 
 void FlowMeter::setPulseFilterUs(std::uint32_t pulseFilterUs) {
@@ -71,6 +76,9 @@ FlowSnapshot FlowMeter::snapshot(std::uint32_t nowUs) const {
 }
 
 std::uint32_t FlowMeter::volumeFromPulses() const {
+    if (pulseCount_ == 0) {
+        return 0;
+    }
     const float volume = static_cast<float>(pulseCount_) / pulsePerMl_;
     if (volume <= 0.0f) {
         return 0;
@@ -78,7 +86,9 @@ std::uint32_t FlowMeter::volumeFromPulses() const {
     if (volume >= static_cast<float>(std::numeric_limits<std::uint32_t>::max())) {
         return std::numeric_limits<std::uint32_t>::max();
     }
-    return static_cast<std::uint32_t>(volume + 0.5f);
+    const std::uint32_t rounded = static_cast<std::uint32_t>(volume + 0.5f);
+    const std::uint32_t max = std::numeric_limits<std::uint32_t>::max();
+    return max - rounded < startupCompensationMl_ ? max : rounded + startupCompensationMl_;
 }
 
 std::uint32_t FlowMeter::flowFromInterval(std::uint32_t intervalUs) const {

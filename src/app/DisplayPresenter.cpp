@@ -42,6 +42,17 @@ void formatLitersNumber(char* out, std::size_t len, std::uint32_t ml) {
     formatLitersValue(out, len, ml, false);
 }
 
+void formatLitersCompact(char* out, std::size_t len, std::uint32_t ml) {
+    const std::uint32_t deciliters = (ml + 50UL) / 100UL;
+    std::snprintf(out, len, "%lu.%luL", static_cast<unsigned long>(deciliters / 10UL),
+                  static_cast<unsigned long>(deciliters % 10UL));
+}
+
+void formatElapsed(char* out, std::size_t len, std::uint32_t seconds) {
+    std::snprintf(out, len, "%02lu:%02lu", static_cast<unsigned long>((seconds / 60UL) % 100UL),
+                  static_cast<unsigned long>(seconds % 60UL));
+}
+
 void copyLine(char (&dest)[kDisplayLineLength], const char* src) {
     std::strncpy(dest, src ? src : "", kDisplayLineLength - 1);
     dest[kDisplayLineLength - 1] = '\0';
@@ -120,7 +131,9 @@ DisplayFrame DisplayPresenter::render(const AppSnapshot& snapshot, std::uint32_t
         formatLitersNumber(step, sizeof(step), snapshot.calibrationStepMl);
         char line1[kDisplayLineLength]{};
         char line2[kDisplayLineLength]{};
-        std::snprintf(line1, sizeof(line1), "A%s P%lu/L", actual, static_cast<unsigned long>(snapshot.pulsePerLiter));
+        char left[kDisplayLineLength]{};
+        std::snprintf(left, sizeof(left), "A%s", actual);
+        composeTopLine(line1, left, snapshot.pulsePerLiter);
         std::snprintf(line2, sizeof(line2), "S%s +/- OK", step);
         return makeFrame(DisplayPage::Calibration, true, line1, line2);
     }
@@ -133,80 +146,87 @@ DisplayFrame DisplayPresenter::render(const AppSnapshot& snapshot, std::uint32_t
     char line1[kDisplayLineLength]{};
     char line2[kDisplayLineLength]{};
     switch (snapshot.water.state) {
-        case WaterState::Idle:
+        case WaterState::Idle: {
             if (snapshot.water.mode == WaterMode::Volume) {
                 char target[8]{};
-                formatLiters(target, sizeof(target), snapshot.water.targetValue);
+                formatLitersCompact(target, sizeof(target), snapshot.water.targetValue);
                 char left[kDisplayLineLength]{};
-                std::snprintf(left, sizeof(left), "P%u %s", static_cast<unsigned>(snapshot.water.selectedPreset + 1), target);
+                std::snprintf(left, sizeof(left), "SEL P%u %s", static_cast<unsigned>(snapshot.water.selectedPreset + 1), target);
                 composeTopLine(line1, left, snapshot.pulsePerLiter);
             } else {
                 char left[kDisplayLineLength]{};
-                std::snprintf(left, sizeof(left), "P%u %lus", static_cast<unsigned>(snapshot.water.selectedPreset + 1),
+                std::snprintf(left, sizeof(left), "SEL P%u %lus", static_cast<unsigned>(snapshot.water.selectedPreset + 1),
                               static_cast<unsigned long>(snapshot.water.targetValue));
                 composeTopLine(line1, left, snapshot.pulsePerLiter);
             }
-            std::snprintf(line2, sizeof(line2), "+/- Sel OK");
+            char today[8]{};
+            formatLiters(today, sizeof(today), snapshot.statistics.todayMl);
+            std::snprintf(line2, sizeof(line2), "TODAY %s", today);
             return makeFrame(DisplayPage::Idle, true, line1, line2);
+        }
         case WaterState::Confirm:
             if (snapshot.water.mode == WaterMode::Volume) {
                 char target[8]{};
-                formatLiters(target, sizeof(target), snapshot.water.targetValue);
+                char step[8]{};
+                formatLitersCompact(target, sizeof(target), snapshot.water.targetValue);
+                formatLiters(step, sizeof(step), snapshot.adjustmentStepMl);
                 char left[kDisplayLineLength]{};
-                std::snprintf(left, sizeof(left), "Set %s", target);
+                std::snprintf(left, sizeof(left), "GO P%u %s", static_cast<unsigned>(snapshot.water.selectedPreset + 1), target);
                 composeTopLine(line1, left, snapshot.pulsePerLiter);
-                std::snprintf(line2, sizeof(line2), "+/- Adj OK Go");
+                std::snprintf(line2, sizeof(line2), "STEP %s", step);
             } else {
                 char left[kDisplayLineLength]{};
-                std::snprintf(left, sizeof(left), "Set %lus", static_cast<unsigned long>(snapshot.water.targetValue));
+                std::snprintf(left, sizeof(left), "GO P%u %lus", static_cast<unsigned>(snapshot.water.selectedPreset + 1),
+                              static_cast<unsigned long>(snapshot.water.targetValue));
                 composeTopLine(line1, left, snapshot.pulsePerLiter);
-                std::snprintf(line2, sizeof(line2), "OK Go CAN Back");
+                std::snprintf(line2, sizeof(line2), "STEP %lus", static_cast<unsigned long>(snapshot.timeAdjustmentStepSec));
             }
             return makeFrame(DisplayPage::Confirm, true, line1, line2);
         case WaterState::Running:
+            {
+                char elapsed[8]{};
+                formatElapsed(elapsed, sizeof(elapsed), snapshot.water.elapsedSec);
+                char left[kDisplayLineLength]{};
+                std::snprintf(left, sizeof(left), "RUN %s", elapsed);
+                composeTopLine(line1, left, snapshot.pulsePerLiter);
+            }
             if (snapshot.water.mode == WaterMode::Volume) {
                 const std::uint32_t remain =
                     snapshot.water.targetValue > snapshot.water.volumeMl ? snapshot.water.targetValue - snapshot.water.volumeMl : 0;
                 char remainText[8]{};
                 formatLiters(remainText, sizeof(remainText), remain);
-                char left[kDisplayLineLength]{};
-                std::snprintf(left, sizeof(left), "Lft %s", remainText);
-                composeTopLine(line1, left, snapshot.pulsePerLiter);
+                char out[8]{};
+                formatLiters(out, sizeof(out), snapshot.water.volumeMl);
+                std::snprintf(line2, sizeof(line2), "%s LFT %s", out, remainText);
             } else {
                 const std::uint32_t remain =
                     snapshot.water.targetValue > snapshot.water.elapsedSec ? snapshot.water.targetValue - snapshot.water.elapsedSec : 0;
-                char left[kDisplayLineLength]{};
-                std::snprintf(left, sizeof(left), "Lft %lus", static_cast<unsigned long>(remain));
-                composeTopLine(line1, left, snapshot.pulsePerLiter);
-            }
-            if (snapshot.water.mode == WaterMode::Volume) {
                 char out[8]{};
                 formatLiters(out, sizeof(out), snapshot.water.volumeMl);
-                std::snprintf(line2, sizeof(line2), "Out %s OK", out);
-            } else {
-                std::snprintf(line2, sizeof(line2), "OK Pause");
+                std::snprintf(line2, sizeof(line2), "%s LFT %lus", out, static_cast<unsigned long>(remain));
             }
             return makeFrame(DisplayPage::Running, true, line1, line2);
         case WaterState::Paused:
             if (snapshot.water.mode == WaterMode::Volume) {
                 char out[8]{};
-                char target[8]{};
-                char step[8]{};
-                formatLitersNumber(out, sizeof(out), snapshot.water.volumeMl);
-                formatLitersNumber(target, sizeof(target), snapshot.water.targetValue);
-                formatLitersNumber(step, sizeof(step), snapshot.adjustmentStepMl);
+                formatLiters(out, sizeof(out), snapshot.water.volumeMl);
                 char left[kDisplayLineLength]{};
-                std::snprintf(left, sizeof(left), "P %s/%s", out, target);
+                std::snprintf(left, sizeof(left), "PAU %s", out);
                 composeTopLine(line1, left, snapshot.pulsePerLiter);
-                std::snprintf(line2, sizeof(line2), "Step%s +/-OK", step);
+                std::snprintf(line2, sizeof(line2), "CAN=STOP OK=RUN");
             } else {
-                composeTopLine(line1, "Paused", snapshot.pulsePerLiter);
-                std::snprintf(line2, sizeof(line2), "OK Resume");
+                char out[8]{};
+                formatLiters(out, sizeof(out), snapshot.water.volumeMl);
+                char left[kDisplayLineLength]{};
+                std::snprintf(left, sizeof(left), "PAU %s", out);
+                composeTopLine(line1, left, snapshot.pulsePerLiter);
+                std::snprintf(line2, sizeof(line2), "CAN=STOP OK=RUN");
             }
             return makeFrame(DisplayPage::Paused, true, line1, line2);
         case WaterState::Error:
         default:
-            return makeFrame(DisplayPage::Error, true, "Error", stateText(snapshot.water.lastResult));
+            composeTopLine(line1, "Error", snapshot.pulsePerLiter);
+            return makeFrame(DisplayPage::Error, true, line1, stateText(snapshot.water.lastResult));
     }
 }
 

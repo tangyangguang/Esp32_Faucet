@@ -40,7 +40,8 @@ struct AppSnapshot {
     ValveOutput valve;
     StatisticsRecord statistics;
     LocalUiMode localMode = LocalUiMode::Normal;
-    std::uint32_t adjustmentStepMl = 500;
+    std::uint32_t adjustmentStepMl = kDefaultVolumeAdjustStepMl;
+    std::uint32_t timeAdjustmentStepSec = kDefaultTimeAdjustStepSec;
     std::uint32_t calibrationActualMl = 0;
     std::uint32_t calibrationStepMl = 100;
     bool calibrationReady = false;
@@ -89,7 +90,6 @@ private:
                            std::uint32_t bootId);
     void startSelectedPreset(std::uint32_t nowMs, std::uint32_t nowSeconds, bool timeSynced, std::uint32_t bootId);
     void exitResultDisplay(std::uint32_t nowMs);
-    void toggleAdjustmentStep();
     void toggleCalibrationStep();
     void enterCalibrationFromResult(std::uint32_t nowMs);
     void updateResultCalibrationHold(bool okPressed, std::uint32_t nowMs);
@@ -130,6 +130,7 @@ private:
     std::uint32_t flowDroppedPulses_;
     std::uint32_t resultDisplayStartMs_;
     std::uint32_t adjustmentStepMl_;
+    std::uint32_t timeAdjustmentStepSec_;
     bool lastResultRecordValid_;
     WaterRecord lastResultRecord_;
     bool resultOkHoldTracking_;

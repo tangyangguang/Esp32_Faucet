@@ -11,6 +11,7 @@ namespace {
 constexpr std::uint32_t kResultCalibrationHoldMs = 5000;
 constexpr std::uint32_t kCalibrationMinActualMl = 100;
 constexpr std::uint32_t kCalibrationMaxDriftPercent = 30;
+constexpr std::uint32_t kStartupCalibrationMaxActualMl = 2000;
 
 std::uint32_t msFromSeconds(std::uint32_t seconds) {
     constexpr std::uint32_t maxMs = std::numeric_limits<std::uint32_t>::max();
@@ -35,7 +36,7 @@ AppController::AppController(const SystemConfig& config,
       water_(config_),
       localMode_(LocalUiMode::Normal),
       buttons_(),
-      flow_(config_.pulsePerMl),
+      flow_(config_.pulsePerMl, kDefaultPulseFilterUs, config_.startupCompensationMl),
       valve_(config_.valveFullPowerSec, config_.valveHoldDutyPercent),
       statistics_(statistics),
       filters_(filters),
@@ -53,7 +54,8 @@ AppController::AppController(const SystemConfig& config,
       pendingBeep_(BeepPattern::None),
       flowDroppedPulses_(0),
       resultDisplayStartMs_(0),
-      adjustmentStepMl_(100),
+      adjustmentStepMl_(config_.volumeAdjustStepMl),
+      timeAdjustmentStepSec_(config_.timeAdjustStepSec),
       lastResultRecordValid_(false),
       lastResultRecord_{},
       resultOkHoldTracking_(false),
@@ -120,6 +122,7 @@ AppSnapshot AppController::snapshot() const {
     snapshot.statistics = statistics_.record();
     snapshot.localMode = localMode_;
     snapshot.adjustmentStepMl = adjustmentStepMl_;
+    snapshot.timeAdjustmentStepSec = timeAdjustmentStepSec_;
     snapshot.calibrationActualMl = calibrationActualMl_;
     snapshot.calibrationStepMl = calibrationStepMl_;
     snapshot.calibrationReady = lastResultRecordValid_;
@@ -187,7 +190,10 @@ bool AppController::applyConfig(const SystemConfig& config) {
     sanitizeConfig(safe);
     config_ = safe;
     flow_.setPulsePerMl(config_.pulsePerMl);
+    flow_.setStartupCompensationMl(config_.startupCompensationMl);
     valve_.configure(config_.valveFullPowerSec, config_.valveHoldDutyPercent);
+    adjustmentStepMl_ = config_.volumeAdjustStepMl;
+    timeAdjustmentStepSec_ = config_.timeAdjustStepSec;
     return true;
 }
 
@@ -208,11 +214,24 @@ CalibrationApplyResult AppController::applyCalibrationFromRecordInternal(const W
     if (record.pulseCount == 0 || !resultAllowsCalibration(record.result)) {
         return CalibrationApplyResult::InvalidRecord;
     }
+    const float oldPulsePerMl = finitePulsePerMl(config_.pulsePerMl) ? config_.pulsePerMl : kDefaultPulsePerMl;
+    const float pulseBasedMl = static_cast<float>(record.pulseCount) / oldPulsePerMl;
+    if (actualMl <= kStartupCalibrationMaxActualMl && pulseBasedMl <= static_cast<float>(actualMl)) {
+        const float missingMl = static_cast<float>(actualMl) - pulseBasedMl;
+        config_.startupCompensationMl =
+            missingMl >= static_cast<float>(kMaxStartupCompensationMl)
+                ? kMaxStartupCompensationMl
+                : static_cast<std::uint32_t>(missingMl + 0.5f);
+        flow_.setStartupCompensationMl(config_.startupCompensationMl);
+        configDirty_ = true;
+        pendingBeep_ = BeepPattern::Done;
+        localMode_ = LocalUiMode::Result;
+        return CalibrationApplyResult::Saved;
+    }
     const float nextPulsePerMl = static_cast<float>(record.pulseCount) / static_cast<float>(actualMl);
     if (!finitePulsePerMl(nextPulsePerMl)) {
         return CalibrationApplyResult::InvalidFactor;
     }
-    const float oldPulsePerMl = finitePulsePerMl(config_.pulsePerMl) ? config_.pulsePerMl : kDefaultPulsePerMl;
     const float ratio = nextPulsePerMl > oldPulsePerMl ? nextPulsePerMl / oldPulsePerMl : oldPulsePerMl / nextPulsePerMl;
     if (ratio > 1.0f + static_cast<float>(kCalibrationMaxDriftPercent) / 100.0f) {
         return CalibrationApplyResult::TooMuchDrift;
@@ -311,7 +330,8 @@ void AppController::handleButtonEvent(ButtonEvent event,
         case ButtonEventType::OkShort:
             if (water.state == WaterState::Idle || water.state == WaterState::Error) {
                 if (water_.requestStart(nowMs)) {
-                    adjustmentStepMl_ = 100;
+                    adjustmentStepMl_ = config_.volumeAdjustStepMl;
+                    timeAdjustmentStepSec_ = config_.timeAdjustStepSec;
                     pendingBeep_ = BeepPattern::Click;
                 }
             } else if (water.state == WaterState::Confirm) {
@@ -323,15 +343,13 @@ void AppController::handleButtonEvent(ButtonEvent event,
             }
             break;
         case ButtonEventType::OkLong:
-            if (water.state == WaterState::Confirm || water.state == WaterState::Paused) {
-                toggleAdjustmentStep();
-                pendingBeep_ = BeepPattern::Click;
-            }
             break;
         case ButtonEventType::PlusShort:
         case ButtonEventType::PlusLong:
-            if (water.state == WaterState::Confirm || water.state == WaterState::Paused) {
-                if (water_.adjustTarget(static_cast<std::int32_t>(adjustmentStepMl_))) {
+            if (water.state == WaterState::Confirm) {
+                const std::uint32_t step =
+                    water.mode == WaterMode::Time ? timeAdjustmentStepSec_ : adjustmentStepMl_;
+                if (water_.adjustTarget(static_cast<std::int32_t>(step))) {
                     pendingBeep_ = BeepPattern::Click;
                 }
             } else if (water_.selectNextPreset()) {
@@ -340,8 +358,10 @@ void AppController::handleButtonEvent(ButtonEvent event,
             break;
         case ButtonEventType::MinusShort:
         case ButtonEventType::MinusLong:
-            if (water.state == WaterState::Confirm || water.state == WaterState::Paused) {
-                if (water_.adjustTarget(-static_cast<std::int32_t>(adjustmentStepMl_))) {
+            if (water.state == WaterState::Confirm) {
+                const std::uint32_t step =
+                    water.mode == WaterMode::Time ? timeAdjustmentStepSec_ : adjustmentStepMl_;
+                if (water_.adjustTarget(-static_cast<std::int32_t>(step))) {
                     pendingBeep_ = BeepPattern::Click;
                 }
             } else if (water_.selectPreviousPreset()) {
@@ -371,10 +391,6 @@ void AppController::exitResultDisplay(std::uint32_t) {
     localMode_ = LocalUiMode::Normal;
     resultOkHoldTracking_ = false;
     resultOkHoldTriggered_ = false;
-}
-
-void AppController::toggleAdjustmentStep() {
-    adjustmentStepMl_ = adjustmentStepMl_ == 100 ? 500 : 100;
 }
 
 void AppController::toggleCalibrationStep() {

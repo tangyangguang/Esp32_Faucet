@@ -19,6 +19,9 @@ void test_default_config_matches_product_defaults() {
     TEST_ASSERT_EQUAL_UINT32(kDefaultHighFlowMlPerMin, config.highFlowMlPerMin);
     TEST_ASSERT_EQUAL_UINT32(kDefaultHighFlowDurationSec, config.highFlowDurationSec);
     TEST_ASSERT_EQUAL_UINT32(kDefaultPauseTimeoutSec, config.pauseTimeoutSec);
+    TEST_ASSERT_EQUAL_UINT32(kDefaultVolumeAdjustStepMl, config.volumeAdjustStepMl);
+    TEST_ASSERT_EQUAL_UINT32(kDefaultTimeAdjustStepSec, config.timeAdjustStepSec);
+    TEST_ASSERT_EQUAL_UINT32(kDefaultStartupCompensationMl, config.startupCompensationMl);
     TEST_ASSERT_FLOAT_WITHIN(0.0001f, kDefaultPulsePerMl, config.pulsePerMl);
     TEST_ASSERT_EQUAL_UINT32(kDefaultValveFullPowerSec, config.valveFullPowerSec);
     TEST_ASSERT_EQUAL_UINT8(kDefaultValveHoldDutyPercent, config.valveHoldDutyPercent);
@@ -85,6 +88,9 @@ void test_sanitize_config_clamps_scalar_ranges() {
     config.highFlowMlPerMin = 1;
     config.highFlowDurationSec = 99;
     config.pauseTimeoutSec = 999999;
+    config.volumeAdjustStepMl = 0;
+    config.timeAdjustStepSec = 0;
+    config.startupCompensationMl = 999999;
     config.pulsePerMl = 999.0f;
     config.valveFullPowerSec = 0;
     config.valveHoldDutyPercent = 1;
@@ -102,6 +108,9 @@ void test_sanitize_config_clamps_scalar_ranges() {
     TEST_ASSERT_EQUAL_UINT32(1000, config.highFlowMlPerMin);
     TEST_ASSERT_EQUAL_UINT32(30, config.highFlowDurationSec);
     TEST_ASSERT_EQUAL_UINT32(3600, config.pauseTimeoutSec);
+    TEST_ASSERT_EQUAL_UINT32(10, config.volumeAdjustStepMl);
+    TEST_ASSERT_EQUAL_UINT32(1, config.timeAdjustStepSec);
+    TEST_ASSERT_EQUAL_UINT32(kMaxStartupCompensationMl, config.startupCompensationMl);
     TEST_ASSERT_FLOAT_WITHIN(0.0001f, kMaxPulsePerMl, config.pulsePerMl);
     TEST_ASSERT_EQUAL_UINT32(1, config.valveFullPowerSec);
     TEST_ASSERT_EQUAL_UINT8(kMinValveHoldDutyPercent, config.valveHoldDutyPercent);

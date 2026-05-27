@@ -19,6 +19,14 @@ constexpr std::uint32_t kDefaultNoFlowTimeoutSec = 10;
 constexpr std::uint32_t kDefaultHighFlowMlPerMin = 30000;
 constexpr std::uint32_t kDefaultHighFlowDurationSec = 5;
 constexpr std::uint32_t kDefaultPauseTimeoutSec = 300;
+constexpr std::uint32_t kDefaultVolumeAdjustStepMl = 100;
+constexpr std::uint32_t kMinVolumeAdjustStepMl = 10;
+constexpr std::uint32_t kMaxVolumeAdjustStepMl = 1000;
+constexpr std::uint32_t kDefaultTimeAdjustStepSec = 10;
+constexpr std::uint32_t kMinTimeAdjustStepSec = 1;
+constexpr std::uint32_t kMaxTimeAdjustStepSec = 300;
+constexpr std::uint32_t kDefaultStartupCompensationMl = 0;
+constexpr std::uint32_t kMaxStartupCompensationMl = 300;
 
 constexpr float kDefaultPulsePerMl = 0.45f;
 constexpr float kMinPulsePerMl = 0.05f;
@@ -53,6 +61,9 @@ struct SystemConfig {
     std::uint32_t highFlowMlPerMin;
     std::uint32_t highFlowDurationSec;
     std::uint32_t pauseTimeoutSec;
+    std::uint32_t volumeAdjustStepMl;
+    std::uint32_t timeAdjustStepSec;
+    std::uint32_t startupCompensationMl;
     float pulsePerMl;
     std::uint32_t valveFullPowerSec;
     std::uint8_t valveHoldDutyPercent;

@@ -1564,7 +1564,7 @@ void handleRecordCalibrationPage() {
             static_cast<unsigned long>(kMinVolumePresetMl),
             static_cast<unsigned long>(kMaxVolumePresetMl),
             static_cast<unsigned long>(record.volumeMl));
-    Esp32BaseWeb::sendChunk("<p class='hint'>保存后按 脉冲数 / 实际水量 更新流量计校准系数。</p>"
+    Esp32BaseWeb::sendChunk("<p class='hint'>大容量记录更新稳态流量系数；小容量少计记录更新启动补偿水量。</p>"
                             "<div class='form-actions'><input type='submit' value='保存校准'>"
                             "<a class='btn-link' href='/faucet/records'>取消</a></div></form></section>");
     sendPageEnd();

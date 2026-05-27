@@ -142,6 +142,13 @@ bool WaterController::requestStart(std::uint32_t nowMs) {
     valveOpen_ = false;
     activeMode_ = modeFromPreset(*selectedPresetConfig());
     targetValue_ = selectedPresetConfig()->value;
+    volumeMl_ = 0;
+    noFlowLastVolumeMl_ = 0;
+    noFlowLastActivityMs_ = nowMs;
+    runStartMs_ = nowMs;
+    pausedStartMs_ = 0;
+    accumulatedPausedMs_ = 0;
+    highFlowStartMs_ = 0;
     lastElapsedSec_ = 0;
     lastError_ = WaterResult::Completed;
     return true;
@@ -167,16 +174,13 @@ bool WaterController::confirmStart(std::uint32_t nowMs) {
 }
 
 bool WaterController::adjustTarget(std::int32_t delta) {
-    if ((state_ != WaterState::Confirm && state_ != WaterState::Paused) || activeMode_ != WaterMode::Volume ||
-        delta == 0) {
+    if (state_ != WaterState::Confirm || delta == 0) {
         return false;
     }
 
-    std::uint32_t minTarget = std::max<std::uint32_t>(kMinVolumePresetMl, volumeMl_);
-    if (state_ == WaterState::Paused && volumeMl_ > 0) {
-        minTarget = volumeMl_;
-    }
-    const std::uint32_t maxTarget = std::min<std::uint32_t>(kMaxVolumePresetMl, config_.maxOutVolumeMl);
+    const std::uint32_t minTarget = activeMode_ == WaterMode::Time ? kMinTimePresetSec : kMinVolumePresetMl;
+    const std::uint32_t maxTarget =
+        activeMode_ == WaterMode::Time ? kMaxTimePresetSec : std::min<std::uint32_t>(kMaxVolumePresetMl, config_.maxOutVolumeMl);
     std::int64_t next = static_cast<std::int64_t>(targetValue_) + delta;
     if (next < static_cast<std::int64_t>(minTarget)) {
         next = minTarget;

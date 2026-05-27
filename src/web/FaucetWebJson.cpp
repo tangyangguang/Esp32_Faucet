@@ -228,7 +228,8 @@ bool writeConfigJson(const SystemConfig& config, char* out, std::size_t len) {
     JsonWriter writer(out, len);
     writer.append("{\"confirmTimeoutSec\":%lu,\"maxOutTimeSec\":%lu,\"maxOutVolumeMl\":%lu,"
                   "\"overflowPercent\":%u,\"noFlowTimeoutSec\":%lu,\"highFlowMlPerMin\":%lu,"
-                  "\"highFlowDurationSec\":%lu,\"pauseTimeoutSec\":%lu,\"pulsePerMl\":%.3f,"
+                  "\"highFlowDurationSec\":%lu,\"pauseTimeoutSec\":%lu,\"volumeAdjustStepMl\":%lu,"
+                  "\"timeAdjustStepSec\":%lu,\"startupCompensationMl\":%lu,\"pulsePerMl\":%.3f,"
                   "\"valveFullPowerSec\":%lu,"
                   "\"valveHoldDutyPercent\":%u,\"displaySleepSec\":%lu,\"resultDisplaySec\":%lu,"
                   "\"lcdI2cAddress\":%u,\"beepEnabled\":%s}",
@@ -240,6 +241,9 @@ bool writeConfigJson(const SystemConfig& config, char* out, std::size_t len) {
                   static_cast<unsigned long>(config.highFlowMlPerMin),
                   static_cast<unsigned long>(config.highFlowDurationSec),
                   static_cast<unsigned long>(config.pauseTimeoutSec),
+                  static_cast<unsigned long>(config.volumeAdjustStepMl),
+                  static_cast<unsigned long>(config.timeAdjustStepSec),
+                  static_cast<unsigned long>(config.startupCompensationMl),
                   static_cast<double>(config.pulsePerMl),
                   static_cast<unsigned long>(config.valveFullPowerSec),
                   static_cast<unsigned>(config.valveHoldDutyPercent),

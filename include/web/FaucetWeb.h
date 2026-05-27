@@ -9,6 +9,8 @@ namespace faucet {
 class AppController;
 class ConfigStore;
 class FilterStore;
+class WaterRecordCalibrationReader;
+class WaterRecordCalibrationWriter;
 class WaterRecordReader;
 struct SystemConfig;
 
@@ -29,6 +31,8 @@ struct FaucetWebContext {
     AppController* app;
     FilterStore* filters;
     const WaterRecordReader* records;
+    const WaterRecordCalibrationReader* recordCalibrations;
+    WaterRecordCalibrationWriter* recordCalibrationWriter;
     FaucetNowSeconds nowSeconds;
     FaucetBootId bootId;
     FaucetApplySettings applySettings;

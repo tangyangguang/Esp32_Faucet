@@ -165,6 +165,14 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "href='/faucet/records/calibration'"));
     TEST_ASSERT_NULL(std::strstr(buffer, "/api/faucet/calibration"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "量杯实际水量"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "<th>脉冲</th><th>校准</th><th>操作</th>"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "实测"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "较目标"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "重校"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "已校准"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "过滤 %lu"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "<th>诊断</th>"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "脉冲 %lu / 过滤 %lu / 系数 %.3f"));
     TEST_ASSERT_NULL(std::strstr(buffer, "sendFmt(\"<section class='panel'><h3>量杯实际水量</h3>\""));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "sendChunk(\"<section class='panel'><h3>量杯实际水量</h3>\""));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "已用天数 (天)"));
@@ -289,7 +297,9 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "阀门"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "设备不在待机状态，请回到待机后再保存配置。"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "<th>目标值</th>"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "<th>诊断</th>"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "<th>脉冲</th>"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "<th>校准</th>"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "<th>诊断</th>"));
 }
 
 void test_main_source_renders_live_display_frame_for_web() {

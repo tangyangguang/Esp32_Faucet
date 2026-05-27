@@ -6,6 +6,7 @@
 #include "app/AppConfig.h"
 #include "app/ConfigStore.h"
 #include "app/FilterStore.h"
+#include "app/WaterRecordCalibrationStore.h"
 #include "app/WaterRecordStore.h"
 #include "web/FaucetWebJson.h"
 #include "web/FaucetWebParsing.h"
@@ -421,6 +422,59 @@ bool sameWaterRecordIdentity(const WaterRecord& a, const WaterRecord& b) {
            a.result == b.result;
 }
 
+std::uint32_t pulsePerLiterFromPulsePerMl(float pulsePerMl) {
+    if (!std::isfinite(pulsePerMl) || pulsePerMl <= 0.0f) {
+        return 0;
+    }
+    return static_cast<std::uint32_t>(std::lround(pulsePerMl * 1000.0f));
+}
+
+bool findRecordCalibration(const WaterRecord& record, WaterRecordCalibration& calibration) {
+    return g_context.recordCalibrations && g_context.recordCalibrations->ready() &&
+           g_context.recordCalibrations->find(record, calibration);
+}
+
+void sendSignedLiters(std::int32_t ml) {
+    if (ml < 0) {
+        Esp32BaseWeb::sendChunk("-");
+        sendLiters(static_cast<std::uint32_t>(-ml));
+        return;
+    }
+    Esp32BaseWeb::sendChunk("+");
+    sendLiters(static_cast<std::uint32_t>(ml));
+}
+
+bool shouldShowTargetDelta(const WaterRecord& record) {
+    if (record.mode != WaterMode::Volume || record.targetValue == 0) {
+        return false;
+    }
+    const std::int32_t diff =
+        static_cast<std::int32_t>(record.volumeMl) - static_cast<std::int32_t>(record.targetValue);
+    const std::uint32_t absDiff = diff < 0 ? static_cast<std::uint32_t>(-diff) : static_cast<std::uint32_t>(diff);
+    return absDiff >= 100UL && absDiff * 100UL >= record.targetValue * 3UL;
+}
+
+void sendTargetDeltaHint(const WaterRecord& record) {
+    if (!shouldShowTargetDelta(record)) {
+        return;
+    }
+    const std::int32_t diff =
+        static_cast<std::int32_t>(record.volumeMl) - static_cast<std::int32_t>(record.targetValue);
+    Esp32BaseWeb::sendChunk("<small class='hint'>较目标 ");
+    sendSignedLiters(diff);
+    Esp32BaseWeb::sendChunk("</small>");
+}
+
+const char* calibrationKindText(WaterRecordCalibrationKind kind) {
+    switch (kind) {
+        case WaterRecordCalibrationKind::StartupCompensation:
+            return "启动补偿";
+        case WaterRecordCalibrationKind::PulsePerMl:
+        default:
+            return "稳态 P/L";
+    }
+}
+
 std::uint32_t sumRealRecordVolumeSince(std::uint32_t startTime) {
     if (!g_context.records || !g_context.records->ready() || startTime < kMinRealDateSeconds) {
         return 0;
@@ -612,6 +666,8 @@ void sendNoticeFromQuery() {
         message = "保存失败，请稍后重试。";
     } else if (std::strcmp(text, "no_calibration_record") == 0) {
         message = "最新记录没有可用的原始脉冲，不能用于校准。";
+    } else if (std::strcmp(text, "calibration_mark_failed") == 0) {
+        message = "校准参数已尝试保存，但记录校准标记保存失败，请重试。";
     } else if (std::strcmp(text, "calibration_drift") == 0) {
         message = "新系数和旧系数偏差过大，请重新接水测量。";
     }
@@ -1483,33 +1539,49 @@ void handleRecordsPage() {
     WaterRecord newestRecord{};
     const bool newestRecordReady = ready && g_context.records->readPage(0, 1, &newestRecord, 1) == 1;
     Esp32BaseWeb::sendChunk("<table><tr><th>开始时间</th><th>目标值</th><th>出水量 (L)</th>"
-                            "<th>持续时间</th><th>预设模式</th><th>结束原因</th><th>诊断</th><th>操作</th></tr>");
+                            "<th>持续时间</th><th>预设模式</th><th>结束原因</th><th>脉冲</th><th>校准</th><th>操作</th></tr>");
     for (std::size_t i = 0; i < count; ++i) {
         char startTime[40]{};
         formatWaterRecordTime(records[i], startTime, sizeof(startTime));
         const bool latestRecord = newestRecordReady && sameWaterRecordIdentity(records[i], newestRecord);
         const bool canCalibrate = latestRecord && waterRecordCanCalibrate(records[i]);
+        WaterRecordCalibration calibration{};
+        const bool calibrated = findRecordCalibration(records[i], calibration);
+        const std::uint32_t pulsePerLiter = pulsePerLiterFromPulsePerMl(records[i].pulsePerMlAtRun);
         Esp32BaseWeb::sendChunk("<tr><td>");
         Esp32BaseWeb::sendChunk(startTime);
         Esp32BaseWeb::sendChunk("</td><td>");
         sendTargetValue(records[i]);
         Esp32BaseWeb::sendChunk("</td><td>");
         sendLiters(records[i].volumeMl);
+        if (calibrated) {
+            Esp32BaseWeb::sendChunk("<small class='hint'>实测 ");
+            sendLiters(calibration.actualMl);
+            Esp32BaseWeb::sendChunk("</small>");
+        }
+        sendTargetDeltaHint(records[i]);
         sendFmt("</td><td>%u s</td><td>%s</td><td><span class='status-pill %s'>%s</span></td>"
-                "<td><span class='muted'>脉冲 %lu / 过滤 %lu / 系数 %.3f</span></td><td>",
+                "<td><span class='muted'>%lu / %luP/L</span>",
                 static_cast<unsigned>(records[i].durationSec),
                 modeText(records[i].mode),
                 resultStatusClass(records[i].result),
                 resultText(records[i].result),
                 static_cast<unsigned long>(records[i].pulseCount),
-                static_cast<unsigned long>(records[i].rejectedPulseCount),
-                static_cast<double>(records[i].pulsePerMlAtRun));
-        if (canCalibrate) {
-            Esp32BaseWeb::sendChunk("<a class='btn-link' href='/faucet/records/calibration'>校准</a>");
-        } else if (!latestRecord) {
-            Esp32BaseWeb::sendChunk("<span class='muted'>仅最新记录</span>");
+                static_cast<unsigned long>(pulsePerLiter));
+        if (records[i].rejectedPulseCount > 0) {
+            sendFmt("<small class='hint'>过滤 %lu</small>", static_cast<unsigned long>(records[i].rejectedPulseCount));
+        }
+        Esp32BaseWeb::sendChunk("</td><td>");
+        if (calibrated) {
+            Esp32BaseWeb::sendChunk("<span class='status-pill status-ok'>已校准</span>");
         } else {
-            Esp32BaseWeb::sendChunk("<span class='muted'>不可校准</span>");
+            Esp32BaseWeb::sendChunk("<span class='status-pill status-muted'>未校准</span>");
+        }
+        Esp32BaseWeb::sendChunk("</td><td>");
+        if (canCalibrate) {
+            sendFmt("<a class='btn-link' href='/faucet/records/calibration'>%s</a>", calibrated ? "重校" : "校准");
+        } else {
+            Esp32BaseWeb::sendChunk("<span class='muted'>-</span>");
         }
         Esp32BaseWeb::sendChunk("</td></tr>");
     }
@@ -1541,32 +1613,83 @@ void handleRecordCalibrationPage() {
 
     char startTime[40]{};
     formatWaterRecordTime(record, startTime, sizeof(startTime));
+    WaterRecordCalibration calibration{};
+    const bool calibrated = findRecordCalibration(record, calibration);
+    const std::uint32_t defaultActualMl = calibrated ? calibration.actualMl : record.volumeMl;
+    const std::uint32_t pulsePerLiter = pulsePerLiterFromPulsePerMl(record.pulsePerMlAtRun);
     Esp32BaseWeb::sendChunk("<table class='kv'><tr><th>开始时间</th><td>");
     Esp32BaseWeb::sendChunk(startTime);
+    Esp32BaseWeb::sendChunk("</td></tr><tr><th>校准状态</th><td>");
+    if (calibrated) {
+        sendFmt("<span class='status-pill status-ok'>已校准</span><span class='hint'>最近实测 ");
+        sendLiters(calibration.actualMl);
+        sendFmt("，第 %u 次校准</span>", static_cast<unsigned>(calibration.calibrationCount));
+    } else {
+        Esp32BaseWeb::sendChunk("<span class='status-pill status-muted'>未校准</span>");
+    }
     Esp32BaseWeb::sendChunk("</td></tr><tr><th>目标</th><td>");
     sendTargetValue(record);
     Esp32BaseWeb::sendChunk("</td></tr><tr><th>出水量</th><td>");
     sendLiters(record.volumeMl);
+    sendTargetDeltaHint(record);
     sendFmt("</td></tr><tr><th>脉冲数</th><td>%lu</td></tr>"
             "<tr><th>过滤脉冲</th><td>%lu</td></tr>"
-            "<tr><th>当时系数</th><td>%.3f</td></tr>"
+            "<tr><th>当时 P/L</th><td>%luP/L</td></tr>"
             "<tr><th>持续时间</th><td>%u s</td></tr>"
             "<tr><th>结束原因</th><td>%s</td></tr></table>",
             static_cast<unsigned long>(record.pulseCount),
             static_cast<unsigned long>(record.rejectedPulseCount),
-            static_cast<double>(record.pulsePerMlAtRun),
+            static_cast<unsigned long>(pulsePerLiter),
             static_cast<unsigned>(record.durationSec),
             resultText(record.result));
+    if (calibrated) {
+        char calibratedAt[40]{};
+        formatWaterRecordTime(WaterRecord{calibration.calibratedAt,
+                                          0,
+                                          0,
+                                          0,
+                                          0,
+                                          0,
+                                          WaterMode::Volume,
+                                          WaterResult::Completed,
+                                          0,
+                                          0,
+                                          0.0f,
+                                          {0, 0, 0, 0}},
+                              calibratedAt,
+                              sizeof(calibratedAt));
+        const std::int32_t measuredDiff =
+            static_cast<std::int32_t>(record.volumeMl) - static_cast<std::int32_t>(calibration.actualMl);
+        Esp32BaseWeb::sendChunk("<section class='panel'><h3>上次校准</h3><table class='kv'>");
+        Esp32BaseWeb::sendChunk("<tr><th>实测水量</th><td>");
+        sendLiters(calibration.actualMl);
+        Esp32BaseWeb::sendChunk("</td></tr><tr><th>实测差</th><td>");
+        sendSignedLiters(measuredDiff);
+        sendFmt("</td></tr><tr><th>校准类型</th><td>%s</td></tr>",
+                calibrationKindText(calibration.kind));
+        if (calibration.kind == WaterRecordCalibrationKind::StartupCompensation) {
+            sendFmt("<tr><th>参数变化</th><td>启动补偿 %lu ml → %lu ml</td></tr>",
+                    static_cast<unsigned long>(calibration.oldStartupCompensationMl),
+                    static_cast<unsigned long>(calibration.newStartupCompensationMl));
+        } else {
+            sendFmt("<tr><th>参数变化</th><td>%luP/L → %luP/L</td></tr>",
+                    static_cast<unsigned long>(pulsePerLiterFromPulsePerMl(calibration.oldPulsePerMl)),
+                    static_cast<unsigned long>(pulsePerLiterFromPulsePerMl(calibration.newPulsePerMl)));
+        }
+        sendFmt("<tr><th>校准时间</th><td>%s</td></tr></table></section>",
+                calibratedAt[0] ? calibratedAt : "未知");
+    }
     Esp32BaseWeb::sendChunk("<section class='panel'><h3>量杯实际水量</h3>"
                             "<form method='post' action='/api/faucet/records/calibration' onsubmit='return once(this)'>"
                             "<label class='field'><span>实际水量 (ml)</span>");
     sendFmt("<input name='actualMl' type='number' min='%lu' max='%lu' step='10' value='%lu'></label>",
             static_cast<unsigned long>(kMinVolumePresetMl),
             static_cast<unsigned long>(kMaxVolumePresetMl),
-            static_cast<unsigned long>(record.volumeMl));
+            static_cast<unsigned long>(defaultActualMl));
     Esp32BaseWeb::sendChunk("<p class='hint'>大容量记录更新稳态流量系数；小容量少计记录更新启动补偿水量。</p>"
-                            "<div class='form-actions'><input type='submit' value='保存校准'>"
-                            "<a class='btn-link' href='/faucet/records'>取消</a></div></form></section>");
+                            "<div class='form-actions'><input type='submit' value='");
+    Esp32BaseWeb::sendChunk(calibrated ? "重新保存校准" : "保存校准");
+    Esp32BaseWeb::sendChunk("'><a class='btn-link' href='/faucet/records'>取消</a></div></form></section>");
     sendPageEnd();
 }
 
@@ -1729,7 +1852,7 @@ bool sendJsonBuffer(bool ok, const char* json) {
 
 bool requireContext() {
     if (!g_context.config || !g_context.configStore || !g_context.app || !g_context.filters || !g_context.records ||
-        !g_context.nowSeconds) {
+        !g_context.recordCalibrations || !g_context.recordCalibrationWriter || !g_context.nowSeconds) {
         Esp32BaseWeb::sendJson(503, "{\"error\":\"context_not_ready\"}");
         return false;
     }
@@ -2033,11 +2156,26 @@ void handleRecordCalibrationApi() {
         return;
     }
 
+    const SystemConfig oldConfig = g_context.app->config();
     const CalibrationApplyResult result = g_context.app->applyCalibrationFromRecord(record, actualMl);
     if (result == CalibrationApplyResult::Saved) {
         *g_context.config = g_context.app->config();
         if (!g_context.configStore->saveSystemConfig(*g_context.config)) {
             Esp32BaseWeb::redirectSeeOther("/faucet/records?error=save_failed");
+            return;
+        }
+        WaterRecordCalibration calibration = makeWaterRecordCalibration(record);
+        calibration.actualMl = actualMl;
+        calibration.calibratedAt = g_context.nowSeconds ? g_context.nowSeconds() : 0;
+        calibration.oldPulsePerMl = oldConfig.pulsePerMl;
+        calibration.newPulsePerMl = g_context.config->pulsePerMl;
+        calibration.oldStartupCompensationMl = oldConfig.startupCompensationMl;
+        calibration.newStartupCompensationMl = g_context.config->startupCompensationMl;
+        calibration.kind = oldConfig.startupCompensationMl != g_context.config->startupCompensationMl
+                               ? WaterRecordCalibrationKind::StartupCompensation
+                               : WaterRecordCalibrationKind::PulsePerMl;
+        if (!g_context.recordCalibrationWriter->upsert(calibration)) {
+            Esp32BaseWeb::redirectSeeOther("/faucet/records?error=calibration_mark_failed");
             return;
         }
         Esp32BaseWeb::redirectSeeOther("/faucet/records?saved=1");

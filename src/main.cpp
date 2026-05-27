@@ -12,6 +12,7 @@
 #include "app/FilterStore.h"
 #include "app/StatisticsStore.h"
 #include "app/TimeUtils.h"
+#include "app/WaterRecordCalibrationStore.h"
 #include "app/WaterRecordFileStore.h"
 #include "app/WaterRecordStore.h"
 #include "drivers/BoardPins.h"
@@ -32,8 +33,11 @@ constexpr const char* kFirmwareVersion = "0.1.0-dev";
 constexpr const char* kDefaultWebUser = "admin";
 constexpr const char* kDefaultWebPassword = "admin";
 constexpr std::size_t kRamRecordCapacity = 128;
+constexpr std::size_t kRamRecordCalibrationCapacity = 32;
 constexpr std::size_t kWaterRecordCapacity = 20000;
+constexpr std::size_t kWaterRecordCalibrationCapacity = 512;
 constexpr const char* kWaterRecordPath = "/faucet_records_v1.bin";
+constexpr const char* kWaterRecordCalibrationPath = "/faucet_record_cal_v1.bin";
 
 class PersistentRecordWriter : public faucet::WaterRecordWriter, public faucet::WaterRecordReader {
 public:
@@ -85,6 +89,48 @@ private:
     faucet::WaterRecordStore ramStore_;
 };
 
+class PersistentRecordCalibrationStore : public faucet::WaterRecordCalibrationReader,
+                                         public faucet::WaterRecordCalibrationWriter {
+public:
+    PersistentRecordCalibrationStore()
+        : fileStore_(nullptr), ramStore_(calibrations_, kRamRecordCalibrationCapacity) {}
+
+    void setFileStore(faucet::WaterRecordCalibrationFileStore* store) {
+        fileStore_ = store;
+    }
+
+    bool upsert(const faucet::WaterRecordCalibration& calibration) override {
+        if (fileStore_ && fileStore_->ready() && fileStore_->upsert(calibration)) {
+            return true;
+        }
+        return ramStore_.upsert(calibration);
+    }
+
+    bool find(const faucet::WaterRecord& record, faucet::WaterRecordCalibration& output) const override {
+        if (fileStore_ && fileStore_->ready()) {
+            return fileStore_->find(record, output);
+        }
+        return ramStore_.find(record, output);
+    }
+
+    std::size_t count() const override {
+        return fileStore_ && fileStore_->ready() ? fileStore_->count() : ramStore_.count();
+    }
+
+    bool ready() const override {
+        return (fileStore_ && fileStore_->ready()) || ramStore_.ready();
+    }
+
+    const char* storageName() const override {
+        return fileStore_ && fileStore_->ready() ? fileStore_->storageName() : ramStore_.storageName();
+    }
+
+private:
+    faucet::WaterRecordCalibrationFileStore* fileStore_;
+    faucet::WaterRecordCalibration calibrations_[kRamRecordCalibrationCapacity]{};
+    faucet::WaterRecordCalibrationStore ramStore_;
+};
+
 faucet::Esp32BaseConfigBackend g_configBackend;
 faucet::ConfigStore g_configStore(g_configBackend);
 faucet::SystemConfig g_config{};
@@ -92,7 +138,12 @@ faucet::StatisticsStore g_statistics;
 faucet::FilterStore* g_filters = nullptr;
 faucet::Esp32BaseWaterRecordBackend g_waterRecordBackend;
 faucet::WaterRecordFileStore g_waterRecordFile(g_waterRecordBackend, kWaterRecordPath, kWaterRecordCapacity);
+faucet::WaterRecordCalibrationFileStore g_recordCalibrationFile(
+    g_waterRecordBackend,
+    kWaterRecordCalibrationPath,
+    kWaterRecordCalibrationCapacity);
 PersistentRecordWriter g_records;
+PersistentRecordCalibrationStore g_recordCalibrations;
 faucet::AppController* g_app = nullptr;
 faucet::GpioButtonReader g_buttons(faucet::kPinButtonCancel,
                                    faucet::kPinButtonOk,
@@ -328,6 +379,7 @@ void initializeApplication() {
     g_config = g_configStore.loadSystemConfig();
     logSystemConfigStatus();
     g_records.setFileStore(g_waterRecordFile.begin() ? &g_waterRecordFile : nullptr);
+    g_recordCalibrations.setFileStore(g_recordCalibrationFile.begin() ? &g_recordCalibrationFile : nullptr);
     checkFileSystemCapacity();
     const std::uint32_t nowSeconds = currentSeconds();
     faucet::PeriodKeys periodKeys{};
@@ -354,6 +406,8 @@ void initializeApplication() {
                                  g_app,
                                  g_filters,
                                  &g_records,
+                                 &g_recordCalibrations,
+                                 &g_recordCalibrations,
                                  currentSeconds,
                                  currentBootId,
                                  applyRuntimeSettings,

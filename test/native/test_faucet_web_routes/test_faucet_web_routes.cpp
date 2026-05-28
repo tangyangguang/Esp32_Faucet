@@ -272,6 +272,8 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "pulse-line-paused"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "legend-paused"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "cum-line"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "cum-line-paused"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "legend-cum-paused"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "脉冲趋势"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "trace-frequency"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "trace-frequency-label'>聚合频率"));
@@ -291,7 +293,8 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NULL(std::strstr(buffer, "<details open class='panel detail-data'>"));
     TEST_ASSERT_NULL(std::strstr(buffer, "<summary>查看明细数据</summary>"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "<table><tr><th>时间</th><th>脉冲数</th><th>累计脉冲数</th><th>状态</th></tr>"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "<tr><td>%lu</td><td>%lu</td><td>%lu</td><td>%s</td></tr>"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "<tr><td>%lu秒</td><td>%lu</td><td>%lu</td><td>%s</td></tr>"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "<tr><td>%lu</td><td>%lu</td><td>%lu</td><td>%s</td></tr>"));
     TEST_ASSERT_NULL(std::strstr(buffer, "<tr><td>%lu-%lus</td><td>%luP</td><td>%luP</td><td>%s</td></tr>"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "inline-note"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "measured-note"));

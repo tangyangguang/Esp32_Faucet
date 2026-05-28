@@ -38,12 +38,15 @@ constexpr std::size_t kRamRecordCalibrationCapacity = 32;
 constexpr std::size_t kWaterRecordCapacity = 20000;
 constexpr std::size_t kWaterRecordCalibrationCapacity = 512;
 constexpr std::size_t kPulseTraceCapacity = 64;
+constexpr std::size_t kSavedPulseTraceMaxCount = 32;
 constexpr std::size_t kSavedPulseTraceSamplesPerTrace = 1024;
 constexpr std::size_t kPulseTraceMaxSamples =
     (static_cast<std::size_t>(faucet::kMaxPulseTraceMemoryKb) * 1024U) / sizeof(faucet::WaterPulseTraceSample);
 constexpr const char* kWaterRecordPath = "/faucet_records_v1.bin";
 constexpr const char* kWaterRecordCalibrationPath = "/faucet_record_cal_v1.bin";
-constexpr const char* kSavedPulseTracePathPrefix = "/fpt_";
+constexpr const char* kSavedPulseTracePath = "/faucet_pulse_traces_v2.bin";
+constexpr const char* kLegacySavedPulseTracePathPrefix = "/fpt_";
+constexpr const char* kLegacySavedPulseTraceBlobPath = "/faucet_saved_traces_v1.bin";
 
 class PersistentRecordWriter : public faucet::WaterRecordWriter, public faucet::WaterRecordReader {
 public:
@@ -150,8 +153,11 @@ faucet::WaterRecordCalibrationFileStore g_recordCalibrationFile(
     kWaterRecordCalibrationCapacity);
 faucet::WaterPulseTraceFileStore g_savedPulseTraceFile(
     g_waterRecordBackend,
-    kSavedPulseTracePathPrefix,
-    kSavedPulseTraceSamplesPerTrace);
+    kSavedPulseTracePath,
+    kSavedPulseTraceSamplesPerTrace,
+    kSavedPulseTraceMaxCount,
+    kLegacySavedPulseTracePathPrefix,
+    kLegacySavedPulseTraceBlobPath);
 PersistentRecordWriter g_records;
 PersistentRecordCalibrationStore g_recordCalibrations;
 faucet::WaterPulseTrace* g_pulseTraceRecords = nullptr;
@@ -200,6 +206,17 @@ void applyFileLogPolicy() {
         ESP32BASE_LOG_W("app", "file log INFO policy apply failed");
     }
 #endif
+}
+
+void feedStartupWatchdog() {
+#if ESP32BASE_ENABLE_WATCHDOG
+    Esp32BaseWatchdog::feed();
+#endif
+}
+
+void logStartupPhase(const char* phase) {
+    ESP32BASE_LOG_D("app", "startup_phase=%s", phase ? phase : "-");
+    feedStartupWatchdog();
 }
 
 void initializeI2cBus() {
@@ -387,12 +404,17 @@ bool currentPeriodKeys(std::uint32_t nowSeconds, faucet::PeriodKeys& keys) {
 void handleTimeSynced(const Esp32BaseNtp::TimeSnapshot& time);
 
 void initializeApplication() {
+    logStartupPhase("app_init_start");
     initializeI2cBus();
+    logStartupPhase("i2c_ready");
     g_rtc.begin();
+    logStartupPhase("rtc_ready");
     g_config = g_configStore.loadSystemConfig();
     logSystemConfigStatus();
+    logStartupPhase("config_ready");
     g_records.setFileStore(g_waterRecordFile.begin() ? &g_waterRecordFile : nullptr);
     g_recordCalibrations.setFileStore(g_recordCalibrationFile.begin() ? &g_recordCalibrationFile : nullptr);
+    logStartupPhase("record_store_ready");
     g_pulseTraceRecords = new (std::nothrow) faucet::WaterPulseTrace[kPulseTraceCapacity]{};
     g_pulseTraceSamples = new (std::nothrow) faucet::WaterPulseTraceSample[kPulseTraceMaxSamples]{};
     if (g_pulseTraceRecords && g_pulseTraceSamples) {
@@ -406,12 +428,14 @@ void initializeApplication() {
     if (!g_pulseTraces) {
         ESP32BASE_LOG_W("app", "pulse trace store allocation failed, trace diagnostics disabled");
     }
+    logStartupPhase("trace_store_ready");
     checkFileSystemCapacity();
     const std::uint32_t nowSeconds = currentSeconds();
     faucet::PeriodKeys periodKeys{};
     currentPeriodKeys(nowSeconds, periodKeys);
     g_statistics = faucet::StatisticsStore(g_configStore.loadStatistics(periodKeys));
     g_configStore.loadFilterRuntime(g_config.filters);
+    logStartupPhase("runtime_state_ready");
     g_filters = new (std::nothrow) faucet::FilterStore(g_config.filters);
     if (!g_filters) {
         ESP32BASE_LOG_E("app", "filter store allocation failed");
@@ -448,6 +472,7 @@ void initializeApplication() {
 #if ESP32BASE_ENABLE_NTP
     Esp32BaseNtp::onTimeSynced(handleTimeSynced);
 #endif
+    logStartupPhase("context_ready");
 
     g_buttons.begin();
     g_flowPulses.begin();
@@ -455,12 +480,14 @@ void initializeApplication() {
     g_beep.setEnabled(g_config.beepEnabled);
     g_beepHardware.begin();
     g_lcd.begin(g_config.lcdI2cAddress);
+    logStartupPhase("hardware_ready");
 
     g_app->resetInputs(g_buttons.read(), millis());
     if (g_display) {
         g_display->wake(millis());
         g_lastDisplayFrame = g_display->render(g_app->snapshot(), millis());
     }
+    logStartupPhase("display_ready");
 
     ESP32BASE_LOG_I("app",
                     "application initialized rtc=%s lcd=%s records=%s",

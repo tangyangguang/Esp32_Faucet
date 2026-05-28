@@ -16,15 +16,18 @@ namespace {
 class MemoryFileBackend : public WaterRecordFileBackend {
 public:
     bool exists(const char* path) override {
+        ++existsCalls;
         return files.find(path ? path : "") != files.end();
     }
 
     std::int64_t fileSize(const char* path) override {
+        ++fileSizeCalls;
         const auto it = files.find(path ? path : "");
         return it == files.end() ? -1 : static_cast<std::int64_t>(it->second.size());
     }
 
     bool createSized(const char* path, std::size_t size) override {
+        ++createSizedCalls;
         if (!path) {
             return false;
         }
@@ -33,6 +36,7 @@ public:
     }
 
     bool appendBytes(const char* path, const std::uint8_t* data, std::size_t len) override {
+        ++appendCalls;
         if (!path || (!data && len > 0)) {
             return false;
         }
@@ -46,6 +50,7 @@ public:
     }
 
     bool readAt(const char* path, std::size_t offset, std::uint8_t* out, std::size_t len) override {
+        ++readCalls;
         if (!path || !out) {
             return false;
         }
@@ -58,6 +63,7 @@ public:
     }
 
     bool writeAt(const char* path, std::size_t offset, const std::uint8_t* data, std::size_t len) override {
+        ++writeCalls;
         if (!path || (!data && len > 0)) {
             return false;
         }
@@ -72,6 +78,7 @@ public:
     }
 
     bool removeFile(const char* path) override {
+        ++removeCalls;
         files.erase(path ? path : "");
         return true;
     }
@@ -79,6 +86,27 @@ public:
     std::size_t fileCount() const {
         return files.size();
     }
+
+    bool contains(const char* path) const {
+        return files.find(path ? path : "") != files.end();
+    }
+
+    std::size_t sizeOf(const char* path) const {
+        const auto it = files.find(path ? path : "");
+        return it == files.end() ? 0 : it->second.size();
+    }
+
+    void putFile(const char* path, const std::vector<std::uint8_t>& data) {
+        files[path ? path : ""] = data;
+    }
+
+    std::size_t createSizedCalls = 0;
+    std::size_t appendCalls = 0;
+    std::size_t readCalls = 0;
+    std::size_t writeCalls = 0;
+    std::size_t removeCalls = 0;
+    std::size_t existsCalls = 0;
+    std::size_t fileSizeCalls = 0;
 
 private:
     std::map<std::string, std::vector<std::uint8_t>> files;
@@ -236,7 +264,7 @@ void test_saved_trace_file_store_persists_and_deletes_selected_trace() {
     TEST_ASSERT_NOT_NULL(trace);
 
     MemoryFileBackend backend;
-    WaterPulseTraceFileStore saved(backend, "/fpt_", 8);
+    WaterPulseTraceFileStore saved(backend, "/faucet_pulse_traces_v2.bin", 8, 4);
     TEST_ASSERT_EQUAL_size_t(0, backend.fileCount());
     TEST_ASSERT_TRUE(saved.begin());
     TEST_ASSERT_EQUAL_size_t(0, backend.fileCount());
@@ -249,6 +277,13 @@ void test_saved_trace_file_store_persists_and_deletes_selected_trace() {
     TEST_ASSERT_NOT_EQUAL_UINT32(0, savedId);
     TEST_ASSERT_NOT_EQUAL_UINT32(id, savedId);
     TEST_ASSERT_EQUAL_size_t(1, backend.fileCount());
+    TEST_ASSERT_TRUE(backend.contains("/faucet_pulse_traces_v2.bin"));
+
+    WaterPulseTraceFileStats stats = saved.stats();
+    TEST_ASSERT_EQUAL_size_t(1, stats.savedCount);
+    TEST_ASSERT_EQUAL_size_t(4, stats.maxCount);
+    TEST_ASSERT_GREATER_THAN_UINT32(0, stats.usedBytes);
+    TEST_ASSERT_GREATER_OR_EQUAL_UINT32(stats.usedBytes, stats.maxBytes);
 
     WaterPulseTrace loaded{};
     TEST_ASSERT_TRUE(saved.findById(savedId, loaded));
@@ -262,10 +297,55 @@ void test_saved_trace_file_store_persists_and_deletes_selected_trace() {
 
     TEST_ASSERT_TRUE(saved.remove(savedId));
     TEST_ASSERT_FALSE(saved.findById(savedId, loaded));
-    TEST_ASSERT_EQUAL_size_t(0, backend.fileCount());
+    stats = saved.stats();
+    TEST_ASSERT_EQUAL_size_t(0, stats.savedCount);
+    TEST_ASSERT_EQUAL_size_t(1, backend.fileCount());
 }
 
-void test_saved_trace_file_store_uses_unique_id_after_restart_conflict() {
+void test_saved_trace_file_store_begin_does_not_touch_flash() {
+    MemoryFileBackend backend;
+    WaterPulseTraceFileStore saved(backend, "/faucet_pulse_traces_v2.bin", 8, 4);
+
+    TEST_ASSERT_TRUE(saved.begin());
+
+    TEST_ASSERT_EQUAL_size_t(0, backend.fileCount());
+    TEST_ASSERT_EQUAL_size_t(0, backend.createSizedCalls);
+    TEST_ASSERT_EQUAL_size_t(0, backend.appendCalls);
+    TEST_ASSERT_EQUAL_size_t(0, backend.writeCalls);
+    TEST_ASSERT_EQUAL_size_t(0, backend.readCalls);
+    TEST_ASSERT_EQUAL_size_t(0, backend.removeCalls);
+    TEST_ASSERT_EQUAL_size_t(0, backend.existsCalls);
+}
+
+void test_saved_trace_file_store_duplicate_save_reuses_existing_slot() {
+    WaterPulseTrace traces[2]{};
+    WaterPulseTraceSample samples[16]{};
+    WaterPulseTraceStore ram(traces, 2, samples, 16, 1024);
+    const std::uint32_t id = ram.beginTrace(1000);
+    fillTrace(ram, id, {2, 3, 4});
+    TEST_ASSERT_TRUE(ram.finishTrace(id, makeRecord(1000, 9, 1000), WaterPulseTraceState::Completed));
+    const WaterPulseTrace* trace = ram.findById(id);
+    TEST_ASSERT_NOT_NULL(trace);
+
+    WaterPulseTraceSample copy[8]{};
+    for (std::size_t i = 0; i < trace->sampleCount; ++i) {
+        copy[i] = *ram.sampleAt(*trace, i);
+    }
+
+    MemoryFileBackend backend;
+    WaterPulseTraceFileStore saved(backend, "/faucet_pulse_traces_v2.bin", 8, 2);
+    TEST_ASSERT_TRUE(saved.begin());
+    std::uint32_t firstSavedId = 0;
+    std::uint32_t secondSavedId = 0;
+    TEST_ASSERT_TRUE(saved.save(*trace, copy, trace->sampleCount, &firstSavedId));
+    TEST_ASSERT_TRUE(saved.save(*trace, copy, trace->sampleCount, &secondSavedId));
+
+    TEST_ASSERT_EQUAL_UINT32(firstSavedId, secondSavedId);
+    TEST_ASSERT_EQUAL_size_t(1, backend.fileCount());
+    TEST_ASSERT_EQUAL_size_t(1, saved.stats().savedCount);
+}
+
+void test_saved_trace_file_store_refuses_new_trace_when_capacity_full() {
     WaterPulseTrace traces[2]{};
     WaterPulseTraceSample samples[16]{};
     WaterPulseTraceStore ram(traces, 2, samples, 16, 1024);
@@ -280,7 +360,7 @@ void test_saved_trace_file_store_uses_unique_id_after_restart_conflict() {
     }
 
     MemoryFileBackend backend;
-    WaterPulseTraceFileStore saved(backend, "/fpt_", 8);
+    WaterPulseTraceFileStore saved(backend, "/faucet_pulse_traces_v2.bin", 8, 1);
     TEST_ASSERT_TRUE(saved.begin());
     std::uint32_t firstSavedId = 0;
     TEST_ASSERT_TRUE(saved.save(*firstTrace, firstSamples, firstTrace->sampleCount, &firstSavedId));
@@ -294,17 +374,49 @@ void test_saved_trace_file_store_uses_unique_id_after_restart_conflict() {
         WaterPulseTraceSample{2, WaterPulseTraceState::Completed, 0},
     };
     std::uint32_t secondSavedId = 0;
-    TEST_ASSERT_TRUE(saved.save(second, secondSamples, 2, &secondSavedId));
-    TEST_ASSERT_NOT_EQUAL_UINT32(0, secondSavedId);
-    TEST_ASSERT_NOT_EQUAL_UINT32(firstSavedId, secondSavedId);
-    TEST_ASSERT_EQUAL_size_t(2, backend.fileCount());
+    WaterPulseTraceSaveStatus status = WaterPulseTraceSaveStatus::Ok;
+    TEST_ASSERT_FALSE(saved.save(second, secondSamples, 2, &secondSavedId, &status));
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(WaterPulseTraceSaveStatus::LimitReached),
+                            static_cast<unsigned>(status));
+    TEST_ASSERT_EQUAL_UINT32(0, secondSavedId);
+    TEST_ASSERT_EQUAL_size_t(1, backend.fileCount());
+    TEST_ASSERT_EQUAL_size_t(1, saved.stats().savedCount);
 
     WaterPulseTrace firstLoaded{};
-    WaterPulseTrace secondLoaded{};
     TEST_ASSERT_TRUE(saved.findById(firstSavedId, firstLoaded));
-    TEST_ASSERT_TRUE(saved.findById(secondSavedId, secondLoaded));
     TEST_ASSERT_EQUAL_UINT32(2, firstLoaded.totalPulses);
-    TEST_ASSERT_EQUAL_UINT32(3, secondLoaded.totalPulses);
+}
+
+void test_saved_trace_file_store_corrupt_file_degrades_without_crashing() {
+    MemoryFileBackend backend;
+    backend.putFile("/faucet_pulse_traces_v2.bin", std::vector<std::uint8_t>{1, 2, 3, 4, 5});
+    WaterPulseTraceFileStore saved(backend, "/faucet_pulse_traces_v2.bin", 8, 2);
+
+    TEST_ASSERT_TRUE(saved.begin());
+
+    WaterPulseTrace loaded{};
+    TEST_ASSERT_FALSE(saved.findById(1, loaded));
+    WaterPulseTraceFileStats stats = saved.stats();
+    TEST_ASSERT_TRUE(stats.corrupt);
+    TEST_ASSERT_EQUAL_size_t(0, stats.savedCount);
+}
+
+void test_saved_trace_file_store_legacy_blob_is_only_removed_explicitly() {
+    MemoryFileBackend backend;
+    backend.putFile("/faucet_saved_traces_v1.bin", std::vector<std::uint8_t>{1, 2, 3});
+    WaterPulseTraceFileStore saved(
+        backend,
+        "/faucet_pulse_traces_v2.bin",
+        8,
+        2,
+        "/fpt_",
+        "/faucet_saved_traces_v1.bin");
+
+    TEST_ASSERT_TRUE(saved.begin());
+    TEST_ASSERT_TRUE(backend.contains("/faucet_saved_traces_v1.bin"));
+    TEST_ASSERT_TRUE(saved.legacyBlobExists());
+    TEST_ASSERT_TRUE(saved.removeLegacyBlob());
+    TEST_ASSERT_FALSE(backend.contains("/faucet_saved_traces_v1.bin"));
 }
 
 int main(int argc, char** argv) {
@@ -317,6 +429,10 @@ int main(int argc, char** argv) {
     RUN_TEST(test_trace_bucket_aggregation_sums_pulses_by_selected_seconds);
     RUN_TEST(test_segmented_calibration_uses_two_valid_samples);
     RUN_TEST(test_saved_trace_file_store_persists_and_deletes_selected_trace);
-    RUN_TEST(test_saved_trace_file_store_uses_unique_id_after_restart_conflict);
+    RUN_TEST(test_saved_trace_file_store_begin_does_not_touch_flash);
+    RUN_TEST(test_saved_trace_file_store_duplicate_save_reuses_existing_slot);
+    RUN_TEST(test_saved_trace_file_store_refuses_new_trace_when_capacity_full);
+    RUN_TEST(test_saved_trace_file_store_corrupt_file_degrades_without_crashing);
+    RUN_TEST(test_saved_trace_file_store_legacy_blob_is_only_removed_explicitly);
     return UNITY_END();
 }

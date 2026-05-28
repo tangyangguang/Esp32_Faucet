@@ -109,17 +109,16 @@ void onAppConfigSave(const Esp32BaseAppConfig::SaveSummary& summary) {
         return;
     }
 
-    const std::int32_t version = Esp32BaseConfig::getInt(kConfigNs, kVersionKey, 0);
-    if (version != kConfigVersion) {
-        Esp32BaseConfig::setInt(kConfigNs, kVersionKey, kConfigVersion);
-    }
-
     if (summary.restartRequired) {
         ESP32BASE_LOG_I("appcfg", "runtime apply skipped because restart-required field changed");
         return;
     }
 
     SystemConfig loaded = g_context.configStore->loadSystemConfig();
+    if (g_context.configStore->lastSystemConfigLoadStatus() == ConfigStore::LoadStatus::DefaultsNoVersion) {
+        Esp32BaseConfig::setInt(kConfigNs, kVersionKey, kConfigVersion);
+        loaded = g_context.configStore->loadSystemConfig();
+    }
     if (!g_context.app->applyConfig(loaded)) {
         ESP32BASE_LOG_W("appcfg", "runtime apply failed after app config save");
         return;
@@ -153,13 +152,13 @@ bool addCoreFields(const SystemConfig& defaults) {
 
     ok = Esp32BaseAppConfig::addInt({kGroupLocal, kConfigNs, kKeyDisplaySleep, "LCD 熄屏时间", static_cast<std::int32_t>(defaults.displaySleepSec), 5, 300, 5, "s", "待机无操作超过该时间关闭背光。立即生效。", false, nullptr}) && ok;
     ok = Esp32BaseAppConfig::addInt({kGroupLocal, kConfigNs, kKeyResultDisplay, "结果页显示时间", static_cast<std::int32_t>(defaults.resultDisplaySec), 0, 60, 1, "s", "出水结束后结果页停留时间，0 表示立即返回。", false, nullptr}) && ok;
-    ok = Esp32BaseAppConfig::addInt({kGroupLocal, kConfigNs, kKeyVolumeStep, "本地确认页容量调整步进", static_cast<std::int32_t>(defaults.volumeAdjustStepMl), static_cast<std::int32_t>(kMinVolumeAdjustStepMl), static_cast<std::int32_t>(kMaxVolumeAdjustStepMl), 10, "ml", "只影响设备按键 PLUS/MINUS 在确认页调整容量目标；不影响 Web 表单输入。", false, nullptr}) && ok;
-    ok = Esp32BaseAppConfig::addInt({kGroupLocal, kConfigNs, kKeyTimeStep, "本地确认页时间调整步进", static_cast<std::int32_t>(defaults.timeAdjustStepSec), static_cast<std::int32_t>(kMinTimeAdjustStepSec), static_cast<std::int32_t>(kMaxTimeAdjustStepSec), 1, "s", "只影响设备按键 PLUS/MINUS 在确认页调整时间目标；不影响 Web 表单输入。", false, nullptr}) && ok;
+    ok = Esp32BaseAppConfig::addInt({kGroupLocal, kConfigNs, kKeyVolumeStep, "容量步进", static_cast<std::int32_t>(defaults.volumeAdjustStepMl), static_cast<std::int32_t>(kMinVolumeAdjustStepMl), static_cast<std::int32_t>(kMaxVolumeAdjustStepMl), 10, "ml", "按键确认页容量步进；Web 表单不受影响。", false, nullptr}) && ok;
+    ok = Esp32BaseAppConfig::addInt({kGroupLocal, kConfigNs, kKeyTimeStep, "时间步进", static_cast<std::int32_t>(defaults.timeAdjustStepSec), static_cast<std::int32_t>(kMinTimeAdjustStepSec), static_cast<std::int32_t>(kMaxTimeAdjustStepSec), 1, "s", "按键确认页时间步进；Web 表单不受影响。", false, nullptr}) && ok;
     ok = Esp32BaseAppConfig::addInt({kGroupLocal, kConfigNs, kKeyLcdAddress, "LCD I2C 地址", defaults.lcdI2cAddress, 0x03, 0x77, 1, nullptr, "保存后需重启，重启后重新探测 LCD。", true, nullptr}) && ok;
     ok = Esp32BaseAppConfig::addBool({kGroupLocal, kConfigNs, kKeyBeep, "蜂鸣器提示音", defaults.beepEnabled, "控制按键、完成和异常提示音。立即生效。", false, nullptr}) && ok;
 
-    ok = Esp32BaseAppConfig::addDecimal({kGroupMetering, kConfigNs, kKeyPulseMilli, "当前控制用 P/L", static_cast<std::int32_t>(defaults.pulsePerMl * 1000.0f), static_cast<std::int32_t>(kMinPulsePerMl * 1000.0f), static_cast<std::int32_t>(kMaxPulsePerMl * 1000.0f), 1, 0, "脉冲/L", "当前实际参与关阀控制的单系数；通常由记录实测更新，必要时可手动修正。", false, nullptr}) && ok;
-    ok = Esp32BaseAppConfig::addInt({kGroupMetering, kConfigNs, kKeyPulseTraceMemory, "脉冲明细缓存上限", static_cast<std::int32_t>(defaults.pulseTraceMemoryKb), static_cast<std::int32_t>(kMinPulseTraceMemoryKb), static_cast<std::int32_t>(kMaxPulseTraceMemoryKb), 1, "KB", "按秒保存最近出水脉冲明细，只存 RAM；可在 10-50KB 之间设置，超限删除最旧明细。", false, nullptr}) && ok;
+    ok = Esp32BaseAppConfig::addDecimal({kGroupMetering, kConfigNs, kKeyPulseMilli, "当前控制用 P/L", static_cast<std::int32_t>(defaults.pulsePerMl * 1000.0f), static_cast<std::int32_t>(kMinPulsePerMl * 1000.0f), static_cast<std::int32_t>(kMaxPulsePerMl * 1000.0f), 1, 0, "脉冲/L", "关阀控制系数；可由记录实测更新，也可手动修正。", false, nullptr}) && ok;
+    ok = Esp32BaseAppConfig::addInt({kGroupMetering, kConfigNs, kKeyPulseTraceMemory, "脉冲明细缓存", static_cast<std::int32_t>(defaults.pulseTraceMemoryKb), static_cast<std::int32_t>(kMinPulseTraceMemoryKb), static_cast<std::int32_t>(kMaxPulseTraceMemoryKb), 1, "KB", "RAM 中保留最近脉冲明细；超限删除最旧明细。", false, nullptr}) && ok;
 
     return ok;
 }

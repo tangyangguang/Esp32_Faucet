@@ -9,8 +9,9 @@ using namespace faucet;
 
 void test_routes_fit_esp32base_default_route_capacity() {
     TEST_ASSERT_TRUE(faucetWebRoutesFitEsp32Base());
-    TEST_ASSERT_LESS_OR_EQUAL_size_t(kFaucetWebMaxRoutes, faucetWebRouteCount());
-    TEST_ASSERT_EQUAL_size_t(17, faucetWebRouteCount());
+    TEST_ASSERT_TRUE(faucetWebRoutesFitEsp32Base(16));
+    TEST_ASSERT_LESS_OR_EQUAL_size_t(16, faucetWebRouteCount());
+    TEST_ASSERT_EQUAL_size_t(15, faucetWebRouteCount());
 }
 
 void test_routes_do_not_register_remote_water_control_paths() {
@@ -53,6 +54,7 @@ void test_dual_method_routes_are_merged_to_any() {
     const FaucetWebRoute* routes = faucetWebRoutes();
     bool foundPresets = false;
     bool foundFilters = false;
+    bool foundRecords = false;
     for (std::size_t i = 0; i < faucetWebRouteCount(); ++i) {
         if (std::strcmp(routes[i].path, "/api/faucet/presets") == 0) {
             foundPresets = routes[i].method == FaucetWebMethod::Any;
@@ -60,14 +62,18 @@ void test_dual_method_routes_are_merged_to_any() {
         if (std::strcmp(routes[i].path, "/api/faucet/filters") == 0) {
             foundFilters = routes[i].method == FaucetWebMethod::Any;
         }
+        if (std::strcmp(routes[i].path, "/api/faucet/records") == 0) {
+            foundRecords = routes[i].method == FaucetWebMethod::Any;
+        }
     }
 
     TEST_ASSERT_TRUE(foundPresets);
     TEST_ASSERT_TRUE(foundFilters);
+    TEST_ASSERT_TRUE(foundRecords);
     TEST_ASSERT_FALSE(faucetWebRouteAllowed("/api/faucet/config"));
-    TEST_ASSERT_TRUE(faucetWebRouteAllowed("/api/faucet/records/calibration"));
+    TEST_ASSERT_FALSE(faucetWebRouteAllowed("/api/faucet/records/calibration"));
     TEST_ASSERT_TRUE(faucetWebRouteAllowed("/faucet/records/calibration"));
-    TEST_ASSERT_TRUE(faucetWebRouteAllowed("/api/faucet/records/trace-calibration"));
+    TEST_ASSERT_FALSE(faucetWebRouteAllowed("/api/faucet/records/trace-calibration"));
     TEST_ASSERT_FALSE(faucetWebRouteAllowed("/api/faucet/records/trace-save"));
     TEST_ASSERT_FALSE(faucetWebRouteAllowed("/api/faucet/records/trace-delete"));
     TEST_ASSERT_TRUE(faucetWebRouteAllowed("/faucet/records/detail"));
@@ -135,8 +141,8 @@ void test_records_page_and_calibration_api_are_available() {
             foundCalibrationPage = routes[i].method == FaucetWebMethod::Get && routes[i].kind == FaucetWebRouteKind::Api &&
                                    routes[i].title == nullptr;
         }
-        if (std::strcmp(routes[i].path, "/api/faucet/records/calibration") == 0) {
-            foundApi = routes[i].method == FaucetWebMethod::Post && routes[i].kind == FaucetWebRouteKind::Api &&
+        if (std::strcmp(routes[i].path, "/api/faucet/records") == 0) {
+            foundApi = routes[i].method == FaucetWebMethod::Any && routes[i].kind == FaucetWebRouteKind::Api &&
                        routes[i].title == nullptr;
         }
     }
@@ -178,7 +184,10 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "filters-table"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "action='/api/faucet/filters'"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "action='/api/faucet/filters/reset'"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "action='/api/faucet/records/calibration'"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "input.secondary:hover,input.secondary:focus-visible"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "input.secondary:hover,input.secondary:focus-visible{background:#10574e;border-color:#10574e;color:#fff}"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "action='/api/faucet/records'"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "name='action' value='calibrate'"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "href='/faucet/records/calibration'"));
     TEST_ASSERT_NULL(std::strstr(buffer, "/api/faucet/calibration"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "实测出水量"));
@@ -194,6 +203,13 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "明细条数"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "数据点数"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "上限能力"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "永久保存"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "保存空间"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "永久保存上限"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "已保存脉冲明细已达上限"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "永久保存明细文件异常"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "name='action' value='delete_legacy'"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "清理旧版明细文件"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "%s / %s · %u%%"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "约 %lu 点 / 最多 %lu 条"));
     TEST_ASSERT_NULL(std::strstr(buffer, "sendMetricCard(\"内存占用\", used)"));
@@ -214,7 +230,7 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "measured-note"));
     TEST_ASSERT_NULL(std::strstr(buffer, "record-more"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "pulse-cell"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "action='/api/faucet/records/trace-calibration'"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "action='/api/faucet/records/trace-calibration'"));
     TEST_ASSERT_NULL(std::strstr(buffer, "action='/api/faucet/records/trace-save'"));
     TEST_ASSERT_NULL(std::strstr(buffer, "action='/api/faucet/records/trace-delete'"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "name='action' value='save'"));
@@ -494,6 +510,13 @@ void test_main_source_renders_live_display_frame_for_web() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "faucet::FaucetDisplayStatus currentDisplayStatus()"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "faucet::DisplayPresenter awakePresenter(0)"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "Esp32BaseWeb::setDeviceName(\"首页\")"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "kSavedPulseTraceMaxCount = 32"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "\"/faucet_pulse_traces_v2.bin\""));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "\"/faucet_saved_traces_v1.bin\""));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "\"/fpt_\""));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "feedStartupWatchdog()"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "startup_phase=%s"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "logStartupPhase(\"hardware_ready\")"));
     TEST_ASSERT_NULL(std::strstr(buffer, "Esp32BaseWeb::setDeviceName(\"智能出水\")"));
     TEST_ASSERT_NULL(std::strstr(buffer, "return g_lastDisplayFrame;"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "return fileStore_->upsert(calibration);"));
@@ -514,11 +537,13 @@ void test_app_config_source_uses_clear_business_labels_and_help() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "无流量判定超时"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "当前控制用 P/L"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "脉冲/L"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "当前实际参与关阀控制的单系数"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "本地确认页容量调整步进"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "本地确认页时间调整步进"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "只影响设备按键 PLUS/MINUS"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "脉冲明细缓存上限"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "当前实际参与关阀控制的单系数"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "本地确认页容量调整步进"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "本地确认页时间调整步进"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "按秒保存最近出水脉冲明细"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "容量步进"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "时间步进"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "脉冲明细缓存"));
     TEST_ASSERT_NULL(std::strstr(buffer, "启动补偿水量"));
     TEST_ASSERT_NULL(std::strstr(buffer, "全程平均脉冲数"));
     TEST_ASSERT_NULL(std::strstr(buffer, "启动段时长"));
@@ -530,6 +555,23 @@ void test_app_config_source_uses_clear_business_labels_and_help() {
     TEST_ASSERT_NULL(std::strstr(buffer, "高级救援参数"));
     TEST_ASSERT_NULL(std::strstr(buffer, "pulse/ml"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "保存后需重启，重启后重新探测 LCD。"));
+}
+
+void test_app_config_save_migrates_before_marking_current_version() {
+    FILE* file = std::fopen("src/app/FaucetAppConfig.cpp", "rb");
+    TEST_ASSERT_NOT_NULL(file);
+    static char buffer[24000]{};
+    const std::size_t read = std::fread(buffer, 1, sizeof(buffer) - 1, file);
+    std::fclose(file);
+    TEST_ASSERT_GREATER_THAN_size_t(0, read);
+
+    const char* saveHandler = std::strstr(buffer, "void onAppConfigSave");
+    TEST_ASSERT_NOT_NULL(saveHandler);
+    const char* loadConfig = std::strstr(saveHandler, "g_context.configStore->loadSystemConfig()");
+    const char* markVersion = std::strstr(saveHandler, "Esp32BaseConfig::setInt(kConfigNs, kVersionKey, kConfigVersion)");
+    TEST_ASSERT_NOT_NULL(loadConfig);
+    TEST_ASSERT_NOT_NULL(markVersion);
+    TEST_ASSERT_TRUE_MESSAGE(loadConfig < markVersion, "AppConfig save must let ConfigStore migrate legacy fields first");
 }
 
 int main(int argc, char** argv) {
@@ -550,5 +592,6 @@ int main(int argc, char** argv) {
     RUN_TEST(test_web_page_source_contains_expected_ui_improvements);
     RUN_TEST(test_main_source_renders_live_display_frame_for_web);
     RUN_TEST(test_app_config_source_uses_clear_business_labels_and_help);
+    RUN_TEST(test_app_config_save_migrates_before_marking_current_version);
     return UNITY_END();
 }

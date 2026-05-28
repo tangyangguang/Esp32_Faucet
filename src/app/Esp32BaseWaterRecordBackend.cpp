@@ -28,12 +28,18 @@ bool Esp32BaseWaterRecordBackend::createSized(const char* path, std::size_t size
 
     std::uint8_t zeros[256]{};
     std::size_t remaining = size;
+    std::size_t writtenSinceYield = 0;
     while (remaining > 0) {
         const std::size_t chunk = std::min<std::size_t>(remaining, sizeof(zeros));
         if (!Esp32BaseFs::appendBytes(path, zeros, chunk)) {
             return false;
         }
         remaining -= chunk;
+        writtenSinceYield += chunk;
+        if (writtenSinceYield >= 4096) {
+            writtenSinceYield = 0;
+            yield();
+        }
     }
     return Esp32BaseFs::fileSize(path) == static_cast<std::int64_t>(size);
 }

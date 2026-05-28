@@ -41,9 +41,11 @@ bool requireContext();
 bool getParam(const char* name, char* out, std::size_t len);
 bool persistConfig(const SystemConfig& config);
 void handleRecordDetailPage();
+void handleRecordCalibrationApi();
 void handleTraceCalibrationApi();
 void handleTraceSaveApi();
 void handleTraceDeleteApi();
+void handleTraceLegacyBlobDeleteApi();
 void formatWaterRecordTime(const WaterRecord& record, char* out, std::size_t len);
 
 Esp32BaseWeb::Method toBaseMethod(FaucetWebMethod method) {
@@ -662,9 +664,43 @@ void sendPulseTraceCachePanel() {
     sendMetricCard("数据点数", samples);
     sendMetricCard("使用率", usage);
     sendMetricCard("上限能力", capacity);
+    WaterPulseTraceFileStats savedStats{};
+    const bool savedReady = ensureSavedPulseTracesReady();
+    if (savedReady) {
+        savedStats = g_context.savedPulseTraces->stats();
+        char savedCount[32]{};
+        char savedUsed[24]{};
+        char savedMax[24]{};
+        char savedSpace[48]{};
+        std::snprintf(savedCount,
+                      sizeof(savedCount),
+                      "%lu / %lu 条",
+                      static_cast<unsigned long>(savedStats.savedCount),
+                      static_cast<unsigned long>(savedStats.maxCount));
+        formatKb(savedStats.usedBytes, savedUsed, sizeof(savedUsed));
+        formatKb(savedStats.maxBytes, savedMax, sizeof(savedMax));
+        std::snprintf(savedSpace, sizeof(savedSpace), "%s / %s", savedUsed, savedMax);
+        sendMetricCard("永久保存", savedCount);
+        sendMetricCard("保存空间", savedSpace);
+    }
     Esp32BaseWeb::sendChunk("</div><p class='hint'>");
     sendFmt("最早 %s · 最新 %s", oldest[0] ? oldest : "-", latest[0] ? latest : "-");
-    Esp32BaseWeb::sendChunk("</p></section>");
+    if (savedReady) {
+        sendFmt(" · 永久保存上限 %lu 条，单条最多 %lu 点",
+                static_cast<unsigned long>(savedStats.maxCount),
+                static_cast<unsigned long>(savedStats.sampleCapacityPerTrace));
+    }
+    Esp32BaseWeb::sendChunk("</p>");
+    if (savedReady && savedStats.corrupt) {
+        Esp32BaseWeb::sendChunk("<p class='err'>永久保存明细文件异常；不会影响启动和本次出水记录。</p>");
+    }
+    if (savedReady && savedStats.legacyBlobPresent) {
+        Esp32BaseWeb::sendChunk("<form method='post' action='/api/faucet/records' "
+                                "onsubmit=\"return confirm('确认清理旧版脉冲明细文件？此操作不会删除出水记录。')&&once(this)\">"
+                                "<input type='hidden' name='action' value='delete_legacy'>"
+                                "<input class='secondary' type='submit' value='清理旧版明细文件'></form>");
+    }
+    Esp32BaseWeb::sendChunk("</section>");
 }
 
 std::uint32_t sumRealRecordVolumeSince(std::uint32_t startTime) {
@@ -936,6 +972,12 @@ void sendNoticeFromQuery() {
         message = "日期格式无效，请重新选择日期。";
     } else if (std::strcmp(text, "save_failed") == 0) {
         message = "保存失败，请稍后重试。";
+    } else if (std::strcmp(text, "saved_trace_full") == 0) {
+        message = "已保存脉冲明细已达上限，请先删除不需要的明细。";
+    } else if (std::strcmp(text, "saved_trace_corrupt") == 0) {
+        message = "永久保存明细文件异常，已停止写入以保护已有数据。";
+    } else if (std::strcmp(text, "saved_trace_read_failed") == 0) {
+        message = "已保存脉冲明细读取失败，文件可能未写完整或已损坏。";
     } else if (std::strcmp(text, "no_calibration_record") == 0) {
         message = "最新记录没有可用的原始脉冲，不能用于校准。";
     } else if (std::strcmp(text, "calibration_mark_failed") == 0) {
@@ -976,7 +1018,7 @@ void sendAppStyles() {
     Esp32BaseWeb::sendChunk(".distribution-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin:18px 0 10px}.distribution-head h2{margin:0;font-size:16px;font-weight:600}.distribution-scope{color:var(--muted);font-size:12px;font-weight:400}.usage-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:10px;margin:0 0 12px}.usage-panel{padding:14px 16px;border-radius:6px}.usage-panel h3{margin-bottom:12px;font-size:15px;font-weight:600}.usage-row{display:grid;grid-template-columns:minmax(72px,1fr) auto;gap:6px 10px;align-items:center;margin:0 0 10px;color:var(--muted);font-size:13px}.usage-row strong{color:var(--text);font-weight:500}.usage-row small{grid-column:1/-1;margin-top:-4px;color:var(--muted);font-size:12px;font-weight:400}.usage-bar{grid-column:1/-1;height:5px;background:#edf3f1;border-radius:4px;overflow:hidden}.usage-bar i{display:block;height:100%;background:var(--accent);border-radius:4px}");
     Esp32BaseWeb::sendChunk(".form-grid{display:grid;grid-template-columns:repeat(12,1fr);gap:10px 12px;align-items:start}.span-2{grid-column:span 2}.span-3{grid-column:span 3}.span-4{grid-column:span 4}.span-5{grid-column:span 5}.span-6{grid-column:span 6}.span-8{grid-column:span 8}.span-12{grid-column:1/-1}"
                             ".field span,.check-title{display:block;font-size:12px;color:var(--muted);font-weight:650;margin-bottom:4px}.field input,.field select{margin-bottom:0}.check-line{display:inline-flex;align-items:center;gap:6px;min-height:32px;padding:0 8px;border:1px solid var(--line);border-radius:6px;background:#fff;color:var(--text);font-size:14px;white-space:nowrap}.check-line input{margin:0}");
-    Esp32BaseWeb::sendChunk(".form-actions{display:flex;align-items:center;justify-content:flex-start;gap:6px;margin-top:10px;flex-wrap:wrap}.form-actions form{margin:0}.form-actions a,.btn-link,.page-link,.page-current,.row-actions a{display:inline-flex;align-items:center;justify-content:center;min-height:32px;padding:0 10px;border:1px solid var(--line);border-radius:6px;background:#f7f9fa;color:#355e66;font-size:13px;line-height:1.2;box-sizing:border-box}input.secondary{background:#f7f9fa;border:1px solid var(--line);color:#4c565d}.row-actions{display:flex;gap:5px;align-items:center;flex-wrap:wrap}");
+    Esp32BaseWeb::sendChunk(".form-actions{display:flex;align-items:center;justify-content:flex-start;gap:6px;margin-top:10px;flex-wrap:wrap}.form-actions form{margin:0}.form-actions a,.btn-link,.page-link,.page-current,.row-actions a{display:inline-flex;align-items:center;justify-content:center;min-height:32px;padding:0 10px;border:1px solid var(--line);border-radius:6px;background:#f7f9fa;color:#355e66;font-size:13px;line-height:1.2;box-sizing:border-box}input.secondary{background:#f7f9fa;border:1px solid var(--line);color:#4c565d}input.secondary:hover,input.secondary:focus-visible{background:#10574e;border-color:#10574e;color:#fff}.row-actions{display:flex;gap:5px;align-items:center;flex-wrap:wrap}");
     Esp32BaseWeb::sendChunk("table{width:100%;border-collapse:separate;border-spacing:0;margin:0 0 12px;overflow:hidden;font-size:13px}td,th{padding:8px 10px;border-bottom:1px solid #edf1f0;text-align:left;vertical-align:middle}tr:last-child td{border-bottom:0}th{background:#f8faf9;color:var(--muted);font-weight:700}.filters-table th:first-child{width:22%}.filters-table th:last-child{width:150px}.kv th{width:26%}");
     Esp32BaseWeb::sendChunk(".pager{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin:0 0 10px}.pager-links{display:flex;align-items:center;gap:5px;flex-wrap:wrap}.page-current{background:var(--accent-soft);color:#17635b;border-color:#cfe4dc}.page-disabled{color:#9aa3aa;background:#f4f6f6;pointer-events:none}.page-size{display:flex;align-items:center;gap:6px;color:var(--muted);font-size:13px}.page-size select{width:auto;min-width:80px}");
     Esp32BaseWeb::sendChunk(".disabled-row{background:#f7f8f8;color:#8a949b}.disabled-row td{color:#8a949b}.disabled-row .status-pill{background:#eef0f0;color:#7b858d}.disabled-row a{color:#6f7a82}"
@@ -2004,7 +2046,8 @@ void handleRecordCalibrationPage() {
                 calibratedAt[0] ? calibratedAt : "未知");
     }
     Esp32BaseWeb::sendChunk("<section class='panel'><h3>实际出水量</h3>"
-                            "<form method='post' action='/api/faucet/records/calibration' onsubmit='return once(this)'>"
+                            "<form method='post' action='/api/faucet/records' onsubmit='return once(this)'>"
+                            "<input type='hidden' name='action' value='calibrate'>"
                             "<label class='field'><span>实际出水量 (ml)</span>");
     sendFmt("<input name='actualMl' type='number' min='%lu' max='%lu' step='1' value='%lu'></label>",
             static_cast<unsigned long>(kMinVolumePresetMl),
@@ -2101,7 +2144,7 @@ void handleRecordDetailPage() {
     const bool alreadySaved = savedStoreReady && g_context.savedPulseTraces->containsRecord(trace->record);
     Esp32BaseWeb::sendChunk("<h2>脉冲明细</h2><div class='form-actions'><a class='btn-link' href='/faucet/records'>返回记录</a>");
     if (savedSource) {
-        Esp32BaseWeb::sendChunk("<form method='post' action='/api/faucet/records/trace-calibration' onsubmit=\"return confirm('确认删除这条已保存的脉冲明细？')&&once(this)\">"
+        Esp32BaseWeb::sendChunk("<form method='post' action='/api/faucet/records' onsubmit=\"return confirm('确认删除这条已保存的脉冲明细？')&&once(this)\">"
                                 "<input type='hidden' name='action' value='delete'>");
         sendFmt("<input type='hidden' name='trace' value='%lu'><input class='secondary' type='submit' value='删除已保存明细'></form>",
                 static_cast<unsigned long>(trace->traceId));
@@ -2109,13 +2152,13 @@ void handleRecordDetailPage() {
         if (alreadySaved) {
             Esp32BaseWeb::sendChunk("<span class='status-pill status-ok'>已永久保存</span>");
         } else {
-            Esp32BaseWeb::sendChunk("<form method='post' action='/api/faucet/records/trace-calibration' onsubmit='return once(this)'>"
+            Esp32BaseWeb::sendChunk("<form method='post' action='/api/faucet/records' onsubmit='return once(this)'>"
                                     "<input type='hidden' name='action' value='save'>");
             sendFmt("<input type='hidden' name='trace' value='%lu'><input type='submit' value='永久保存明细'></form>",
                     static_cast<unsigned long>(trace->traceId));
         }
     } else {
-        Esp32BaseWeb::sendChunk("<form method='post' action='/api/faucet/records/trace-calibration' onsubmit='return once(this)'>"
+        Esp32BaseWeb::sendChunk("<form method='post' action='/api/faucet/records' onsubmit='return once(this)'>"
                                 "<input type='hidden' name='action' value='save'>");
         sendFmt("<input type='hidden' name='trace' value='%lu'><input type='submit' value='永久保存明细'></form>",
                 static_cast<unsigned long>(trace->traceId));
@@ -2244,8 +2287,8 @@ void handleRecordDetailPage() {
     if (!savedSource && g_context.pulseTraces) {
         const std::uint32_t defaultActualMl = trace->actualMl > 0 ? trace->actualMl : trace->record.volumeMl;
         Esp32BaseWeb::sendChunk("<section class='panel'><h3>分段样本</h3>"
-                                "<form method='post' action='/api/faucet/records/trace-calibration' onsubmit='return once(this)'>");
-        sendFmt("<input type='hidden' name='trace' value='%lu'><label class='field'><span>实测出水量 (ml)</span>"
+                                "<form method='post' action='/api/faucet/records' onsubmit='return once(this)'>");
+        sendFmt("<input type='hidden' name='action' value='trace_calibrate'><input type='hidden' name='trace' value='%lu'><label class='field'><span>实测出水量 (ml)</span>"
                 "<input name='actualMl' type='number' min='%lu' max='%lu' step='1' value='%lu'></label>",
                 static_cast<unsigned long>(traceId),
                 static_cast<unsigned long>(kMinVolumePresetMl),
@@ -2630,6 +2673,27 @@ void handleRecordsApi() {
         return;
     }
     char text[24]{};
+    if (Esp32BaseWeb::isMethod(Esp32BaseWeb::METHOD_POST)) {
+        if (!getParam("action", text, sizeof(text))) {
+            Esp32BaseWeb::sendJson(400, "{\"error\":\"missing_action\"}");
+            return;
+        }
+        if (std::strcmp(text, "calibrate") == 0) {
+            handleRecordCalibrationApi();
+            return;
+        }
+        if (std::strcmp(text, "save") == 0 || std::strcmp(text, "delete") == 0 ||
+            std::strcmp(text, "delete_legacy") == 0 || std::strcmp(text, "trace_calibrate") == 0) {
+            handleTraceCalibrationApi();
+            return;
+        }
+        Esp32BaseWeb::sendJson(400, "{\"error\":\"invalid_action\"}");
+        return;
+    }
+    if (!Esp32BaseWeb::isMethod(Esp32BaseWeb::METHOD_GET)) {
+        Esp32BaseWeb::sendJson(405, "{\"error\":\"method_not_allowed\"}");
+        return;
+    }
     std::uint32_t page = 0;
     std::uint32_t pageSize = kDefaultRecordPageSize;
     if (getParam("page", text, sizeof(text))) {
@@ -2756,10 +2820,6 @@ void handleTraceCalibrationApi() {
     if (!Esp32BaseWeb::checkAuth() || !requireContext()) {
         return;
     }
-    if (!g_context.pulseTraces) {
-        Esp32BaseWeb::redirectSeeOther("/faucet/records?error=no_calibration_record");
-        return;
-    }
     if (!Esp32BaseWeb::isMethod(Esp32BaseWeb::METHOD_POST)) {
         Esp32BaseWeb::sendJson(405, "{\"error\":\"method_not_allowed\"}");
         return;
@@ -2775,6 +2835,14 @@ void handleTraceCalibrationApi() {
             handleTraceDeleteApi();
             return;
         }
+        if (std::strcmp(text, "delete_legacy") == 0) {
+            handleTraceLegacyBlobDeleteApi();
+            return;
+        }
+    }
+    if (!g_context.pulseTraces) {
+        Esp32BaseWeb::redirectSeeOther("/faucet/records?error=no_calibration_record");
+        return;
     }
     std::uint32_t actualMl = 0;
     if (!getParam("trace", text, sizeof(text)) || !parseU32(text, traceId) ||
@@ -2883,10 +2951,17 @@ void handleTraceSaveApi() {
         samples[i] = sample ? *sample : WaterPulseTraceSample{};
     }
     std::uint32_t savedTraceId = 0;
-    const bool saved = g_context.savedPulseTraces->save(*trace, samples, trace->sampleCount, &savedTraceId);
+    WaterPulseTraceSaveStatus status = WaterPulseTraceSaveStatus::Ok;
+    const bool saved = g_context.savedPulseTraces->save(*trace, samples, trace->sampleCount, &savedTraceId, &status);
     delete[] samples;
     if (!saved) {
-        Esp32BaseWeb::redirectSeeOther("/faucet/records?error=save_failed");
+        if (status == WaterPulseTraceSaveStatus::LimitReached) {
+            Esp32BaseWeb::redirectSeeOther("/faucet/records?error=saved_trace_full");
+        } else if (status == WaterPulseTraceSaveStatus::CorruptStore) {
+            Esp32BaseWeb::redirectSeeOther("/faucet/records?error=saved_trace_corrupt");
+        } else {
+            Esp32BaseWeb::redirectSeeOther("/faucet/records?error=save_failed");
+        }
         return;
     }
     char url[96]{};
@@ -2916,6 +2991,21 @@ void handleTraceDeleteApi() {
         return;
     }
     if (!g_context.savedPulseTraces->remove(traceId)) {
+        Esp32BaseWeb::redirectSeeOther("/faucet/records?error=save_failed");
+        return;
+    }
+    Esp32BaseWeb::redirectSeeOther("/faucet/records?saved=trace_deleted");
+}
+
+void handleTraceLegacyBlobDeleteApi() {
+    if (!Esp32BaseWeb::checkAuth() || !requireContext()) {
+        return;
+    }
+    if (!Esp32BaseWeb::isMethod(Esp32BaseWeb::METHOD_POST)) {
+        Esp32BaseWeb::sendJson(405, "{\"error\":\"method_not_allowed\"}");
+        return;
+    }
+    if (!ensureSavedPulseTracesReady() || !g_context.savedPulseTraces->removeLegacyBlob()) {
         Esp32BaseWeb::redirectSeeOther("/faucet/records?error=save_failed");
         return;
     }
@@ -3044,12 +3134,6 @@ Esp32BaseWeb::Handler handlerFor(const FaucetWebRoute& route) {
     }
     if (std::strcmp(route.path, "/api/faucet/filters/reset") == 0) {
         return handleFiltersResetApi;
-    }
-    if (std::strcmp(route.path, "/api/faucet/records/calibration") == 0) {
-        return handleRecordCalibrationApi;
-    }
-    if (std::strcmp(route.path, "/api/faucet/records/trace-calibration") == 0) {
-        return handleTraceCalibrationApi;
     }
     return handleApi;
 }

@@ -81,6 +81,29 @@ struct SegmentedCalibrationResult {
     std::uint32_t overallPulsePerLiter;
 };
 
+constexpr std::size_t kSavedPulseTraceMaxCountLimit = 64;
+
+enum class WaterPulseTraceSaveStatus : std::uint8_t {
+    Ok = 0,
+    AlreadyExists = 1,
+    NotReady = 2,
+    InvalidInput = 3,
+    LimitReached = 4,
+    CorruptStore = 5,
+    WriteFailed = 6,
+};
+
+struct WaterPulseTraceFileStats {
+    std::size_t savedCount;
+    std::size_t maxCount;
+    std::size_t usedBytes;
+    std::size_t maxBytes;
+    std::size_t sampleCapacityPerTrace;
+    bool ready;
+    bool corrupt;
+    bool legacyBlobPresent;
+};
+
 class WaterPulseTraceStore {
 public:
     WaterPulseTraceStore(WaterPulseTrace* traces,
@@ -121,31 +144,78 @@ private:
 
 class WaterPulseTraceFileStore {
 public:
-    WaterPulseTraceFileStore(WaterRecordFileBackend& backend, const char* pathPrefix, std::size_t sampleCapacityPerTrace);
+    WaterPulseTraceFileStore(WaterRecordFileBackend& backend,
+                             const char* path,
+                             std::size_t sampleCapacityPerTrace,
+                             std::size_t maxTraceCount,
+                             const char* legacyPathPrefix = nullptr,
+                             const char* legacyBlobPath = nullptr);
 
     bool begin();
     bool save(const WaterPulseTrace& trace,
               const WaterPulseTraceSample* samples,
               std::size_t sampleCount,
-              std::uint32_t* savedTraceId = nullptr);
+              std::uint32_t* savedTraceId = nullptr,
+              WaterPulseTraceSaveStatus* status = nullptr);
     bool remove(std::uint32_t traceId);
     bool findById(std::uint32_t traceId, WaterPulseTrace& output) const;
     bool findByRecord(const WaterRecord& record, WaterPulseTrace& output) const;
     std::size_t readSamples(std::uint32_t traceId, WaterPulseTraceSample* output, std::size_t outputCapacity) const;
     bool containsRecord(const WaterRecord& record) const;
+    WaterPulseTraceFileStats stats() const;
+    bool legacyBlobExists() const;
+    bool removeLegacyBlob();
     std::size_t sampleCapacityPerTrace() const;
     bool ready() const;
 
 private:
+    struct IndexEntry {
+        std::uint32_t key;
+        std::uint32_t sequence;
+        WaterRecord record;
+        std::uint32_t sampleCount;
+        std::uint32_t totalPulses;
+        std::uint32_t actualMl;
+        std::uint32_t sampleChecksum;
+        std::uint8_t finished;
+        std::uint8_t reserved[3];
+        std::uint32_t entryChecksum;
+    };
+
     std::uint32_t keyForRecord(const WaterRecord& record) const;
-    bool pathForKey(std::uint32_t key, char* out, std::size_t len) const;
-    bool readTraceFile(std::uint32_t key, WaterPulseTrace& output) const;
-    std::size_t sampleOffset() const;
+    std::uint32_t keyForRecordProbe(const WaterRecord& record, std::size_t probe) const;
+    std::uint32_t keyForNewRecord(const WaterRecord& record) const;
+    bool loadIndex() const;
+    void clearIndexCache() const;
+    bool ensureFileForWrite();
+    bool writeHeader();
+    bool writeIndexEntry(std::size_t slot, const IndexEntry& entry);
+    std::uint32_t indexEntryChecksum(IndexEntry entry) const;
+    bool populateTraceFromEntry(const IndexEntry& entry, WaterPulseTrace& output) const;
+    std::size_t findSlotByKey(std::uint32_t key) const;
+    std::size_t findSlotByRecord(const WaterRecord& record) const;
+    std::size_t findFreeSlot() const;
+    std::uint32_t nextSequence() const;
+    std::size_t expectedFileSize() const;
+    std::size_t indexOffset(std::size_t slot) const;
+    std::size_t sampleSlotOffset(std::size_t slot) const;
+    bool legacyPathForKey(std::uint32_t key, char* out, std::size_t len) const;
+    bool readLegacyTraceFile(std::uint32_t key, WaterPulseTrace& output) const;
+    std::size_t readLegacySamples(std::uint32_t key, WaterPulseTraceSample* output, std::size_t outputCapacity) const;
+    bool removeLegacyTrace(std::uint32_t key);
 
     WaterRecordFileBackend& backend_;
-    const char* pathPrefix_;
+    const char* path_;
+    const char* legacyPathPrefix_;
+    const char* legacyBlobPath_;
     std::size_t sampleCapacityPerTrace_;
+    std::size_t maxTraceCount_;
     bool ready_;
+    mutable bool indexLoaded_;
+    mutable bool indexValid_;
+    mutable bool filePresent_;
+    mutable bool corrupt_;
+    mutable IndexEntry index_[kSavedPulseTraceMaxCountLimit];
 };
 
 std::size_t aggregateWaterPulseTrace(const WaterPulseTrace& trace,

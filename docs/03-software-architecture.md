@@ -136,7 +136,7 @@
 | GET | `/api/faucet/presets` | 查询预设 |
 | POST | `/api/faucet/presets` | 保存预设 |
 | GET | `/api/faucet/records` | 按时间范围筛选并分页查询出水记录 |
-| POST | `/api/faucet/records/calibration` | 基于最新可校准出水记录保存流量系数或启动补偿，并写入记录校准元数据 |
+| POST | `/api/faucet/records` | 通过 `action` 执行记录校准、脉冲明细保存/删除和分段样本保存 |
 | GET | `/api/faucet/stats` | 查询统计 |
 | GET | `/api/faucet/filters` | 查询滤芯 |
 | POST | `/api/faucet/filters` | 保存指定滤芯的启用状态、名称、寿命和上次更换日期 |

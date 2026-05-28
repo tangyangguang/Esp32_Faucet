@@ -200,9 +200,13 @@ private:
     std::size_t findSlotByRecord(const WaterRecord& record) const;
     std::size_t findFreeSlot() const;
     std::uint32_t nextSequence() const;
+    std::size_t minimumFileSize() const;
     std::size_t expectedFileSize() const;
     std::size_t indexOffset(std::size_t slot) const;
     std::size_t sampleSlotOffset(std::size_t slot) const;
+    bool extendFileTo(std::size_t size);
+    bool writeOrAppendAt(std::size_t offset, const std::uint8_t* data, std::size_t len);
+    bool filePrefixAllZero(std::size_t size) const;
     bool legacyPathForKey(std::uint32_t key, char* out, std::size_t len) const;
     bool readLegacyTraceFile(std::uint32_t key, WaterPulseTrace& output) const;
     std::size_t readLegacySamples(std::uint32_t key, WaterPulseTraceSample* output, std::size_t outputCapacity) const;

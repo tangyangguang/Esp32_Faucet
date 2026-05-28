@@ -103,6 +103,16 @@ std::uint32_t checksumHeader(SavedTraceFileHeader header) {
     return checksumBytes(&header, sizeof(header));
 }
 
+bool allZeroBytes(const void* data, std::size_t len) {
+    const std::uint8_t* bytes = static_cast<const std::uint8_t*>(data);
+    for (std::size_t i = 0; i < len; ++i) {
+        if (bytes[i] != 0) {
+            return false;
+        }
+    }
+    return true;
+}
+
 }  // namespace
 
 WaterPulseTraceStore::WaterPulseTraceStore(WaterPulseTrace* traces,
@@ -375,10 +385,9 @@ bool WaterPulseTraceFileStore::save(const WaterPulseTrace& trace,
     }
 
     const std::size_t sampleBytes = sampleCount * sizeof(WaterPulseTraceSample);
-    if (!backend_.writeAt(path_,
-                          sampleSlotOffset(slot),
-                          reinterpret_cast<const std::uint8_t*>(samples),
-                          sampleBytes)) {
+    if (!writeOrAppendAt(sampleSlotOffset(slot),
+                         reinterpret_cast<const std::uint8_t*>(samples),
+                         sampleBytes)) {
         if (status) {
             *status = WaterPulseTraceSaveStatus::WriteFailed;
         }
@@ -550,7 +559,10 @@ WaterPulseTraceFileStats WaterPulseTraceFileStore::stats() const {
         loadIndex();
     }
     out.corrupt = corrupt_;
-    out.usedBytes = filePresent_ ? expectedFileSize() : 0;
+    if (filePresent_) {
+        const std::int64_t fileSize = backend_.fileSize(path_);
+        out.usedBytes = fileSize > 0 ? static_cast<std::size_t>(fileSize) : 0;
+    }
     out.legacyBlobPresent = legacyBlobExists();
     for (std::size_t i = 0; i < maxTraceCount_; ++i) {
         if (index_[i].key != 0 && index_[i].entryChecksum == indexEntryChecksum(index_[i])) {
@@ -630,20 +642,38 @@ bool WaterPulseTraceFileStore::loadIndex() const {
     }
     filePresent_ = true;
     const std::int64_t fileSize = backend_.fileSize(path_);
-    if (fileSize != static_cast<std::int64_t>(expectedFileSize())) {
+    if (fileSize < 0 || fileSize > static_cast<std::int64_t>(expectedFileSize())) {
+        corrupt_ = true;
+        return false;
+    }
+    if (fileSize < static_cast<std::int64_t>(sizeof(SavedTraceFileHeader))) {
+        if (filePrefixAllZero(static_cast<std::size_t>(fileSize))) {
+            filePresent_ = false;
+            indexValid_ = true;
+            return true;
+        }
         corrupt_ = true;
         return false;
     }
     SavedTraceFileHeader header{};
-    if (!backend_.readAt(path_, 0, reinterpret_cast<std::uint8_t*>(&header), sizeof(header)) ||
-        header.magic != kSavedTraceFileMagic || header.version != kSavedTraceFileVersion ||
-        header.headerSize != sizeof(SavedTraceFileHeader) ||
-        header.indexEntrySize != sizeof(IndexEntry) ||
-        header.sampleSize != sizeof(WaterPulseTraceSample) ||
-        header.slotCount != maxTraceCount_ ||
-        header.sampleCapacity != sampleCapacityPerTrace_ ||
-        header.fileSize != expectedFileSize() ||
+    if (!backend_.readAt(path_, 0, reinterpret_cast<std::uint8_t*>(&header), sizeof(header))) {
+        corrupt_ = true;
+        return false;
+    }
+    if (header.magic != kSavedTraceFileMagic || header.version != kSavedTraceFileVersion ||
+        header.headerSize != sizeof(SavedTraceFileHeader) || header.indexEntrySize != sizeof(IndexEntry) ||
+        header.sampleSize != sizeof(WaterPulseTraceSample) || header.slotCount != maxTraceCount_ ||
+        header.sampleCapacity != sampleCapacityPerTrace_ || header.fileSize != expectedFileSize() ||
         header.headerChecksum != checksumHeader(header)) {
+        if (allZeroBytes(&header, sizeof(header))) {
+            filePresent_ = false;
+            indexValid_ = true;
+            return true;
+        }
+        corrupt_ = true;
+        return false;
+    }
+    if (fileSize < static_cast<std::int64_t>(minimumFileSize())) {
         corrupt_ = true;
         return false;
     }
@@ -659,7 +689,9 @@ bool WaterPulseTraceFileStore::loadIndex() const {
         if (entry.key == 0) {
             continue;
         }
+        const std::size_t sampleBytes = static_cast<std::size_t>(entry.sampleCount) * sizeof(WaterPulseTraceSample);
         if (entry.sampleCount == 0 || entry.sampleCount > sampleCapacityPerTrace_ ||
+            sampleSlotOffset(i) + sampleBytes > static_cast<std::size_t>(fileSize) ||
             entry.entryChecksum != indexEntryChecksum(entry)) {
             corrupt_ = true;
             index_[i] = IndexEntry{};
@@ -686,7 +718,7 @@ bool WaterPulseTraceFileStore::ensureFileForWrite() {
     if (filePresent_) {
         return true;
     }
-    if (!backend_.createSized(path_, expectedFileSize())) {
+    if (!backend_.createSized(path_, minimumFileSize())) {
         return false;
     }
     if (!writeHeader()) {
@@ -781,9 +813,12 @@ std::uint32_t WaterPulseTraceFileStore::nextSequence() const {
     return sequence == 0 ? 1 : sequence;
 }
 
+std::size_t WaterPulseTraceFileStore::minimumFileSize() const {
+    return sizeof(SavedTraceFileHeader) + maxTraceCount_ * sizeof(IndexEntry);
+}
+
 std::size_t WaterPulseTraceFileStore::expectedFileSize() const {
-    return sizeof(SavedTraceFileHeader) + maxTraceCount_ * sizeof(IndexEntry) +
-           maxTraceCount_ * sampleCapacityPerTrace_ * sizeof(WaterPulseTraceSample);
+    return minimumFileSize() + maxTraceCount_ * sampleCapacityPerTrace_ * sizeof(WaterPulseTraceSample);
 }
 
 std::size_t WaterPulseTraceFileStore::indexOffset(std::size_t slot) const {
@@ -791,8 +826,74 @@ std::size_t WaterPulseTraceFileStore::indexOffset(std::size_t slot) const {
 }
 
 std::size_t WaterPulseTraceFileStore::sampleSlotOffset(std::size_t slot) const {
-    return sizeof(SavedTraceFileHeader) + maxTraceCount_ * sizeof(IndexEntry) +
-           slot * sampleCapacityPerTrace_ * sizeof(WaterPulseTraceSample);
+    return minimumFileSize() + slot * sampleCapacityPerTrace_ * sizeof(WaterPulseTraceSample);
+}
+
+bool WaterPulseTraceFileStore::extendFileTo(std::size_t size) {
+    if (size > expectedFileSize()) {
+        return false;
+    }
+    std::int64_t fileSize = backend_.fileSize(path_);
+    if (fileSize < 0 || fileSize > static_cast<std::int64_t>(expectedFileSize())) {
+        return false;
+    }
+    std::size_t currentSize = static_cast<std::size_t>(fileSize);
+    if (currentSize >= size) {
+        return true;
+    }
+
+    std::uint8_t zeros[256]{};
+    while (currentSize < size) {
+        const std::size_t chunk = std::min<std::size_t>(sizeof(zeros), size - currentSize);
+        if (!backend_.appendBytes(path_, zeros, chunk)) {
+            return false;
+        }
+        currentSize += chunk;
+    }
+    return backend_.fileSize(path_) == static_cast<std::int64_t>(size);
+}
+
+bool WaterPulseTraceFileStore::writeOrAppendAt(std::size_t offset, const std::uint8_t* data, std::size_t len) {
+    if (!data && len > 0) {
+        return false;
+    }
+    if (len == 0) {
+        return true;
+    }
+    if (offset > expectedFileSize() || len > expectedFileSize() - offset || !extendFileTo(offset)) {
+        return false;
+    }
+
+    const std::int64_t fileSize = backend_.fileSize(path_);
+    if (fileSize < static_cast<std::int64_t>(offset)) {
+        return false;
+    }
+    const std::size_t currentSize = static_cast<std::size_t>(fileSize);
+    if (currentSize >= offset + len) {
+        return backend_.writeAt(path_, offset, data, len);
+    }
+
+    const std::size_t overwriteBytes = currentSize > offset ? currentSize - offset : 0;
+    if (overwriteBytes > 0 && !backend_.writeAt(path_, offset, data, overwriteBytes)) {
+        return false;
+    }
+    return backend_.appendBytes(path_, data + overwriteBytes, len - overwriteBytes);
+}
+
+bool WaterPulseTraceFileStore::filePrefixAllZero(std::size_t size) const {
+    if (size == 0) {
+        return true;
+    }
+    std::uint8_t buffer[64]{};
+    std::size_t offset = 0;
+    while (offset < size) {
+        const std::size_t chunk = std::min<std::size_t>(sizeof(buffer), size - offset);
+        if (!backend_.readAt(path_, offset, buffer, chunk) || !allZeroBytes(buffer, chunk)) {
+            return false;
+        }
+        offset += chunk;
+    }
+    return true;
 }
 
 bool WaterPulseTraceFileStore::legacyPathForKey(std::uint32_t key, char* out, std::size_t len) const {

@@ -236,17 +236,29 @@ void test_record_calibration_file_store_appends_first_entry_without_write_at_ext
 
 void test_record_calibration_file_store_matches_page_records_with_single_scan() {
     MemoryFileBackend backend;
-    WaterRecordCalibrationFileStore store(backend, "/cal.bin", 8);
-    const WaterRecord newest = makeRecord(832000500UL, 5500, 7000, 1210);
-    const WaterRecord middle = makeRecord(832000300UL, 5300, 7000, 1170);
+    WaterRecordCalibrationFileStore store(backend, "/cal.bin", 48);
+    const WaterRecord newest = makeRecord(832004000UL, 5500, 7000, 1210);
+    const WaterRecord middle = makeRecord(832002000UL, 5300, 7000, 1170);
     const WaterRecord oldest = makeRecord(832000100UL, 5100, 7000, 1130);
     const WaterRecord missing = makeRecord(832000900UL, 5900, 7000, 1300);
 
     TEST_ASSERT_TRUE(store.begin());
     TEST_ASSERT_TRUE(store.upsert(makeCalibration(oldest, 5000)));
-    TEST_ASSERT_TRUE(store.upsert(makeCalibration(makeRecord(832000200UL, 5200, 7000, 1150), 5200)));
+    for (std::size_t i = 1; i < 20; ++i) {
+        TEST_ASSERT_TRUE(store.upsert(makeCalibration(makeRecord(832000100UL + static_cast<std::uint32_t>(i) * 100UL,
+                                                                 5100 + static_cast<std::uint32_t>(i),
+                                                                 7000,
+                                                                 1130 + static_cast<std::uint32_t>(i)),
+                                                   5000 + static_cast<std::uint32_t>(i))));
+    }
     TEST_ASSERT_TRUE(store.upsert(makeCalibration(middle, 5350)));
-    TEST_ASSERT_TRUE(store.upsert(makeCalibration(makeRecord(832000400UL, 5400, 7000, 1190), 5400)));
+    for (std::size_t i = 21; i < 40; ++i) {
+        TEST_ASSERT_TRUE(store.upsert(makeCalibration(makeRecord(832000100UL + static_cast<std::uint32_t>(i) * 100UL,
+                                                                 5100 + static_cast<std::uint32_t>(i),
+                                                                 7000,
+                                                                 1130 + static_cast<std::uint32_t>(i)),
+                                                   5000 + static_cast<std::uint32_t>(i))));
+    }
     TEST_ASSERT_TRUE(store.upsert(makeCalibration(newest, 5600)));
 
     WaterRecord page[] = {newest, missing, middle, oldest};
@@ -263,7 +275,7 @@ void test_record_calibration_file_store_matches_page_records_with_single_scan() 
     TEST_ASSERT_EQUAL_UINT32(5600, matches[0].actualMl);
     TEST_ASSERT_EQUAL_UINT32(5350, matches[2].actualMl);
     TEST_ASSERT_EQUAL_UINT32(5000, matches[3].actualMl);
-    TEST_ASSERT_LESS_OR_EQUAL_size_t(store.count(), backend.readCalls);
+    TEST_ASSERT_LESS_OR_EQUAL_size_t(2, backend.readCalls);
 }
 
 int main(int argc, char** argv) {

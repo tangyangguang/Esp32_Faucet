@@ -487,25 +487,25 @@ std::size_t WaterPulseTraceFileStore::findByRecords(const WaterRecord* records,
                 }
             }
         }
+        if (filePresent_) {
+            return matched;
+        }
+    }
+    if (!legacyBlobExists()) {
+        return matched;
     }
     for (std::size_t i = 0; i < recordCount && matched < recordCount; ++i) {
         if (found[i]) {
             continue;
         }
         WaterPulseTrace legacy{};
-        for (std::size_t probe = 0; probe < maxTraceCount_; ++probe) {
-            const std::uint32_t key = keyForRecordProbe(records[i], probe);
-            if (key == 0 || !readLegacyTraceFile(key, legacy)) {
-                continue;
-            }
-            if (!sameRecordIdentity(legacy.record, records[i])) {
-                continue;
-            }
-            output[i] = legacy;
-            found[i] = true;
-            ++matched;
-            break;
+        const std::uint32_t key = keyForRecord(records[i]);
+        if (key == 0 || !readLegacyTraceFile(key, legacy) || !sameRecordIdentity(legacy.record, records[i])) {
+            continue;
         }
+        output[i] = legacy;
+        found[i] = true;
+        ++matched;
     }
     return matched;
 }
@@ -648,22 +648,23 @@ bool WaterPulseTraceFileStore::loadIndex() const {
         return false;
     }
     indexValid_ = true;
+    const std::size_t indexBytes = maxTraceCount_ * sizeof(IndexEntry);
+    if (!backend_.readAt(path_, indexOffset(0), reinterpret_cast<std::uint8_t*>(index_), indexBytes)) {
+        corrupt_ = true;
+        indexValid_ = false;
+        return false;
+    }
     for (std::size_t i = 0; i < maxTraceCount_; ++i) {
-        IndexEntry entry{};
-        if (!backend_.readAt(path_, indexOffset(i), reinterpret_cast<std::uint8_t*>(&entry), sizeof(entry))) {
-            corrupt_ = true;
-            indexValid_ = false;
-            return false;
-        }
+        const IndexEntry entry = index_[i];
         if (entry.key == 0) {
             continue;
         }
         if (entry.sampleCount == 0 || entry.sampleCount > sampleCapacityPerTrace_ ||
             entry.entryChecksum != indexEntryChecksum(entry)) {
             corrupt_ = true;
+            index_[i] = IndexEntry{};
             continue;
         }
-        index_[i] = entry;
     }
     return true;
 }

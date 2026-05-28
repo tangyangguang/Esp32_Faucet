@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <new>
 
 namespace faucet {
 namespace {
@@ -311,22 +312,34 @@ std::size_t WaterRecordCalibrationFileStore::findAny(const WaterRecord* records,
     if (!records || !output || !found || recordCount == 0 || !ready()) {
         return 0;
     }
+    constexpr std::size_t kBatchSize = 32;
+    WaterRecordCalibration* batch = new (std::nothrow) WaterRecordCalibration[kBatchSize]{};
+    if (!batch) {
+        return WaterRecordCalibrationReader::findAny(records, recordCount, output, found);
+    }
     std::size_t matched = 0;
-    for (std::size_t offset = 0; offset < count_ && matched < recordCount; ++offset) {
-        const std::size_t index = physicalIndexFromNewestOffset(offset);
-        WaterRecordCalibration candidate{};
-        if (!readEntry(index, candidate)) {
+    for (std::size_t offset = 0; offset < count_ && matched < recordCount;) {
+        const std::size_t newestIndex = physicalIndexFromNewestOffset(offset);
+        const std::size_t batchCount = std::min<std::size_t>({count_ - offset, kBatchSize, newestIndex + 1U});
+        const std::size_t firstIndex = newestIndex + 1U - batchCount;
+        if (!readEntries(firstIndex, batch, batchCount)) {
+            delete[] batch;
             return matched;
         }
-        for (std::size_t i = 0; i < recordCount; ++i) {
-            if (found[i] || !sameWaterRecordCalibrationIdentity(candidate, records[i])) {
-                continue;
+        for (std::size_t batchOffset = 0; batchOffset < batchCount && matched < recordCount; ++batchOffset) {
+            const WaterRecordCalibration& candidate = batch[batchCount - 1U - batchOffset];
+            for (std::size_t i = 0; i < recordCount; ++i) {
+                if (found[i] || !sameWaterRecordCalibrationIdentity(candidate, records[i])) {
+                    continue;
+                }
+                output[i] = candidate;
+                found[i] = true;
+                ++matched;
             }
-            output[i] = candidate;
-            found[i] = true;
-            ++matched;
         }
+        offset += batchCount;
     }
+    delete[] batch;
     return matched;
 }
 
@@ -395,6 +408,18 @@ bool WaterRecordCalibrationFileStore::readEntry(std::size_t index, WaterRecordCa
         return false;
     }
     return backend_.readAt(path_, entryOffset(index), reinterpret_cast<std::uint8_t*>(&output), sizeof(output));
+}
+
+bool WaterRecordCalibrationFileStore::readEntries(std::size_t firstIndex,
+                                                  WaterRecordCalibration* output,
+                                                  std::size_t count) const {
+    if (!output || count == 0 || firstIndex >= capacity_ || count > capacity_ - firstIndex) {
+        return false;
+    }
+    return backend_.readAt(path_,
+                           entryOffset(firstIndex),
+                           reinterpret_cast<std::uint8_t*>(output),
+                           count * sizeof(WaterRecordCalibration));
 }
 
 bool WaterRecordCalibrationFileStore::appendEntry(std::size_t index, const WaterRecordCalibration& calibration) {

@@ -106,6 +106,7 @@ private:
     bool loadHeader();
     bool saveHeader() const;
     bool readEntry(std::size_t index, WaterRecordCalibration& output) const;
+    bool readEntries(std::size_t firstIndex, WaterRecordCalibration* output, std::size_t count) const;
     bool appendEntry(std::size_t index, const WaterRecordCalibration& calibration);
     std::size_t physicalIndexFromNewestOffset(std::size_t offset) const;
     std::size_t entryOffset(std::size_t index) const;

@@ -39,7 +39,7 @@ constexpr float kDefaultPulsePerMl = 0.45f;
 constexpr float kMinPulsePerMl = 0.05f;
 constexpr float kMaxPulsePerMl = 5.0f;
 
-constexpr std::uint32_t kDefaultValveFullPowerSec = 10;
+constexpr std::uint32_t kDefaultValveFullPowerSec = 5;
 constexpr std::uint8_t kDefaultValveHoldDutyPercent = 70;
 constexpr std::uint8_t kMinValveHoldDutyPercent = 20;
 constexpr std::uint8_t kMaxValveHoldDutyPercent = 100;

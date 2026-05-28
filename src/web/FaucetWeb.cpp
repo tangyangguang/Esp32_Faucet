@@ -1087,16 +1087,16 @@ std::uint32_t roundedPercent(std::uint32_t value, std::uint32_t total) {
     return percent > 100ULL ? 100UL : static_cast<std::uint32_t>(percent);
 }
 
-void sendVolumeDistributionRow(const char* label, std::uint32_t volumeMl, std::uint32_t count, std::uint32_t totalMl) {
+void sendCountVolumeDistributionRow(const char* label, std::uint32_t count, std::uint32_t volumeMl, std::uint32_t totalCount) {
     char volume[24]{};
     formatLiters(volumeMl, volume, sizeof(volume));
-    const std::uint32_t percent = roundedPercent(volumeMl, totalMl);
-    sendFmt("<div class='usage-row'><span>%s</span><strong>%s</strong><small>%lu 次 · 占 %lu%%</small>"
+    const std::uint32_t percent = roundedPercent(count, totalCount);
+    sendFmt("<div class='usage-row'><span>%s</span><strong>%lu 次</strong><small>占 %lu%% · 合计 %s</small>"
             "<div class='usage-bar'><i style='width:%lu%%'></i></div></div>",
             label,
-            volume,
             static_cast<unsigned long>(count),
             static_cast<unsigned long>(percent),
+            volume,
             static_cast<unsigned long>(percent));
 }
 
@@ -1128,7 +1128,7 @@ const char* resultLabel(std::size_t index) {
 
 void sendUsagePatterns(const WaterUsageSummary& summary, const SystemConfig& config) {
     Esp32BaseWeb::sendChunk("<div class='distribution-head'><h2>最近 30 天分布</h2>"
-                            "<span class='distribution-scope'>以下分布均按最近 30 天真实时间记录统计</span></div>"
+                            "<span class='distribution-scope'>以下占比均按最近 30 天记录次数统计</span></div>"
                             "<div class='usage-grid'>");
     Esp32BaseWeb::sendChunk("<section class='usage-panel'><h3>按预设分布</h3>");
     for (std::size_t i = 0; i < kPresetCount; ++i) {
@@ -1139,7 +1139,7 @@ void sendUsagePatterns(const WaterUsageSummary& summary, const SystemConfig& con
         char name[kPresetNameLength]{};
         std::strncpy(name, config.presets[i].name, sizeof(name) - 1);
         std::snprintf(label, sizeof(label), "%u %s", static_cast<unsigned>(i + 1), name);
-        sendVolumeDistributionRow(label, summary.presetCounts[i].volumeMl, summary.presetCounts[i].count, summary.last30DaysMl);
+        sendCountVolumeDistributionRow(label, summary.presetCounts[i].count, summary.presetCounts[i].volumeMl, summary.last30DaysCount);
     }
     if (summary.last30DaysMl == 0) {
         Esp32BaseWeb::sendChunk("<p class='hint'>最近 30 天没有可聚合的真实时间记录。</p>");
@@ -1147,7 +1147,7 @@ void sendUsagePatterns(const WaterUsageSummary& summary, const SystemConfig& con
     Esp32BaseWeb::sendChunk("</section><section class='usage-panel'><h3>按容量段分布</h3>");
     static constexpr const char* histLabels[kUsageVolumeHistCount] = {"0.5 L 以下", "0.5 - 2 L", "2 - 5 L", "5 - 10 L", "10 L 以上"};
     for (std::size_t i = 0; i < kUsageVolumeHistCount; ++i) {
-        sendVolumeDistributionRow(histLabels[i], summary.volumeHist[i].volumeMl, summary.volumeHist[i].count, summary.last30DaysMl);
+        sendCountVolumeDistributionRow(histLabels[i], summary.volumeHist[i].count, summary.volumeHist[i].volumeMl, summary.last30DaysCount);
     }
     Esp32BaseWeb::sendChunk("</section><section class='usage-panel'><h3>按完成结果分布</h3>");
     for (std::size_t i = 0; i < kUsageResultCount; ++i) {

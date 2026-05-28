@@ -66,7 +66,7 @@ Expected: all `test_water_record_store` tests pass.
 Add checks for:
 
 - `最近 30 天分布`
-- `以下分布均按最近 30 天真实时间记录统计`
+- `以下占比均按最近 30 天记录次数统计`
 - `按容量段分布`
 - `按完成结果分布`
 - `0.5 L 以下`

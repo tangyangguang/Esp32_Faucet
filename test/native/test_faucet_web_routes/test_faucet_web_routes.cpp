@@ -260,7 +260,12 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NULL(std::strstr(buffer, "count-row-zero"));
     TEST_ASSERT_NULL(std::strstr(buffer, "countLabelX"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "最近 30 天分布"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "以下分布均按最近 30 天真实时间记录统计"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "以下占比均按最近 30 天记录次数统计"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "sendCountVolumeDistributionRow"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "roundedPercent(count, totalCount)"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "<strong>%lu 次</strong><small>占 %lu%% · 合计 %s</small>"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "sendVolumeDistributionRow"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "roundedPercent(volumeMl, totalMl)"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "按容量段分布"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "按完成结果分布"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "0.5 L 以下"));

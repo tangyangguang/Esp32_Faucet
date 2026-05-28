@@ -229,6 +229,26 @@ void test_trace_bucket_aggregation_sums_pulses_by_selected_seconds() {
     TEST_ASSERT_EQUAL_UINT32(15, buckets[2].cumulativePulses);
 }
 
+void test_trace_bucket_aggregation_accepts_four_second_bucket() {
+    WaterPulseTrace traces[1]{};
+    WaterPulseTraceSample samples[16]{};
+    WaterPulseTraceStore store(traces, 1, samples, 16, 1024);
+    const std::uint32_t id = store.beginTrace(1000);
+    for (std::uint16_t value : {1, 2, 3, 4, 5}) {
+        TEST_ASSERT_TRUE(store.appendSecond(id, value, WaterPulseTraceState::Running));
+    }
+    TEST_ASSERT_TRUE(store.finishTrace(id, makeRecord(1000, 15, 1000), WaterPulseTraceState::Completed));
+    const WaterPulseTrace* trace = store.findById(id);
+    WaterPulseTraceBucket buckets[2]{};
+
+    const std::size_t count = aggregateWaterPulseTrace(*trace, store, 4, buckets, 2);
+
+    TEST_ASSERT_EQUAL_size_t(2, count);
+    TEST_ASSERT_EQUAL_UINT16(10, buckets[0].pulseDelta);
+    TEST_ASSERT_EQUAL_UINT16(5, buckets[1].pulseDelta);
+    TEST_ASSERT_EQUAL_UINT32(15, buckets[1].cumulativePulses);
+}
+
 void test_segmented_calibration_uses_two_valid_samples() {
     SegmentedCalibrationSample samples[2]{};
     samples[0].actualMl = 1500;
@@ -645,6 +665,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_trace_store_drops_oldest_when_memory_budget_is_exceeded);
     RUN_TEST(test_trace_analysis_finds_stable_start_after_slow_ramp);
     RUN_TEST(test_trace_bucket_aggregation_sums_pulses_by_selected_seconds);
+    RUN_TEST(test_trace_bucket_aggregation_accepts_four_second_bucket);
     RUN_TEST(test_segmented_calibration_uses_two_valid_samples);
     RUN_TEST(test_saved_trace_file_store_persists_and_deletes_selected_trace);
     RUN_TEST(test_saved_trace_file_store_begin_does_not_touch_flash);

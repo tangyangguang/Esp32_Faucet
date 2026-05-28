@@ -977,7 +977,7 @@ std::size_t aggregateWaterPulseTrace(const WaterPulseTrace&,
     if (!samples || !buckets || bucketCapacity == 0 || sampleCount == 0) {
         return 0;
     }
-    if (bucketSeconds != 2 && bucketSeconds != 3 && bucketSeconds != 5) {
+    if (bucketSeconds != 2 && bucketSeconds != 3 && bucketSeconds != 4 && bucketSeconds != 5) {
         bucketSeconds = 1;
     }
     std::size_t bucketCount = 0;

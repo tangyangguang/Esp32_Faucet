@@ -269,7 +269,15 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "pulse-detail-chart"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "pulse-line"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "cum-line"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "bucketSeconds != 2 && bucketSeconds != 3 && bucketSeconds != 4 && bucketSeconds != 5"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "bucketsToShow[] = {1, 2, 3, 4, 5}"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "bucket == bucketSeconds ? \"btn-link page-current\" : \"btn-link\""));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "aria-current='%s'"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "detail-data"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "<details open class='panel detail-data'>"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "<table><tr><th>时间</th><th>脉冲数</th><th>累计脉冲数</th><th>状态</th></tr>"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "<tr><td>%lu</td><td>%lu</td><td>%lu</td><td>%s</td></tr>"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "<tr><td>%lu-%lus</td><td>%luP</td><td>%luP</td><td>%s</td></tr>"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "inline-note"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "measured-note"));
     TEST_ASSERT_NULL(std::strstr(buffer, "record-more"));

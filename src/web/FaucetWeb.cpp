@@ -2182,7 +2182,7 @@ void handleRecordDetailPage() {
     if (getParam("bucket", text, sizeof(text))) {
         parseU32(text, bucketSeconds);
     }
-    if (bucketSeconds != 2 && bucketSeconds != 3 && bucketSeconds != 5) {
+    if (bucketSeconds != 2 && bucketSeconds != 3 && bucketSeconds != 4 && bucketSeconds != 5) {
         bucketSeconds = 1;
     }
     bool savedSource = false;
@@ -2289,9 +2289,12 @@ void handleRecordDetailPage() {
     Esp32BaseWeb::sendChunk("</table></section>");
 
     Esp32BaseWeb::sendChunk("<section class='panel'><div class='panel-head'><h3>聚合频率</h3><div class='row-actions'>");
-    constexpr std::uint32_t bucketsToShow[] = {1, 2, 3, 5};
+    constexpr std::uint32_t bucketsToShow[] = {1, 2, 3, 4, 5};
     for (std::uint32_t bucket : bucketsToShow) {
-        sendFmt("<a class='btn-link' href='/faucet/records/detail?%strace=%lu&bucket=%lu'>%lus</a>",
+        const char* linkClass = bucket == bucketSeconds ? "btn-link page-current" : "btn-link";
+        sendFmt("<a class='%s' aria-current='%s' href='/faucet/records/detail?%strace=%lu&bucket=%lu'>%lus</a>",
+                linkClass,
+                bucket == bucketSeconds ? "true" : "false",
                 savedSource ? "saved=1&" : "",
                 static_cast<unsigned long>(traceId),
                 static_cast<unsigned long>(bucket),
@@ -2321,7 +2324,7 @@ void handleRecordDetailPage() {
     }
     sendFmt("<text class='chart-label' x='54' y='248'>0s</text>"
             "<text class='chart-label' x='918' y='248'>%lus</text>"
-            "<text class='chart-label' x='58' y='20'>每桶最高 %luP / 累计 %luP</text>",
+            "<text class='chart-label' x='58' y='20'>每桶最高 %lu 脉冲 / 累计 %lu 脉冲</text>",
             static_cast<unsigned long>(maxEndSec),
             static_cast<unsigned long>(maxDelta),
             static_cast<unsigned long>(maxCumulative));
@@ -2357,11 +2360,10 @@ void handleRecordDetailPage() {
         const std::uint32_t endSec = buckets[i].startSec + buckets[i].durationSec;
         const std::uint32_t x = left + (endSec * chartWidth) / maxEndSec;
         const std::uint32_t y = baseY - (buckets[i].pulseDelta * chartHeight) / maxDelta;
-        sendFmt("<circle class='pulse-dot' cx='%lu' cy='%lu' r='2.6'><title>%lu-%lus: %luP / 累计 %luP / %s</title></circle>",
+        sendFmt("<circle class='pulse-dot' cx='%lu' cy='%lu' r='2.6'><title>第%lu秒: 脉冲数 %lu / 累计脉冲数 %lu / %s</title></circle>",
                 static_cast<unsigned long>(x),
                 static_cast<unsigned long>(y),
                 static_cast<unsigned long>(buckets[i].startSec),
-                static_cast<unsigned long>(endSec),
                 static_cast<unsigned long>(buckets[i].pulseDelta),
                 static_cast<unsigned long>(buckets[i].cumulativePulses),
                 traceStateText(buckets[i].state));
@@ -2370,12 +2372,11 @@ void handleRecordDetailPage() {
                             "<span><i class='legend-mark legend-pulse'></i>每桶脉冲</span>"
                             "<span><i class='legend-mark legend-cum'></i>累计脉冲</span>"
                             "<span><i class='legend-mark legend-stable'></i>稳态开始</span>"
-                            "</div></section><details class='panel detail-data'><summary>查看明细数据</summary>"
-                            "<table><tr><th>时间</th><th>脉冲</th><th>累计</th><th>状态</th></tr>");
+                            "</div></section><details open class='panel detail-data'><summary>查看明细数据</summary>"
+                            "<table><tr><th>时间</th><th>脉冲数</th><th>累计脉冲数</th><th>状态</th></tr>");
     for (std::size_t i = 0; i < bucketCount; ++i) {
-        sendFmt("<tr><td>%lu-%lus</td><td>%luP</td><td>%luP</td><td>%s</td></tr>",
+        sendFmt("<tr><td>%lu</td><td>%lu</td><td>%lu</td><td>%s</td></tr>",
                 static_cast<unsigned long>(buckets[i].startSec),
-                static_cast<unsigned long>(buckets[i].startSec + buckets[i].durationSec),
                 static_cast<unsigned long>(buckets[i].pulseDelta),
                 static_cast<unsigned long>(buckets[i].cumulativePulses),
                 traceStateText(buckets[i].state));

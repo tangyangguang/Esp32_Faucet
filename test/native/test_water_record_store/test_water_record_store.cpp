@@ -205,10 +205,14 @@ void test_record_aggregate_uses_calendar_month_and_real_daily_buckets() {
     const WaterUsageSummary summary = aggregateWaterRecords(store, 832032000UL, 30);
 
     TEST_ASSERT_EQUAL_UINT32(12000, summary.todayMl);
+    TEST_ASSERT_EQUAL_UINT32(1, summary.todayCount);
     TEST_ASSERT_EQUAL_UINT32(23000, summary.monthMl);
+    TEST_ASSERT_EQUAL_UINT32(3, summary.monthCount);
     TEST_ASSERT_EQUAL_UINT32(30000, summary.last30DaysMl);
+    TEST_ASSERT_EQUAL_UINT32(4, summary.last30DaysCount);
     TEST_ASSERT_EQUAL_UINT32(1000, summary.last30DaysDailyAverageMl);
     TEST_ASSERT_EQUAL_UINT32(30000, summary.totalMl);
+    TEST_ASSERT_EQUAL_UINT32(4, summary.totalCount);
     TEST_ASSERT_EQUAL_UINT32(900, summary.unknownMl);
     TEST_ASSERT_EQUAL_UINT32(7, summary.unknownDurationSec);
     TEST_ASSERT_EQUAL_UINT32(1, summary.unknownCount);

@@ -272,6 +272,7 @@ WaterUsageSummary aggregateWaterRecords(const WaterRecordReader& reader,
             }
 
             addSaturating(summary.totalMl, record.volumeMl);
+            addSaturating(summary.totalCount, 1);
             if (!hasRealNow) {
                 continue;
             }
@@ -284,12 +285,15 @@ WaterUsageSummary aggregateWaterRecords(const WaterRecordReader& reader,
             }
             if (day == summary.todayDay) {
                 addSaturating(summary.todayMl, record.volumeMl);
+                addSaturating(summary.todayCount, 1);
             }
             if (day >= summary.monthStartDay) {
                 addSaturating(summary.monthMl, record.volumeMl);
+                addSaturating(summary.monthCount, 1);
             }
             if (summary.todayDay - day < kUsageSummaryMaxDays) {
                 addSaturating(summary.last30DaysMl, record.volumeMl);
+                addSaturating(summary.last30DaysCount, 1);
             }
             if (day < firstDay || day > summary.todayDay) {
                 continue;

@@ -23,7 +23,7 @@ AppSnapshot makeSnapshot() {
 }  // namespace
 
 void test_status_json_contains_no_remote_control_capability() {
-    char json[256]{};
+    char json[384]{};
 
     TEST_ASSERT_TRUE(writeStatusJson(makeSnapshot(), json, sizeof(json)));
 
@@ -37,6 +37,9 @@ void test_status_json_contains_no_remote_control_capability() {
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"selectedPreset\":1"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"pulsePerLiter\":0"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"flowDroppedPulses\":7"));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"valveDutyPercent\":100"));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"valveFullPowerSec\":10"));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"valveHoldDutyPercent\":70"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"screenOn\":false"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"waterControl\":false"));
     TEST_ASSERT_NULL(std::strstr(json, "start"));
@@ -44,11 +47,27 @@ void test_status_json_contains_no_remote_control_capability() {
 }
 
 void test_status_json_can_report_screen_state() {
-    char json[256]{};
+    char json[384]{};
 
     TEST_ASSERT_TRUE(writeStatusJson(makeSnapshot(), true, json, sizeof(json)));
 
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"screenOn\":true"));
+}
+
+void test_status_json_uses_configured_valve_pwm_values() {
+    char json[384]{};
+    SystemConfig config = makeDefaultConfig();
+    config.valveFullPowerSec = 5;
+    config.valveHoldDutyPercent = 45;
+    AppSnapshot snapshot = makeSnapshot();
+    snapshot.valve = ValveOutput{ValveState::Holding, true, 45};
+
+    TEST_ASSERT_TRUE(writeStatusJson(snapshot, true, config, json, sizeof(json)));
+
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"valveDutyPercent\":45"));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"valveFullPowerSec\":5"));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"valveHoldDutyPercent\":45"));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"waterControl\":false"));
 }
 
 void test_stats_json_contains_all_periods() {
@@ -180,6 +199,7 @@ int main(int argc, char** argv) {
     UNITY_BEGIN();
     RUN_TEST(test_status_json_contains_no_remote_control_capability);
     RUN_TEST(test_status_json_can_report_screen_state);
+    RUN_TEST(test_status_json_uses_configured_valve_pwm_values);
     RUN_TEST(test_stats_json_contains_all_periods);
     RUN_TEST(test_usage_summary_json_contains_aggregated_series);
     RUN_TEST(test_config_json_contains_safety_and_display_settings);

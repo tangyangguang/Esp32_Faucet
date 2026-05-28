@@ -151,6 +151,35 @@ void formatLiters(std::uint32_t ml, char* out, std::size_t len) {
                   static_cast<unsigned long>(centiliters % 100UL));
 }
 
+void formatChartLiters(std::uint32_t ml, char* out, std::size_t len) {
+    const std::uint32_t deciliters = (ml + 50UL) / 100UL;
+    if (deciliters == 0) {
+        std::snprintf(out, len, "0");
+        return;
+    }
+    std::snprintf(out,
+                  len,
+                  "%lu.%lu",
+                  static_cast<unsigned long>(deciliters / 10UL),
+                  static_cast<unsigned long>(deciliters % 10UL));
+}
+
+std::uint32_t chartDistance(std::uint32_t a, std::uint32_t b) {
+    return a > b ? a - b : b - a;
+}
+
+std::uint32_t chooseCountLabelY(std::uint32_t pointY, std::uint32_t barLabelY) {
+    const std::uint32_t above = pointY > 16UL ? pointY - 11UL : pointY + 16UL;
+    if (chartDistance(above, barLabelY) >= 14UL) {
+        return above;
+    }
+    const std::uint32_t below = pointY + 15UL;
+    if (chartDistance(below, barLabelY) >= 14UL) {
+        return below;
+    }
+    return pointY > 24UL ? pointY - 24UL : pointY + 24UL;
+}
+
 bool isLeapYear(std::uint16_t year) {
     return (year % 4U == 0 && year % 100U != 0) || year % 400U == 0;
 }
@@ -326,6 +355,16 @@ void sendMetricCardClass(const char* label, const char* value, const char* class
     Esp32BaseWeb::sendChunk("</span><strong>");
     Esp32BaseWeb::sendChunk(value);
     Esp32BaseWeb::sendChunk("</strong></section>");
+}
+
+void sendStatsMetricCard(const char* label, const char* value, const char* meta) {
+    Esp32BaseWeb::sendChunk("<section class='metric-card stats-metric-card'><span>");
+    Esp32BaseWeb::sendChunk(label);
+    Esp32BaseWeb::sendChunk("</span><strong>");
+    Esp32BaseWeb::sendChunk(value);
+    Esp32BaseWeb::sendChunk("</strong><small class='stats-card-meta'>");
+    Esp32BaseWeb::sendChunk(meta);
+    Esp32BaseWeb::sendChunk("</small></section>");
 }
 
 void formatSecondsValue(std::uint32_t seconds, char* out, std::size_t len) {
@@ -613,82 +652,132 @@ std::uint32_t sumRealRecordVolumeSince(std::uint32_t startTime) {
 
 void sendDailyChart(const WaterUsageSummary& summary) {
     std::uint32_t maxVolume = 0;
-    std::uint32_t maxDuration = 0;
+    std::uint32_t maxCount = 0;
     for (std::size_t i = 0; i < summary.dayCount; ++i) {
         if (summary.days[i].volumeMl > maxVolume) {
             maxVolume = summary.days[i].volumeMl;
         }
-        if (summary.days[i].durationSec > maxDuration) {
-            maxDuration = summary.days[i].durationSec;
+        if (summary.days[i].count > maxCount) {
+            maxCount = summary.days[i].count;
         }
     }
-    Esp32BaseWeb::sendChunk("<section class='daily-chart'><div class='chart-head'><h3>最近 30 天</h3>"
-                            "<span class='chart-key volume-key'>出水量</span><span class='chart-key duration-key'>出水时长</span></div>"
-                            "<p class='hint'>上下两图共用日期轴，灰色短线表示当天无记录。</p>"
-                            "<svg viewBox='0 0 1000 210' role='img' aria-label='最近30天每日出水量和出水时长'>");
-    constexpr std::uint32_t volumeTop = 14;
-    constexpr std::uint32_t durationTop = 114;
-    constexpr std::uint32_t chartHeight = 58;
-    constexpr std::uint32_t volumeBaseY = volumeTop + chartHeight;
-    constexpr std::uint32_t durationBaseY = durationTop + chartHeight;
-    constexpr std::uint32_t left = 46;
+    const std::uint32_t chartMax = maxVolume == 0 ? 1000UL : maxVolume;
+    const std::uint32_t countMax = maxCount == 0 ? 1UL : maxCount;
+    Esp32BaseWeb::sendChunk("<section class='daily-chart'><div class='chart-head'><h3>最近 30 天出水量</h3>"
+                            "<span class='chart-unit'>每日出水量 (L) · 每日次数</span></div>"
+                            "<svg viewBox='0 0 1080 292' role='img' aria-label='最近30天每日出水量和每日次数'>");
+    constexpr std::uint32_t top = 56;
+    constexpr std::uint32_t baseY = 222;
+    constexpr std::uint32_t chartHeight = baseY - top;
+    constexpr std::uint32_t left = 90;
     constexpr std::uint32_t step = 31;
-    constexpr std::uint32_t barWidth = 14;
-    char maxText[24]{};
-    formatLiters(maxVolume, maxText, sizeof(maxText));
-    char maxDurationText[24]{};
-    formatDurationShort(maxDuration, maxDurationText, sizeof(maxDurationText));
-    Esp32BaseWeb::sendChunk("<line class='axis' x1='40' y1='72' x2='975' y2='72'></line>");
-    sendFmt("<text class='y-label' x='38' y='12'>%s</text>", maxText);
+    constexpr std::uint32_t barWidth = 16;
+    Esp32BaseWeb::sendChunk("<line class='axis' x1='72' y1='222' x2='1030' y2='222'></line>"
+                            "<line class='axis' x1='72' y1='48' x2='72' y2='222'></line>"
+                            "<line class='count-axis' x1='1030' y1='48' x2='1030' y2='222'></line>");
+    for (std::uint32_t tick = 0; tick < 5; ++tick) {
+        const std::uint32_t tickValue = (chartMax * tick) / 4UL;
+        const std::uint32_t y = baseY - (chartHeight * tick) / 4UL;
+        char tickText[24]{};
+        formatLiters(tickValue, tickText, sizeof(tickText));
+        sendFmt("<line class='grid' x1='72' y1='%lu' x2='1030' y2='%lu'></line>"
+                "<text class='chart-y-tick' x='62' y='%lu'>%s</text>",
+                static_cast<unsigned long>(y),
+                static_cast<unsigned long>(y),
+                static_cast<unsigned long>(y + 4UL),
+                tickText);
+    }
+    std::uint32_t previousCountTick = countMax + 1UL;
+    for (std::uint32_t tick = 0; tick < 4; ++tick) {
+        const std::uint32_t countValue = (countMax * tick + 1UL) / 3UL;
+        if (tick > 0 && countValue == previousCountTick) {
+            continue;
+        }
+        previousCountTick = countValue;
+        const std::uint32_t y = baseY - (chartHeight * countValue) / countMax;
+        sendFmt("<text class='count-y-tick' x='1040' y='%lu'>%lu 次</text>",
+                static_cast<unsigned long>(y + 4UL),
+                static_cast<unsigned long>(countValue));
+    }
     for (std::size_t i = 0; i < summary.dayCount; ++i) {
         const std::uint32_t x = left + static_cast<std::uint32_t>(i) * step;
         const DailyUsageBucket& day = summary.days[i];
-        const std::uint32_t barHeight = maxVolume == 0 ? 0 : (day.volumeMl * chartHeight) / maxVolume;
-        const std::uint32_t y = volumeBaseY - barHeight;
+        char label[8]{};
         char volume[24]{};
-        formatLiters(day.volumeMl, volume, sizeof(volume));
+        char barLabel[12]{};
         char duration[24]{};
+        formatDayLabel(day.dayIndex, label, sizeof(label));
+        formatLiters(day.volumeMl, volume, sizeof(volume));
+        formatChartLiters(day.volumeMl, barLabel, sizeof(barLabel));
         formatDurationShort(day.durationSec, duration, sizeof(duration));
         const std::uint32_t avgMl = day.count == 0 ? 0 : day.volumeMl / day.count;
-        sendFmt("<rect class='%s' x='%lu' y='%lu' width='%lu' height='%lu'><title>",
+        const std::uint32_t barHeight = day.volumeMl == 0 ? 0 : (day.volumeMl * chartHeight) / chartMax;
+        const std::uint32_t y = baseY - barHeight;
+        const std::uint32_t center = x + barWidth / 2UL;
+        sendFmt("<rect class='%s' x='%lu' y='%lu' width='%lu' height='%lu' rx='1'><title>"
+                "%s：%s · %u 次 · %s · 平均 %lu ml/次</title></rect>"
+                "<text class='bar-label' x='%lu' y='%lu'>%s</text>"
+                "<text class='x-label' x='%lu' y='250' transform='rotate(-45 %lu 250)'>%s</text>",
                 day.count == 0 ? "bar empty-bar" : "bar",
                 static_cast<unsigned long>(x),
-                static_cast<unsigned long>(barHeight == 0 ? volumeBaseY - 2 : y),
+                static_cast<unsigned long>(barHeight == 0 ? baseY - 3UL : y),
                 static_cast<unsigned long>(barWidth),
-                static_cast<unsigned long>(barHeight == 0 ? 2 : barHeight));
-        char label[8]{};
-        formatDayLabel(day.dayIndex, label, sizeof(label));
-        sendFmt("%s：%s · %s · %u 次 · 平均 %lu ml/次</title></rect>",
+                static_cast<unsigned long>(barHeight == 0 ? 3UL : barHeight),
                 label,
                 volume,
-                duration,
                 static_cast<unsigned>(day.count),
-                static_cast<unsigned long>(avgMl));
-    }
-    Esp32BaseWeb::sendChunk("<line class='axis' x1='40' y1='172' x2='975' y2='172'></line>");
-    sendFmt("<text class='y-label' x='38' y='112'>%s</text>", maxDurationText);
-    for (std::size_t i = 0; i < summary.dayCount; ++i) {
-        const std::uint32_t x = left + static_cast<std::uint32_t>(i) * step;
-        const DailyUsageBucket& day = summary.days[i];
-        const std::uint32_t barHeight = maxDuration == 0 ? 0 : (day.durationSec * chartHeight) / maxDuration;
-        const std::uint32_t y = durationBaseY - barHeight;
-        char label[8]{};
-        char duration[24]{};
-        formatDayLabel(day.dayIndex, label, sizeof(label));
-        formatDurationShort(day.durationSec, duration, sizeof(duration));
-        sendFmt("<rect class='%s' x='%lu' y='%lu' width='%lu' height='%lu'><title>%s：%s · %u 次</title></rect>",
-                day.count == 0 ? "duration-bar empty-bar" : "duration-bar",
-                static_cast<unsigned long>(x),
-                static_cast<unsigned long>(barHeight == 0 ? durationBaseY - 2 : y),
-                static_cast<unsigned long>(barWidth),
-                static_cast<unsigned long>(barHeight == 0 ? 2 : barHeight),
-                label,
                 duration,
-                static_cast<unsigned>(day.count));
-        if (i % 5 == 0 || i + 1 == summary.dayCount) {
-            sendFmt("<text class='x-label' x='%lu' y='204'>%s</text>",
-                    static_cast<unsigned long>(x + barWidth / 2),
-                    label);
+                static_cast<unsigned long>(avgMl),
+                static_cast<unsigned long>(center),
+                static_cast<unsigned long>(barHeight == 0 ? baseY - 10UL : (y > 10UL ? y - 8UL : y)),
+                barLabel,
+                static_cast<unsigned long>(center),
+                static_cast<unsigned long>(center),
+                label);
+    }
+    if (summary.dayCount > 0) {
+        Esp32BaseWeb::sendChunk("<polyline class='count-line-halo' points='");
+        for (std::size_t i = 0; i < summary.dayCount; ++i) {
+            const DailyUsageBucket& day = summary.days[i];
+            const std::uint32_t x = left + static_cast<std::uint32_t>(i) * step + barWidth / 2UL;
+            const std::uint32_t y = baseY - (static_cast<std::uint32_t>(day.count) * chartHeight) / countMax;
+            sendFmt("%s%lu,%lu",
+                    i == 0 ? "" : " ",
+                    static_cast<unsigned long>(x),
+                    static_cast<unsigned long>(y));
+        }
+        Esp32BaseWeb::sendChunk("'></polyline><polyline class='count-line' points='");
+        for (std::size_t i = 0; i < summary.dayCount; ++i) {
+            const DailyUsageBucket& day = summary.days[i];
+            const std::uint32_t x = left + static_cast<std::uint32_t>(i) * step + barWidth / 2UL;
+            const std::uint32_t y = baseY - (static_cast<std::uint32_t>(day.count) * chartHeight) / countMax;
+            sendFmt("%s%lu,%lu",
+                    i == 0 ? "" : " ",
+                    static_cast<unsigned long>(x),
+                    static_cast<unsigned long>(y));
+        }
+        Esp32BaseWeb::sendChunk("'></polyline>");
+        for (std::size_t i = 0; i < summary.dayCount; ++i) {
+            const DailyUsageBucket& day = summary.days[i];
+            if (day.count == 0) {
+                continue;
+            }
+            const std::uint32_t center = left + static_cast<std::uint32_t>(i) * step + barWidth / 2UL;
+            const std::uint32_t y = baseY - (static_cast<std::uint32_t>(day.count) * chartHeight) / countMax;
+            const std::uint32_t barHeight = day.volumeMl == 0 ? 0 : (day.volumeMl * chartHeight) / chartMax;
+            const std::uint32_t barTop = baseY - barHeight;
+            const std::uint32_t barLabelY = barHeight == 0 ? baseY - 10UL : (barTop > 10UL ? barTop - 8UL : barTop);
+            const std::uint32_t countLabelY = chooseCountLabelY(y, barLabelY);
+            char countText[12]{};
+            std::snprintf(countText, sizeof(countText), "%u次", static_cast<unsigned>(day.count));
+            sendFmt("<circle class='count-dot' cx='%lu' cy='%lu' r='1.7'><title>%u 次</title></circle>"
+                    "<text class='count-label' x='%lu' y='%lu'>%s</text>",
+                    static_cast<unsigned long>(center),
+                    static_cast<unsigned long>(y),
+                    static_cast<unsigned>(day.count),
+                    static_cast<unsigned long>(center),
+                    static_cast<unsigned long>(countLabelY),
+                    countText);
         }
     }
     Esp32BaseWeb::sendChunk("</svg></section>");
@@ -750,6 +839,32 @@ void formatWaterRecordTime(const WaterRecord& record, char* out, std::size_t len
     std::snprintf(out, len, "历史未知时间");
 }
 
+void formatWaterRecordListTime(const WaterRecord& record, char* out, std::size_t len) {
+    if (!out || len == 0) {
+        return;
+    }
+    if (waterRecordHasRealTime(record)) {
+        std::uint16_t year = 0;
+        std::uint8_t month = 0;
+        std::uint8_t monthDay = 0;
+        dateFromDayIndex(record.startTime / 86400UL, year, month, monthDay);
+        const std::uint32_t daySecond = record.startTime % 86400UL;
+        std::snprintf(out,
+                      len,
+                      "%02u-%02u %02lu:%02lu",
+                      static_cast<unsigned>(month),
+                      static_cast<unsigned>(monthDay),
+                      static_cast<unsigned long>(daySecond / 3600UL),
+                      static_cast<unsigned long>((daySecond / 60UL) % 60UL));
+        return;
+    }
+    if (waterRecordHasBootRelativeTime(record)) {
+        std::snprintf(out, len, "开机+%lu s", static_cast<unsigned long>(record.startTime));
+        return;
+    }
+    std::snprintf(out, len, "未知");
+}
+
 void sendNoticeFromQuery() {
     char text[32]{};
     if (getParam("saved", text, sizeof(text))) {
@@ -788,30 +903,30 @@ void sendNoticeFromQuery() {
 
 void sendAppStyles() {
     Esp32BaseWeb::sendChunk("<style>");
-    Esp32BaseWeb::sendChunk(":root{--bg:#fff;--surface:#fff;--line:#dde5e3;--text:#17202a;--muted:#68747d;--accent:#2f756f;--accent-soft:#e3f1ed;--warn:#a36b10}"
-                            "body{max-width:1280px;background:var(--bg);color:var(--text);font-size:14px;line-height:1.42;padding:14px 18px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,'PingFang SC','Microsoft YaHei',sans-serif}"
+    Esp32BaseWeb::sendChunk(":root{--bg:#fbfcfb;--surface:#fff;--line:#e2ebe8;--text:#243039;--muted:#6b777f;--accent:#3d837b;--accent-soft:#edf6f3;--warn:#a36b10}"
+                            "body{max-width:1120px;background:var(--bg);color:var(--text);font-size:14px;line-height:1.42;padding:14px 18px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,'PingFang SC','Microsoft YaHei',sans-serif}"
                             "h1,h2,h3{letter-spacing:0;color:var(--text)}h2{font-size:18px;margin:18px 0 10px}h3{font-size:15px;margin:0 0 8px}.page{margin:0}p{margin:0 0 8px}");
-    Esp32BaseWeb::sendChunk("nav,.footerbar,.panel,.metric-card,.filter-card,.daily-chart,.usage-panel,table{background:var(--surface);border:1px solid var(--line);border-radius:8px;box-shadow:0 1px 2px rgba(16,24,40,.035)}"
-                            "nav{display:flex;align-items:center;gap:6px;margin:0 0 18px;padding:8px 10px;overflow-x:auto}nav a{font-size:15px;font-weight:650;padding:8px 12px;margin:0;border-radius:7px;color:#25313f}.brand{font-weight:750}nav a.active{background:var(--accent-soft);color:#17635b}"
+    Esp32BaseWeb::sendChunk("nav,.footerbar,.panel,.metric-card,.filter-card,.daily-chart,.usage-panel,table{background:var(--surface);border:1px solid var(--line);border-radius:6px;box-shadow:0 1px 2px rgba(20,34,38,.025)}"
+                            "nav{display:flex;align-items:center;gap:6px;margin:0 0 18px;padding:8px 10px;overflow-x:auto}nav a{font-size:15px;font-weight:650;padding:8px 12px;margin:0;border-radius:7px;color:#25313f}.brand{font-weight:750}nav a.active{background:var(--accent-soft);color:#1f635e}"
                             ".footerbar{margin-top:18px;padding:9px 12px}.syslinks a{background:#f1f4f4;color:var(--muted)}.heap{color:var(--muted)}");
     Esp32BaseWeb::sendChunk(".muted{color:var(--muted)}.hint{display:block;color:var(--muted);font-size:12px;margin:3px 0 0}.panel{padding:12px;margin:12px 0}.panel h3{padding-bottom:6px;margin-bottom:8px;border-bottom:1px solid #eef2f1}"
                             ".panel-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px;padding-bottom:7px;border-bottom:1px solid #eef2f1}.panel-head h3{padding:0;margin:0;border:0}");
     Esp32BaseWeb::sendChunk(".records-top-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:0 0 14px;align-items:stretch}"
                             ".records-top-grid .panel{display:flex;flex-direction:column;margin:0}.records-top-grid .metric-grid{grid-template-columns:repeat(auto-fit,minmax(128px,1fr));gap:8px;margin:0}.records-top-grid .metric-card{min-height:44px;padding:9px 11px}.records-top-grid .metric-card span{font-size:12px;margin-bottom:3px}.records-top-grid .metric-card strong{font-size:16px}"
                             ".metering-panel .hint{margin-top:auto;padding-top:10px}.trace-cache-panel .metric-grid{grid-template-columns:repeat(2,minmax(0,1fr));margin-top:0}.trace-cache-panel .panel-head{margin-bottom:8px}.trace-head-meter{display:grid;grid-template-columns:minmax(120px,1fr) auto;gap:9px;align-items:center;min-width:230px}.trace-head-meter .progress{height:7px}.trace-badge{display:inline-flex;align-items:center;min-height:20px;margin-left:7px;padding:0 7px;border:1px solid #cfe4dc;border-radius:999px;background:var(--accent-soft);color:#17635b;font-size:12px;font-weight:700;vertical-align:middle}"
-                            ".pulse-cell{font-variant-numeric:tabular-nums}.inline-note{display:inline-flex;align-items:center;min-height:20px;margin-left:6px;padding:0 7px;border-radius:999px;background:#eef3f2;color:var(--muted);font-size:12px;font-weight:650;white-space:nowrap}.inline-note.ok{background:#e8f4ee;color:#21634c}");
+                            ".pulse-cell{font-variant-numeric:tabular-nums;white-space:nowrap}.inline-note{display:inline-flex;align-items:center;min-height:20px;margin-left:6px;padding:0 7px;border-radius:999px;background:#eef3f2;color:var(--muted);font-size:12px;font-weight:650;white-space:nowrap}.inline-note.ok{background:#e8f4ee;color:#21634c}.measured-note{display:flex;width:max-content;margin:2px 0 0}");
     Esp32BaseWeb::sendChunk(".pulse-detail-chart{padding:10px 0 2px;overflow-x:auto}.pulse-detail-chart svg{display:block;width:100%;min-width:760px;height:auto}.pulse-detail-chart .axis{stroke:#d9e0df;stroke-width:1}.pulse-detail-chart .grid-line{stroke:#edf2f1;stroke-width:1}.pulse-line{fill:none;stroke:var(--accent);stroke-width:3;stroke-linejoin:round;stroke-linecap:round}.cum-line{fill:none;stroke:#7c8fae;stroke-width:2.5;stroke-linejoin:round;stroke-linecap:round;opacity:.9}.pulse-dot{fill:var(--surface);stroke:var(--accent);stroke-width:2}.stable-line{stroke:#a36b10;stroke-width:2;stroke-dasharray:7 5}.chart-label{font-size:12px;fill:var(--muted)}.chart-legend{display:flex;align-items:center;gap:14px;flex-wrap:wrap;color:var(--muted);font-size:12px;margin:6px 0 0}.legend-mark{display:inline-block;width:18px;height:3px;border-radius:999px;margin-right:5px;vertical-align:middle}.legend-pulse{background:var(--accent)}.legend-cum{background:#7c8fae}.legend-stable{background:#a36b10}.detail-data summary{cursor:pointer;font-weight:750;color:#355e66}.detail-data table{margin-top:10px}");
     Esp32BaseWeb::sendChunk(".grid,.metric-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin:0 0 12px}"
                             ".metric-card{padding:12px 14px;min-height:54px}.metric-card.primary{border-color:#b8d7cf;background:#f7fbfa}.metric-card span{display:block;color:var(--muted);font-size:13px;font-weight:600;margin-bottom:4px}.metric-card strong{display:block;color:var(--text);font-size:18px;line-height:1.2;font-weight:750}"
-                            ".machine-status{padding:14px 16px;margin:0 0 14px;border-color:#c8ddd7;background:#fbfefd}"
-                            ".machine-main{display:grid;grid-template-columns:minmax(280px,.85fr) minmax(0,1.15fr);gap:16px;align-items:stretch}.machine-main.compact{grid-template-columns:minmax(250px,.58fr) minmax(0,1.42fr)}.machine-hero{display:flex;flex-direction:column;justify-content:center;min-height:118px}.machine-eyebrow{display:block;color:var(--muted);font-size:13px;font-weight:700;margin-bottom:4px}.machine-hero strong{display:block;font-size:31px;line-height:1.05;font-weight:800}.machine-note{margin:8px 0 0;color:#405059;font-weight:650}.machine-preset-line{margin:5px 0 0;color:var(--muted);font-weight:650}.machine-progress{margin-top:14px}.machine-progress-head{display:flex;align-items:center;justify-content:space-between;gap:10px;color:var(--muted);font-size:13px;font-weight:700;margin-bottom:7px}.progress{height:9px;background:#e7eeec;border-radius:999px;overflow:hidden}.progress span{display:block;height:100%;background:var(--accent);border-radius:999px}.machine-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;align-content:stretch}.machine-kpi,.machine-indicator{display:flex;flex-direction:column;justify-content:center;min-height:58px;padding:10px 11px;border:1px solid #edf2f1;border-radius:7px;background:#fff}.machine-kpi span{display:block;color:var(--muted);font-size:12px;font-weight:700;margin-bottom:3px}.machine-kpi strong{display:block;font-size:16px;line-height:1.2;font-weight:750}.machine-kpi.soft strong{font-size:14px;color:#405059}");
+                            ".machine-status{padding:14px 16px;margin:0 0 14px;border-color:#d8e1e6;background:#fbfcfd}"
+                            ".machine-main{display:grid;grid-template-columns:minmax(280px,.36fr) minmax(0,.64fr);gap:16px;align-items:stretch}.machine-main.compact{grid-template-columns:minmax(250px,.36fr) minmax(0,.64fr)}.machine-hero{display:flex;flex-direction:column;justify-content:center;min-height:118px}.machine-eyebrow{display:block;color:var(--muted);font-size:13px;font-weight:700;margin-bottom:4px}.machine-hero strong{display:block;font-size:31px;line-height:1.05;font-weight:800}.machine-note{margin:8px 0 0;color:#405059;font-weight:650}.machine-preset-line{margin:5px 0 0;color:var(--muted);font-weight:650}.machine-progress{margin-top:14px}.machine-progress-head{display:flex;align-items:center;justify-content:space-between;gap:10px;color:var(--muted);font-size:13px;font-weight:700;margin-bottom:7px}.progress{height:9px;background:#e2e9e7;border-radius:999px;overflow:hidden}.progress span{display:block;height:100%;background:var(--accent);border-radius:999px}.machine-overview{display:flex;flex-direction:column;gap:8px;min-width:0}.machine-task-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.machine-task-card{display:flex;flex-direction:column;justify-content:center;min-height:68px;padding:11px 12px;border:1px solid #dde6eb;border-radius:7px;background:#fff;box-shadow:0 1px 2px rgba(16,24,40,.025)}.machine-task-card span{display:block;color:var(--muted);font-size:12px;font-weight:700;margin-bottom:3px}.machine-task-card strong{display:block;color:var(--text);font-size:17px;line-height:1.2;font-weight:760}.machine-task-card small{display:block;margin-top:4px;color:var(--muted);font-size:12px;line-height:1.2;font-weight:650}.machine-status-strip{display:flex;align-items:center;gap:7px;flex-wrap:wrap}.machine-status-item{display:inline-flex;align-items:center;gap:5px;min-height:28px;padding:0 9px;border:1px solid #dce4ea;border-radius:999px;background:#f7f9fb;color:#66737c;font-size:12px;font-weight:700;line-height:1}.machine-status-item strong{color:#35424c;font-size:13px;font-weight:750;line-height:1}.machine-status-note{color:#7a858e;font-size:11px;font-weight:650;line-height:1}");
     Esp32BaseWeb::sendChunk(".today-layout{display:grid;grid-template-columns:minmax(190px,.28fr) minmax(0,1.72fr);gap:12px;margin:0 0 14px}.today-summary-card{display:flex;flex-direction:column;justify-content:flex-start;min-height:92px;padding:14px 16px}.today-summary-label{display:block;color:var(--muted);font-size:13px;font-weight:700;line-height:1.35;margin-bottom:6px}.today-total-main{display:block;color:var(--text);font-size:26px;line-height:1.05;font-weight:800}.today-total-meta{display:flex;align-items:center;flex-wrap:wrap;gap:3px 8px;color:var(--muted);font-size:13px;font-weight:600;margin-top:8px}.today-meta-item{display:inline-flex;align-items:baseline;gap:3px;white-space:nowrap}.today-meta-item+.today-meta-item:before{content:'·';margin-right:5px;color:#a2adb4}.today-meta-value{color:#52616b;font-weight:650}.today-records{padding:8px 10px;overflow-x:auto}.today-record-table{min-width:680px;margin:0;border:0;border-radius:0;box-shadow:none;background:transparent;font-size:13px}.today-record-table th,.today-record-table td{padding:6px 8px}.today-record-table th{background:transparent}.today-record-table .record-duration{white-space:nowrap}.today-record-table .status-pill{justify-content:center}");
     Esp32BaseWeb::sendChunk(".filter-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:10px;margin:0 0 12px}.filter-card{padding:12px 14px;min-height:128px}.filter-head{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:8px}.filter-head strong{font-size:16px;line-height:1.25;font-weight:750}"
                             ".filter-meta{display:grid;gap:4px;color:var(--muted);font-size:13px;margin-top:10px}.dual-progress{display:grid;gap:7px;margin:8px 0 10px}.filter-progress-row{display:grid;grid-template-columns:48px 1fr;gap:8px;align-items:center;color:var(--muted);font-size:12px}.filter-track{display:block;height:7px;background:#edf3f1;border:1px solid #d7e3e0;border-radius:999px;overflow:hidden}.filter-progress-fill{display:block;height:100%;border-radius:999px}.day-progress{background:var(--accent)}.flow-progress{background:#c9822c}");
     Esp32BaseWeb::sendChunk(".status-pill{display:inline-flex;align-items:center;min-height:22px;padding:0 9px;border-radius:999px;background:#eef2f2;color:#55616a;font-size:12px;font-weight:650;line-height:1;white-space:nowrap}.status-ok{background:#e8f4ee;color:#21634c;border-color:#bdddcf}.status-warn{background:#fff7e6;color:#7a520e;border-color:#eed28f}.status-error{background:#fff0ee;color:#9b3328;border-color:#efc1ba}.status-muted{background:#eef2f2;color:#66737c;border-color:#d8e0df}.warn{display:inline-block;background:#fff8e6;border:1px solid #ead28b;border-radius:8px;padding:7px 9px;color:#6b4a12;margin:0 0 10px}.filter-used-days{font-variant-numeric:tabular-nums}.filter-progress-label{display:grid;grid-template-columns:48px 1fr;gap:6px;align-items:center;color:var(--muted);font-size:12px}");
-    Esp32BaseWeb::sendChunk(".stats-layout{display:grid;grid-template-columns:minmax(0,1fr);gap:10px;align-items:start}.daily-chart{padding:14px 16px;margin:0 0 12px;overflow-x:auto}.chart-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:2px}.chart-head h3{margin:0 4px 0 0}.chart-key{font-size:12px;color:var(--muted);font-weight:650}.chart-key:before{content:'';display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5px}.volume-key:before{background:var(--accent)}.duration-key:before{background:#7c8fae}");
-    Esp32BaseWeb::sendChunk(".daily-chart svg{display:block;width:100%;height:auto;min-width:720px;margin-top:6px}.daily-chart .bar{fill:var(--accent)}.daily-chart .duration-bar{fill:#7c8fae}.daily-chart .empty-bar{fill:#cfd7d5}.daily-chart .axis{stroke:#d9e0df;stroke-width:1}.daily-chart .x-label,.daily-chart .y-label{font-size:11px;text-anchor:middle;fill:var(--muted)}");
-    Esp32BaseWeb::sendChunk(".usage-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:10px;margin:0 0 12px}.usage-panel{padding:12px 14px}.usage-panel h3{margin-bottom:9px}.usage-row{display:grid;grid-template-columns:minmax(72px,1fr) auto;gap:5px 8px;align-items:center;margin:0 0 8px;color:var(--muted);font-size:13px}.usage-row strong{color:var(--text);font-weight:650}.usage-bar{grid-column:1/-1;height:5px;background:#e6ecea;border-radius:999px;overflow:hidden}.usage-bar i{display:block;height:100%;background:var(--accent);border-radius:999px}");
+    Esp32BaseWeb::sendChunk(".stats-layout{display:grid;grid-template-columns:minmax(0,1fr);gap:10px;align-items:start}.stats-layout .metric-card{border-radius:6px}.stats-metric-card span{font-weight:500}.stats-metric-card strong{font-weight:600}.stats-card-meta{display:block;margin-top:8px;color:var(--muted);font-size:12px;font-weight:400;line-height:1.25}.daily-chart{padding:16px 18px 14px;margin:0 0 12px;overflow-x:auto;border-radius:6px}.chart-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:6px}.chart-head h3{margin:0;font-size:16px;font-weight:600}.chart-unit{color:var(--muted);font-size:12px;font-weight:400}");
+    Esp32BaseWeb::sendChunk(".daily-chart svg{display:block;width:100%;height:auto;min-width:980px;margin-top:2px}.daily-chart .bar{fill:var(--accent)}.daily-chart .empty-bar{fill:#d5ddda}.daily-chart .axis,.daily-chart .count-axis{stroke:#d6e0dd;stroke-width:1}.daily-chart .grid{stroke:#edf4f2;stroke-width:1}.daily-chart .chart-y-tick{font-size:11px;text-anchor:end;fill:var(--muted);font-weight:400}.daily-chart .count-y-tick{font-size:11px;text-anchor:start;fill:#9aa6ab;font-weight:400}.daily-chart .x-label{font-size:11px;text-anchor:end;fill:var(--muted);font-weight:400}.daily-chart .bar-label{font-size:11px;text-anchor:middle;fill:var(--muted);font-weight:400}.daily-chart .count-line-halo{fill:none;stroke:#fff;stroke-width:2;stroke-linejoin:round;stroke-linecap:round;opacity:.55}.daily-chart .count-line{fill:none;stroke:#acbbc1;stroke-width:1.15;stroke-linejoin:round;stroke-linecap:round}.daily-chart .count-dot{fill:#acbbc1;stroke:#fff;stroke-width:.6}.daily-chart .count-label{font-size:10px;text-anchor:middle;fill:#7d8b92;font-weight:400}");
+    Esp32BaseWeb::sendChunk(".distribution-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin:18px 0 10px}.distribution-head h2{margin:0;font-size:16px;font-weight:600}.distribution-scope{color:var(--muted);font-size:12px;font-weight:400}.usage-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:10px;margin:0 0 12px}.usage-panel{padding:14px 16px;border-radius:6px}.usage-panel h3{margin-bottom:12px;font-size:15px;font-weight:600}.usage-row{display:grid;grid-template-columns:minmax(72px,1fr) auto;gap:6px 10px;align-items:center;margin:0 0 10px;color:var(--muted);font-size:13px}.usage-row strong{color:var(--text);font-weight:500}.usage-row small{grid-column:1/-1;margin-top:-4px;color:var(--muted);font-size:12px;font-weight:400}.usage-bar{grid-column:1/-1;height:5px;background:#edf3f1;border-radius:4px;overflow:hidden}.usage-bar i{display:block;height:100%;background:var(--accent);border-radius:4px}");
     Esp32BaseWeb::sendChunk(".form-grid{display:grid;grid-template-columns:repeat(12,1fr);gap:10px 12px;align-items:start}.span-2{grid-column:span 2}.span-3{grid-column:span 3}.span-4{grid-column:span 4}.span-5{grid-column:span 5}.span-6{grid-column:span 6}.span-8{grid-column:span 8}.span-12{grid-column:1/-1}"
                             ".field span,.check-title{display:block;font-size:12px;color:var(--muted);font-weight:650;margin-bottom:4px}.field input,.field select{margin-bottom:0}.check-line{display:inline-flex;align-items:center;gap:6px;min-height:32px;padding:0 8px;border:1px solid var(--line);border-radius:6px;background:#fff;color:var(--text);font-size:14px;white-space:nowrap}.check-line input{margin:0}");
     Esp32BaseWeb::sendChunk(".form-actions{display:flex;align-items:center;justify-content:flex-start;gap:6px;margin-top:10px;flex-wrap:wrap}.form-actions form{margin:0}.form-actions a,.btn-link,.page-link,.page-current,.row-actions a{display:inline-flex;align-items:center;justify-content:center;min-height:32px;padding:0 10px;border:1px solid var(--line);border-radius:6px;background:#f7f9fa;color:#355e66;font-size:13px;line-height:1.2;box-sizing:border-box}input.secondary{background:#f7f9fa;border:1px solid var(--line);color:#4c565d}.row-actions{display:flex;gap:5px;align-items:center;flex-wrap:wrap}");
@@ -819,9 +934,9 @@ void sendAppStyles() {
     Esp32BaseWeb::sendChunk(".pager{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin:0 0 10px}.pager-links{display:flex;align-items:center;gap:5px;flex-wrap:wrap}.page-current{background:var(--accent-soft);color:#17635b;border-color:#cfe4dc}.page-disabled{color:#9aa3aa;background:#f4f6f6;pointer-events:none}.page-size{display:flex;align-items:center;gap:6px;color:var(--muted);font-size:13px}.page-size select{width:auto;min-width:80px}");
     Esp32BaseWeb::sendChunk(".disabled-row{background:#f7f8f8;color:#8a949b}.disabled-row td{color:#8a949b}.disabled-row .status-pill{background:#eef0f0;color:#7b858d}.disabled-row a{color:#6f7a82}"
                             "@media(max-width:920px){.records-top-grid{grid-template-columns:1fr}}"
-                            "@media(max-width:820px){.machine-main,.machine-main.compact,.today-layout{grid-template-columns:1fr}.machine-hero{min-height:0}.machine-hero strong{font-size:26px}}"
+                            "@media(max-width:820px){.machine-main,.machine-main.compact,.today-layout{grid-template-columns:1fr}.machine-hero{min-height:0}.machine-hero strong{font-size:26px}.machine-task-grid{grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}}"
                             "@media(max-width:720px){body{padding:10px}.form-grid{grid-template-columns:1fr}.span-2,.span-3,.span-4,.span-5,.span-6,.span-8,.span-12{grid-column:1/-1}.usage-grid{grid-template-columns:1fr}.daily-chart svg{min-width:680px}}"
-                            "@media(max-width:520px){.grid,.metric-grid,.filter-cards,.machine-kpis{grid-template-columns:1fr}.metric-card{min-height:0}.pager{align-items:flex-start}.page-size{width:100%}.kv th{width:34%}}");
+                            "@media(max-width:520px){.grid,.metric-grid,.filter-cards,.machine-task-grid{grid-template-columns:1fr}.metric-card{min-height:0}.pager{align-items:flex-start}.page-size{width:100%}.kv th{width:34%}}");
     Esp32BaseWeb::sendChunk("</style>");
 }
 
@@ -936,44 +1051,35 @@ void formatMonthRange(const WaterUsageSummary& summary, char* out, std::size_t l
                   static_cast<unsigned>(endDay));
 }
 
-std::uint32_t maxCountVolume(const CountVolumeBucket* buckets, std::size_t count) {
-    std::uint32_t max = 0;
-    for (std::size_t i = 0; i < count; ++i) {
-        if (buckets[i].volumeMl > max) {
-            max = buckets[i].volumeMl;
-        }
+std::uint32_t roundedPercent(std::uint32_t value, std::uint32_t total) {
+    if (total == 0) {
+        return 0;
     }
-    return max;
+    const std::uint64_t percent =
+        (static_cast<std::uint64_t>(value) * 100ULL + static_cast<std::uint64_t>(total) / 2ULL) / total;
+    return percent > 100ULL ? 100UL : static_cast<std::uint32_t>(percent);
 }
 
-std::uint32_t maxResultCount(const std::uint32_t* values, std::size_t count) {
-    std::uint32_t max = 0;
-    for (std::size_t i = 0; i < count; ++i) {
-        if (values[i] > max) {
-            max = values[i];
-        }
-    }
-    return max;
-}
-
-void sendUsageBar(const char* label, std::uint32_t volumeMl, std::uint32_t count, std::uint32_t maxVolume) {
+void sendVolumeDistributionRow(const char* label, std::uint32_t volumeMl, std::uint32_t count, std::uint32_t totalMl) {
     char volume[24]{};
     formatLiters(volumeMl, volume, sizeof(volume));
-    const std::uint32_t percent = maxVolume == 0 ? 0 : (volumeMl * 100UL) / maxVolume;
-    sendFmt("<div class='usage-row'><span>%s</span><strong>%s · %lu 次</strong>"
+    const std::uint32_t percent = roundedPercent(volumeMl, totalMl);
+    sendFmt("<div class='usage-row'><span>%s</span><strong>%s</strong><small>%lu 次 · 占 %lu%%</small>"
             "<div class='usage-bar'><i style='width:%lu%%'></i></div></div>",
             label,
             volume,
             static_cast<unsigned long>(count),
+            static_cast<unsigned long>(percent),
             static_cast<unsigned long>(percent));
 }
 
-void sendCountBar(const char* label, std::uint32_t count, std::uint32_t maxCount) {
-    const std::uint32_t percent = maxCount == 0 ? 0 : (count * 100UL) / maxCount;
-    sendFmt("<div class='usage-row'><span>%s</span><strong>%lu 次</strong>"
+void sendCountDistributionRow(const char* label, std::uint32_t count, std::uint32_t totalCount) {
+    const std::uint32_t percent = roundedPercent(count, totalCount);
+    sendFmt("<div class='usage-row'><span>%s</span><strong>%lu 次</strong><small>占 %lu%%</small>"
             "<div class='usage-bar'><i style='width:%lu%%'></i></div></div>",
             label,
             static_cast<unsigned long>(count),
+            static_cast<unsigned long>(percent),
             static_cast<unsigned long>(percent));
 }
 
@@ -982,7 +1088,7 @@ const char* resultLabel(std::size_t index) {
         case WaterResult::Completed:
             return "正常完成";
         case WaterResult::StoppedByUser:
-            return "用户停止";
+            return "手动停止";
         case WaterResult::SafetyStopped:
             return "安全停止";
         case WaterResult::FlowError:
@@ -994,8 +1100,10 @@ const char* resultLabel(std::size_t index) {
 }
 
 void sendUsagePatterns(const WaterUsageSummary& summary, const SystemConfig& config) {
+    Esp32BaseWeb::sendChunk("<div class='distribution-head'><h2>最近 30 天分布</h2>"
+                            "<span class='distribution-scope'>以下分布均按最近 30 天真实时间记录统计</span></div>"
+                            "<div class='usage-grid'>");
     Esp32BaseWeb::sendChunk("<section class='usage-panel'><h3>按预设分布</h3>");
-    const std::uint32_t maxPreset = maxCountVolume(summary.presetCounts, kPresetCount);
     for (std::size_t i = 0; i < kPresetCount; ++i) {
         if (summary.presetCounts[i].count == 0) {
             continue;
@@ -1004,53 +1112,59 @@ void sendUsagePatterns(const WaterUsageSummary& summary, const SystemConfig& con
         char name[kPresetNameLength]{};
         std::strncpy(name, config.presets[i].name, sizeof(name) - 1);
         std::snprintf(label, sizeof(label), "%u %s", static_cast<unsigned>(i + 1), name);
-        sendUsageBar(label, summary.presetCounts[i].volumeMl, summary.presetCounts[i].count, maxPreset);
+        sendVolumeDistributionRow(label, summary.presetCounts[i].volumeMl, summary.presetCounts[i].count, summary.last30DaysMl);
     }
-    if (maxPreset == 0) {
+    if (summary.last30DaysMl == 0) {
         Esp32BaseWeb::sendChunk("<p class='hint'>最近 30 天没有可聚合的真实时间记录。</p>");
     }
-    Esp32BaseWeb::sendChunk("</section><section class='usage-panel'><h3>完成结果</h3>");
-    const std::uint32_t maxResult = maxResultCount(summary.resultCounts, kUsageResultCount);
-    for (std::size_t i = 0; i < kUsageResultCount; ++i) {
-        sendCountBar(resultLabel(i), summary.resultCounts[i], maxResult);
-    }
-    Esp32BaseWeb::sendChunk("</section><section class='usage-panel'><h3>单次出水分布</h3>");
-    static constexpr const char* histLabels[kUsageVolumeHistCount] = {"< 0.5 L", "0.5 - 2 L", "2 - 5 L", "5 - 10 L", ">= 10 L"};
-    const std::uint32_t maxHist = maxCountVolume(summary.volumeHist, kUsageVolumeHistCount);
+    Esp32BaseWeb::sendChunk("</section><section class='usage-panel'><h3>按容量段分布</h3>");
+    static constexpr const char* histLabels[kUsageVolumeHistCount] = {"0.5 L 以下", "0.5 - 2 L", "2 - 5 L", "5 - 10 L", "10 L 以上"};
     for (std::size_t i = 0; i < kUsageVolumeHistCount; ++i) {
-        sendUsageBar(histLabels[i], summary.volumeHist[i].volumeMl, summary.volumeHist[i].count, maxHist);
+        sendVolumeDistributionRow(histLabels[i], summary.volumeHist[i].volumeMl, summary.volumeHist[i].count, summary.last30DaysMl);
     }
-    Esp32BaseWeb::sendChunk("</section>");
+    Esp32BaseWeb::sendChunk("</section><section class='usage-panel'><h3>按完成结果分布</h3>");
+    for (std::size_t i = 0; i < kUsageResultCount; ++i) {
+        sendCountDistributionRow(resultLabel(i), summary.resultCounts[i], summary.last30DaysCount);
+    }
+    Esp32BaseWeb::sendChunk("</section></div>");
 }
 
-void sendMachineKpi(const char* label, const char* value, bool soft = false) {
-    sendFmt("<div class='machine-kpi machine-indicator%s'><span>%s</span><strong>%s</strong></div>",
-            soft ? " soft" : "",
+void sendMachineTaskCard(const char* valueId, const char* metaId, const char* label, const char* value, const char* meta) {
+    sendFmt("<div class='machine-task-card'><span>%s</span><strong id='%s'>%s</strong><small id='%s'>%s</small></div>",
             label,
-            value);
+            valueId,
+            value,
+            metaId,
+            meta);
 }
 
-void sendMachineKpiId(const char* id, const char* label, const char* value, bool soft = false) {
-    sendFmt("<div class='machine-kpi machine-indicator%s'><span>%s</span><strong id='%s'>%s</strong></div>",
-            soft ? " soft" : "",
-            label,
-            id,
-            value);
-}
-
-void sendMachineKpiBlock(const char* wrapperId,
-                         const char* valueId,
-                         const char* label,
-                         const char* value,
-                         bool soft = false,
-                         bool hidden = false) {
-    sendFmt("<div id='%s' class='machine-kpi machine-indicator%s'%s><span>%s</span><strong id='%s'>%s</strong></div>",
-            wrapperId,
-            soft ? " soft" : "",
-            hidden ? " style='display:none'" : "",
+void sendMachineStatusItem(const char* valueId,
+                           const char* label,
+                           const char* value,
+                           const char* wrapperId = nullptr,
+                           bool hidden = false) {
+    if (wrapperId != nullptr) {
+        sendFmt("<span id='%s' class='machine-status-item'%s><span>%s</span><strong id='%s'>%s</strong></span>",
+                wrapperId,
+                hidden ? " style='display:none'" : "",
+                label,
+                valueId,
+                value);
+        return;
+    }
+    sendFmt("<span class='machine-status-item'><span>%s</span><strong id='%s'>%s</strong></span>",
             label,
             valueId,
             value);
+}
+
+void sendMachineStatusItemNote(const char* valueId, const char* noteId, const char* label, const char* value, const char* note) {
+    sendFmt("<span class='machine-status-item'><span>%s</span><strong id='%s'>%s</strong><small id='%s' class='machine-status-note'>%s</small></span>",
+            label,
+            valueId,
+            value,
+            noteId,
+            note);
 }
 
 const char* machineStatusNote(const AppSnapshot& snapshot) {
@@ -1082,7 +1196,7 @@ void sendMachineStatusCard(const AppSnapshot& snapshot, bool screenOn) {
     char currentPreset[48]{};
     std::snprintf(currentPreset,
                   sizeof(currentPreset),
-                  "%u · %s · %s",
+                  "P%u · %s · %s",
                   static_cast<unsigned>(snapshot.water.selectedPreset + 1),
                   modeText(snapshot.water.mode),
                   targetValue);
@@ -1108,20 +1222,31 @@ void sendMachineStatusCard(const AppSnapshot& snapshot, bool screenOn) {
     } else {
         formatLiters(remaining, remainingValue, sizeof(remainingValue));
     }
-    char elapsedValue[24]{};
-    formatSecondsValue(snapshot.water.elapsedSec, elapsedValue, sizeof(elapsedValue));
+    char elapsedText[24]{};
+    formatSecondsValue(snapshot.water.elapsedSec, elapsedText, sizeof(elapsedText));
+    char targetMeta[16]{};
+    std::snprintf(targetMeta, sizeof(targetMeta), "%s模式", modeText(snapshot.water.mode));
+    char outputMeta[32]{};
+    std::snprintf(outputMeta, sizeof(outputMeta), "已运行 %s", elapsedText);
+    char remainingMeta[24]{};
+    std::snprintf(remainingMeta, sizeof(remainingMeta), "完成 %lu%%", static_cast<unsigned long>(progressPercent));
     char pulsePerLiter[24]{};
     if (snapshot.pulsePerLiter > 0) {
-        std::snprintf(pulsePerLiter, sizeof(pulsePerLiter), "%lu 脉冲/L", static_cast<unsigned long>(snapshot.pulsePerLiter));
+        std::snprintf(pulsePerLiter, sizeof(pulsePerLiter), "%lu脉冲/L", static_cast<unsigned long>(snapshot.pulsePerLiter));
     } else {
         std::snprintf(pulsePerLiter, sizeof(pulsePerLiter), "未校准");
     }
     char droppedPulses[24]{};
     std::snprintf(droppedPulses, sizeof(droppedPulses), "%lu", static_cast<unsigned long>(snapshot.flowDroppedPulses));
+    char valvePwmDuty[12]{};
+    std::snprintf(valvePwmDuty, sizeof(valvePwmDuty), "%u%%", static_cast<unsigned>(snapshot.valve.dutyPercent));
+    char valvePwmNote[32]{};
+    std::snprintf(valvePwmNote,
+                  sizeof(valvePwmNote),
+                  "%lus全功率→%u%%保持",
+                  static_cast<unsigned long>(g_context.config->valveFullPowerSec),
+                  static_cast<unsigned>(g_context.config->valveHoldDutyPercent));
 
-    const bool showRemaining = snapshot.water.state == WaterState::Running || snapshot.water.state == WaterState::Paused ||
-                               snapshot.water.state == WaterState::Confirm;
-    const bool showElapsed = snapshot.water.state == WaterState::Running || snapshot.water.state == WaterState::Paused;
     const bool showResult = snapshot.water.state == WaterState::Error || snapshot.localMode == LocalUiMode::Result;
     const char* machineLayoutClass = shouldShowProgress ? "machine-main" : "machine-main compact";
     sendFmt("<h2>机器状态</h2><section class='panel machine-status'><div class='%s'><div class='machine-hero'>"
@@ -1138,24 +1263,18 @@ void sendMachineStatusCard(const AppSnapshot& snapshot, bool screenOn) {
             shouldShowProgress ? "" : " style='display:none'",
             progressText,
             static_cast<unsigned long>(progressPercent));
-    Esp32BaseWeb::sendChunk("</div><div class='machine-kpis'>");
-    sendMachineKpiId("targetValue", "目标值", targetValue);
-    sendMachineKpiId("outputValue", "已出水", outValue);
-    sendMachineKpiBlock("kpiRemaining",
-                        "remainingValue",
-                        snapshot.water.mode == WaterMode::Time ? "剩余时间" : "剩余量",
-                        remainingValue,
-                        false,
-                        !showRemaining);
-    sendMachineKpiBlock("kpiElapsed", "elapsedValue", "已运行", elapsedValue, false, !showElapsed);
-    sendMachineKpiBlock("kpiResult", "resultStatus", "结束原因", resultText(snapshot.water.lastResult), false, !showResult);
-    sendMachineKpiId("valveStatus", "阀门", snapshot.water.valveOpen ? "开" : "关");
-    sendMachineKpiId("pulsePerLiter", "流量计校准系数", pulsePerLiter, true);
-    if (snapshot.flowDroppedPulses > 0) {
-        sendMachineKpi("丢弃脉冲", droppedPulses, true);
-    }
-    sendMachineKpiId("screenStatus", "屏幕状态", screenOn ? "亮屏" : "休眠", true);
-    Esp32BaseWeb::sendChunk("</div></div></section>");
+    Esp32BaseWeb::sendChunk("</div><div class='machine-overview'><div class='machine-task-grid'>");
+    sendMachineTaskCard("targetValue", "targetMeta", "目标", targetValue, targetMeta);
+    sendMachineTaskCard("outputValue", "outputMeta", "已出水", outValue, outputMeta);
+    sendMachineTaskCard("remainingValue", "remainingMeta", "剩余", remainingValue, remainingMeta);
+    Esp32BaseWeb::sendChunk("</div><div class='machine-status-strip'>");
+    sendMachineStatusItem("valveStatus", "阀门", snapshot.water.valveOpen ? "开" : "关");
+    sendMachineStatusItemNote("valvePwmDuty", "valvePwmNote", "PWM", valvePwmDuty, valvePwmNote);
+    sendMachineStatusItem("pulsePerLiter", "流量计", pulsePerLiter);
+    sendMachineStatusItem("screenStatus", "屏幕", screenOn ? "亮屏" : "休眠");
+    sendMachineStatusItem("resultStatus", "结果", resultText(snapshot.water.lastResult), "resultItem", !showResult);
+    sendMachineStatusItem("droppedPulses", "丢弃脉冲", droppedPulses, "droppedPulsesItem", snapshot.flowDroppedPulses == 0);
+    Esp32BaseWeb::sendChunk("</div></div></div></section>");
 }
 
 TodayOverview collectTodayOverview(std::uint32_t now, std::uint32_t fallbackTodayMl) {
@@ -1273,21 +1392,29 @@ void sendHomeAutoRefreshScript() {
                             "var out=faucetLiters(s.volumeMl);"
                             "var shown=faucetIsActiveState(s.state);"
                             "var remaining=s.mode==='time'?Math.max(0,(Number(s.targetValue)||0)-(Number(s.elapsedSec)||0)):Math.max(0,(Number(s.targetValue)||0)-(Number(s.volumeMl)||0));"
+                            "var base=s.mode==='time'?s.elapsedSec:s.volumeMl;"
+                            "var pct=s.targetValue>0?Math.min(100,Math.floor(base*100/s.targetValue)):0;"
                             "faucetHomeActive=shown;"
                             "faucetSet('machineState',faucetStateText(s.state));"
                             "faucetSet('machineStatusNote',faucetStatusNote(s.state,s.lastResult));"
-                            "faucetSet('machinePreset',(Number(s.selectedPreset)+1)+' · '+faucetModeText(s.mode)+' · '+target);"
+                            "faucetSet('machinePreset','P'+(Number(s.selectedPreset)+1)+' · '+faucetModeText(s.mode)+' · '+target);"
                             "faucetSet('targetValue',target);faucetSet('outputValue',out);"
                             "faucetSet('remainingValue',s.mode==='time'?faucetSeconds(remaining):faucetLiters(remaining));"
-                            "faucetSet('elapsedValue',faucetSeconds(s.elapsedSec));"
+                            "faucetSet('targetMeta',faucetModeText(s.mode)+'模式');"
+                            "faucetSet('outputMeta','已运行 '+faucetSeconds(s.elapsedSec));"
+                            "faucetSet('remainingMeta','完成 '+pct+'%');"
                             "faucetSet('resultStatus',faucetResultText(s.lastResult));"
                             "faucetSet('valveStatus',s.valveOpen?'开':'关');"
-                            "faucetSet('pulsePerLiter',s.pulsePerLiter>0?s.pulsePerLiter+' 脉冲/L':'未校准');"
+                            "faucetSet('valvePwmDuty',s.valveDutyPercent+'%');"
+                            "faucetSet('valvePwmNote',s.valveFullPowerSec+'s全功率→'+s.valveHoldDutyPercent+'%保持');"
+                            "faucetSet('pulsePerLiter',s.pulsePerLiter>0?s.pulsePerLiter+'脉冲/L':'未校准');"
                             "faucetSet('screenStatus',s.screenOn?'亮屏':'休眠');"
-                            "faucetToggle('kpiRemaining',shown);faucetToggle('kpiElapsed',s.state==='running'||s.state==='paused');faucetToggle('kpiResult',s.state==='error');"
+                            "faucetSet('droppedPulses',Number(s.flowDroppedPulses)||0);"
+                            "faucetToggle('resultItem',s.state==='error');"
+                            "faucetToggle('droppedPulsesItem',(Number(s.flowDroppedPulses)||0)>0);"
                             "var main=document.querySelector('.machine-main');if(main){main.className=shown?'machine-main':'machine-main compact';}"
                             "var p=document.getElementById('machineProgress');if(p){p.style.display=shown?'block':'none';}"
-                            "if(shown){var base=s.mode==='time'?s.elapsedSec:s.volumeMl;var pct=s.targetValue>0?Math.min(100,Math.floor(base*100/s.targetValue)):0;"
+                            "if(shown){"
                             "faucetSet('machineProgressText',(s.mode==='time'?faucetSeconds(s.elapsedSec):out)+' / '+target);"
                             "var bar=document.getElementById('machineProgressBar');if(bar){bar.style.width=pct+'%';}}"
                             "scheduleFaucetHomeStatus(shown?faucetActivePollMs:faucetIdlePollMs);"
@@ -1497,11 +1624,33 @@ void handleStatsPage() {
     char total[24]{};
     char average30[24]{};
     char monthRange[32]{};
+    char todayMeta[32]{};
+    char monthMeta[48]{};
+    char average30Meta[48]{};
+    char totalMeta[32]{};
     formatLiters(summary.todayMl, today, sizeof(today));
     formatLiters(summary.monthMl, month, sizeof(month));
     formatLiters(snapshot.statistics.totalMl, total, sizeof(total));
     formatLiters(summary.last30DaysDailyAverageMl, average30, sizeof(average30));
     formatMonthRange(summary, monthRange, sizeof(monthRange));
+    const std::uint32_t monthDays =
+        summary.monthStartDay > 0 && summary.todayDay >= summary.monthStartDay
+            ? summary.todayDay - summary.monthStartDay + 1UL
+            : 30UL;
+    const float monthDailyCount = monthDays == 0 ? 0.0f : static_cast<float>(summary.monthCount) / monthDays;
+    const float last30DailyCount = static_cast<float>(summary.last30DaysCount) / 30.0f;
+    std::snprintf(todayMeta, sizeof(todayMeta), "今日 %lu 次", static_cast<unsigned long>(summary.todayCount));
+    std::snprintf(monthMeta,
+                  sizeof(monthMeta),
+                  "日均 %.1f 次 · 总共 %lu 次",
+                  static_cast<double>(monthDailyCount),
+                  static_cast<unsigned long>(summary.monthCount));
+    std::snprintf(average30Meta,
+                  sizeof(average30Meta),
+                  "日均 %.1f 次 · 总共 %lu 次",
+                  static_cast<double>(last30DailyCount),
+                  static_cast<unsigned long>(summary.last30DaysCount));
+    std::snprintf(totalMeta, sizeof(totalMeta), "累计 %lu 次", static_cast<unsigned long>(summary.totalCount));
     Esp32BaseWeb::sendHeader("用水统计");
     Esp32BaseWeb::sendChunk("<h2>统计</h2>");
     if (summary.unknownCount > 0) {
@@ -1509,21 +1658,20 @@ void handleStatsPage() {
                 static_cast<unsigned long>(summary.unknownCount));
     }
     Esp32BaseWeb::sendChunk("<div class='stats-layout'><div><div class='metric-grid'>");
-    sendMetricCard("今日", today);
+    sendStatsMetricCard("今日", today, todayMeta);
     char monthTitle[48]{};
     std::snprintf(monthTitle, sizeof(monthTitle), "本月%s%s", monthRange[0] ? " " : "", monthRange);
-    sendMetricCard(monthTitle, month);
-    sendMetricCard("过去 30 天日均", average30);
-    sendMetricCard("总累计", total);
+    sendStatsMetricCard(monthTitle, month, monthMeta);
+    sendStatsMetricCard("过去 30 天日均", average30, average30Meta);
+    sendStatsMetricCard("总累计", total, totalMeta);
     Esp32BaseWeb::sendChunk("</div></div>");
     if (now >= kMinRealDateSeconds) {
         sendDailyChart(summary);
     } else {
         sendTimeUnsyncedChartNotice();
     }
-    Esp32BaseWeb::sendChunk("</div><div class='usage-grid'>");
-    sendUsagePatterns(summary, *g_context.config);
     Esp32BaseWeb::sendChunk("</div>");
+    sendUsagePatterns(summary, *g_context.config);
     sendPageEnd();
 }
 
@@ -1668,10 +1816,10 @@ void handleRecordsPage() {
     WaterRecord newestRecord{};
     const bool newestRecordReady = ready && g_context.records->readPage(0, 1, &newestRecord, 1) == 1;
     Esp32BaseWeb::sendChunk("<table><tr><th>时间</th><th>模式</th><th>目标</th><th>出水</th>"
-                            "<th>用时</th><th>脉冲</th><th>脉冲/升</th><th>结果</th><th>操作</th></tr>");
+                            "<th>用时</th><th>脉冲</th><th>结果</th><th>操作</th></tr>");
     for (std::size_t i = 0; i < count; ++i) {
         char startTime[40]{};
-        formatWaterRecordTime(records[i], startTime, sizeof(startTime));
+        formatWaterRecordListTime(records[i], startTime, sizeof(startTime));
         const bool latestRecord = newestRecordReady && sameWaterRecordIdentity(records[i], newestRecord);
         const bool canCalibrate = latestRecord && waterRecordCanCalibrate(records[i]);
         WaterRecordCalibration calibration{};
@@ -1691,16 +1839,16 @@ void handleRecordsPage() {
         Esp32BaseWeb::sendChunk("</td><td>");
         sendLiters(records[i].volumeMl);
         if (calibrated) {
-            Esp32BaseWeb::sendChunk("<span class='inline-note ok'>实测 ");
+            Esp32BaseWeb::sendChunk("<span class='inline-note ok measured-note'>实测 ");
             sendLiters(calibration.actualMl);
             Esp32BaseWeb::sendChunk("</span>");
         }
-        sendFmt("</td><td>%u s</td><td class='pulse-cell'>%luP",
+        sendFmt("</td><td>%u s</td><td class='pulse-cell'>%luP / %luP/L",
                 static_cast<unsigned>(records[i].durationSec),
-                static_cast<unsigned long>(records[i].pulseCount));
-        sendFmt("</td><td>%luP/L", static_cast<unsigned long>(pulsePerLiter));
+                static_cast<unsigned long>(records[i].pulseCount),
+                static_cast<unsigned long>(pulsePerLiter));
         if (records[i].rejectedPulseCount > 0) {
-            sendFmt("<span class='inline-note'>滤 %luP</span>",
+            sendFmt(" / 滤%luP",
                     static_cast<unsigned long>(records[i].rejectedPulseCount));
         }
         sendFmt("</td><td><span class='status-pill %s'>%s</span>",
@@ -2288,8 +2436,8 @@ void handleStatusApi() {
         g_context.currentDisplayStatus
             ? g_context.currentDisplayStatus()
             : FaucetDisplayStatus{DisplayFrame{DisplayPage::Sleep, false, {}, {}}, false};
-    char json[320]{};
-    sendJsonBuffer(writeStatusJson(g_context.app->snapshot(), displayStatus.screenOn, json, sizeof(json)), json);
+    char json[384]{};
+    sendJsonBuffer(writeStatusJson(g_context.app->snapshot(), displayStatus.screenOn, *g_context.config, json, sizeof(json)), json);
 }
 
 void handleTodayOverviewApi() {

@@ -133,9 +133,19 @@ bool writeStatusJson(const AppSnapshot& snapshot, char* out, std::size_t len) {
 }
 
 bool writeStatusJson(const AppSnapshot& snapshot, bool screenOn, char* out, std::size_t len) {
+    const SystemConfig config = makeDefaultConfig();
+    return writeStatusJson(snapshot, screenOn, config, out, len);
+}
+
+bool writeStatusJson(const AppSnapshot& snapshot,
+                     bool screenOn,
+                     const SystemConfig& config,
+                     char* out,
+                     std::size_t len) {
     JsonWriter writer(out, len);
     writer.append("{\"state\":\"%s\",\"valveOpen\":%s,\"volumeMl\":%lu,\"elapsedSec\":%lu,\"targetValue\":%lu,"
                   "\"lastResult\":\"%s\",\"mode\":\"%s\",\"selectedPreset\":%u,\"pulsePerLiter\":%lu,\"flowDroppedPulses\":%lu,"
+                  "\"valveDutyPercent\":%u,\"valveFullPowerSec\":%lu,\"valveHoldDutyPercent\":%u,"
                   "\"screenOn\":%s,\"waterControl\":false}",
                   waterStateName(snapshot.water.state),
                   snapshot.water.valveOpen ? "true" : "false",
@@ -147,6 +157,9 @@ bool writeStatusJson(const AppSnapshot& snapshot, bool screenOn, char* out, std:
                   static_cast<unsigned>(snapshot.water.selectedPreset),
                   static_cast<unsigned long>(snapshot.pulsePerLiter),
                   static_cast<unsigned long>(snapshot.flowDroppedPulses),
+                  static_cast<unsigned>(snapshot.valve.dutyPercent),
+                  static_cast<unsigned long>(config.valveFullPowerSec),
+                  static_cast<unsigned>(config.valveHoldDutyPercent),
                   screenOn ? "true" : "false");
     return writer.ok();
 }

@@ -11,6 +11,11 @@ namespace faucet {
 
 bool writeStatusJson(const AppSnapshot& snapshot, char* out, std::size_t len);
 bool writeStatusJson(const AppSnapshot& snapshot, bool screenOn, char* out, std::size_t len);
+bool writeStatusJson(const AppSnapshot& snapshot,
+                     bool screenOn,
+                     const SystemConfig& config,
+                     char* out,
+                     std::size_t len);
 bool writeStatsJson(const StatisticsRecord& record, char* out, std::size_t len);
 bool writeUsageSummaryJson(const WaterUsageSummary& summary,
                            std::uint32_t totalMl,

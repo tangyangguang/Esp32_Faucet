@@ -31,10 +31,14 @@ struct WaterUsageSummary {
     CountVolumeBucket volumeHist[kUsageVolumeHistCount];
     std::uint32_t resultCounts[kUsageResultCount];
     std::uint32_t todayMl;
+    std::uint32_t todayCount;
     std::uint32_t monthMl;
+    std::uint32_t monthCount;
     std::uint32_t last30DaysMl;
+    std::uint32_t last30DaysCount;
     std::uint32_t last30DaysDailyAverageMl;
     std::uint32_t totalMl;
+    std::uint32_t totalCount;
     std::uint32_t unknownMl;
     std::uint32_t unknownDurationSec;
     std::uint32_t unknownCount;

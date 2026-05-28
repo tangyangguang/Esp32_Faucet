@@ -247,11 +247,12 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "明细条数"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "数据点数"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "上限能力"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "永久保存"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "设备存储"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "保存空间"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "永久保存上限"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "设备存储上限"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "已保存脉冲明细已达上限"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "永久保存明细文件异常"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "设备存储明细文件异常"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "永久保存"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "name='action' value='delete_legacy'"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "清理旧版明细文件"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "%s / %s · %u%%"));
@@ -287,7 +288,9 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NULL(std::strstr(buffer, "action='/api/faucet/records/trace-delete'"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "name='action' value='save'"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "name='action' value='delete'"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "永久保存明细"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "保存到设备"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "已保存到设备"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "确认将这条脉冲明细保存到设备存储？"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "删除已保存明细"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "确认删除这条已保存的脉冲明细？"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "saved=1&trace"));

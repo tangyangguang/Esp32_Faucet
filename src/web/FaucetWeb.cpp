@@ -711,19 +711,19 @@ void sendPulseTraceCachePanel() {
         formatKb(savedStats.usedBytes, savedUsed, sizeof(savedUsed));
         formatKb(savedStats.maxBytes, savedMax, sizeof(savedMax));
         std::snprintf(savedSpace, sizeof(savedSpace), "%s / %s", savedUsed, savedMax);
-        sendMetricCard("永久保存", savedCount);
+        sendMetricCard("设备存储", savedCount);
         sendMetricCard("保存空间", savedSpace);
     }
     Esp32BaseWeb::sendChunk("</div><p class='hint'>");
     sendFmt("最早 %s · 最新 %s", oldest[0] ? oldest : "-", latest[0] ? latest : "-");
     if (savedReady) {
-        sendFmt(" · 永久保存上限 %lu 条，单条最多 %lu 点",
+        sendFmt(" · 设备存储上限 %lu 条，单条最多 %lu 点",
                 static_cast<unsigned long>(savedStats.maxCount),
                 static_cast<unsigned long>(savedStats.sampleCapacityPerTrace));
     }
     Esp32BaseWeb::sendChunk("</p>");
     if (savedReady && savedStats.corrupt) {
-        Esp32BaseWeb::sendChunk("<p class='err'>永久保存明细文件异常；不会影响启动和本次出水记录。</p>");
+        Esp32BaseWeb::sendChunk("<p class='err'>设备存储明细文件异常；不会影响启动和本次出水记录。</p>");
     }
     if (savedReady && savedStats.legacyBlobPresent) {
         Esp32BaseWeb::sendChunk("<form method='post' action='/api/faucet/records' "
@@ -1006,7 +1006,7 @@ void sendNoticeFromQuery() {
     } else if (std::strcmp(text, "saved_trace_full") == 0) {
         message = "已保存脉冲明细已达上限，请先删除不需要的明细。";
     } else if (std::strcmp(text, "saved_trace_corrupt") == 0) {
-        message = "永久保存明细文件异常，已停止写入以保护已有数据。";
+        message = "设备存储明细文件异常，已停止写入以保护已有数据。";
     } else if (std::strcmp(text, "saved_trace_read_failed") == 0) {
         message = "已保存脉冲明细读取失败，文件可能未写完整或已损坏。";
     } else if (std::strcmp(text, "no_calibration_record") == 0) {
@@ -2248,17 +2248,17 @@ void handleRecordDetailPage() {
                 static_cast<unsigned long>(trace->traceId));
     } else if (savedStoreReady) {
         if (alreadySaved) {
-            Esp32BaseWeb::sendChunk("<span class='status-pill status-ok'>已永久保存</span>");
+            Esp32BaseWeb::sendChunk("<span class='status-pill status-ok'>已保存到设备</span>");
         } else {
-            Esp32BaseWeb::sendChunk("<form method='post' action='/api/faucet/records' onsubmit='return once(this)'>"
+            Esp32BaseWeb::sendChunk("<form method='post' action='/api/faucet/records' onsubmit=\"return confirm('确认将这条脉冲明细保存到设备存储？')&&once(this)\">"
                                     "<input type='hidden' name='action' value='save'>");
-            sendFmt("<input type='hidden' name='trace' value='%lu'><input type='submit' value='永久保存明细'></form>",
+            sendFmt("<input type='hidden' name='trace' value='%lu'><input type='submit' value='保存到设备'></form>",
                     static_cast<unsigned long>(trace->traceId));
         }
     } else {
-        Esp32BaseWeb::sendChunk("<form method='post' action='/api/faucet/records' onsubmit='return once(this)'>"
+        Esp32BaseWeb::sendChunk("<form method='post' action='/api/faucet/records' onsubmit=\"return confirm('确认将这条脉冲明细保存到设备存储？')&&once(this)\">"
                                 "<input type='hidden' name='action' value='save'>");
-        sendFmt("<input type='hidden' name='trace' value='%lu'><input type='submit' value='永久保存明细'></form>",
+        sendFmt("<input type='hidden' name='trace' value='%lu'><input type='submit' value='保存到设备'></form>",
                 static_cast<unsigned long>(trace->traceId));
     }
     Esp32BaseWeb::sendChunk("</div>");

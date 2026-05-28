@@ -196,6 +196,7 @@ void test_sanitize_config_clamps_preset_values_by_type() {
 }
 
 void test_record_page_size_and_filter_life_helpers() {
+    TEST_ASSERT_EQUAL_UINT16(10, kDefaultRecordPageSize);
     TEST_ASSERT_EQUAL_UINT16(kDefaultRecordPageSize, sanitizeRecordPageSize(0));
     TEST_ASSERT_EQUAL_UINT16(20, sanitizeRecordPageSize(20));
     TEST_ASSERT_EQUAL_UINT16(30, sanitizeRecordPageSize(30));

@@ -42,6 +42,7 @@ struct TodayOverview {
 };
 
 bool requireContext();
+bool contextReady();
 bool getParam(const char* name, char* out, std::size_t len);
 bool persistConfig(const SystemConfig& config);
 void handleRecordDetailPage();
@@ -604,6 +605,35 @@ const char* traceStateText(WaterPulseTraceState state) {
     }
 }
 
+void sendPlainTextResponse(int status, const char* body) {
+    Esp32BaseWeb::sendResponseHeader("Cache-Control", "no-store");
+    Esp32BaseWeb::sendResponseHeader("X-Content-Type-Options", "nosniff");
+    if (!Esp32BaseWeb::beginResponse(status, "text/plain; charset=utf-8", nullptr)) {
+        return;
+    }
+    Esp32BaseWeb::sendChunk(body ? body : "");
+    Esp32BaseWeb::endResponse();
+}
+
+void sendPulseTraceRawText(const WaterPulseTrace& trace, const WaterPulseTraceSample* samples) {
+    Esp32BaseWeb::sendResponseHeader("Cache-Control", "no-store");
+    Esp32BaseWeb::sendResponseHeader("X-Content-Type-Options", "nosniff");
+    if (!Esp32BaseWeb::beginResponse(200, "text/plain; charset=utf-8", nullptr)) {
+        return;
+    }
+    Esp32BaseWeb::sendChunk("时间\t脉冲数\t累计脉冲数\t状态\n");
+    std::uint32_t cumulative = 0;
+    for (std::size_t i = 0; i < trace.sampleCount; ++i) {
+        cumulative += samples[i].pulseDelta;
+        sendFmt("%lu秒\t%u\t%lu\t%s\n",
+                static_cast<unsigned long>(i),
+                static_cast<unsigned>(samples[i].pulseDelta),
+                static_cast<unsigned long>(cumulative),
+                traceStateText(samples[i].state));
+    }
+    Esp32BaseWeb::endResponse();
+}
+
 std::uint32_t bucketRunningPulseDelta(const WaterPulseTraceSample* samples,
                                       std::size_t sampleCount,
                                       const WaterPulseTraceBucket& bucket) {
@@ -1070,7 +1100,7 @@ void sendAppCss() {
                             ".records-top-grid .panel{display:flex;flex-direction:column;margin:0}.records-top-grid .metric-grid{grid-template-columns:repeat(auto-fit,minmax(128px,1fr));gap:8px;margin:0}.records-top-grid .metric-card{min-height:44px;padding:9px 11px}.records-top-grid .metric-card span{font-size:12px;margin-bottom:3px}.records-top-grid .metric-card strong{font-size:15px;font-weight:500}"
                             ".metering-panel .hint{margin-top:auto;padding-top:10px}.trace-cache-panel .metric-grid{grid-template-columns:repeat(2,minmax(0,1fr));margin-top:0}.trace-cache-panel .panel-head{margin-bottom:8px}.trace-head-meter{display:grid;grid-template-columns:minmax(120px,1fr) auto;gap:9px;align-items:center;min-width:230px}.trace-head-meter .progress{height:7px}.trace-badge{display:inline-flex;align-items:center;min-height:20px;margin-left:7px;padding:0 7px;border:1px solid #cfe4dc;border-radius:999px;background:var(--accent-soft);color:#17635b;font-size:12px;font-weight:700;vertical-align:middle}"
                             ".pulse-cell{font-variant-numeric:tabular-nums}.inline-note{display:inline-flex;align-items:center;min-height:20px;margin-left:6px;padding:0 7px;border-radius:999px;background:#eef3f2;color:var(--muted);font-size:12px;font-weight:500;white-space:nowrap}.inline-note.ok,.measured-note{background:#e8f4ee;color:#21634c}");
-    Esp32BaseWeb::sendChunk(".pulse-detail-chart{padding:10px 0 2px;overflow-x:auto}.pulse-detail-chart svg{display:block;width:100%;min-width:760px;height:auto}.pulse-detail-chart .axis{stroke:#d9e0df;stroke-width:1}.pulse-detail-chart .grid-line{stroke:#edf2f1;stroke-width:1}.pulse-line{fill:none;stroke:var(--accent);stroke-width:3;stroke-linejoin:round;stroke-linecap:round}.pulse-line-paused{stroke-dasharray:7 5;opacity:.65}.cum-line{fill:none;stroke:#7c8fae;stroke-width:2.5;stroke-linejoin:round;stroke-linecap:round;opacity:.9}.cum-line-paused{stroke-dasharray:7 5;opacity:.6}.pulse-dot{fill:var(--surface);stroke:var(--accent);stroke-width:2}.pulse-dot-paused{stroke-dasharray:3 3;opacity:.75}.stable-line{stroke:#a36b10;stroke-width:2;stroke-dasharray:7 5}.chart-label{font-size:12px;fill:var(--muted)}.chart-y-label{text-anchor:end}.chart-cum-y-label{text-anchor:start;fill:#7c8fae}.chart-x-label{text-anchor:middle}.chart-legend{display:flex;align-items:center;gap:14px;flex-wrap:wrap;color:var(--muted);font-size:12px;margin:6px 0 0}.legend-mark{display:inline-block;width:18px;height:3px;border-radius:999px;margin-right:5px;vertical-align:middle}.legend-pulse{background:var(--accent)}.legend-paused{background:transparent;border-top:3px dashed var(--accent);height:0;border-radius:0}.legend-cum{background:#7c8fae}.legend-cum-paused{background:transparent;border-top:3px dashed #7c8fae;height:0;border-radius:0}.legend-stable{background:#a36b10}.trace-frequency{margin-left:auto}.trace-frequency-label{color:var(--muted);font-size:12px;font-weight:650;margin-right:3px}.trace-frequency a.page-current{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:750}.detail-data table{margin-top:10px}");
+    Esp32BaseWeb::sendChunk(".pulse-detail-chart{padding:10px 0 2px;overflow-x:auto}.pulse-detail-chart svg{display:block;width:100%;min-width:760px;height:auto}.pulse-detail-chart .axis{stroke:#d9e0df;stroke-width:1}.pulse-detail-chart .grid-line{stroke:#edf2f1;stroke-width:1}.pulse-line{fill:none;stroke:var(--accent);stroke-width:3;stroke-linejoin:round;stroke-linecap:round}.pulse-line-paused{stroke-dasharray:7 5;opacity:.65}.cum-line{fill:none;stroke:#7c8fae;stroke-width:2.5;stroke-linejoin:round;stroke-linecap:round;opacity:.9}.cum-line-paused{stroke-dasharray:7 5;opacity:.6}.pulse-dot{fill:var(--surface);stroke:var(--accent);stroke-width:2}.pulse-dot-paused{stroke-dasharray:3 3;opacity:.75}.stable-line{stroke:#a36b10;stroke-width:2;stroke-dasharray:7 5}.chart-label{font-size:12px;fill:var(--muted)}.chart-y-label{text-anchor:end}.chart-cum-y-label{text-anchor:start;fill:#7c8fae}.chart-x-label{text-anchor:middle}.chart-legend{display:flex;align-items:center;gap:14px;flex-wrap:wrap;color:var(--muted);font-size:12px;margin:6px 0 0}.legend-mark{display:inline-block;width:18px;height:3px;border-radius:999px;margin-right:5px;vertical-align:middle}.legend-pulse{background:var(--accent)}.legend-paused{background:transparent;border-top:3px dashed var(--accent);height:0;border-radius:0}.legend-cum{background:#7c8fae}.legend-cum-paused{background:transparent;border-top:3px dashed #7c8fae;height:0;border-radius:0}.legend-stable{background:#a36b10}.trace-frequency{margin-left:auto}.trace-frequency-label{color:var(--muted);font-size:12px;font-weight:650;margin-right:3px}.trace-frequency a.page-current{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:750}.raw-trace-text{display:none;max-height:360px;overflow:auto;white-space:pre;font:12px/1.45 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;border:1px solid var(--line);border-radius:6px;background:#fbfcfd;padding:10px;margin:8px 0 0}.raw-trace-text.is-loaded{display:block}");
     Esp32BaseWeb::sendChunk(".grid,.metric-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin:0 0 12px}"
                             ".metric-card{padding:12px 14px;min-height:54px}.metric-card.primary{border-color:#b8d7cf;background:#f7fbfa}.metric-card span{display:block;color:var(--muted);font-size:13px;font-weight:500;margin-bottom:4px}.metric-card strong{display:block;color:var(--text);font-size:18px;line-height:1.2;font-weight:500}"
                             ".machine-status{padding:14px 16px;margin:0 0 14px;border-color:#d8e1e6;background:#fbfcfd}"
@@ -1842,7 +1872,10 @@ void handleRecordsPage() {
     }
     char text[24]{};
     std::uint32_t page = 0;
-    if (getParam("page", text, sizeof(text))) {
+    std::uint32_t requestedPageNo = 0;
+    if (getParam("pageNo", text, sizeof(text)) && parseU32(text, requestedPageNo) && requestedPageNo > 0) {
+        page = requestedPageNo - 1;
+    } else if (getParam("page", text, sizeof(text))) {
         parseU32(text, page);
     }
     std::uint32_t requestedPageSize = kDefaultRecordPageSize;
@@ -1851,49 +1884,6 @@ void handleRecordsPage() {
     }
     const std::uint16_t pageSize = sanitizeRecordPageSize(static_cast<std::uint16_t>(requestedPageSize));
     WaterRecordFilter filter{};
-    char startDate[16]{};
-    char endDate[16]{};
-    if (getParam("startDate", startDate, sizeof(startDate))) {
-        if (!parseDate(startDate, filter.startTime)) {
-            Esp32BaseWeb::redirectSeeOther("/faucet/records?error=invalid_date");
-            return;
-        }
-        filter.hasStart = filter.startTime > 0;
-    }
-    if (getParam("endDate", endDate, sizeof(endDate))) {
-        if (!parseDate(endDate, filter.endTime)) {
-            Esp32BaseWeb::redirectSeeOther("/faucet/records?error=invalid_date");
-            return;
-        }
-        filter.hasEnd = filter.endTime > 0;
-        if (filter.hasEnd) {
-            filter.endTime = UINT32_MAX - filter.endTime < 86399UL ? UINT32_MAX : filter.endTime + 86399UL;
-        }
-    }
-    if (filter.hasStart && filter.hasEnd && filter.endTime < filter.startTime) {
-        Esp32BaseWeb::redirectSeeOther("/faucet/records?error=invalid_date");
-        return;
-    }
-    if ((filter.hasStart || filter.hasEnd) && waterTaskActive()) {
-        Esp32BaseWeb::redirectSeeOther("/faucet/records?error=busy");
-        return;
-    }
-    char filterQuery[96]{};
-    if (filter.hasStart || filter.hasEnd) {
-        char normalizedStart[16]{};
-        char normalizedEnd[16]{};
-        if (filter.hasStart) {
-            formatDate(filter.startTime, normalizedStart, sizeof(normalizedStart));
-        }
-        if (filter.hasEnd) {
-            formatDate(filter.endTime, normalizedEnd, sizeof(normalizedEnd));
-        }
-        std::snprintf(filterQuery,
-                      sizeof(filterQuery),
-                      "&startDate=%s&endDate=%s",
-                      normalizedStart,
-                      normalizedEnd);
-    }
     WaterRecord* records = new (std::nothrow) WaterRecord[pageSize]{};
     if (!records) {
         Esp32BaseWeb::sendJson(500, "{\"error\":\"oom\"}");
@@ -1919,13 +1909,11 @@ void handleRecordsPage() {
     const bool hasPrev = ready && total > 0 && page > 0;
     const bool hasNext = ready && total > 0 && page < filteredMaxPage;
     if (hasPrev) {
-        sendFmt("<a class='page-link' href='/faucet/records?page=0&pageSize=%u%s'>首页</a>"
-                "<a class='page-link' href='/faucet/records?page=%lu&pageSize=%u%s'>上一页</a>",
+        sendFmt("<a class='page-link' href='/faucet/records?page=0&pageSize=%u'>首页</a>"
+                "<a class='page-link' href='/faucet/records?page=%lu&pageSize=%u'>上一页</a>",
                 static_cast<unsigned>(pageSize),
-                filterQuery,
                 static_cast<unsigned long>(page - 1),
-                static_cast<unsigned>(pageSize),
-                filterQuery);
+                static_cast<unsigned>(pageSize));
     } else {
         Esp32BaseWeb::sendChunk("<span class='page-link page-disabled'>首页</span><span class='page-link page-disabled'>上一页</span>");
     }
@@ -1933,38 +1921,29 @@ void handleRecordsPage() {
             static_cast<unsigned long>(page + 1),
             static_cast<unsigned long>(filteredMaxPage + 1));
     if (hasNext) {
-        sendFmt("<a class='page-link' href='/faucet/records?page=%lu&pageSize=%u%s'>下一页</a>"
-                "<a class='page-link' href='/faucet/records?page=%lu&pageSize=%u%s'>末页</a>",
+        sendFmt("<a class='page-link' href='/faucet/records?page=%lu&pageSize=%u'>下一页</a>"
+                "<a class='page-link' href='/faucet/records?page=%lu&pageSize=%u'>末页</a>",
                 static_cast<unsigned long>(page + 1),
                 static_cast<unsigned>(pageSize),
-                filterQuery,
                 static_cast<unsigned long>(filteredMaxPage),
-                static_cast<unsigned>(pageSize),
-                filterQuery);
+                static_cast<unsigned>(pageSize));
     } else {
         Esp32BaseWeb::sendChunk("<span class='page-link page-disabled'>下一页</span><span class='page-link page-disabled'>末页</span>");
     }
-    char shownStart[16]{};
-    char shownEnd[16]{};
-    if (filter.hasStart) {
-        formatDate(filter.startTime, shownStart, sizeof(shownStart));
-    }
-    if (filter.hasEnd) {
-        formatDate(filter.endTime, shownEnd, sizeof(shownEnd));
-    }
     sendFmt("</div><form class='page-size' method='get' action='/faucet/records'>"
-            "<input type='hidden' name='page' value='0'><span>开始</span><input type='date' name='startDate' value='%s'>"
-            "<span>结束</span><input type='date' name='endDate' value='%s'><span>每页</span><select name='pageSize' onchange='this.form.submit()'>",
-            shownStart,
-            shownEnd);
-    constexpr std::uint16_t sizes[] = {20, 30, 50, 100, 200};
+            "<span>每页</span><select name='pageSize' onchange='this.form.submit()'>");
+    constexpr std::uint16_t sizes[] = {10, 15, 20, 30, 50};
     for (std::uint16_t size : sizes) {
         sendFmt("<option value='%u'%s>%u</option>",
                 static_cast<unsigned>(size),
                 pageSize == size ? " selected" : "",
                 static_cast<unsigned>(size));
     }
-    sendFmt("</select><span>条</span><input class='secondary' type='submit' value='筛选'></form></div><p class='hint'>共 %lu 条记录</p>",
+    sendFmt("</select><span>条</span><span>跳到第</span>"
+            "<input name='pageNo' type='number' min='1' max='%lu' step='1' value='%lu'><span>页</span>"
+            "<input class='secondary' type='submit' value='跳转'></form></div><p class='hint'>共 %lu 条记录</p>",
+            static_cast<unsigned long>(filteredMaxPage + 1),
+            static_cast<unsigned long>(page + 1),
             static_cast<unsigned long>(total));
     if (!ready) {
         Esp32BaseWeb::sendChunk("<p class='err'>记录存储不可用。</p>");
@@ -2195,21 +2174,42 @@ void handleRecordCalibrationPage() {
 }
 
 void handleRecordDetailPage() {
-    if (!sendPageStart("脉冲明细")) {
+    if (!Esp32BaseWeb::checkAuth()) {
         return;
     }
-    if (!requireContext()) {
-        sendPageEnd();
+    char text[24]{};
+    bool rawRequest = false;
+    if (getParam("raw", text, sizeof(text))) {
+        std::uint32_t rawValue = 0;
+        rawRequest = parseU32(text, rawValue) && rawValue != 0;
+    }
+    if (!contextReady()) {
+        if (rawRequest) {
+            sendPlainTextResponse(503, "上下文未就绪。\n");
+        } else {
+            Esp32BaseWeb::sendHeader("脉冲明细");
+            Esp32BaseWeb::sendChunk("<h2>脉冲明细</h2><p class='err'>上下文未就绪。</p>");
+            sendPageEnd();
+        }
         return;
     }
     if (!g_context.pulseTraces && !g_context.savedPulseTraces) {
+        if (rawRequest) {
+            sendPlainTextResponse(503, "脉冲明细缓存不可用。\n");
+            return;
+        }
+        Esp32BaseWeb::sendHeader("脉冲明细");
         Esp32BaseWeb::sendChunk("<h2>脉冲明细</h2><p class='err'>脉冲明细缓存不可用。</p><p><a class='btn-link' href='/faucet/records'>返回记录</a></p>");
         sendPageEnd();
         return;
     }
-    char text[24]{};
     std::uint32_t traceId = 0;
     if (!getParam("trace", text, sizeof(text)) || !parseU32(text, traceId)) {
+        if (rawRequest) {
+            sendPlainTextResponse(400, "明细编号无效。\n");
+            return;
+        }
+        Esp32BaseWeb::sendHeader("脉冲明细");
         Esp32BaseWeb::sendChunk("<h2>脉冲明细</h2><p class='err'>明细编号无效。</p><p><a class='btn-link' href='/faucet/records'>返回记录</a></p>");
         sendPageEnd();
         return;
@@ -2236,16 +2236,24 @@ void handleRecordDetailPage() {
         trace = g_context.pulseTraces->findById(traceId);
     }
     if (!trace) {
+        if (rawRequest) {
+            sendPlainTextResponse(404, "该脉冲明细不存在或已被 RAM 缓存淘汰。\n");
+            return;
+        }
+        Esp32BaseWeb::sendHeader("脉冲明细");
         Esp32BaseWeb::sendChunk("<h2>脉冲明细</h2><p class='err'>该脉冲明细不存在或已被 RAM 缓存淘汰。</p><p><a class='btn-link' href='/faucet/records'>返回记录</a></p>");
         sendPageEnd();
         return;
     }
 
     WaterPulseTraceSample* samples = new (std::nothrow) WaterPulseTraceSample[trace->sampleCount]{};
-    WaterPulseTraceBucket* buckets = new (std::nothrow) WaterPulseTraceBucket[trace->sampleCount]{};
-    if (!samples || !buckets) {
+    if (!samples) {
         delete[] samples;
-        delete[] buckets;
+        if (rawRequest) {
+            sendPlainTextResponse(500, "内存不足，无法生成脉冲明细。\n");
+            return;
+        }
+        Esp32BaseWeb::sendHeader("脉冲明细");
         Esp32BaseWeb::sendChunk("<p class='err'>内存不足，无法生成脉冲明细。</p>");
         sendPageEnd();
         return;
@@ -2254,7 +2262,11 @@ void handleRecordDetailPage() {
         if (!g_context.savedPulseTraces ||
             g_context.savedPulseTraces->readSamples(trace->traceId, samples, trace->sampleCount) != trace->sampleCount) {
             delete[] samples;
-            delete[] buckets;
+            if (rawRequest) {
+                sendPlainTextResponse(500, "已保存明细读取失败。\n");
+                return;
+            }
+            Esp32BaseWeb::sendHeader("脉冲明细");
             Esp32BaseWeb::sendChunk("<p class='err'>已保存明细读取失败。</p>");
             sendPageEnd();
             return;
@@ -2264,6 +2276,19 @@ void handleRecordDetailPage() {
             const WaterPulseTraceSample* sample = g_context.pulseTraces ? g_context.pulseTraces->sampleAt(*trace, i) : nullptr;
             samples[i] = sample ? *sample : WaterPulseTraceSample{};
         }
+    }
+    if (rawRequest) {
+        sendPulseTraceRawText(*trace, samples);
+        delete[] samples;
+        return;
+    }
+    WaterPulseTraceBucket* buckets = new (std::nothrow) WaterPulseTraceBucket[trace->sampleCount]{};
+    if (!buckets) {
+        delete[] samples;
+        Esp32BaseWeb::sendHeader("脉冲明细");
+        Esp32BaseWeb::sendChunk("<p class='err'>内存不足，无法生成脉冲明细。</p>");
+        sendPageEnd();
+        return;
     }
     const std::size_t bucketCount =
         aggregateWaterPulseTrace(*trace, samples, trace->sampleCount, bucketSeconds, buckets, trace->sampleCount);
@@ -2276,6 +2301,7 @@ void handleRecordDetailPage() {
     formatKb(traceBytes, traceKb, sizeof(traceKb));
     const bool savedStoreReady = ensureSavedPulseTracesReady();
     const bool alreadySaved = savedStoreReady && g_context.savedPulseTraces->containsRecord(trace->record);
+    Esp32BaseWeb::sendHeader("脉冲明细");
     Esp32BaseWeb::sendChunk("<h2>脉冲明细</h2><div class='form-actions'><a class='btn-link' href='/faucet/records'>返回记录</a>");
     if (savedSource) {
         Esp32BaseWeb::sendChunk("<form method='post' action='/api/faucet/records' onsubmit=\"return confirm('确认删除这条已保存的脉冲明细？')&&once(this)\">"
@@ -2470,16 +2496,28 @@ void handleRecordDetailPage() {
                             "<span><i class='legend-mark legend-cum'></i>运行累计</span>"
                             "<span><i class='legend-mark legend-cum-paused'></i>非运行累计</span>"
                             "<span><i class='legend-mark legend-stable'></i>稳态开始</span>"
-                            "</div></section><section class='panel detail-data'><h3>明细数据</h3>"
-                            "<table><tr><th>时间</th><th>脉冲数</th><th>累计脉冲数</th><th>状态</th></tr>");
-    for (std::size_t i = 0; i < bucketCount; ++i) {
-        sendFmt("<tr><td>%lu秒</td><td>%lu</td><td>%lu</td><td>%s</td></tr>",
-                static_cast<unsigned long>(buckets[i].startSec),
-                static_cast<unsigned long>(buckets[i].pulseDelta),
-                static_cast<unsigned long>(buckets[i].cumulativePulses),
-                traceStateText(buckets[i].state));
-    }
-    Esp32BaseWeb::sendChunk("</table></section>");
+                            "</div></section>");
+    const char* rawSavedParam = savedSource ? "saved=1&" : "";
+    Esp32BaseWeb::sendChunk("<section class='panel detail-data'><div class='panel-head'><h3>原始明细</h3><div class='row-actions'>");
+    sendFmt("<button class='btn-link' id='rawTraceLoad' type='button'>加载原始明细</button>"
+            "<a class='btn-link' href='/faucet/records/detail?raw=1&%strace=%lu'>下载文本</a>",
+            rawSavedParam,
+            static_cast<unsigned long>(traceId));
+    sendFmt("</div></div><p class='hint'>原始秒级数据共 %lu 行，默认不加载；需要排查时再拉取纯文本，避免页面一次性生成大量表格。</p>"
+            "<pre id='rawTraceText' class='raw-trace-text' aria-live='polite'></pre></section>"
+            "<script>"
+            "(function(){var btn=document.getElementById('rawTraceLoad');var out=document.getElementById('rawTraceText');"
+            "var rawUrl='/faucet/records/detail?raw=1&%strace=%lu';"
+            "if(!btn||!out){return;}"
+            "btn.addEventListener('click',function(){btn.disabled=true;btn.textContent='加载中';"
+            "fetch(rawUrl,{cache:'no-store'}).then(function(r){if(!r.ok){throw new Error('load');}return r.text();})"
+            ".then(function(t){out.textContent=t;out.className='raw-trace-text is-loaded';btn.textContent='重新加载';btn.disabled=false;})"
+            ".catch(function(){out.textContent='原始明细加载失败。';out.className='raw-trace-text is-loaded';btn.textContent='重试';btn.disabled=false;});});"
+            "})();"
+            "</script>",
+            static_cast<unsigned long>(trace->sampleCount),
+            rawSavedParam,
+            static_cast<unsigned long>(traceId));
 
     if (!savedSource && g_context.pulseTraces) {
         const std::uint32_t defaultActualMl = trace->actualMl > 0 ? trace->actualMl : trace->record.volumeMl;
@@ -2684,9 +2722,16 @@ bool sendJsonBuffer(bool ok, const char* json) {
     return true;
 }
 
-bool requireContext() {
+bool contextReady() {
     if (!g_context.config || !g_context.configStore || !g_context.app || !g_context.filters || !g_context.records ||
         !g_context.recordCalibrations || !g_context.recordCalibrationWriter || !g_context.nowSeconds) {
+        return false;
+    }
+    return true;
+}
+
+bool requireContext() {
+    if (!contextReady()) {
         Esp32BaseWeb::sendJson(503, "{\"error\":\"context_not_ready\"}");
         return false;
     }

@@ -167,7 +167,7 @@ void test_records_page_and_calibration_api_are_available() {
 void test_web_page_source_has_no_remote_water_control_forms() {
     FILE* file = std::fopen("src/web/FaucetWeb.cpp", "rb");
     TEST_ASSERT_NOT_NULL(file);
-    static char buffer[180000]{};
+    static char buffer[240000]{};
     const std::size_t read = std::fread(buffer, 1, sizeof(buffer) - 1, file);
     std::fclose(file);
     TEST_ASSERT_GREATER_THAN_size_t(0, read);
@@ -185,7 +185,7 @@ void test_web_page_source_has_no_remote_water_control_forms() {
 void test_web_page_source_links_cacheable_app_css() {
     FILE* file = std::fopen("src/web/FaucetWeb.cpp", "rb");
     TEST_ASSERT_NOT_NULL(file);
-    static char buffer[180000]{};
+    static char buffer[240000]{};
     const std::size_t read = std::fread(buffer, 1, sizeof(buffer) - 1, file);
     std::fclose(file);
     TEST_ASSERT_GREATER_THAN_size_t(0, read);
@@ -216,7 +216,7 @@ void test_web_page_source_links_cacheable_app_css() {
 void test_web_page_source_contains_expected_ui_improvements() {
     FILE* file = std::fopen("src/web/FaucetWeb.cpp", "rb");
     TEST_ASSERT_NOT_NULL(file);
-    static char buffer[180000]{};
+    static char buffer[240000]{};
     const std::size_t read = std::fread(buffer, 1, sizeof(buffer) - 1, file);
     std::fclose(file);
     TEST_ASSERT_GREATER_THAN_size_t(0, read);
@@ -243,6 +243,15 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "formatWaterRecordListTime(records[i], startTime"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "%luP (%luP/L)"));
     TEST_ASSERT_NULL(std::strstr(buffer, "</td><td>%luP/L"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "std::uint32_t requestedPageSize = kDefaultRecordPageSize"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "std::uint32_t requestedPageNo = 0"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "page = requestedPageNo - 1"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "sizes[] = {10, 15, 20, 30, 50}"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "name='pageNo'"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "value='跳转'"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "<span>开始</span><input type='date' name='startDate'"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "<span>结束</span><input type='date' name='endDate'"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "&startDate=%s&endDate=%s"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "脉冲明细缓存"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "明细条数"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "数据点数"));
@@ -295,11 +304,19 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "bucket == bucketSeconds ? \"btn-link page-current\" : \"btn-link\""));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "aria-current='%s'"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "detail-data"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "<section class='panel detail-data'><h3>明细数据</h3>"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "<section class='panel detail-data'><div class='panel-head'><h3>原始明细</h3>"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "加载原始明细"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "raw=1"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "fetch(rawUrl,{cache:'no-store'})"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "<pre id='rawTraceText' class='raw-trace-text'"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "beginResponse(200, \"text/plain; charset=utf-8\""));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "时间\\t脉冲数\\t累计脉冲数\\t状态\\n"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "%lu秒\\t%u\\t%lu\\t%s\\n"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, ".raw-trace-text"));
     TEST_ASSERT_NULL(std::strstr(buffer, "<details open class='panel detail-data'>"));
     TEST_ASSERT_NULL(std::strstr(buffer, "<summary>查看明细数据</summary>"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "<table><tr><th>时间</th><th>脉冲数</th><th>累计脉冲数</th><th>状态</th></tr>"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "<tr><td>%lu秒</td><td>%lu</td><td>%lu</td><td>%s</td></tr>"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "<table><tr><th>时间</th><th>脉冲数</th><th>累计脉冲数</th><th>状态</th></tr>"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "<tr><td>%lu秒</td><td>%lu</td><td>%lu</td><td>%s</td></tr>"));
     TEST_ASSERT_NULL(std::strstr(buffer, "<tr><td>%lu</td><td>%lu</td><td>%lu</td><td>%s</td></tr>"));
     TEST_ASSERT_NULL(std::strstr(buffer, "<tr><td>%lu-%lus</td><td>%luP</td><td>%luP</td><td>%s</td></tr>"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "inline-note"));
@@ -540,7 +557,6 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NULL(std::strstr(buffer, "sendMetricCard(\"平均单次\""));
     TEST_ASSERT_NULL(std::strstr(buffer, "本地显示"));
     TEST_ASSERT_NULL(std::strstr(buffer, "local-display-card"));
-    TEST_ASSERT_NULL(std::strstr(buffer, "white-space:pre"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "当前状态"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "\"screenStatus\", \"屏幕\", screenOn"));
     TEST_ASSERT_NULL(std::strstr(buffer, "local-display-meta"));

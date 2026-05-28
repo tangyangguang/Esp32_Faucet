@@ -1017,8 +1017,7 @@ void sendNoticeFromQuery() {
     Esp32BaseWeb::sendChunk("</p>");
 }
 
-void sendAppStyles() {
-    Esp32BaseWeb::sendChunk("<style>");
+void sendAppCss() {
     Esp32BaseWeb::sendChunk(":root{--bg:#fbfcfb;--surface:#fff;--line:#e2ebe8;--text:#243039;--muted:#6b777f;--accent:#3d837b;--accent-soft:#edf6f3;--warn:#a36b10}"
                             "body{max-width:1120px;background:var(--bg);color:var(--text);font-size:14px;line-height:1.42;padding:14px 18px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,'PingFang SC','Microsoft YaHei',sans-serif}"
                             "h1,h2,h3{letter-spacing:0;color:var(--text)}h2{font-size:18px;margin:18px 0 10px}h3{font-size:15px;margin:0 0 8px}.page{margin:0}p{margin:0 0 8px}");
@@ -1053,7 +1052,10 @@ void sendAppStyles() {
                             "@media(max-width:820px){.machine-main,.machine-main.compact,.today-layout{grid-template-columns:1fr}.machine-hero{min-height:0}.machine-hero strong{font-size:26px}.machine-task-grid{grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}}"
                             "@media(max-width:720px){body{padding:10px}.form-grid{grid-template-columns:1fr}.span-2,.span-3,.span-4,.span-5,.span-6,.span-8,.span-12{grid-column:1/-1}.usage-grid{grid-template-columns:1fr}.daily-chart svg{min-width:680px}}"
                             "@media(max-width:520px){.grid,.metric-grid,.filter-cards,.machine-task-grid{grid-template-columns:1fr}.metric-card{min-height:0}.pager{align-items:flex-start}.page-size{width:100%}.kv th{width:34%}}");
-    Esp32BaseWeb::sendChunk("</style>");
+}
+
+void sendAppStylesheetLink() {
+    Esp32BaseWeb::sendChunk("<link rel='stylesheet' href='/faucet/app.css'>");
 }
 
 bool sendPageStart(const char* title) {
@@ -2557,6 +2559,17 @@ void handleApi() {
     Esp32BaseWeb::sendJson(200, "{\"ok\":true,\"waterControl\":false}");
 }
 
+void handleAppCss() {
+    if (!Esp32BaseWeb::checkAuth()) {
+        return;
+    }
+    if (!Esp32BaseWeb::beginResponse(200, "text/css; charset=utf-8", nullptr)) {
+        return;
+    }
+    sendAppCss();
+    Esp32BaseWeb::endResponse();
+}
+
 bool sendJsonBuffer(bool ok, const char* json) {
     if (!ok) {
         Esp32BaseWeb::sendJson(500, "{\"error\":\"buffer_too_small\"}");
@@ -3203,6 +3216,9 @@ Esp32BaseWeb::Handler handlerFor(const FaucetWebRoute& route) {
     if (std::strcmp(route.path, "/api/faucet/today") == 0) {
         return handleTodayOverviewApi;
     }
+    if (std::strcmp(route.path, "/faucet/app.css") == 0) {
+        return handleAppCss;
+    }
     if (std::strcmp(route.path, "/faucet/filters/edit") == 0) {
         return handleFilterEditPage;
     }
@@ -3241,7 +3257,7 @@ bool registerFaucetWeb() {
         return false;
     }
 
-    Esp32BaseWeb::setHeadExtraCallback(sendAppStyles);
+    Esp32BaseWeb::setHeadExtraCallback(sendAppStylesheetLink);
 
     bool ok = true;
     const FaucetWebRoute* routes = faucetWebRoutes();

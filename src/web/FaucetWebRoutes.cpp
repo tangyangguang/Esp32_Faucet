@@ -11,6 +11,7 @@ constexpr FaucetWebRoute kRoutes[] = {
     {"/faucet/stats", FaucetWebMethod::Get, FaucetWebRouteKind::Page, "统计"},
     {"/faucet/presets", FaucetWebMethod::Get, FaucetWebRouteKind::Page, "预设"},
     {"/faucet/filters", FaucetWebMethod::Get, FaucetWebRouteKind::Page, "滤芯"},
+    {"/faucet/app.css", FaucetWebMethod::Get, FaucetWebRouteKind::Api, nullptr},
     {"/faucet/filters/edit", FaucetWebMethod::Get, FaucetWebRouteKind::Api, nullptr},
     {"/faucet/records/calibration", FaucetWebMethod::Get, FaucetWebRouteKind::Api, nullptr},
     {"/faucet/records/detail", FaucetWebMethod::Get, FaucetWebRouteKind::Api, nullptr},

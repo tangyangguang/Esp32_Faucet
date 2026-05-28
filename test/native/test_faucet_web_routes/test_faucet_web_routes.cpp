@@ -11,7 +11,7 @@ void test_routes_fit_esp32base_default_route_capacity() {
     TEST_ASSERT_TRUE(faucetWebRoutesFitEsp32Base());
     TEST_ASSERT_TRUE(faucetWebRoutesFitEsp32Base(16));
     TEST_ASSERT_LESS_OR_EQUAL_size_t(16, faucetWebRouteCount());
-    TEST_ASSERT_EQUAL_size_t(15, faucetWebRouteCount());
+    TEST_ASSERT_EQUAL_size_t(16, faucetWebRouteCount());
 }
 
 void test_routes_do_not_register_remote_water_control_paths() {
@@ -97,6 +97,19 @@ void test_filter_edit_route_is_hidden_from_navigation() {
     TEST_ASSERT_TRUE(found);
 }
 
+void test_app_css_route_is_hidden_from_navigation() {
+    const FaucetWebRoute* routes = faucetWebRoutes();
+    bool found = false;
+    for (std::size_t i = 0; i < faucetWebRouteCount(); ++i) {
+        if (std::strcmp(routes[i].path, "/faucet/app.css") == 0) {
+            found = routes[i].method == FaucetWebMethod::Get && routes[i].kind == FaucetWebRouteKind::Api &&
+                    routes[i].title == nullptr;
+        }
+    }
+    TEST_ASSERT_TRUE(found);
+    TEST_ASSERT_TRUE(faucetWebRouteAllowed("/faucet/app.css"));
+}
+
 void test_filter_forms_use_registered_api_endpoints() {
     const FaucetWebRoute* routes = faucetWebRoutes();
     bool foundFilters = false;
@@ -167,6 +180,23 @@ void test_web_page_source_has_no_remote_water_control_forms() {
     TEST_ASSERT_NULL(std::strstr(buffer, "href=\"/api/faucet/start\""));
     TEST_ASSERT_NULL(std::strstr(buffer, "href='/api/faucet/stop'"));
     TEST_ASSERT_NULL(std::strstr(buffer, "href=\"/api/faucet/stop\""));
+}
+
+void test_web_page_source_links_cacheable_app_css() {
+    FILE* file = std::fopen("src/web/FaucetWeb.cpp", "rb");
+    TEST_ASSERT_NOT_NULL(file);
+    static char buffer[180000]{};
+    const std::size_t read = std::fread(buffer, 1, sizeof(buffer) - 1, file);
+    std::fclose(file);
+    TEST_ASSERT_GREATER_THAN_size_t(0, read);
+
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "href='/faucet/app.css'"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "beginResponse(200, \"text/css; charset=utf-8\""));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "handleAppCss"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "setHeadExtraCallback(sendAppStylesheetLink)"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "setHeadExtraCallback(sendAppStyles)"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "sendChunk(\"<style>\")"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "sendChunk(\"</style>\")"));
 }
 
 void test_web_page_source_contains_expected_ui_improvements() {
@@ -585,10 +615,12 @@ int main(int argc, char** argv) {
     RUN_TEST(test_route_whitelist_rejects_unknown_and_dangerous_control_aliases);
     RUN_TEST(test_dual_method_routes_are_merged_to_any);
     RUN_TEST(test_filter_edit_route_is_hidden_from_navigation);
+    RUN_TEST(test_app_css_route_is_hidden_from_navigation);
     RUN_TEST(test_filter_forms_use_registered_api_endpoints);
     RUN_TEST(test_presets_page_is_available_in_navigation);
     RUN_TEST(test_records_page_and_calibration_api_are_available);
     RUN_TEST(test_web_page_source_has_no_remote_water_control_forms);
+    RUN_TEST(test_web_page_source_links_cacheable_app_css);
     RUN_TEST(test_web_page_source_contains_expected_ui_improvements);
     RUN_TEST(test_main_source_renders_live_display_frame_for_web);
     RUN_TEST(test_app_config_source_uses_clear_business_labels_and_help);

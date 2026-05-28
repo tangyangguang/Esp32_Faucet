@@ -2,11 +2,38 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <cstring>
 #include <new>
 
 namespace faucet {
 namespace {
+
+constexpr std::uint32_t kSavedTraceMagic = 0x46575054UL;  // FWPT
+constexpr std::uint16_t kSavedTraceVersion = 1;
+
+struct SavedTraceHeader {
+    std::uint32_t magic;
+    std::uint16_t version;
+    std::uint16_t headerSize;
+    std::uint16_t entrySize;
+    std::uint16_t sampleSize;
+    std::uint32_t sampleCount;
+    std::uint32_t key;
+};
+
+struct SavedTraceEntry {
+    std::uint32_t traceId;
+    std::uint32_t startTime;
+    WaterRecord record;
+    std::uint32_t sampleCount;
+    std::uint32_t totalPulses;
+    std::uint32_t actualMl;
+    std::uint8_t finished;
+    std::uint8_t reserved[7];
+};
+
+static_assert(sizeof(SavedTraceHeader) == 20, "SavedTraceHeader must stay fixed-size");
 
 bool sameRecordIdentity(const WaterRecord& a, const WaterRecord& b) {
     return a.startTime == b.startTime && a.volumeMl == b.volumeMl && a.targetValue == b.targetValue &&
@@ -32,6 +59,23 @@ WaterPulseTraceState mergeState(WaterPulseTraceState current, WaterPulseTraceSta
 
 std::uint32_t roundU32(float value) {
     return value <= 0.0f ? 0 : static_cast<std::uint32_t>(std::lround(value));
+}
+
+void hashRecordField(std::uint32_t& hash, std::uint32_t value) {
+    hash ^= value;
+    hash *= 16777619UL;
+}
+
+SavedTraceHeader makeSavedTraceHeader(std::uint32_t key, std::size_t sampleCount) {
+    return SavedTraceHeader{
+        kSavedTraceMagic,
+        kSavedTraceVersion,
+        static_cast<std::uint16_t>(sizeof(SavedTraceHeader)),
+        static_cast<std::uint16_t>(sizeof(SavedTraceEntry)),
+        static_cast<std::uint16_t>(sizeof(WaterPulseTraceSample)),
+        static_cast<std::uint32_t>(sampleCount),
+        key,
+    };
 }
 
 }  // namespace
@@ -205,6 +249,200 @@ std::size_t WaterPulseTraceStore::indexOf(std::uint32_t traceId) const {
         }
     }
     return traceCount_;
+}
+
+WaterPulseTraceFileStore::WaterPulseTraceFileStore(WaterRecordFileBackend& backend,
+                                                   const char* pathPrefix,
+                                                   std::size_t sampleCapacityPerTrace)
+    : backend_(backend),
+      pathPrefix_(pathPrefix),
+      sampleCapacityPerTrace_(sampleCapacityPerTrace),
+      ready_(false) {}
+
+bool WaterPulseTraceFileStore::begin() {
+    ready_ = false;
+    if (!pathPrefix_ || pathPrefix_[0] != '/' || std::strlen(pathPrefix_) > 16 ||
+        sampleCapacityPerTrace_ == 0 || sampleCapacityPerTrace_ > UINT32_MAX) {
+        return false;
+    }
+    ready_ = true;
+    return true;
+}
+
+bool WaterPulseTraceFileStore::save(const WaterPulseTrace& trace,
+                                    const WaterPulseTraceSample* samples,
+                                    std::size_t sampleCount,
+                                    std::uint32_t* savedTraceId) {
+    if (!ready() || !samples || sampleCount == 0 || sampleCount > sampleCapacityPerTrace_ ||
+        sampleCount != trace.sampleCount) {
+        return false;
+    }
+    WaterPulseTrace next = trace;
+    const std::uint32_t key = keyForRecord(next.record);
+    if (key == 0) {
+        return false;
+    }
+    next.traceId = key;
+    char path[32]{};
+    if (!pathForKey(key, path, sizeof(path))) {
+        return false;
+    }
+    const std::size_t fileSize = sampleOffset() + sampleCount * sizeof(WaterPulseTraceSample);
+    if (!backend_.createSized(path, fileSize)) {
+        return false;
+    }
+    const SavedTraceHeader header = makeSavedTraceHeader(key, sampleCount);
+    SavedTraceEntry entry{};
+    entry.traceId = key;
+    entry.startTime = next.startTime;
+    entry.record = next.record;
+    entry.sampleCount = static_cast<std::uint32_t>(sampleCount);
+    entry.totalPulses = next.totalPulses;
+    entry.actualMl = next.actualMl;
+    entry.finished = next.finished ? 1 : 0;
+    const bool wrote = backend_.writeAt(path, 0, reinterpret_cast<const std::uint8_t*>(&header), sizeof(header)) &&
+                       backend_.writeAt(path,
+                                        sizeof(SavedTraceHeader),
+                                        reinterpret_cast<const std::uint8_t*>(&entry),
+                                        sizeof(entry)) &&
+                       backend_.writeAt(path,
+                                        sampleOffset(),
+                                        reinterpret_cast<const std::uint8_t*>(samples),
+                                        sampleCount * sizeof(WaterPulseTraceSample));
+    if (!wrote) {
+        backend_.removeFile(path);
+        return false;
+    }
+    if (savedTraceId) {
+        *savedTraceId = key;
+    }
+    return true;
+}
+
+bool WaterPulseTraceFileStore::remove(std::uint32_t traceId) {
+    if (!ready() || traceId == 0) {
+        return false;
+    }
+    char path[32]{};
+    if (!pathForKey(traceId, path, sizeof(path)) || !backend_.exists(path)) {
+        return false;
+    }
+    return backend_.removeFile(path);
+}
+
+bool WaterPulseTraceFileStore::findById(std::uint32_t traceId, WaterPulseTrace& output) const {
+    return traceId != 0 && readTraceFile(traceId, output);
+}
+
+bool WaterPulseTraceFileStore::findByRecord(const WaterRecord& record, WaterPulseTrace& output) const {
+    const std::uint32_t key = keyForRecord(record);
+    if (key == 0 || !readTraceFile(key, output)) {
+        return false;
+    }
+    return sameRecordIdentity(output.record, record);
+}
+
+std::size_t WaterPulseTraceFileStore::readSamples(std::uint32_t traceId,
+                                                  WaterPulseTraceSample* output,
+                                                  std::size_t outputCapacity) const {
+    if (!ready() || !output || outputCapacity == 0 || traceId == 0) {
+        return 0;
+    }
+    WaterPulseTrace trace{};
+    if (!findById(traceId, trace) || trace.sampleCount == 0 || trace.sampleCount > outputCapacity ||
+        trace.sampleCount > sampleCapacityPerTrace_) {
+        return 0;
+    }
+    char path[32]{};
+    if (!pathForKey(traceId, path, sizeof(path))) {
+        return 0;
+    }
+    return backend_.readAt(path,
+                           sampleOffset(),
+                           reinterpret_cast<std::uint8_t*>(output),
+                           trace.sampleCount * sizeof(WaterPulseTraceSample))
+               ? trace.sampleCount
+               : 0;
+}
+
+bool WaterPulseTraceFileStore::containsRecord(const WaterRecord& record) const {
+    WaterPulseTrace trace{};
+    return findByRecord(record, trace);
+}
+
+std::size_t WaterPulseTraceFileStore::sampleCapacityPerTrace() const {
+    return sampleCapacityPerTrace_;
+}
+
+bool WaterPulseTraceFileStore::ready() const {
+    return ready_ && pathPrefix_ && pathPrefix_[0] == '/';
+}
+
+std::uint32_t WaterPulseTraceFileStore::keyForRecord(const WaterRecord& record) const {
+    std::uint32_t hash = 2166136261UL;
+    hashRecordField(hash, record.startTime);
+    hashRecordField(hash, record.volumeMl);
+    hashRecordField(hash, record.targetValue);
+    hashRecordField(hash, record.pulseCount);
+    hashRecordField(hash, record.rejectedPulseCount);
+    hashRecordField(hash, record.durationSec);
+    hashRecordField(hash, static_cast<std::uint32_t>(record.mode));
+    hashRecordField(hash, static_cast<std::uint32_t>(record.result));
+    hashRecordField(hash, record.selectedPreset);
+    if (hash == 0) {
+        hash = 1;
+    }
+    return hash;
+}
+
+bool WaterPulseTraceFileStore::pathForKey(std::uint32_t key, char* out, std::size_t len) const {
+    if (!ready() || key == 0 || !out || len == 0) {
+        return false;
+    }
+    const int written = std::snprintf(out, len, "%s%08lx.bin", pathPrefix_, static_cast<unsigned long>(key));
+    return written > 0 && static_cast<std::size_t>(written) < len;
+}
+
+bool WaterPulseTraceFileStore::readTraceFile(std::uint32_t key, WaterPulseTrace& output) const {
+    if (!ready() || key == 0) {
+        return false;
+    }
+    char path[32]{};
+    if (!pathForKey(key, path, sizeof(path)) || !backend_.exists(path)) {
+        return false;
+    }
+    SavedTraceHeader header{};
+    SavedTraceEntry entry{};
+    if (!backend_.readAt(path, 0, reinterpret_cast<std::uint8_t*>(&header), sizeof(header)) ||
+        !backend_.readAt(path, sizeof(SavedTraceHeader), reinterpret_cast<std::uint8_t*>(&entry), sizeof(entry))) {
+        return false;
+    }
+    if (header.magic != kSavedTraceMagic || header.version != kSavedTraceVersion ||
+        header.headerSize != sizeof(SavedTraceHeader) || header.entrySize != sizeof(SavedTraceEntry) ||
+        header.sampleSize != sizeof(WaterPulseTraceSample) || header.key != key || header.sampleCount == 0 ||
+        header.sampleCount > sampleCapacityPerTrace_ || entry.sampleCount != header.sampleCount ||
+        entry.traceId != key) {
+        return false;
+    }
+    const std::int64_t expectedSize =
+        static_cast<std::int64_t>(sampleOffset() + header.sampleCount * sizeof(WaterPulseTraceSample));
+    if (backend_.fileSize(path) != expectedSize) {
+        return false;
+    }
+    output = WaterPulseTrace{};
+    output.traceId = entry.traceId;
+    output.startTime = entry.startTime;
+    output.record = entry.record;
+    output.sampleStart = 0;
+    output.sampleCount = entry.sampleCount;
+    output.totalPulses = entry.totalPulses;
+    output.actualMl = entry.actualMl;
+    output.finished = entry.finished != 0;
+    return true;
+}
+
+std::size_t WaterPulseTraceFileStore::sampleOffset() const {
+    return sizeof(SavedTraceHeader) + sizeof(SavedTraceEntry);
 }
 
 std::size_t aggregateWaterPulseTrace(const WaterPulseTrace&,

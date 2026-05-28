@@ -12,6 +12,7 @@ class FilterStore;
 class WaterRecordCalibrationReader;
 class WaterRecordCalibrationWriter;
 class WaterRecordReader;
+class WaterPulseTraceFileStore;
 class WaterPulseTraceStore;
 struct SystemConfig;
 
@@ -35,6 +36,7 @@ struct FaucetWebContext {
     const WaterRecordCalibrationReader* recordCalibrations;
     WaterRecordCalibrationWriter* recordCalibrationWriter;
     WaterPulseTraceStore* pulseTraces;
+    WaterPulseTraceFileStore* savedPulseTraces;
     FaucetNowSeconds nowSeconds;
     FaucetBootId bootId;
     FaucetApplySettings applySettings;

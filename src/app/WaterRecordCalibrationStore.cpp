@@ -203,7 +203,7 @@ bool WaterRecordCalibrationFileStore::upsert(const WaterRecordCalibration& calib
         next.calibrationCount = existing.calibrationCount == UINT16_MAX
                                     ? UINT16_MAX
                                     : static_cast<std::uint16_t>(existing.calibrationCount + 1U);
-        return writeEntry(index, next);
+        return appendEntry(index, next);
     }
 
     std::size_t index = 0;
@@ -220,7 +220,7 @@ bool WaterRecordCalibrationFileStore::upsert(const WaterRecordCalibration& calib
     if (next.calibrationCount == 0) {
         next.calibrationCount = 1;
     }
-    if (!writeEntry(index, next)) {
+    if (!appendEntry(index, next)) {
         return false;
     }
     oldestIndex_ = nextOldest;
@@ -317,11 +317,20 @@ bool WaterRecordCalibrationFileStore::readEntry(std::size_t index, WaterRecordCa
     return backend_.readAt(path_, entryOffset(index), reinterpret_cast<std::uint8_t*>(&output), sizeof(output));
 }
 
-bool WaterRecordCalibrationFileStore::writeEntry(std::size_t index, const WaterRecordCalibration& calibration) {
+bool WaterRecordCalibrationFileStore::appendEntry(std::size_t index, const WaterRecordCalibration& calibration) {
     if (index >= capacity_) {
         return false;
     }
-    return backend_.writeAt(path_, entryOffset(index), reinterpret_cast<const std::uint8_t*>(&calibration), sizeof(calibration));
+    const std::size_t offset = entryOffset(index);
+    const std::int64_t fileSize = backend_.fileSize(path_);
+    const std::uint8_t* data = reinterpret_cast<const std::uint8_t*>(&calibration);
+    if (fileSize == static_cast<std::int64_t>(offset)) {
+        return backend_.appendBytes(path_, data, sizeof(calibration));
+    }
+    if (fileSize > static_cast<std::int64_t>(offset)) {
+        return backend_.writeAt(path_, offset, data, sizeof(calibration));
+    }
+    return false;
 }
 
 std::size_t WaterRecordCalibrationFileStore::physicalIndexFromNewestOffset(std::size_t offset) const {

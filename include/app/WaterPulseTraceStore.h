@@ -1,6 +1,7 @@
 #pragma once
 
 #include "app/AppTypes.h"
+#include "app/WaterRecordFileStore.h"
 #include "app/WaterRecordStore.h"
 
 #include <cstddef>
@@ -116,6 +117,35 @@ private:
     std::size_t sampleCount_;
     std::size_t budgetBytes_;
     std::uint32_t nextTraceId_;
+};
+
+class WaterPulseTraceFileStore {
+public:
+    WaterPulseTraceFileStore(WaterRecordFileBackend& backend, const char* pathPrefix, std::size_t sampleCapacityPerTrace);
+
+    bool begin();
+    bool save(const WaterPulseTrace& trace,
+              const WaterPulseTraceSample* samples,
+              std::size_t sampleCount,
+              std::uint32_t* savedTraceId = nullptr);
+    bool remove(std::uint32_t traceId);
+    bool findById(std::uint32_t traceId, WaterPulseTrace& output) const;
+    bool findByRecord(const WaterRecord& record, WaterPulseTrace& output) const;
+    std::size_t readSamples(std::uint32_t traceId, WaterPulseTraceSample* output, std::size_t outputCapacity) const;
+    bool containsRecord(const WaterRecord& record) const;
+    std::size_t sampleCapacityPerTrace() const;
+    bool ready() const;
+
+private:
+    std::uint32_t keyForRecord(const WaterRecord& record) const;
+    bool pathForKey(std::uint32_t key, char* out, std::size_t len) const;
+    bool readTraceFile(std::uint32_t key, WaterPulseTrace& output) const;
+    std::size_t sampleOffset() const;
+
+    WaterRecordFileBackend& backend_;
+    const char* pathPrefix_;
+    std::size_t sampleCapacityPerTrace_;
+    bool ready_;
 };
 
 std::size_t aggregateWaterPulseTrace(const WaterPulseTrace& trace,

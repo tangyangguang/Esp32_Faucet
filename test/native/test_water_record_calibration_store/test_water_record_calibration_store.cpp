@@ -17,6 +17,7 @@ class MemoryFileBackend : public WaterRecordFileBackend {
 public:
     bool failWrite = false;
     bool failRead = false;
+    bool writeAtExtends = true;
 
     bool exists(const char* path) override {
         return files.find(path ? path : "") != files.end();
@@ -65,6 +66,9 @@ public:
             return false;
         }
         std::vector<std::uint8_t>& file = files[path];
+        if (!writeAtExtends && offset + len > file.size()) {
+            return false;
+        }
         if (offset + len > file.size()) {
             file.resize(offset + len, 0);
         }
@@ -200,6 +204,21 @@ void test_record_calibration_file_store_overwrites_matching_record() {
     TEST_ASSERT_EQUAL_UINT16(2, found.calibrationCount);
 }
 
+void test_record_calibration_file_store_appends_first_entry_without_write_at_extend() {
+    MemoryFileBackend backend;
+    backend.writeAtExtends = false;
+    WaterRecordCalibrationFileStore store(backend, "/cal.bin", 4);
+    const WaterRecord record = makeRecord(832000100UL, 5840, 7000, 1291);
+
+    TEST_ASSERT_TRUE(store.begin());
+    TEST_ASSERT_TRUE(store.upsert(makeCalibration(record, 7000)));
+
+    WaterRecordCalibration found{};
+    TEST_ASSERT_TRUE(store.find(record, found));
+    TEST_ASSERT_EQUAL_UINT32(7000, found.actualMl);
+    TEST_ASSERT_EQUAL_UINT16(1, found.calibrationCount);
+}
+
 int main(int argc, char** argv) {
     (void)argc;
     (void)argv;
@@ -210,5 +229,6 @@ int main(int argc, char** argv) {
     RUN_TEST(test_record_calibration_store_identity_excludes_similar_records);
     RUN_TEST(test_record_calibration_file_store_persists_saved_calibration);
     RUN_TEST(test_record_calibration_file_store_overwrites_matching_record);
+    RUN_TEST(test_record_calibration_file_store_appends_first_entry_without_write_at_extend);
     return UNITY_END();
 }

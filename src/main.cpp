@@ -38,10 +38,12 @@ constexpr std::size_t kRamRecordCalibrationCapacity = 32;
 constexpr std::size_t kWaterRecordCapacity = 20000;
 constexpr std::size_t kWaterRecordCalibrationCapacity = 512;
 constexpr std::size_t kPulseTraceCapacity = 64;
+constexpr std::size_t kSavedPulseTraceSamplesPerTrace = 1024;
 constexpr std::size_t kPulseTraceMaxSamples =
     (static_cast<std::size_t>(faucet::kMaxPulseTraceMemoryKb) * 1024U) / sizeof(faucet::WaterPulseTraceSample);
 constexpr const char* kWaterRecordPath = "/faucet_records_v1.bin";
 constexpr const char* kWaterRecordCalibrationPath = "/faucet_record_cal_v1.bin";
+constexpr const char* kSavedPulseTracePathPrefix = "/fpt_";
 
 class PersistentRecordWriter : public faucet::WaterRecordWriter, public faucet::WaterRecordReader {
 public:
@@ -104,8 +106,8 @@ public:
     }
 
     bool upsert(const faucet::WaterRecordCalibration& calibration) override {
-        if (fileStore_ && fileStore_->ready() && fileStore_->upsert(calibration)) {
-            return true;
+        if (fileStore_ && fileStore_->ready()) {
+            return fileStore_->upsert(calibration);
         }
         return ramStore_.upsert(calibration);
     }
@@ -146,6 +148,10 @@ faucet::WaterRecordCalibrationFileStore g_recordCalibrationFile(
     g_waterRecordBackend,
     kWaterRecordCalibrationPath,
     kWaterRecordCalibrationCapacity);
+faucet::WaterPulseTraceFileStore g_savedPulseTraceFile(
+    g_waterRecordBackend,
+    kSavedPulseTracePathPrefix,
+    kSavedPulseTraceSamplesPerTrace);
 PersistentRecordWriter g_records;
 PersistentRecordCalibrationStore g_recordCalibrations;
 faucet::WaterPulseTrace* g_pulseTraceRecords = nullptr;
@@ -432,6 +438,7 @@ void initializeApplication() {
                                  &g_recordCalibrations,
                                  &g_recordCalibrations,
                                  g_pulseTraces,
+                                 &g_savedPulseTraceFile,
                                  currentSeconds,
                                  currentBootId,
                                  applyRuntimeSettings,

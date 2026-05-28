@@ -21,6 +21,10 @@
 #include <cstring>
 #include <new>
 
+#ifndef FAUCET_WEB_CSS_VERSION
+#define FAUCET_WEB_CSS_VERSION __TIME__
+#endif
+
 namespace faucet {
 namespace {
 
@@ -1055,7 +1059,7 @@ void sendAppCss() {
 }
 
 void sendAppStylesheetLink() {
-    Esp32BaseWeb::sendChunk("<link rel='stylesheet' href='/faucet/app.css'>");
+    Esp32BaseWeb::sendChunk("<link rel='stylesheet' href='/faucet/app.css?v=" FAUCET_WEB_CSS_VERSION "'>");
 }
 
 bool sendPageStart(const char* title) {
@@ -2563,6 +2567,8 @@ void handleAppCss() {
     if (!Esp32BaseWeb::checkAuth()) {
         return;
     }
+    Esp32BaseWeb::sendResponseHeader("Cache-Control", "public, max-age=86400");
+    Esp32BaseWeb::sendResponseHeader("X-Content-Type-Options", "nosniff");
     if (!Esp32BaseWeb::beginResponse(200, "text/css; charset=utf-8", nullptr)) {
         return;
     }

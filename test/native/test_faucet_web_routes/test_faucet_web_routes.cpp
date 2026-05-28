@@ -190,13 +190,27 @@ void test_web_page_source_links_cacheable_app_css() {
     std::fclose(file);
     TEST_ASSERT_GREATER_THAN_size_t(0, read);
 
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "href='/faucet/app.css'"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "FAUCET_WEB_CSS_VERSION"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "href='/faucet/app.css?v="));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "beginResponse(200, \"text/css; charset=utf-8\""));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "handleAppCss"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "setHeadExtraCallback(sendAppStylesheetLink)"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "sendResponseHeader(\"Cache-Control\", \"public, max-age=86400\")"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "sendResponseHeader(\"X-Content-Type-Options\", \"nosniff\")"));
     TEST_ASSERT_NULL(std::strstr(buffer, "setHeadExtraCallback(sendAppStyles)"));
     TEST_ASSERT_NULL(std::strstr(buffer, "sendChunk(\"<style>\")"));
     TEST_ASSERT_NULL(std::strstr(buffer, "sendChunk(\"</style>\")"));
+
+    const char* handler = std::strstr(buffer, "void handleAppCss()");
+    TEST_ASSERT_NOT_NULL(handler);
+    const char* cacheHeader = std::strstr(handler, "sendResponseHeader(\"Cache-Control\", \"public, max-age=86400\")");
+    const char* nosniffHeader = std::strstr(handler, "sendResponseHeader(\"X-Content-Type-Options\", \"nosniff\")");
+    const char* beginResponse = std::strstr(handler, "beginResponse(200, \"text/css; charset=utf-8\"");
+    TEST_ASSERT_NOT_NULL(cacheHeader);
+    TEST_ASSERT_NOT_NULL(nosniffHeader);
+    TEST_ASSERT_NOT_NULL(beginResponse);
+    TEST_ASSERT_TRUE(cacheHeader < beginResponse);
+    TEST_ASSERT_TRUE(nosniffHeader < beginResponse);
 }
 
 void test_web_page_source_contains_expected_ui_improvements() {

@@ -152,7 +152,9 @@ const WaterPulseTraceSample* WaterPulseTraceStore::sampleAt(const WaterPulseTrac
 WaterPulseTraceStats WaterPulseTraceStore::stats() const {
     WaterPulseTraceStats out{};
     out.traceCount = traceCount_;
+    out.traceCapacity = traceCapacity_;
     out.sampleCount = sampleCount_;
+    out.sampleCapacity = sampleCapacity_;
     out.usedBytes = usedBytes();
     out.budgetBytes = budgetBytes_;
     out.usagePercent = budgetBytes_ == 0

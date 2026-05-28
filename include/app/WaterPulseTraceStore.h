@@ -35,7 +35,9 @@ struct WaterPulseTrace {
 
 struct WaterPulseTraceStats {
     std::size_t traceCount;
+    std::size_t traceCapacity;
     std::size_t sampleCount;
+    std::size_t sampleCapacity;
     std::size_t usedBytes;
     std::size_t budgetBytes;
     std::uint8_t usagePercent;

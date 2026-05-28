@@ -210,7 +210,7 @@ void test_config_save_and_load_round_trips_system_config() {
     config.volumeAdjustStepMl = 250;
     config.timeAdjustStepSec = 15;
     config.startupCompensationMl = 80;
-    config.pulseTraceMemoryKb = 64;
+    config.pulseTraceMemoryKb = 40;
     config.overallPulsePerLiter = 211;
     config.startupDurationSec = 5;
     config.startupPulseCount = 40;
@@ -241,7 +241,7 @@ void test_config_save_and_load_round_trips_system_config() {
     TEST_ASSERT_EQUAL_UINT32(250, loaded.volumeAdjustStepMl);
     TEST_ASSERT_EQUAL_UINT32(15, loaded.timeAdjustStepSec);
     TEST_ASSERT_EQUAL_UINT32(80, loaded.startupCompensationMl);
-    TEST_ASSERT_EQUAL_UINT32(64, loaded.pulseTraceMemoryKb);
+    TEST_ASSERT_EQUAL_UINT32(40, loaded.pulseTraceMemoryKb);
     TEST_ASSERT_EQUAL_UINT32(211, loaded.overallPulsePerLiter);
     TEST_ASSERT_EQUAL_UINT32(5, loaded.startupDurationSec);
     TEST_ASSERT_EQUAL_UINT32(40, loaded.startupPulseCount);

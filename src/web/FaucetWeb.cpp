@@ -1070,7 +1070,7 @@ void sendAppCss() {
                             ".records-top-grid .panel{display:flex;flex-direction:column;margin:0}.records-top-grid .metric-grid{grid-template-columns:repeat(auto-fit,minmax(128px,1fr));gap:8px;margin:0}.records-top-grid .metric-card{min-height:44px;padding:9px 11px}.records-top-grid .metric-card span{font-size:12px;margin-bottom:3px}.records-top-grid .metric-card strong{font-size:15px;font-weight:500}"
                             ".metering-panel .hint{margin-top:auto;padding-top:10px}.trace-cache-panel .metric-grid{grid-template-columns:repeat(2,minmax(0,1fr));margin-top:0}.trace-cache-panel .panel-head{margin-bottom:8px}.trace-head-meter{display:grid;grid-template-columns:minmax(120px,1fr) auto;gap:9px;align-items:center;min-width:230px}.trace-head-meter .progress{height:7px}.trace-badge{display:inline-flex;align-items:center;min-height:20px;margin-left:7px;padding:0 7px;border:1px solid #cfe4dc;border-radius:999px;background:var(--accent-soft);color:#17635b;font-size:12px;font-weight:700;vertical-align:middle}"
                             ".pulse-cell{font-variant-numeric:tabular-nums}.inline-note{display:inline-flex;align-items:center;min-height:20px;margin-left:6px;padding:0 7px;border-radius:999px;background:#eef3f2;color:var(--muted);font-size:12px;font-weight:500;white-space:nowrap}.inline-note.ok,.measured-note{background:#e8f4ee;color:#21634c}");
-    Esp32BaseWeb::sendChunk(".pulse-detail-chart{padding:10px 0 2px;overflow-x:auto}.pulse-detail-chart svg{display:block;width:100%;min-width:760px;height:auto}.pulse-detail-chart .axis{stroke:#d9e0df;stroke-width:1}.pulse-detail-chart .grid-line{stroke:#edf2f1;stroke-width:1}.pulse-line{fill:none;stroke:var(--accent);stroke-width:3;stroke-linejoin:round;stroke-linecap:round}.pulse-line-paused{stroke-dasharray:7 5;opacity:.65}.cum-line{fill:none;stroke:#7c8fae;stroke-width:2.5;stroke-linejoin:round;stroke-linecap:round;opacity:.9}.cum-line-paused{stroke-dasharray:7 5;opacity:.6}.pulse-dot{fill:var(--surface);stroke:var(--accent);stroke-width:2}.pulse-dot-paused{stroke-dasharray:3 3;opacity:.75}.stable-line{stroke:#a36b10;stroke-width:2;stroke-dasharray:7 5}.chart-label{font-size:12px;fill:var(--muted)}.chart-y-label{text-anchor:end}.chart-x-label{text-anchor:middle}.chart-legend{display:flex;align-items:center;gap:14px;flex-wrap:wrap;color:var(--muted);font-size:12px;margin:6px 0 0}.legend-mark{display:inline-block;width:18px;height:3px;border-radius:999px;margin-right:5px;vertical-align:middle}.legend-pulse{background:var(--accent)}.legend-paused{background:transparent;border-top:3px dashed var(--accent);height:0;border-radius:0}.legend-cum{background:#7c8fae}.legend-cum-paused{background:transparent;border-top:3px dashed #7c8fae;height:0;border-radius:0}.legend-stable{background:#a36b10}.trace-frequency{margin-left:auto}.trace-frequency-label{color:var(--muted);font-size:12px;font-weight:650;margin-right:3px}.trace-frequency a.page-current{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:750}.detail-data table{margin-top:10px}");
+    Esp32BaseWeb::sendChunk(".pulse-detail-chart{padding:10px 0 2px;overflow-x:auto}.pulse-detail-chart svg{display:block;width:100%;min-width:760px;height:auto}.pulse-detail-chart .axis{stroke:#d9e0df;stroke-width:1}.pulse-detail-chart .grid-line{stroke:#edf2f1;stroke-width:1}.pulse-line{fill:none;stroke:var(--accent);stroke-width:3;stroke-linejoin:round;stroke-linecap:round}.pulse-line-paused{stroke-dasharray:7 5;opacity:.65}.cum-line{fill:none;stroke:#7c8fae;stroke-width:2.5;stroke-linejoin:round;stroke-linecap:round;opacity:.9}.cum-line-paused{stroke-dasharray:7 5;opacity:.6}.pulse-dot{fill:var(--surface);stroke:var(--accent);stroke-width:2}.pulse-dot-paused{stroke-dasharray:3 3;opacity:.75}.stable-line{stroke:#a36b10;stroke-width:2;stroke-dasharray:7 5}.chart-label{font-size:12px;fill:var(--muted)}.chart-y-label{text-anchor:end}.chart-cum-y-label{text-anchor:start;fill:#7c8fae}.chart-x-label{text-anchor:middle}.chart-legend{display:flex;align-items:center;gap:14px;flex-wrap:wrap;color:var(--muted);font-size:12px;margin:6px 0 0}.legend-mark{display:inline-block;width:18px;height:3px;border-radius:999px;margin-right:5px;vertical-align:middle}.legend-pulse{background:var(--accent)}.legend-paused{background:transparent;border-top:3px dashed var(--accent);height:0;border-radius:0}.legend-cum{background:#7c8fae}.legend-cum-paused{background:transparent;border-top:3px dashed #7c8fae;height:0;border-radius:0}.legend-stable{background:#a36b10}.trace-frequency{margin-left:auto}.trace-frequency-label{color:var(--muted);font-size:12px;font-weight:650;margin-right:3px}.trace-frequency a.page-current{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:750}.detail-data table{margin-top:10px}");
     Esp32BaseWeb::sendChunk(".grid,.metric-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin:0 0 12px}"
                             ".metric-card{padding:12px 14px;min-height:54px}.metric-card.primary{border-color:#b8d7cf;background:#f7fbfa}.metric-card span{display:block;color:var(--muted);font-size:13px;font-weight:500;margin-bottom:4px}.metric-card strong{display:block;color:var(--text);font-size:18px;line-height:1.2;font-weight:500}"
                             ".machine-status{padding:14px 16px;margin:0 0 14px;border-color:#d8e1e6;background:#fbfcfd}"
@@ -2340,6 +2340,9 @@ void handleRecordDetailPage() {
     std::uint32_t maxCumulative = 1;
     std::uint32_t runningCumulative = 0;
     for (std::size_t i = 0; i < bucketCount; ++i) {
+        if (!bucketOnlyHasRunningSamples(samples, trace->sampleCount, buckets[i])) {
+            continue;
+        }
         const std::uint32_t chartDelta = bucketRunningPulseDelta(samples, trace->sampleCount, buckets[i]);
         maxDelta = std::max(maxDelta, chartDelta);
         runningCumulative += chartDelta;
@@ -2354,7 +2357,8 @@ void handleRecordDetailPage() {
         bucketCount == 0 ? 1 : std::max<std::uint32_t>(1, buckets[bucketCount - 1].startSec + buckets[bucketCount - 1].durationSec);
     Esp32BaseWeb::sendChunk("</div></div><div class='pulse-detail-chart'><svg viewBox='0 0 1000 300' role='img' aria-label='脉冲明细折线图'>"
                             "<line class='axis' x1='54' y1='224' x2='954' y2='224'></line>"
-                            "<line class='axis' x1='54' y1='28' x2='54' y2='224'></line>");
+                            "<line class='axis' x1='54' y1='28' x2='54' y2='224'></line>"
+                            "<line class='axis' x1='954' y1='28' x2='954' y2='224'></line>");
     for (std::uint32_t i = 1; i <= 4; ++i) {
         const std::uint32_t y = baseY - (chartHeight * i) / 4;
         sendFmt("<line class='grid-line' x1='54' y1='%lu' x2='954' y2='%lu'></line>",
@@ -2369,6 +2373,13 @@ void handleRecordDetailPage() {
                 static_cast<unsigned long>(value));
     }
     for (std::uint32_t i = 0; i <= 4; ++i) {
+        const std::uint32_t y = baseY - (chartHeight * i) / 4;
+        const std::uint32_t value = (maxCumulative * i + 2U) / 4U;
+        sendFmt("<text class='chart-label chart-cum-y-label' x='960' y='%lu'>%lu</text>",
+                static_cast<unsigned long>(y + 4U),
+                static_cast<unsigned long>(value));
+    }
+    for (std::uint32_t i = 0; i <= 4; ++i) {
         const std::uint32_t x = left + (chartWidth * i) / 4;
         const std::uint32_t value = (maxEndSec * i + 2U) / 4U;
         sendFmt("<text class='chart-label chart-x-label' x='%lu' y='248'>%lus</text>",
@@ -2378,40 +2389,51 @@ void handleRecordDetailPage() {
     sendFmt("<text class='chart-label' x='58' y='20'>运行最高 %lu 脉冲 / 运行累计 %lu 脉冲</text>",
             static_cast<unsigned long>(maxDelta),
             static_cast<unsigned long>(maxCumulative));
-    std::uint32_t prevX = left;
-    std::uint32_t prevY = baseY;
+    bool prevPulseValid = false;
+    std::uint32_t prevPulseX = left;
+    std::uint32_t prevPulseY = baseY;
     for (std::size_t i = 0; i < bucketCount; ++i) {
         const bool bucketRunning = bucketOnlyHasRunningSamples(samples, trace->sampleCount, buckets[i]);
-        const std::uint32_t chartDelta = bucketRunningPulseDelta(samples, trace->sampleCount, buckets[i]);
+        const std::uint32_t chartDelta =
+            bucketRunning ? bucketRunningPulseDelta(samples, trace->sampleCount, buckets[i]) : 0;
+        const std::uint32_t startSec = buckets[i].startSec;
         const std::uint32_t endSec = buckets[i].startSec + buckets[i].durationSec;
+        const std::uint32_t startX = left + (startSec * chartWidth) / maxEndSec;
         const std::uint32_t x = left + (endSec * chartWidth) / maxEndSec;
         const std::uint32_t y = baseY - (chartDelta * chartHeight) / maxDelta;
+        const std::uint32_t lineStartX = bucketRunning && prevPulseValid ? prevPulseX : startX;
+        const std::uint32_t lineStartY = bucketRunning && prevPulseValid ? prevPulseY : baseY;
         sendFmt("<line class='%s' x1='%lu' y1='%lu' x2='%lu' y2='%lu'></line>",
                 bucketRunning ? "pulse-line" : "pulse-line pulse-line-paused",
-                static_cast<unsigned long>(prevX),
-                static_cast<unsigned long>(prevY),
+                static_cast<unsigned long>(lineStartX),
+                static_cast<unsigned long>(lineStartY),
                 static_cast<unsigned long>(x),
                 static_cast<unsigned long>(y));
-        prevX = x;
-        prevY = y;
+        prevPulseValid = bucketRunning;
+        prevPulseX = x;
+        prevPulseY = y;
     }
     runningCumulative = 0;
-    std::uint32_t prevCumX = left;
-    std::uint32_t prevCumY = baseY;
     for (std::size_t i = 0; i < bucketCount; ++i) {
         const bool bucketRunning = bucketOnlyHasRunningSamples(samples, trace->sampleCount, buckets[i]);
-        runningCumulative += bucketRunningPulseDelta(samples, trace->sampleCount, buckets[i]);
+        const std::uint32_t beforeCumulative = runningCumulative;
+        const std::uint32_t chartDelta =
+            bucketRunning ? bucketRunningPulseDelta(samples, trace->sampleCount, buckets[i]) : 0;
+        if (bucketRunning) {
+            runningCumulative += chartDelta;
+        }
+        const std::uint32_t startSec = buckets[i].startSec;
         const std::uint32_t endSec = buckets[i].startSec + buckets[i].durationSec;
+        const std::uint32_t startX = left + (startSec * chartWidth) / maxEndSec;
         const std::uint32_t x = left + (endSec * chartWidth) / maxEndSec;
+        const std::uint32_t startY = baseY - (beforeCumulative * chartHeight) / maxCumulative;
         const std::uint32_t y = baseY - (runningCumulative * chartHeight) / maxCumulative;
         sendFmt("<line class='%s' x1='%lu' y1='%lu' x2='%lu' y2='%lu'></line>",
                 bucketRunning ? "cum-line" : "cum-line cum-line-paused",
-                static_cast<unsigned long>(prevCumX),
-                static_cast<unsigned long>(prevCumY),
+                static_cast<unsigned long>(startX),
+                static_cast<unsigned long>(startY),
                 static_cast<unsigned long>(x),
                 static_cast<unsigned long>(y));
-        prevCumX = x;
-        prevCumY = y;
     }
     if (analysis.stable) {
         const std::uint32_t stableX = left + (analysis.stableStartSec * chartWidth) / maxEndSec;
@@ -2427,7 +2449,8 @@ void handleRecordDetailPage() {
     runningCumulative = 0;
     for (std::size_t i = 0; i < bucketCount; ++i) {
         const bool bucketRunning = bucketOnlyHasRunningSamples(samples, trace->sampleCount, buckets[i]);
-        const std::uint32_t chartDelta = bucketRunningPulseDelta(samples, trace->sampleCount, buckets[i]);
+        const std::uint32_t chartDelta =
+            bucketRunning ? bucketRunningPulseDelta(samples, trace->sampleCount, buckets[i]) : 0;
         runningCumulative += chartDelta;
         const std::uint32_t endSec = buckets[i].startSec + buckets[i].durationSec;
         const std::uint32_t x = left + (endSec * chartWidth) / maxEndSec;

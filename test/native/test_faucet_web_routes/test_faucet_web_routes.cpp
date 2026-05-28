@@ -279,11 +279,17 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "trace-frequency-label'>聚合频率"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, ".trace-frequency a.page-current"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "chart-y-label"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "chart-cum-y-label"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "chart-x-label"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "运行累计"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "bucketRunningPulseDelta"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "bucketOnlyHasRunningSamples"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "bucketRunning ? bucketRunningPulseDelta(samples, trace->sampleCount, buckets[i]) : 0"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "runningCumulative"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "prevPulseValid = false"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "bucketRunning ? \"pulse-line\" : \"pulse-line pulse-line-paused\""));
+    TEST_ASSERT_NULL(std::strstr(buffer, "prevX = x;"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "prevCumX = x;"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "bucketSeconds != 2 && bucketSeconds != 3 && bucketSeconds != 4 && bucketSeconds != 5"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "bucketsToShow[] = {1, 2, 3, 4, 5}"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "bucket == bucketSeconds ? \"btn-link page-current\" : \"btn-link\""));

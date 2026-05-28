@@ -387,6 +387,54 @@ void test_saved_trace_file_store_refuses_new_trace_when_capacity_full() {
     TEST_ASSERT_EQUAL_UINT32(2, firstLoaded.totalPulses);
 }
 
+void test_saved_trace_file_store_matches_page_records_in_one_call() {
+    WaterPulseTrace traces[4]{};
+    WaterPulseTraceSample samples[32]{};
+    WaterPulseTraceStore ram(traces, 4, samples, 32, 2048);
+    const std::uint32_t first = ram.beginTrace(1000);
+    fillTrace(ram, first, {1, 2});
+    TEST_ASSERT_TRUE(ram.finishTrace(first, makeRecord(1000, 3, 1000), WaterPulseTraceState::Completed));
+    const std::uint32_t second = ram.beginTrace(2000);
+    fillTrace(ram, second, {3, 4});
+    TEST_ASSERT_TRUE(ram.finishTrace(second, makeRecord(2000, 7, 2000), WaterPulseTraceState::Completed));
+    const std::uint32_t third = ram.beginTrace(3000);
+    fillTrace(ram, third, {5, 6});
+    TEST_ASSERT_TRUE(ram.finishTrace(third, makeRecord(3000, 11, 3000), WaterPulseTraceState::Completed));
+
+    MemoryFileBackend backend;
+    WaterPulseTraceFileStore saved(backend, "/faucet_pulse_traces_v2.bin", 8, 4);
+    TEST_ASSERT_TRUE(saved.begin());
+    for (std::size_t i = 0; i < ram.count(); ++i) {
+        const WaterPulseTrace* trace = ram.traceAt(i);
+        TEST_ASSERT_NOT_NULL(trace);
+        WaterPulseTraceSample copy[8]{};
+        for (std::size_t sample = 0; sample < trace->sampleCount; ++sample) {
+            copy[sample] = *ram.sampleAt(*trace, sample);
+        }
+        TEST_ASSERT_TRUE(saved.save(*trace, copy, trace->sampleCount));
+    }
+
+    const WaterPulseTrace* newestTrace = ram.traceAt(2);
+    const WaterPulseTrace* oldestTrace = ram.traceAt(0);
+    TEST_ASSERT_NOT_NULL(newestTrace);
+    TEST_ASSERT_NOT_NULL(oldestTrace);
+    WaterRecord page[] = {
+        newestTrace->record,
+        makeRecord(4000, 9, 4000),
+        oldestTrace->record,
+    };
+    WaterPulseTrace matches[3]{};
+    bool found[3]{};
+
+    TEST_ASSERT_EQUAL_size_t(2, saved.findByRecords(page, 3, matches, found));
+
+    TEST_ASSERT_TRUE(found[0]);
+    TEST_ASSERT_FALSE(found[1]);
+    TEST_ASSERT_TRUE(found[2]);
+    TEST_ASSERT_EQUAL_UINT32(11, matches[0].totalPulses);
+    TEST_ASSERT_EQUAL_UINT32(3, matches[2].totalPulses);
+}
+
 void test_saved_trace_file_store_corrupt_file_degrades_without_crashing() {
     MemoryFileBackend backend;
     backend.putFile("/faucet_pulse_traces_v2.bin", std::vector<std::uint8_t>{1, 2, 3, 4, 5});
@@ -432,6 +480,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_saved_trace_file_store_begin_does_not_touch_flash);
     RUN_TEST(test_saved_trace_file_store_duplicate_save_reuses_existing_slot);
     RUN_TEST(test_saved_trace_file_store_refuses_new_trace_when_capacity_full);
+    RUN_TEST(test_saved_trace_file_store_matches_page_records_in_one_call);
     RUN_TEST(test_saved_trace_file_store_corrupt_file_degrades_without_crashing);
     RUN_TEST(test_saved_trace_file_store_legacy_blob_is_only_removed_explicitly);
     return UNITY_END();

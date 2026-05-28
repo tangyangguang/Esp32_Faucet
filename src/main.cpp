@@ -122,6 +122,16 @@ public:
         return ramStore_.find(record, output);
     }
 
+    std::size_t findAny(const faucet::WaterRecord* records,
+                        std::size_t recordCount,
+                        faucet::WaterRecordCalibration* output,
+                        bool* found) const override {
+        if (fileStore_ && fileStore_->ready()) {
+            return fileStore_->findAny(records, recordCount, output, found);
+        }
+        return ramStore_.findAny(records, recordCount, output, found);
+    }
+
     std::size_t count() const override {
         return fileStore_ && fileStore_->ready() ? fileStore_->count() : ramStore_.count();
     }

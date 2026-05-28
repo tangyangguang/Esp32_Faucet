@@ -160,6 +160,10 @@ public:
     bool remove(std::uint32_t traceId);
     bool findById(std::uint32_t traceId, WaterPulseTrace& output) const;
     bool findByRecord(const WaterRecord& record, WaterPulseTrace& output) const;
+    std::size_t findByRecords(const WaterRecord* records,
+                              std::size_t recordCount,
+                              WaterPulseTrace* output,
+                              bool* found) const;
     std::size_t readSamples(std::uint32_t traceId, WaterPulseTraceSample* output, std::size_t outputCapacity) const;
     bool containsRecord(const WaterRecord& record) const;
     WaterPulseTraceFileStats stats() const;

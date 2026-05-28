@@ -58,6 +58,28 @@ bool sameWaterRecordCalibrationIdentity(const WaterRecordCalibration& calibratio
            calibration.selectedPreset == record.selectedPreset;
 }
 
+std::size_t WaterRecordCalibrationReader::findAny(const WaterRecord* records,
+                                                  std::size_t recordCount,
+                                                  WaterRecordCalibration* output,
+                                                  bool* found) const {
+    if (found) {
+        for (std::size_t i = 0; i < recordCount; ++i) {
+            found[i] = false;
+        }
+    }
+    if (!records || !output || !found || recordCount == 0 || !ready()) {
+        return 0;
+    }
+    std::size_t matched = 0;
+    for (std::size_t i = 0; i < recordCount; ++i) {
+        if (find(records[i], output[i])) {
+            found[i] = true;
+            ++matched;
+        }
+    }
+    return matched;
+}
+
 WaterRecordCalibrationStore::WaterRecordCalibrationStore(WaterRecordCalibration* entries, std::size_t capacity)
     : entries_(entries), capacity_(capacity), oldestIndex_(0), count_(0) {}
 
@@ -110,6 +132,33 @@ bool WaterRecordCalibrationStore::find(const WaterRecord& record, WaterRecordCal
         }
     }
     return false;
+}
+
+std::size_t WaterRecordCalibrationStore::findAny(const WaterRecord* records,
+                                                 std::size_t recordCount,
+                                                 WaterRecordCalibration* output,
+                                                 bool* found) const {
+    if (found) {
+        for (std::size_t i = 0; i < recordCount; ++i) {
+            found[i] = false;
+        }
+    }
+    if (!records || !output || !found || recordCount == 0 || !ready()) {
+        return 0;
+    }
+    std::size_t matched = 0;
+    for (std::size_t offset = 0; offset < count_ && matched < recordCount; ++offset) {
+        const WaterRecordCalibration& candidate = entries_[physicalIndexFromNewestOffset(offset)];
+        for (std::size_t i = 0; i < recordCount; ++i) {
+            if (found[i] || !sameWaterRecordCalibrationIdentity(candidate, records[i])) {
+                continue;
+            }
+            output[i] = candidate;
+            found[i] = true;
+            ++matched;
+        }
+    }
+    return matched;
 }
 
 std::size_t WaterRecordCalibrationStore::count() const {
@@ -248,6 +297,37 @@ bool WaterRecordCalibrationFileStore::find(const WaterRecord& record, WaterRecor
         }
     }
     return false;
+}
+
+std::size_t WaterRecordCalibrationFileStore::findAny(const WaterRecord* records,
+                                                     std::size_t recordCount,
+                                                     WaterRecordCalibration* output,
+                                                     bool* found) const {
+    if (found) {
+        for (std::size_t i = 0; i < recordCount; ++i) {
+            found[i] = false;
+        }
+    }
+    if (!records || !output || !found || recordCount == 0 || !ready()) {
+        return 0;
+    }
+    std::size_t matched = 0;
+    for (std::size_t offset = 0; offset < count_ && matched < recordCount; ++offset) {
+        const std::size_t index = physicalIndexFromNewestOffset(offset);
+        WaterRecordCalibration candidate{};
+        if (!readEntry(index, candidate)) {
+            return matched;
+        }
+        for (std::size_t i = 0; i < recordCount; ++i) {
+            if (found[i] || !sameWaterRecordCalibrationIdentity(candidate, records[i])) {
+                continue;
+            }
+            output[i] = candidate;
+            found[i] = true;
+            ++matched;
+        }
+    }
+    return matched;
 }
 
 std::size_t WaterRecordCalibrationFileStore::count() const {

@@ -495,6 +495,33 @@ bool findRecordCalibration(const WaterRecord& record, WaterRecordCalibration& ca
            g_context.recordCalibrations->find(record, calibration);
 }
 
+void indexPagePulseTraces(const WaterRecord* records,
+                          std::size_t recordCount,
+                          const WaterPulseTraceStore* store,
+                          const WaterPulseTrace** output) {
+    if (!output) {
+        return;
+    }
+    for (std::size_t i = 0; i < recordCount; ++i) {
+        output[i] = nullptr;
+    }
+    if (!records || !store || recordCount == 0) {
+        return;
+    }
+    const std::size_t traceCount = store->count();
+    for (std::size_t traceIndex = 0; traceIndex < traceCount; ++traceIndex) {
+        const WaterPulseTrace* trace = store->traceAt(traceIndex);
+        if (!trace || !trace->finished) {
+            continue;
+        }
+        for (std::size_t i = 0; i < recordCount; ++i) {
+            if (!output[i] && sameWaterRecordIdentity(trace->record, records[i])) {
+                output[i] = trace;
+            }
+        }
+    }
+}
+
 std::uint32_t measuredPulsePerLiter(const WaterRecord& record, const WaterRecordCalibration& calibration) {
     if (record.pulseCount == 0 || calibration.actualMl == 0) {
         return 0;
@@ -1904,6 +1931,48 @@ void handleRecordsPage() {
     }
     WaterRecord newestRecord{};
     const bool newestRecordReady = ready && g_context.records->readPage(0, 1, &newestRecord, 1) == 1;
+    WaterRecordCalibration* pageCalibrations = nullptr;
+    bool* pageCalibrated = nullptr;
+    bool pageCalibrationIndexReady = false;
+    if (count > 0 && g_context.recordCalibrations && g_context.recordCalibrations->ready()) {
+        pageCalibrations = new (std::nothrow) WaterRecordCalibration[count]{};
+        pageCalibrated = new (std::nothrow) bool[count]{};
+        if (pageCalibrations && pageCalibrated) {
+            g_context.recordCalibrations->findAny(records, count, pageCalibrations, pageCalibrated);
+            pageCalibrationIndexReady = true;
+        } else {
+            delete[] pageCalibrations;
+            delete[] pageCalibrated;
+            pageCalibrations = nullptr;
+            pageCalibrated = nullptr;
+        }
+    }
+    const WaterPulseTrace** pageTraces = nullptr;
+    bool pageTraceIndexReady = false;
+    if (count > 0 && g_context.pulseTraces) {
+        pageTraces = new (std::nothrow) const WaterPulseTrace*[count]{};
+        if (pageTraces) {
+            indexPagePulseTraces(records, count, g_context.pulseTraces, pageTraces);
+            pageTraceIndexReady = true;
+        }
+    }
+    const bool savedPulseTracesReady = ensureSavedPulseTracesReady();
+    WaterPulseTrace* pageSavedTraces = nullptr;
+    bool* pageSavedTraceFound = nullptr;
+    bool pageSavedTraceIndexReady = false;
+    if (count > 0 && savedPulseTracesReady) {
+        pageSavedTraces = new (std::nothrow) WaterPulseTrace[count]{};
+        pageSavedTraceFound = new (std::nothrow) bool[count]{};
+        if (pageSavedTraces && pageSavedTraceFound) {
+            g_context.savedPulseTraces->findByRecords(records, count, pageSavedTraces, pageSavedTraceFound);
+            pageSavedTraceIndexReady = true;
+        } else {
+            delete[] pageSavedTraces;
+            delete[] pageSavedTraceFound;
+            pageSavedTraces = nullptr;
+            pageSavedTraceFound = nullptr;
+        }
+    }
     Esp32BaseWeb::sendChunk("<table><tr><th>时间</th><th>模式</th><th>目标</th><th>出水</th>"
                             "<th>用时</th><th>脉冲</th><th>结果</th><th>操作</th></tr>");
     for (std::size_t i = 0; i < count; ++i) {
@@ -1912,11 +1981,29 @@ void handleRecordsPage() {
         const bool latestRecord = newestRecordReady && sameWaterRecordIdentity(records[i], newestRecord);
         const bool canCalibrate = latestRecord && waterRecordCanCalibrate(records[i]);
         WaterRecordCalibration calibration{};
-        const bool calibrated = findRecordCalibration(records[i], calibration);
-        const WaterPulseTrace* trace = g_context.pulseTraces ? g_context.pulseTraces->findByRecord(records[i]) : nullptr;
+        bool calibrated = false;
+        if (pageCalibrationIndexReady) {
+            calibrated = pageCalibrated[i];
+            if (calibrated) {
+                calibration = pageCalibrations[i];
+            }
+        } else {
+            calibrated = findRecordCalibration(records[i], calibration);
+        }
+        const WaterPulseTrace* trace = pageTraceIndexReady ? pageTraces[i]
+                                                           : (g_context.pulseTraces
+                                                                  ? g_context.pulseTraces->findByRecord(records[i])
+                                                                  : nullptr);
         WaterPulseTrace savedTrace{};
-        const bool hasSavedTrace = ensureSavedPulseTracesReady() &&
-                                   g_context.savedPulseTraces->findByRecord(records[i], savedTrace);
+        bool hasSavedTrace = false;
+        if (pageSavedTraceIndexReady) {
+            hasSavedTrace = pageSavedTraceFound[i];
+            if (hasSavedTrace) {
+                savedTrace = pageSavedTraces[i];
+            }
+        } else if (savedPulseTracesReady) {
+            hasSavedTrace = g_context.savedPulseTraces->findByRecord(records[i], savedTrace);
+        }
         const std::uint32_t pulsePerLiter = pulsePerLiterFromPulsePerMl(records[i].pulsePerMlAtRun);
         Esp32BaseWeb::sendChunk("<tr><td>");
         Esp32BaseWeb::sendChunk(startTime);
@@ -1964,6 +2051,11 @@ void handleRecordsPage() {
         Esp32BaseWeb::sendChunk("</div></td></tr>");
     }
     Esp32BaseWeb::sendChunk("</table>");
+    delete[] pageCalibrations;
+    delete[] pageCalibrated;
+    delete[] pageTraces;
+    delete[] pageSavedTraces;
+    delete[] pageSavedTraceFound;
     delete[] records;
     sendPageEnd();
 }

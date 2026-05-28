@@ -458,6 +458,58 @@ bool WaterPulseTraceFileStore::findByRecord(const WaterRecord& record, WaterPuls
     return false;
 }
 
+std::size_t WaterPulseTraceFileStore::findByRecords(const WaterRecord* records,
+                                                    std::size_t recordCount,
+                                                    WaterPulseTrace* output,
+                                                    bool* found) const {
+    if (found) {
+        for (std::size_t i = 0; i < recordCount; ++i) {
+            found[i] = false;
+        }
+    }
+    if (!records || !output || !found || recordCount == 0 || !ready()) {
+        return 0;
+    }
+    std::size_t matched = 0;
+    if (loadIndex()) {
+        for (std::size_t slot = 0; slot < maxTraceCount_ && matched < recordCount; ++slot) {
+            const IndexEntry& entry = index_[slot];
+            if (entry.key == 0 || entry.entryChecksum != indexEntryChecksum(entry)) {
+                continue;
+            }
+            for (std::size_t i = 0; i < recordCount; ++i) {
+                if (found[i] || !sameRecordIdentity(entry.record, records[i])) {
+                    continue;
+                }
+                if (populateTraceFromEntry(entry, output[i])) {
+                    found[i] = true;
+                    ++matched;
+                }
+            }
+        }
+    }
+    for (std::size_t i = 0; i < recordCount && matched < recordCount; ++i) {
+        if (found[i]) {
+            continue;
+        }
+        WaterPulseTrace legacy{};
+        for (std::size_t probe = 0; probe < maxTraceCount_; ++probe) {
+            const std::uint32_t key = keyForRecordProbe(records[i], probe);
+            if (key == 0 || !readLegacyTraceFile(key, legacy)) {
+                continue;
+            }
+            if (!sameRecordIdentity(legacy.record, records[i])) {
+                continue;
+            }
+            output[i] = legacy;
+            found[i] = true;
+            ++matched;
+            break;
+        }
+    }
+    return matched;
+}
+
 std::size_t WaterPulseTraceFileStore::readSamples(std::uint32_t traceId,
                                                   WaterPulseTraceSample* output,
                                                   std::size_t outputCapacity) const {

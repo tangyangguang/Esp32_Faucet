@@ -20,15 +20,18 @@ public:
     bool writeAtExtends = true;
 
     bool exists(const char* path) override {
+        ++existsCalls;
         return files.find(path ? path : "") != files.end();
     }
 
     std::int64_t fileSize(const char* path) override {
+        ++fileSizeCalls;
         const auto it = files.find(path ? path : "");
         return it == files.end() ? -1 : static_cast<std::int64_t>(it->second.size());
     }
 
     bool createSized(const char* path, std::size_t size) override {
+        ++createSizedCalls;
         if (failWrite || !path) {
             return false;
         }
@@ -37,6 +40,7 @@ public:
     }
 
     bool appendBytes(const char* path, const std::uint8_t* data, std::size_t len) override {
+        ++appendCalls;
         if (failWrite || !path || (!data && len > 0)) {
             return false;
         }
@@ -50,6 +54,7 @@ public:
     }
 
     bool readAt(const char* path, std::size_t offset, std::uint8_t* out, std::size_t len) override {
+        ++readCalls;
         if (failRead || !path || !out) {
             return false;
         }
@@ -62,6 +67,7 @@ public:
     }
 
     bool writeAt(const char* path, std::size_t offset, const std::uint8_t* data, std::size_t len) override {
+        ++writeCalls;
         if (failWrite || !path || (!data && len > 0)) {
             return false;
         }
@@ -79,9 +85,18 @@ public:
     }
 
     bool removeFile(const char* path) override {
+        ++removeCalls;
         files.erase(path ? path : "");
         return true;
     }
+
+    std::size_t createSizedCalls = 0;
+    std::size_t appendCalls = 0;
+    std::size_t readCalls = 0;
+    std::size_t writeCalls = 0;
+    std::size_t removeCalls = 0;
+    std::size_t existsCalls = 0;
+    std::size_t fileSizeCalls = 0;
 
 private:
     std::map<std::string, std::vector<std::uint8_t>> files;
@@ -219,6 +234,38 @@ void test_record_calibration_file_store_appends_first_entry_without_write_at_ext
     TEST_ASSERT_EQUAL_UINT16(1, found.calibrationCount);
 }
 
+void test_record_calibration_file_store_matches_page_records_with_single_scan() {
+    MemoryFileBackend backend;
+    WaterRecordCalibrationFileStore store(backend, "/cal.bin", 8);
+    const WaterRecord newest = makeRecord(832000500UL, 5500, 7000, 1210);
+    const WaterRecord middle = makeRecord(832000300UL, 5300, 7000, 1170);
+    const WaterRecord oldest = makeRecord(832000100UL, 5100, 7000, 1130);
+    const WaterRecord missing = makeRecord(832000900UL, 5900, 7000, 1300);
+
+    TEST_ASSERT_TRUE(store.begin());
+    TEST_ASSERT_TRUE(store.upsert(makeCalibration(oldest, 5000)));
+    TEST_ASSERT_TRUE(store.upsert(makeCalibration(makeRecord(832000200UL, 5200, 7000, 1150), 5200)));
+    TEST_ASSERT_TRUE(store.upsert(makeCalibration(middle, 5350)));
+    TEST_ASSERT_TRUE(store.upsert(makeCalibration(makeRecord(832000400UL, 5400, 7000, 1190), 5400)));
+    TEST_ASSERT_TRUE(store.upsert(makeCalibration(newest, 5600)));
+
+    WaterRecord page[] = {newest, missing, middle, oldest};
+    WaterRecordCalibration matches[4]{};
+    bool found[4]{};
+    backend.readCalls = 0;
+
+    TEST_ASSERT_EQUAL_size_t(3, store.findAny(page, 4, matches, found));
+
+    TEST_ASSERT_TRUE(found[0]);
+    TEST_ASSERT_FALSE(found[1]);
+    TEST_ASSERT_TRUE(found[2]);
+    TEST_ASSERT_TRUE(found[3]);
+    TEST_ASSERT_EQUAL_UINT32(5600, matches[0].actualMl);
+    TEST_ASSERT_EQUAL_UINT32(5350, matches[2].actualMl);
+    TEST_ASSERT_EQUAL_UINT32(5000, matches[3].actualMl);
+    TEST_ASSERT_LESS_OR_EQUAL_size_t(store.count(), backend.readCalls);
+}
+
 int main(int argc, char** argv) {
     (void)argc;
     (void)argv;
@@ -230,5 +277,6 @@ int main(int argc, char** argv) {
     RUN_TEST(test_record_calibration_file_store_persists_saved_calibration);
     RUN_TEST(test_record_calibration_file_store_overwrites_matching_record);
     RUN_TEST(test_record_calibration_file_store_appends_first_entry_without_write_at_extend);
+    RUN_TEST(test_record_calibration_file_store_matches_page_records_with_single_scan);
     return UNITY_END();
 }

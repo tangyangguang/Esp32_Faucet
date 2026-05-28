@@ -43,6 +43,10 @@ public:
     virtual ~WaterRecordCalibrationReader() = default;
 
     virtual bool find(const WaterRecord& record, WaterRecordCalibration& output) const = 0;
+    virtual std::size_t findAny(const WaterRecord* records,
+                                std::size_t recordCount,
+                                WaterRecordCalibration* output,
+                                bool* found) const;
     virtual std::size_t count() const = 0;
     virtual bool ready() const = 0;
     virtual const char* storageName() const = 0;
@@ -61,6 +65,10 @@ public:
 
     bool upsert(const WaterRecordCalibration& calibration) override;
     bool find(const WaterRecord& record, WaterRecordCalibration& output) const override;
+    std::size_t findAny(const WaterRecord* records,
+                        std::size_t recordCount,
+                        WaterRecordCalibration* output,
+                        bool* found) const override;
     std::size_t count() const override;
     std::size_t capacity() const;
     bool ready() const override;
@@ -83,6 +91,10 @@ public:
     bool begin();
     bool upsert(const WaterRecordCalibration& calibration) override;
     bool find(const WaterRecord& record, WaterRecordCalibration& output) const override;
+    std::size_t findAny(const WaterRecord* records,
+                        std::size_t recordCount,
+                        WaterRecordCalibration* output,
+                        bool* found) const override;
     std::size_t count() const override;
     std::size_t capacity() const;
     bool ready() const override;

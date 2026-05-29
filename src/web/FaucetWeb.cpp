@@ -1160,11 +1160,11 @@ void sendSegmentedMeteringPanel() {
 void sendPulseTraceCachePanel() {
     WaterPulseTraceStats stats{};
     if (!g_context.pulseTraces) {
-        Esp32BaseWeb::sendChunk("<section class='panel records-diagnostic-panel trace-cache-diagnostic'><div class='diagnostic-head'><h3>临时缓存</h3>"
+        Esp32BaseWeb::sendChunk("<section class='panel records-diagnostic-panel trace-cache-diagnostic'><div class='diagnostic-head'><h3>RAM 最近明细</h3>"
                                 "<span class='status-pill status-error'>RAM 不可用</span></div>"
-                                "<div class='diagnostic-metric-grid'><div class='diagnostic-metric'><span>明细</span><strong>-</strong></div>"
-                                "<div class='diagnostic-metric'><span>数据点</span><strong>-</strong></div></div>"
-                                "<div class='diagnostic-foot'><span>占用 <b>-</b></span></div></section>");
+                                "<div class='diagnostic-metric-grid'><div class='diagnostic-metric'><span>最近明细</span><strong>-</strong></div>"
+                                "<div class='diagnostic-metric'><span>RAM 数据点</span><strong>-</strong></div></div>"
+                                "<div class='diagnostic-foot'><span>RAM 占用 <b>-</b></span><span>单条上限 <b>-</b></span></div></section>");
     } else {
         stats = g_context.pulseTraces->stats();
         char used[24]{};
@@ -1181,11 +1181,11 @@ void sendPulseTraceCachePanel() {
                       "%lu / %lu 点",
                       static_cast<unsigned long>(stats.sampleCount),
                       static_cast<unsigned long>(stats.sampleCapacity));
-        Esp32BaseWeb::sendChunk("<section class='panel records-diagnostic-panel trace-cache-diagnostic'><div class='diagnostic-head'><h3>临时缓存</h3>"
+        Esp32BaseWeb::sendChunk("<section class='panel records-diagnostic-panel trace-cache-diagnostic'><div class='diagnostic-head'><h3>RAM 最近明细</h3>"
                                 "<span class='status-pill status-muted ram-badge'>RAM</span></div><div class='diagnostic-metric-grid'>");
-        sendFmt("<div class='diagnostic-metric'><span>明细</span><strong>%s</strong></div>", traces);
-        sendFmt("<div class='diagnostic-metric'><span>数据点</span><strong>%s</strong></div>", samples);
-        sendFmt("</div><div class='diagnostic-foot'><span>占用 <b>%s</b></span><span>单条最多 <b>%lu 点</b></span></div></section>",
+        sendFmt("<div class='diagnostic-metric'><span>最近明细</span><strong>%s</strong></div>", traces);
+        sendFmt("<div class='diagnostic-metric'><span>RAM 数据点</span><strong>%s</strong></div>", samples);
+        sendFmt("</div><div class='diagnostic-foot'><span>RAM 占用 <b>%s</b></span><span>单条上限 <b>%lu 点</b></span></div></section>",
                 used,
                 static_cast<unsigned long>(stats.sampleCapacityPerTrace));
     }

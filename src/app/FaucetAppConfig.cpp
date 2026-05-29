@@ -158,7 +158,7 @@ bool addCoreFields(const SystemConfig& defaults) {
     ok = Esp32BaseAppConfig::addBool({kGroupLocal, kConfigNs, kKeyBeep, "蜂鸣器提示音", defaults.beepEnabled, "控制按键、完成和异常提示音。立即生效。", false, nullptr}) && ok;
 
     ok = Esp32BaseAppConfig::addDecimal({kGroupMetering, kConfigNs, kKeyPulseMilli, "当前控制用 P/L", static_cast<std::int32_t>(defaults.pulsePerMl * 1000.0f), static_cast<std::int32_t>(kMinPulsePerMl * 1000.0f), static_cast<std::int32_t>(kMaxPulsePerMl * 1000.0f), 1, 0, "脉冲/L", "关阀控制系数；可由记录实测更新，也可手动修正。", false, nullptr}) && ok;
-    ok = Esp32BaseAppConfig::addInt({kGroupMetering, kConfigNs, kKeyRecentPulseTraceCount, "最近脉冲明细条数", static_cast<std::int32_t>(defaults.recentPulseTraceCount), static_cast<std::int32_t>(kMinRecentPulseTraceCount), static_cast<std::int32_t>(kMaxRecentPulseTraceCount), 1, "条", "RAM 中保留最近 N 条脉冲明细；超限删除最旧明细。", false, nullptr}) && ok;
+    ok = Esp32BaseAppConfig::addInt({kGroupMetering, kConfigNs, kKeyRecentPulseTraceCount, "RAM 最近脉冲明细条数", static_cast<std::int32_t>(defaults.recentPulseTraceCount), static_cast<std::int32_t>(kMinRecentPulseTraceCount), static_cast<std::int32_t>(kMaxRecentPulseTraceCount), 1, "条", "仅保存在 RAM 中，重启会丢失；用于查看最近出水明细和校准后自动入库。", false, nullptr}) && ok;
 
     return ok;
 }

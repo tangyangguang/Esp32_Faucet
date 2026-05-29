@@ -286,7 +286,8 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "计量状态"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "样本覆盖"));
     TEST_ASSERT_NULL(std::strstr(buffer, "明细存储"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "临时缓存"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "RAM 最近明细"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "临时缓存"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "已保存明细"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "控制P/L"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "稳态P/L"));
@@ -301,9 +302,11 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "候选已生成"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "样本不足"));
     TEST_ASSERT_NULL(std::strstr(buffer, "最近校准"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "占用 <b>%s</b>"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "最近明细"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "RAM 数据点"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "RAM 占用 <b>%s</b>"));
     TEST_ASSERT_NULL(std::strstr(buffer, "<span><b>%u%%</b></span>"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "单条最多 <b>%lu 点</b>"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "单条上限 <b>%lu 点</b>"));
     TEST_ASSERT_NULL(std::strstr(buffer, "上限能力"));
     TEST_ASSERT_NULL(std::strstr(buffer, "设备存储上限"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "已保存脉冲明细已达上限"));
@@ -870,7 +873,7 @@ void test_app_config_source_uses_clear_business_labels_and_help() {
     TEST_ASSERT_NULL(std::strstr(buffer, "按秒保存最近出水脉冲明细"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "容量步进"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "时间步进"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "最近脉冲明细条数"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "RAM 最近脉冲明细条数"));
     TEST_ASSERT_NULL(std::strstr(buffer, "启动补偿水量"));
     TEST_ASSERT_NULL(std::strstr(buffer, "全程平均脉冲数"));
     TEST_ASSERT_NULL(std::strstr(buffer, "启动段时长"));

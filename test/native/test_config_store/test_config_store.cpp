@@ -126,7 +126,7 @@ void test_config_migrates_v1_without_losing_user_values() {
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(ConfigStore::LoadStatus::MigratedLegacy),
                             static_cast<std::uint8_t>(store.lastSystemConfigLoadStatus()));
     TEST_ASSERT_FALSE(store.systemConfigReadOnly());
-    TEST_ASSERT_EQUAL_INT32(7, backend.getInt("faucet_cfg", "ver", 0));
+    TEST_ASSERT_EQUAL_INT32(8, backend.getInt("faucet_cfg", "ver", 0));
     TEST_ASSERT_EQUAL_INT32(90, backend.getInt("faucet_cfg", "f0_life_min", 0));
     TEST_ASSERT_EQUAL_INT32(90, backend.getInt("faucet_cfg", "f0_life_max", 0));
     TEST_ASSERT_EQUAL_UINT32(22, loaded.confirmTimeoutSec);
@@ -162,7 +162,7 @@ void test_config_migrates_v2_filter_ranges_and_single_calibration_target() {
 
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(ConfigStore::LoadStatus::MigratedLegacy),
                             static_cast<std::uint8_t>(store.lastSystemConfigLoadStatus()));
-    TEST_ASSERT_EQUAL_INT32(7, backend.getInt("faucet_cfg", "ver", 0));
+    TEST_ASSERT_EQUAL_INT32(8, backend.getInt("faucet_cfg", "ver", 0));
     TEST_ASSERT_TRUE(loaded.filters[1].enabled);
     TEST_ASSERT_EQUAL_STRING("RO", loaded.filters[1].name);
     TEST_ASSERT_EQUAL_UINT32(360, loaded.filters[1].recommendDays);
@@ -218,6 +218,26 @@ void test_config_save_and_load_round_trips_system_config() {
     config.startupPulsePerLiter = 72;
     config.stablePulsePerLiter = 222;
     config.segmentedMeteringCalibrated = true;
+    config.segmentedCandidateReady = true;
+    config.candidateOverallPulsePerLiter = 212;
+    config.candidateStartupDurationSec = 6;
+    config.candidateStartupPulseCount = 41;
+    config.candidateStartupVolumeMl = 520;
+    config.candidateStartupPulsePerLiter = 79;
+    config.candidateStablePulsePerLiter = 224;
+    config.candidateSampleCount = 3;
+    config.candidateMinActualMl = 1500;
+    config.candidateMaxActualMl = 7500;
+    config.candidateMaxErrorMl = 35;
+    config.candidateGeneratedAt = 1770000000;
+    config.segmentedPreviousReady = true;
+    config.previousOverallPulsePerLiter = 211;
+    config.previousStartupDurationSec = 5;
+    config.previousStartupPulseCount = 40;
+    config.previousStartupVolumeMl = 553;
+    config.previousStartupPulsePerLiter = 72;
+    config.previousStablePulsePerLiter = 222;
+    config.previousSegmentedMeteringCalibrated = true;
     config.presets[2].enabled = true;
     config.presets[2].type = PresetType::Time;
     config.presets[2].value = 120;
@@ -249,6 +269,26 @@ void test_config_save_and_load_round_trips_system_config() {
     TEST_ASSERT_EQUAL_UINT32(72, loaded.startupPulsePerLiter);
     TEST_ASSERT_EQUAL_UINT32(222, loaded.stablePulsePerLiter);
     TEST_ASSERT_TRUE(loaded.segmentedMeteringCalibrated);
+    TEST_ASSERT_TRUE(loaded.segmentedCandidateReady);
+    TEST_ASSERT_EQUAL_UINT32(212, loaded.candidateOverallPulsePerLiter);
+    TEST_ASSERT_EQUAL_UINT32(6, loaded.candidateStartupDurationSec);
+    TEST_ASSERT_EQUAL_UINT32(41, loaded.candidateStartupPulseCount);
+    TEST_ASSERT_EQUAL_UINT32(520, loaded.candidateStartupVolumeMl);
+    TEST_ASSERT_EQUAL_UINT32(79, loaded.candidateStartupPulsePerLiter);
+    TEST_ASSERT_EQUAL_UINT32(224, loaded.candidateStablePulsePerLiter);
+    TEST_ASSERT_EQUAL_UINT32(3, loaded.candidateSampleCount);
+    TEST_ASSERT_EQUAL_UINT32(1500, loaded.candidateMinActualMl);
+    TEST_ASSERT_EQUAL_UINT32(7500, loaded.candidateMaxActualMl);
+    TEST_ASSERT_EQUAL_UINT32(35, loaded.candidateMaxErrorMl);
+    TEST_ASSERT_EQUAL_UINT32(1770000000, loaded.candidateGeneratedAt);
+    TEST_ASSERT_TRUE(loaded.segmentedPreviousReady);
+    TEST_ASSERT_EQUAL_UINT32(211, loaded.previousOverallPulsePerLiter);
+    TEST_ASSERT_EQUAL_UINT32(5, loaded.previousStartupDurationSec);
+    TEST_ASSERT_EQUAL_UINT32(40, loaded.previousStartupPulseCount);
+    TEST_ASSERT_EQUAL_UINT32(553, loaded.previousStartupVolumeMl);
+    TEST_ASSERT_EQUAL_UINT32(72, loaded.previousStartupPulsePerLiter);
+    TEST_ASSERT_EQUAL_UINT32(222, loaded.previousStablePulsePerLiter);
+    TEST_ASSERT_TRUE(loaded.previousSegmentedMeteringCalibrated);
     TEST_ASSERT_TRUE(loaded.presets[2].enabled);
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(PresetType::Time), static_cast<std::uint8_t>(loaded.presets[2].type));
     TEST_ASSERT_EQUAL_UINT32(120, loaded.presets[2].value);

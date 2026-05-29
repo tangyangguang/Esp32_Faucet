@@ -11,7 +11,7 @@ namespace {
 constexpr const char* kConfigNs = "faucet_cfg";
 constexpr const char* kStatNs = "faucet_stat";
 constexpr const char* kRunNs = "faucet_run";
-constexpr std::int32_t kConfigVersion = 7;
+constexpr std::int32_t kConfigVersion = 8;
 constexpr std::int32_t kRuntimeVersion = 1;
 
 std::int32_t toInt(std::uint32_t value) {
@@ -103,6 +103,44 @@ void loadCommonSystemConfig(ConfigBackend& backend, SystemConfig& config) {
         static_cast<std::uint32_t>(backend.getInt(kConfigNs, "seg_stable_p", toInt(config.stablePulsePerLiter)));
     config.segmentedMeteringCalibrated =
         backend.getBool(kConfigNs, "seg_cal", config.segmentedMeteringCalibrated);
+    config.segmentedCandidateReady = backend.getBool(kConfigNs, "cand_ready", config.segmentedCandidateReady);
+    config.candidateOverallPulsePerLiter =
+        static_cast<std::uint32_t>(backend.getInt(kConfigNs, "cand_all_p", toInt(config.candidateOverallPulsePerLiter)));
+    config.candidateStartupDurationSec =
+        static_cast<std::uint32_t>(backend.getInt(kConfigNs, "cand_start_s", toInt(config.candidateStartupDurationSec)));
+    config.candidateStartupPulseCount =
+        static_cast<std::uint32_t>(backend.getInt(kConfigNs, "cand_start_p", toInt(config.candidateStartupPulseCount)));
+    config.candidateStartupVolumeMl =
+        static_cast<std::uint32_t>(backend.getInt(kConfigNs, "cand_start_ml", toInt(config.candidateStartupVolumeMl)));
+    config.candidateStartupPulsePerLiter =
+        static_cast<std::uint32_t>(backend.getInt(kConfigNs, "cand_start_pl", toInt(config.candidateStartupPulsePerLiter)));
+    config.candidateStablePulsePerLiter =
+        static_cast<std::uint32_t>(backend.getInt(kConfigNs, "cand_stable", toInt(config.candidateStablePulsePerLiter)));
+    config.candidateSampleCount =
+        static_cast<std::uint32_t>(backend.getInt(kConfigNs, "cand_samples", toInt(config.candidateSampleCount)));
+    config.candidateMinActualMl =
+        static_cast<std::uint32_t>(backend.getInt(kConfigNs, "cand_min_ml", toInt(config.candidateMinActualMl)));
+    config.candidateMaxActualMl =
+        static_cast<std::uint32_t>(backend.getInt(kConfigNs, "cand_max_ml", toInt(config.candidateMaxActualMl)));
+    config.candidateMaxErrorMl =
+        static_cast<std::uint32_t>(backend.getInt(kConfigNs, "cand_err_ml", toInt(config.candidateMaxErrorMl)));
+    config.candidateGeneratedAt =
+        static_cast<std::uint32_t>(backend.getInt(kConfigNs, "cand_at", toInt(config.candidateGeneratedAt)));
+    config.segmentedPreviousReady = backend.getBool(kConfigNs, "prev_ready", config.segmentedPreviousReady);
+    config.previousSegmentedMeteringCalibrated =
+        backend.getBool(kConfigNs, "prev_cal", config.previousSegmentedMeteringCalibrated);
+    config.previousOverallPulsePerLiter =
+        static_cast<std::uint32_t>(backend.getInt(kConfigNs, "prev_all_p", toInt(config.previousOverallPulsePerLiter)));
+    config.previousStartupDurationSec =
+        static_cast<std::uint32_t>(backend.getInt(kConfigNs, "prev_start_s", toInt(config.previousStartupDurationSec)));
+    config.previousStartupPulseCount =
+        static_cast<std::uint32_t>(backend.getInt(kConfigNs, "prev_start_p", toInt(config.previousStartupPulseCount)));
+    config.previousStartupVolumeMl =
+        static_cast<std::uint32_t>(backend.getInt(kConfigNs, "prev_start_ml", toInt(config.previousStartupVolumeMl)));
+    config.previousStartupPulsePerLiter =
+        static_cast<std::uint32_t>(backend.getInt(kConfigNs, "prev_start_pl", toInt(config.previousStartupPulsePerLiter)));
+    config.previousStablePulsePerLiter =
+        static_cast<std::uint32_t>(backend.getInt(kConfigNs, "prev_stable", toInt(config.previousStablePulsePerLiter)));
     config.pulsePerMl = pulseFromMilli(backend.getInt(kConfigNs, "pulse_m", pulseToMilli(config.pulsePerMl)));
     config.valveFullPowerSec =
         static_cast<std::uint32_t>(backend.getInt(kConfigNs, "valve_s", toInt(config.valveFullPowerSec)));
@@ -250,6 +288,26 @@ bool ConfigStore::saveSystemConfig(const SystemConfig& config) {
     ok = okAll(ok, backend_.setInt(kConfigNs, "seg_start_pl", toInt(safe.startupPulsePerLiter)));
     ok = okAll(ok, backend_.setInt(kConfigNs, "seg_stable_p", toInt(safe.stablePulsePerLiter)));
     ok = okAll(ok, backend_.setBool(kConfigNs, "seg_cal", safe.segmentedMeteringCalibrated));
+    ok = okAll(ok, backend_.setBool(kConfigNs, "cand_ready", safe.segmentedCandidateReady));
+    ok = okAll(ok, backend_.setInt(kConfigNs, "cand_all_p", toInt(safe.candidateOverallPulsePerLiter)));
+    ok = okAll(ok, backend_.setInt(kConfigNs, "cand_start_s", toInt(safe.candidateStartupDurationSec)));
+    ok = okAll(ok, backend_.setInt(kConfigNs, "cand_start_p", toInt(safe.candidateStartupPulseCount)));
+    ok = okAll(ok, backend_.setInt(kConfigNs, "cand_start_ml", toInt(safe.candidateStartupVolumeMl)));
+    ok = okAll(ok, backend_.setInt(kConfigNs, "cand_start_pl", toInt(safe.candidateStartupPulsePerLiter)));
+    ok = okAll(ok, backend_.setInt(kConfigNs, "cand_stable", toInt(safe.candidateStablePulsePerLiter)));
+    ok = okAll(ok, backend_.setInt(kConfigNs, "cand_samples", toInt(safe.candidateSampleCount)));
+    ok = okAll(ok, backend_.setInt(kConfigNs, "cand_min_ml", toInt(safe.candidateMinActualMl)));
+    ok = okAll(ok, backend_.setInt(kConfigNs, "cand_max_ml", toInt(safe.candidateMaxActualMl)));
+    ok = okAll(ok, backend_.setInt(kConfigNs, "cand_err_ml", toInt(safe.candidateMaxErrorMl)));
+    ok = okAll(ok, backend_.setInt(kConfigNs, "cand_at", toInt(safe.candidateGeneratedAt)));
+    ok = okAll(ok, backend_.setBool(kConfigNs, "prev_ready", safe.segmentedPreviousReady));
+    ok = okAll(ok, backend_.setBool(kConfigNs, "prev_cal", safe.previousSegmentedMeteringCalibrated));
+    ok = okAll(ok, backend_.setInt(kConfigNs, "prev_all_p", toInt(safe.previousOverallPulsePerLiter)));
+    ok = okAll(ok, backend_.setInt(kConfigNs, "prev_start_s", toInt(safe.previousStartupDurationSec)));
+    ok = okAll(ok, backend_.setInt(kConfigNs, "prev_start_p", toInt(safe.previousStartupPulseCount)));
+    ok = okAll(ok, backend_.setInt(kConfigNs, "prev_start_ml", toInt(safe.previousStartupVolumeMl)));
+    ok = okAll(ok, backend_.setInt(kConfigNs, "prev_start_pl", toInt(safe.previousStartupPulsePerLiter)));
+    ok = okAll(ok, backend_.setInt(kConfigNs, "prev_stable", toInt(safe.previousStablePulsePerLiter)));
     ok = okAll(ok, backend_.setInt(kConfigNs, "pulse_m", pulseToMilli(safe.pulsePerMl)));
     ok = okAll(ok, backend_.setInt(kConfigNs, "valve_s", toInt(safe.valveFullPowerSec)));
     ok = okAll(ok, backend_.setInt(kConfigNs, "hold_pct", safe.valveHoldDutyPercent));

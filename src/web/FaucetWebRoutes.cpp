@@ -16,6 +16,7 @@ constexpr FaucetWebRoute kRoutes[] = {
     {"/faucet/calibration", FaucetWebMethod::Post, FaucetWebRouteKind::Api, nullptr},
     {"/faucet/filters/edit", FaucetWebMethod::Get, FaucetWebRouteKind::Api, nullptr},
     {"/faucet/records/detail", FaucetWebMethod::Get, FaucetWebRouteKind::Api, nullptr},
+    {"/faucet/calibration/detail", FaucetWebMethod::Get, FaucetWebRouteKind::Api, nullptr},
     {"/api/faucet/status", FaucetWebMethod::Get, FaucetWebRouteKind::Api, nullptr},
     {"/api/faucet/today", FaucetWebMethod::Get, FaucetWebRouteKind::Api, nullptr},
     {"/api/faucet/presets", FaucetWebMethod::Any, FaucetWebRouteKind::Api, nullptr},

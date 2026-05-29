@@ -9,9 +9,9 @@ using namespace faucet;
 
 void test_routes_fit_esp32base_default_route_capacity() {
     TEST_ASSERT_TRUE(faucetWebRoutesFitEsp32Base());
-    TEST_ASSERT_TRUE(faucetWebRoutesFitEsp32Base(17));
-    TEST_ASSERT_LESS_OR_EQUAL_size_t(17, faucetWebRouteCount());
-    TEST_ASSERT_EQUAL_size_t(17, faucetWebRouteCount());
+    TEST_ASSERT_TRUE(faucetWebRoutesFitEsp32Base(18));
+    TEST_ASSERT_LESS_OR_EQUAL_size_t(18, faucetWebRouteCount());
+    TEST_ASSERT_EQUAL_size_t(18, faucetWebRouteCount());
 }
 
 void test_routes_do_not_register_remote_water_control_paths() {
@@ -78,6 +78,7 @@ void test_dual_method_routes_are_merged_to_any() {
     TEST_ASSERT_FALSE(faucetWebRouteAllowed("/api/faucet/records/trace-save"));
     TEST_ASSERT_FALSE(faucetWebRouteAllowed("/api/faucet/records/trace-delete"));
     TEST_ASSERT_TRUE(faucetWebRouteAllowed("/faucet/records/detail"));
+    TEST_ASSERT_TRUE(faucetWebRouteAllowed("/faucet/calibration/detail"));
     TEST_ASSERT_FALSE(faucetWebRouteAllowed("/api/faucet/calibration"));
     TEST_ASSERT_FALSE(faucetWebRouteAllowed("/api/faucet/records/latest/calibration"));
     TEST_ASSERT_FALSE(faucetWebRouteAllowed("/faucet/config"));
@@ -146,6 +147,7 @@ void test_records_page_and_calibration_api_are_available() {
     bool found = false;
     bool foundCalibrationPage = false;
     bool foundCalibrationPost = false;
+    bool foundCalibrationDetail = false;
     bool foundApi = false;
     for (std::size_t i = 0; i < faucetWebRouteCount(); ++i) {
         if (std::strcmp(routes[i].path, "/faucet/records") == 0) {
@@ -162,6 +164,11 @@ void test_records_page_and_calibration_api_are_available() {
                                     routes[i].kind == FaucetWebRouteKind::Api &&
                                     routes[i].title == nullptr);
         }
+        if (std::strcmp(routes[i].path, "/faucet/calibration/detail") == 0) {
+            foundCalibrationDetail = routes[i].method == FaucetWebMethod::Get &&
+                                     routes[i].kind == FaucetWebRouteKind::Api &&
+                                     routes[i].title == nullptr;
+        }
         if (std::strcmp(routes[i].path, "/api/faucet/records") == 0) {
             foundApi = routes[i].method == FaucetWebMethod::Any && routes[i].kind == FaucetWebRouteKind::Api &&
                        routes[i].title == nullptr;
@@ -170,6 +177,7 @@ void test_records_page_and_calibration_api_are_available() {
     TEST_ASSERT_TRUE(found);
     TEST_ASSERT_TRUE(foundCalibrationPage);
     TEST_ASSERT_TRUE(foundCalibrationPost);
+    TEST_ASSERT_TRUE(foundCalibrationDetail);
     TEST_ASSERT_TRUE(foundApi);
 }
 
@@ -270,10 +278,12 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NULL(std::strstr(buffer, "<h3>脉冲明细缓存</h3>"));
     TEST_ASSERT_NULL(std::strstr(buffer, "明细条数"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "records-diagnostic-strip"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "metering-diagnostic"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "trace-cache-diagnostic"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "saved-trace-diagnostic"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "计量诊断"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "metering-status-diagnostic"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "sample-coverage-diagnostic"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "trace-storage-diagnostic"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "计量状态"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "样本覆盖"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "明细存储"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "临时缓存"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "已保存明细"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "控制P/L"));
@@ -310,6 +320,7 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "records-top-grid"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, ".records-top-grid .records-diagnostic-panel"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, ".diagnostic-metric-grid.three"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, ".trace-storage-groups"));
     const char* recordsHandler = std::strstr(buffer, "void handleRecordsPage() {");
     const char* calibrationHandler = std::strstr(buffer, "void handleCalibrationPage() {");
     TEST_ASSERT_NOT_NULL(recordsHandler);
@@ -420,9 +431,11 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "确认/校准容量"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "校准工作台"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "latest-record-table"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "<details id='confirm-volume' class='panel calibration-volume-panel'>"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "<summary>确认/校准容量</summary>"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, ".calibration-volume-panel summary{padding-bottom:6px"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "latest-calibration-form"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "href='#confirm-volume'"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "<details id='confirm-volume' class='panel calibration-volume-panel'>"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "<summary>确认/校准容量</summary>"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, ".latest-calibration-form"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "估算出水"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "上次校准记录"));
     TEST_ASSERT_NULL(std::strstr(buffer, "<tr><th>出水信息</th><td>"));
@@ -456,6 +469,10 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "action='/faucet/calibration'"));
     TEST_ASSERT_NULL(std::strstr(buffer, "<span class='status-pill status-muted'>手动执行</span>"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "手动执行：只扫描已保存到设备、容量已确认且稳态识别成功的样本"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "参数说明与计算公式"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "估算出水量 = round(脉冲数 / 控制P/ml) + 启动补偿"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "实测容量 ≈ 启动等效水量 + 稳态脉冲数 × 1000 / 稳态P/L"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "全程平均只做长期诊断"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "有临时样本未保存"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "仍然生成候选"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "<h3>样本</h3>"));
@@ -474,6 +491,10 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "来自确认/校准容量记录"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "待确认容量"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "请在校准页确认这条记录的实际出水量。"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "/faucet/calibration/detail?from=calibration&"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "返回校准"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "returnTo' value='calibration'"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "const char* detailPath = fromCalibration ? \"/faucet/calibration/detail\" : \"/faucet/records/detail\""));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "actualMlForSegmentedSample(*trace)"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "actualMlForSegmentedSample(trace)"));
     TEST_ASSERT_NULL(std::strstr(buffer, "保存为分段样本"));

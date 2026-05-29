@@ -32,7 +32,7 @@ void test_navigation_pages_use_requested_order_and_labels() {
 
     for (std::size_t i = 0; i < 6; ++i) {
         TEST_ASSERT_EQUAL_STRING(expectedPaths[i], routes[i].path);
-        TEST_ASSERT_EQUAL(FaucetWebMethod::Get, routes[i].method);
+        TEST_ASSERT_EQUAL(i == 2 ? FaucetWebMethod::Any : FaucetWebMethod::Get, routes[i].method);
         TEST_ASSERT_EQUAL(FaucetWebRouteKind::Page, routes[i].kind);
         TEST_ASSERT_EQUAL_STRING(expectedTitles[i], routes[i].title);
     }
@@ -152,7 +152,7 @@ void test_records_page_and_calibration_api_are_available() {
                     std::strcmp(routes[i].title, "记录") == 0;
         }
         if (std::strcmp(routes[i].path, "/faucet/calibration") == 0) {
-            foundCalibrationPage = routes[i].method == FaucetWebMethod::Get &&
+            foundCalibrationPage = routes[i].method == FaucetWebMethod::Any &&
                                    routes[i].kind == FaucetWebRouteKind::Page &&
                                    std::strcmp(routes[i].title, "校准") == 0;
         }
@@ -255,6 +255,8 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "sizes[] = {10, 15, 20, 30, 50}"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "name='pageNo'"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "value='跳转'"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, ".page-size select,.page-size input{height:32px;min-height:32px"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, ".page-size input[name=pageNo]{width:58px;text-align:center}"));
     TEST_ASSERT_NULL(std::strstr(buffer, "<span>开始</span><input type='date' name='startDate'"));
     TEST_ASSERT_NULL(std::strstr(buffer, "<span>结束</span><input type='date' name='endDate'"));
     TEST_ASSERT_NULL(std::strstr(buffer, "&startDate=%s&endDate=%s"));
@@ -287,7 +289,7 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NULL(std::strstr(buffer, "设备存储上限"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "已保存脉冲明细已达上限"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "设备存储明细文件异常"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "永久保存对应脉冲明细"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "永久保存"));
     TEST_ASSERT_NULL(std::strstr(buffer, "name='action' value='delete_legacy'"));
     TEST_ASSERT_NULL(std::strstr(buffer, "清理旧版明细文件"));
     TEST_ASSERT_NULL(std::strstr(buffer, "delete_legacy"));
@@ -312,6 +314,7 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NOT_NULL(std::strstr(calibrationHandler, "records-diagnostic-strip"));
     TEST_ASSERT_NOT_NULL(std::strstr(calibrationHandler, "sendSegmentedMeteringPanel"));
     TEST_ASSERT_NOT_NULL(std::strstr(calibrationHandler, "sendPulseTraceCachePanel"));
+    TEST_ASSERT_NULL(std::strstr(calibrationHandler, "<a class='btn-link' href='/faucet/records'>历史记录</a>"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "trace-badge"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "已存明细"));
     TEST_ASSERT_NULL(std::strstr(buffer, "trace-head-meter"));
@@ -402,6 +405,9 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NULL(std::strstr(buffer, "量杯实际水量"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "容量校准"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "校准工作台"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "<details class='panel calibration-volume-panel'>"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "<summary>容量校准</summary>"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, ".calibration-volume-panel summary{padding-bottom:6px"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "出水信息"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "上次校准记录"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "<tr><th>出水信息</th><td>"));
@@ -425,10 +431,16 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NULL(std::strstr(buffer, "step='10' value='%lu'></label>"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "step='1' value='%lu'></label>"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "保存这条记录的实际容量；不会修改原始脉冲、当前关阀控制 P/L 或分段拟合参数。"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "name='saveTrace'"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "name='saveTrace'"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "name='action' value='save_latest_trace'"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "name='action' value='delete_latest_trace'"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "明细文件"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "name='action' value='generate_segmented'"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "name='action' value='apply_segmented'"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "name='action' value='restore_segmented'"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "action='/faucet/calibration'"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "<span class='status-pill status-muted'>手动执行</span>"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "手动执行：扫描已保存且带实测容量的脉冲明细"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "样本状态"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "样本已入库"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "记录已校准"));
@@ -695,23 +707,24 @@ void test_record_calibration_api_saves_actual_without_segmented_generation() {
     const char* unchangedRedirect =
         unchangedGuard ? std::strstr(unchangedGuard, "Esp32BaseWeb::redirectSeeOther(\"/faucet/calibration?saved=actual\")") : nullptr;
     const char* saveMeasurement = std::strstr(handler, "saveRecordActualMeasurement(record, actualMl)");
-    const char* saveTraceFlag = std::strstr(handler, "const bool saveTrace = checkboxParam(\"saveTrace\");");
-    const char* optionalTraceSave =
-        saveTraceFlag ? std::strstr(saveTraceFlag, "if (saveTrace) {\n        autoSaveTraceAsSegmentedSample(record, actualMl);") : nullptr;
     const char* syncAfterSave =
         saveMeasurement ? std::strstr(saveMeasurement, "syncSegmentedCalibrationFromActual(record, actualMl)") : nullptr;
     const char* applyAfterSave =
         saveMeasurement ? std::strstr(saveMeasurement, "applySegmentedCalibrationFromAvailableSamples()") : nullptr;
+    const char* traceSaveAfterMeasurement =
+        saveMeasurement ? std::strstr(saveMeasurement, "autoSaveTraceAsSegmentedSample(record, actualMl)") : nullptr;
+    const char* traceActualSync =
+        saveMeasurement ? std::strstr(saveMeasurement, "syncTraceActualMeasurement(record, actualMl)") : nullptr;
 
     TEST_ASSERT_TRUE(findExisting != nullptr && findExisting < nextHandler);
     TEST_ASSERT_TRUE(defaultActual != nullptr && defaultActual < nextHandler);
     TEST_ASSERT_TRUE(unchangedGuard != nullptr && unchangedGuard < nextHandler);
     TEST_ASSERT_TRUE(unchangedRedirect != nullptr && unchangedRedirect < nextHandler);
     TEST_ASSERT_TRUE(unchangedGuard < saveMeasurement);
-    TEST_ASSERT_TRUE(saveTraceFlag != nullptr && saveTraceFlag < nextHandler);
-    TEST_ASSERT_TRUE(optionalTraceSave != nullptr && optionalTraceSave < nextHandler);
     TEST_ASSERT_TRUE(syncAfterSave == nullptr || syncAfterSave > nextHandler);
     TEST_ASSERT_TRUE(applyAfterSave == nullptr || applyAfterSave > nextHandler);
+    TEST_ASSERT_TRUE(traceSaveAfterMeasurement == nullptr || traceSaveAfterMeasurement > nextHandler);
+    TEST_ASSERT_TRUE(traceActualSync != nullptr && traceActualSync < nextHandler);
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "autoSaveTraceAsSegmentedSample"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "generateSegmentedCalibrationCandidateFromSavedSamples"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "校准已保存。"));

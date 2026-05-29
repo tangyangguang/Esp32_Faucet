@@ -101,7 +101,6 @@ struct WaterPulseTraceFileStats {
     std::size_t sampleCapacityPerTrace;
     bool ready;
     bool corrupt;
-    bool legacyBlobPresent;
 };
 
 class WaterPulseTraceStore {
@@ -147,9 +146,7 @@ public:
     WaterPulseTraceFileStore(WaterRecordFileBackend& backend,
                              const char* path,
                              std::size_t sampleCapacityPerTrace,
-                             std::size_t maxTraceCount,
-                             const char* legacyPathPrefix = nullptr,
-                             const char* legacyBlobPath = nullptr);
+                             std::size_t maxTraceCount);
 
     bool begin();
     bool save(const WaterPulseTrace& trace,
@@ -167,8 +164,6 @@ public:
     std::size_t readSamples(std::uint32_t traceId, WaterPulseTraceSample* output, std::size_t outputCapacity) const;
     bool containsRecord(const WaterRecord& record) const;
     WaterPulseTraceFileStats stats() const;
-    bool legacyBlobExists() const;
-    bool removeLegacyBlob();
     std::size_t sampleCapacityPerTrace() const;
     bool ready() const;
 
@@ -207,15 +202,9 @@ private:
     bool extendFileTo(std::size_t size);
     bool writeOrAppendAt(std::size_t offset, const std::uint8_t* data, std::size_t len);
     bool filePrefixAllZero(std::size_t size) const;
-    bool legacyPathForKey(std::uint32_t key, char* out, std::size_t len) const;
-    bool readLegacyTraceFile(std::uint32_t key, WaterPulseTrace& output) const;
-    std::size_t readLegacySamples(std::uint32_t key, WaterPulseTraceSample* output, std::size_t outputCapacity) const;
-    bool removeLegacyTrace(std::uint32_t key);
 
     WaterRecordFileBackend& backend_;
     const char* path_;
-    const char* legacyPathPrefix_;
-    const char* legacyBlobPath_;
     std::size_t sampleCapacityPerTrace_;
     std::size_t maxTraceCount_;
     bool ready_;

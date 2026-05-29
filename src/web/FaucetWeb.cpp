@@ -50,7 +50,6 @@ void handleRecordCalibrationApi();
 void handleTraceCalibrationApi();
 void handleTraceSaveApi();
 void handleTraceDeleteApi();
-void handleTraceLegacyBlobDeleteApi();
 void formatWaterRecordTime(const WaterRecord& record, char* out, std::size_t len);
 
 Esp32BaseWeb::Method toBaseMethod(FaucetWebMethod method) {
@@ -790,12 +789,6 @@ void sendPulseTraceCachePanel() {
     Esp32BaseWeb::sendChunk("</p>");
     if (savedReady && savedStats.corrupt) {
         Esp32BaseWeb::sendChunk("<p class='err'>设备存储明细文件异常；不会影响启动和本次出水记录。</p>");
-    }
-    if (savedReady && savedStats.legacyBlobPresent) {
-        Esp32BaseWeb::sendChunk("<form method='post' action='/api/faucet/records' "
-                                "onsubmit=\"return confirm('确认清理旧版脉冲明细文件？此操作不会删除出水记录。')&&once(this)\">"
-                                "<input type='hidden' name='action' value='delete_legacy'>"
-                                "<input class='secondary' type='submit' value='清理旧版明细文件'></form>");
     }
     Esp32BaseWeb::sendChunk("</section>");
 }
@@ -2924,7 +2917,7 @@ void handleRecordsApi() {
             return;
         }
         if (std::strcmp(text, "save") == 0 || std::strcmp(text, "delete") == 0 ||
-            std::strcmp(text, "delete_legacy") == 0 || std::strcmp(text, "trace_calibrate") == 0) {
+            std::strcmp(text, "trace_calibrate") == 0) {
             handleTraceCalibrationApi();
             return;
         }
@@ -3074,10 +3067,6 @@ void handleTraceCalibrationApi() {
         }
         if (std::strcmp(text, "delete") == 0) {
             handleTraceDeleteApi();
-            return;
-        }
-        if (std::strcmp(text, "delete_legacy") == 0) {
-            handleTraceLegacyBlobDeleteApi();
             return;
         }
     }
@@ -3232,21 +3221,6 @@ void handleTraceDeleteApi() {
         return;
     }
     if (!g_context.savedPulseTraces->remove(traceId)) {
-        Esp32BaseWeb::redirectSeeOther("/faucet/records?error=save_failed");
-        return;
-    }
-    Esp32BaseWeb::redirectSeeOther("/faucet/records?saved=trace_deleted");
-}
-
-void handleTraceLegacyBlobDeleteApi() {
-    if (!Esp32BaseWeb::checkAuth() || !requireContext()) {
-        return;
-    }
-    if (!Esp32BaseWeb::isMethod(Esp32BaseWeb::METHOD_POST)) {
-        Esp32BaseWeb::sendJson(405, "{\"error\":\"method_not_allowed\"}");
-        return;
-    }
-    if (!ensureSavedPulseTracesReady() || !g_context.savedPulseTraces->removeLegacyBlob()) {
         Esp32BaseWeb::redirectSeeOther("/faucet/records?error=save_failed");
         return;
     }

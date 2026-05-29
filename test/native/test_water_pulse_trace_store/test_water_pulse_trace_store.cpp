@@ -550,15 +550,9 @@ void test_saved_trace_file_store_loads_v2_index_in_bulk_for_page_match() {
     TEST_ASSERT_LESS_OR_EQUAL_size_t(2, backend.readCalls);
 }
 
-void test_saved_trace_file_store_skips_legacy_probe_when_no_legacy_file_exists() {
+void test_saved_trace_file_store_empty_store_does_not_read_samples_for_page_match() {
     MemoryFileBackend backend;
-    WaterPulseTraceFileStore saved(
-        backend,
-        "/faucet_pulse_traces_v2.bin",
-        8,
-        4,
-        "/fpt_",
-        "/faucet_saved_traces_v1.bin");
+    WaterPulseTraceFileStore saved(backend, "/faucet_pulse_traces_v2.bin", 8, 4);
     TEST_ASSERT_TRUE(saved.begin());
     WaterRecord page[20]{};
     for (std::size_t i = 0; i < 20; ++i) {
@@ -574,11 +568,11 @@ void test_saved_trace_file_store_skips_legacy_probe_when_no_legacy_file_exists()
     for (bool value : found) {
         TEST_ASSERT_FALSE(value);
     }
-    TEST_ASSERT_LESS_OR_EQUAL_size_t(2, backend.existsCalls);
+    TEST_ASSERT_LESS_OR_EQUAL_size_t(1, backend.existsCalls);
     TEST_ASSERT_EQUAL_size_t(0, backend.readCalls);
 }
 
-void test_saved_trace_file_store_skips_legacy_probe_when_v2_index_exists() {
+void test_saved_trace_file_store_uses_v2_index_without_reading_unrelated_files() {
     WaterPulseTrace traces[1]{};
     WaterPulseTraceSample samples[8]{};
     WaterPulseTraceStore ram(traces, 1, samples, 8, 512);
@@ -589,15 +583,9 @@ void test_saved_trace_file_store_skips_legacy_probe_when_v2_index_exists() {
     TEST_ASSERT_NOT_NULL(trace);
 
     MemoryFileBackend backend;
-    backend.putFile("/faucet_saved_traces_v1.bin", std::vector<std::uint8_t>{1});
+    backend.putFile("/unrelated.bin", std::vector<std::uint8_t>{1});
     {
-        WaterPulseTraceFileStore saved(
-            backend,
-            "/faucet_pulse_traces_v2.bin",
-            8,
-            4,
-            "/fpt_",
-            "/faucet_saved_traces_v1.bin");
+        WaterPulseTraceFileStore saved(backend, "/faucet_pulse_traces_v2.bin", 8, 4);
         TEST_ASSERT_TRUE(saved.begin());
         WaterPulseTraceSample copy[8]{};
         for (std::size_t sample = 0; sample < trace->sampleCount; ++sample) {
@@ -606,13 +594,7 @@ void test_saved_trace_file_store_skips_legacy_probe_when_v2_index_exists() {
         TEST_ASSERT_TRUE(saved.save(*trace, copy, trace->sampleCount));
     }
 
-    WaterPulseTraceFileStore loaded(
-        backend,
-        "/faucet_pulse_traces_v2.bin",
-        8,
-        4,
-        "/fpt_",
-        "/faucet_saved_traces_v1.bin");
+    WaterPulseTraceFileStore loaded(backend, "/faucet_pulse_traces_v2.bin", 8, 4);
     TEST_ASSERT_TRUE(loaded.begin());
     WaterRecord page[] = {makeRecord(2000, 5, 2000)};
     WaterPulseTrace matches[1]{};
@@ -639,24 +621,6 @@ void test_saved_trace_file_store_corrupt_file_degrades_without_crashing() {
     TEST_ASSERT_EQUAL_size_t(0, stats.savedCount);
 }
 
-void test_saved_trace_file_store_legacy_blob_is_only_removed_explicitly() {
-    MemoryFileBackend backend;
-    backend.putFile("/faucet_saved_traces_v1.bin", std::vector<std::uint8_t>{1, 2, 3});
-    WaterPulseTraceFileStore saved(
-        backend,
-        "/faucet_pulse_traces_v2.bin",
-        8,
-        2,
-        "/fpt_",
-        "/faucet_saved_traces_v1.bin");
-
-    TEST_ASSERT_TRUE(saved.begin());
-    TEST_ASSERT_TRUE(backend.contains("/faucet_saved_traces_v1.bin"));
-    TEST_ASSERT_TRUE(saved.legacyBlobExists());
-    TEST_ASSERT_TRUE(saved.removeLegacyBlob());
-    TEST_ASSERT_FALSE(backend.contains("/faucet_saved_traces_v1.bin"));
-}
-
 int main(int argc, char** argv) {
     (void)argc;
     (void)argv;
@@ -675,9 +639,8 @@ int main(int argc, char** argv) {
     RUN_TEST(test_saved_trace_file_store_refuses_new_trace_when_capacity_full);
     RUN_TEST(test_saved_trace_file_store_matches_page_records_in_one_call);
     RUN_TEST(test_saved_trace_file_store_loads_v2_index_in_bulk_for_page_match);
-    RUN_TEST(test_saved_trace_file_store_skips_legacy_probe_when_no_legacy_file_exists);
-    RUN_TEST(test_saved_trace_file_store_skips_legacy_probe_when_v2_index_exists);
+    RUN_TEST(test_saved_trace_file_store_empty_store_does_not_read_samples_for_page_match);
+    RUN_TEST(test_saved_trace_file_store_uses_v2_index_without_reading_unrelated_files);
     RUN_TEST(test_saved_trace_file_store_corrupt_file_degrades_without_crashing);
-    RUN_TEST(test_saved_trace_file_store_legacy_blob_is_only_removed_explicitly);
     return UNITY_END();
 }

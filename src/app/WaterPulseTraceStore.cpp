@@ -9,31 +9,8 @@
 namespace faucet {
 namespace {
 
-constexpr std::uint32_t kLegacySavedTraceMagic = 0x46575054UL;  // FWPT
-constexpr std::uint16_t kLegacySavedTraceVersion = 1;
 constexpr std::uint32_t kSavedTraceFileMagic = 0x46575046UL;  // FWPF
 constexpr std::uint16_t kSavedTraceFileVersion = 2;
-
-struct LegacySavedTraceHeader {
-    std::uint32_t magic;
-    std::uint16_t version;
-    std::uint16_t headerSize;
-    std::uint16_t entrySize;
-    std::uint16_t sampleSize;
-    std::uint32_t sampleCount;
-    std::uint32_t key;
-};
-
-struct LegacySavedTraceEntry {
-    std::uint32_t traceId;
-    std::uint32_t startTime;
-    WaterRecord record;
-    std::uint32_t sampleCount;
-    std::uint32_t totalPulses;
-    std::uint32_t actualMl;
-    std::uint8_t finished;
-    std::uint8_t reserved[7];
-};
 
 struct SavedTraceFileHeader {
     std::uint32_t magic;
@@ -47,8 +24,6 @@ struct SavedTraceFileHeader {
     std::uint32_t fileSize;
     std::uint32_t headerChecksum;
 };
-
-static_assert(sizeof(LegacySavedTraceHeader) == 20, "LegacySavedTraceHeader must stay fixed-size");
 
 bool sameRecordIdentity(const WaterRecord& a, const WaterRecord& b) {
     return a.startTime == b.startTime && a.volumeMl == b.volumeMl && a.targetValue == b.targetValue &&
@@ -289,13 +264,9 @@ std::size_t WaterPulseTraceStore::indexOf(std::uint32_t traceId) const {
 WaterPulseTraceFileStore::WaterPulseTraceFileStore(WaterRecordFileBackend& backend,
                                                    const char* path,
                                                    std::size_t sampleCapacityPerTrace,
-                                                   std::size_t maxTraceCount,
-                                                   const char* legacyPathPrefix,
-                                                   const char* legacyBlobPath)
+                                                   std::size_t maxTraceCount)
     : backend_(backend),
       path_(path),
-      legacyPathPrefix_(legacyPathPrefix),
-      legacyBlobPath_(legacyBlobPath),
       sampleCapacityPerTrace_(sampleCapacityPerTrace),
       maxTraceCount_(maxTraceCount),
       ready_(false),
@@ -310,12 +281,6 @@ bool WaterPulseTraceFileStore::begin() {
     clearIndexCache();
     if (!path_ || path_[0] != '/' || sampleCapacityPerTrace_ == 0 || sampleCapacityPerTrace_ > UINT16_MAX ||
         maxTraceCount_ == 0 || maxTraceCount_ > kSavedPulseTraceMaxCountLimit) {
-        return false;
-    }
-    if (legacyPathPrefix_ && (legacyPathPrefix_[0] != '/' || std::strlen(legacyPathPrefix_) > 16)) {
-        return false;
-    }
-    if (legacyBlobPath_ && legacyBlobPath_[0] != '/') {
         return false;
     }
     ready_ = true;
@@ -412,7 +377,6 @@ bool WaterPulseTraceFileStore::save(const WaterPulseTrace& trace,
     }
     index_[slot] = entry;
     filePresent_ = true;
-    removeLegacyTrace(key);
     if (savedTraceId) {
         *savedTraceId = key;
     }
@@ -434,7 +398,7 @@ bool WaterPulseTraceFileStore::remove(std::uint32_t traceId) {
             return true;
         }
     }
-    return removeLegacyTrace(traceId);
+    return false;
 }
 
 bool WaterPulseTraceFileStore::findById(std::uint32_t traceId, WaterPulseTrace& output) const {
@@ -447,7 +411,7 @@ bool WaterPulseTraceFileStore::findById(std::uint32_t traceId, WaterPulseTrace& 
             return populateTraceFromEntry(index_[slot], output);
         }
     }
-    return readLegacyTraceFile(traceId, output);
+    return false;
 }
 
 bool WaterPulseTraceFileStore::findByRecord(const WaterRecord& record, WaterPulseTrace& output) const {
@@ -456,13 +420,6 @@ bool WaterPulseTraceFileStore::findByRecord(const WaterRecord& record, WaterPuls
         if (slot < maxTraceCount_) {
             return populateTraceFromEntry(index_[slot], output);
         }
-    }
-    for (std::size_t probe = 0; probe < maxTraceCount_; ++probe) {
-        const std::uint32_t key = keyForRecordProbe(record, probe);
-        if (key == 0 || !readLegacyTraceFile(key, output)) {
-            continue;
-        }
-        return sameRecordIdentity(output.record, record);
     }
     return false;
 }
@@ -500,22 +457,6 @@ std::size_t WaterPulseTraceFileStore::findByRecords(const WaterRecord* records,
             return matched;
         }
     }
-    if (!legacyBlobExists()) {
-        return matched;
-    }
-    for (std::size_t i = 0; i < recordCount && matched < recordCount; ++i) {
-        if (found[i]) {
-            continue;
-        }
-        WaterPulseTrace legacy{};
-        const std::uint32_t key = keyForRecord(records[i]);
-        if (key == 0 || !readLegacyTraceFile(key, legacy) || !sameRecordIdentity(legacy.record, records[i])) {
-            continue;
-        }
-        output[i] = legacy;
-        found[i] = true;
-        ++matched;
-    }
     return matched;
 }
 
@@ -541,7 +482,7 @@ std::size_t WaterPulseTraceFileStore::readSamples(std::uint32_t traceId,
             return entry.sampleCount;
         }
     }
-    return readLegacySamples(traceId, output, outputCapacity);
+    return 0;
 }
 
 bool WaterPulseTraceFileStore::containsRecord(const WaterRecord& record) const {
@@ -563,21 +504,12 @@ WaterPulseTraceFileStats WaterPulseTraceFileStore::stats() const {
         const std::int64_t fileSize = backend_.fileSize(path_);
         out.usedBytes = fileSize > 0 ? static_cast<std::size_t>(fileSize) : 0;
     }
-    out.legacyBlobPresent = legacyBlobExists();
     for (std::size_t i = 0; i < maxTraceCount_; ++i) {
         if (index_[i].key != 0 && index_[i].entryChecksum == indexEntryChecksum(index_[i])) {
             ++out.savedCount;
         }
     }
     return out;
-}
-
-bool WaterPulseTraceFileStore::legacyBlobExists() const {
-    return ready() && legacyBlobPath_ && backend_.exists(legacyBlobPath_);
-}
-
-bool WaterPulseTraceFileStore::removeLegacyBlob() {
-    return ready() && legacyBlobPath_ && backend_.exists(legacyBlobPath_) && backend_.removeFile(legacyBlobPath_);
 }
 
 std::size_t WaterPulseTraceFileStore::sampleCapacityPerTrace() const {
@@ -894,78 +826,6 @@ bool WaterPulseTraceFileStore::filePrefixAllZero(std::size_t size) const {
         offset += chunk;
     }
     return true;
-}
-
-bool WaterPulseTraceFileStore::legacyPathForKey(std::uint32_t key, char* out, std::size_t len) const {
-    if (!ready() || !legacyPathPrefix_ || key == 0 || !out || len == 0) {
-        return false;
-    }
-    const int written = std::snprintf(out, len, "%s%08lx.bin", legacyPathPrefix_, static_cast<unsigned long>(key));
-    return written > 0 && static_cast<std::size_t>(written) < len;
-}
-
-bool WaterPulseTraceFileStore::readLegacyTraceFile(std::uint32_t key, WaterPulseTrace& output) const {
-    if (!ready() || key == 0) {
-        return false;
-    }
-    char path[32]{};
-    if (!legacyPathForKey(key, path, sizeof(path)) || !backend_.exists(path)) {
-        return false;
-    }
-    LegacySavedTraceHeader header{};
-    LegacySavedTraceEntry entry{};
-    if (!backend_.readAt(path, 0, reinterpret_cast<std::uint8_t*>(&header), sizeof(header)) ||
-        !backend_.readAt(path, sizeof(LegacySavedTraceHeader), reinterpret_cast<std::uint8_t*>(&entry), sizeof(entry))) {
-        return false;
-    }
-    if (header.magic != kLegacySavedTraceMagic || header.version != kLegacySavedTraceVersion ||
-        header.headerSize != sizeof(LegacySavedTraceHeader) || header.entrySize != sizeof(LegacySavedTraceEntry) ||
-        header.sampleSize != sizeof(WaterPulseTraceSample) || header.key != key || header.sampleCount == 0 ||
-        header.sampleCount > sampleCapacityPerTrace_ || entry.sampleCount != header.sampleCount ||
-        entry.traceId != key) {
-        return false;
-    }
-    const std::int64_t expectedSize = static_cast<std::int64_t>(
-        sizeof(LegacySavedTraceHeader) + sizeof(LegacySavedTraceEntry) +
-        header.sampleCount * sizeof(WaterPulseTraceSample));
-    if (backend_.fileSize(path) != expectedSize) {
-        return false;
-    }
-    output = WaterPulseTrace{};
-    output.traceId = entry.traceId;
-    output.startTime = entry.startTime;
-    output.record = entry.record;
-    output.sampleStart = 0;
-    output.sampleCount = entry.sampleCount;
-    output.totalPulses = entry.totalPulses;
-    output.actualMl = entry.actualMl;
-    output.finished = entry.finished != 0;
-    return true;
-}
-
-std::size_t WaterPulseTraceFileStore::readLegacySamples(std::uint32_t key,
-                                                        WaterPulseTraceSample* output,
-                                                        std::size_t outputCapacity) const {
-    WaterPulseTrace trace{};
-    if (!readLegacyTraceFile(key, trace) || trace.sampleCount == 0 || trace.sampleCount > outputCapacity ||
-        trace.sampleCount > sampleCapacityPerTrace_) {
-        return 0;
-    }
-    char path[32]{};
-    if (!legacyPathForKey(key, path, sizeof(path))) {
-        return 0;
-    }
-    return backend_.readAt(path,
-                           sizeof(LegacySavedTraceHeader) + sizeof(LegacySavedTraceEntry),
-                           reinterpret_cast<std::uint8_t*>(output),
-                           trace.sampleCount * sizeof(WaterPulseTraceSample))
-               ? trace.sampleCount
-               : 0;
-}
-
-bool WaterPulseTraceFileStore::removeLegacyTrace(std::uint32_t key) {
-    char path[32]{};
-    return legacyPathForKey(key, path, sizeof(path)) && backend_.exists(path) && backend_.removeFile(path);
 }
 
 std::size_t aggregateWaterPulseTrace(const WaterPulseTrace&,

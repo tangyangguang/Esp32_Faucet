@@ -45,8 +45,6 @@ constexpr std::size_t kPulseTraceMaxSamples =
 constexpr const char* kWaterRecordPath = "/faucet_records_v1.bin";
 constexpr const char* kWaterRecordCalibrationPath = "/faucet_record_cal_v1.bin";
 constexpr const char* kSavedPulseTracePath = "/faucet_pulse_traces_v2.bin";
-constexpr const char* kLegacySavedPulseTracePathPrefix = "/fpt_";
-constexpr const char* kLegacySavedPulseTraceBlobPath = "/faucet_saved_traces_v1.bin";
 
 class PersistentRecordWriter : public faucet::WaterRecordWriter, public faucet::WaterRecordReader {
 public:
@@ -165,9 +163,7 @@ faucet::WaterPulseTraceFileStore g_savedPulseTraceFile(
     g_waterRecordBackend,
     kSavedPulseTracePath,
     kSavedPulseTraceSamplesPerTrace,
-    kSavedPulseTraceMaxCount,
-    kLegacySavedPulseTracePathPrefix,
-    kLegacySavedPulseTraceBlobPath);
+    kSavedPulseTraceMaxCount);
 PersistentRecordWriter g_records;
 PersistentRecordCalibrationStore g_recordCalibrations;
 faucet::WaterPulseTrace* g_pulseTraceRecords = nullptr;

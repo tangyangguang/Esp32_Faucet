@@ -265,8 +265,9 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "已保存脉冲明细已达上限"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "设备存储明细文件异常"));
     TEST_ASSERT_NULL(std::strstr(buffer, "永久保存"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "name='action' value='delete_legacy'"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "清理旧版明细文件"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "name='action' value='delete_legacy'"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "清理旧版明细文件"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "delete_legacy"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "%s / %s · %u%%"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "约 %lu 点 / 最多 %lu 条"));
     TEST_ASSERT_NULL(std::strstr(buffer, "sendMetricCard(\"内存占用\", used)"));
@@ -614,8 +615,8 @@ void test_main_source_renders_live_display_frame_for_web() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "Esp32BaseWeb::setDeviceName(\"首页\")"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "kSavedPulseTraceMaxCount = 32"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "\"/faucet_pulse_traces_v2.bin\""));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "\"/faucet_saved_traces_v1.bin\""));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "\"/fpt_\""));
+    TEST_ASSERT_NULL(std::strstr(buffer, "\"/faucet_saved_traces_v1.bin\""));
+    TEST_ASSERT_NULL(std::strstr(buffer, "\"/fpt_\""));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "feedStartupWatchdog()"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "startup_phase=%s"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "logStartupPhase(\"hardware_ready\")"));

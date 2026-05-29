@@ -75,12 +75,16 @@ struct SegmentedCalibrationSample {
 
 struct SegmentedCalibrationResult {
     bool valid;
+    std::uint16_t sampleCount;
     std::uint32_t startupDurationSec;
     std::uint32_t startupPulseCount;
     std::uint32_t startupVolumeMl;
     std::uint32_t startupPulsePerLiter;
     std::uint32_t stablePulsePerLiter;
     std::uint32_t overallPulsePerLiter;
+    std::uint32_t minActualMl;
+    std::uint32_t maxActualMl;
+    std::uint32_t maxErrorMl;
 };
 
 constexpr std::size_t kSavedPulseTraceMaxCountLimit = 64;
@@ -118,6 +122,7 @@ public:
     bool appendSecond(std::uint32_t traceId, std::uint32_t pulseDelta, WaterPulseTraceState state);
     bool finishTrace(std::uint32_t traceId, const WaterRecord& record, WaterPulseTraceState finalState);
     bool setActualMl(std::uint32_t traceId, std::uint32_t actualMl);
+    bool setActualMlByRecord(const WaterRecord& record, std::uint32_t actualMl);
 
     const WaterPulseTrace* findById(std::uint32_t traceId) const;
     WaterPulseTrace* findById(std::uint32_t traceId);
@@ -163,7 +168,10 @@ public:
                               std::size_t recordCount,
                               WaterPulseTrace* output,
                               bool* found) const;
+    std::size_t list(WaterPulseTrace* output, std::size_t outputCapacity) const;
     std::size_t readSamples(std::uint32_t traceId, WaterPulseTraceSample* output, std::size_t outputCapacity) const;
+    bool setActualMl(std::uint32_t traceId, std::uint32_t actualMl);
+    bool setActualMlByRecord(const WaterRecord& record, std::uint32_t actualMl);
     bool containsRecord(const WaterRecord& record) const;
     WaterPulseTraceFileStats stats() const;
     std::size_t sampleCapacityPerTrace() const;

@@ -273,6 +273,91 @@ void test_segmented_calibration_uses_two_valid_samples() {
     TEST_ASSERT_EQUAL_UINT32(40, result.startupPulseCount);
 }
 
+void test_segmented_calibration_fits_all_valid_samples() {
+    SegmentedCalibrationSample samples[3]{};
+    samples[0].actualMl = 1500;
+    samples[0].totalPulses = 250;
+    samples[0].startupPulseCount = 40;
+    samples[0].stablePulseCount = 210;
+    samples[0].startupDurationSec = 5;
+    samples[1].actualMl = 3000;
+    samples[1].totalPulses = 600;
+    samples[1].startupPulseCount = 42;
+    samples[1].stablePulseCount = 560;
+    samples[1].startupDurationSec = 5;
+    samples[2].actualMl = 7500;
+    samples[2].totalPulses = 1580;
+    samples[2].startupPulseCount = 41;
+    samples[2].stablePulseCount = 1540;
+    samples[2].startupDurationSec = 6;
+
+    SegmentedCalibrationResult result{};
+    TEST_ASSERT_TRUE(computeSegmentedCalibration(samples, 3, result));
+
+    TEST_ASSERT_EQUAL_UINT16(3, result.sampleCount);
+    TEST_ASSERT_EQUAL_UINT32(1500, result.minActualMl);
+    TEST_ASSERT_EQUAL_UINT32(7500, result.maxActualMl);
+    TEST_ASSERT_UINT32_WITHIN(3, 222, result.stablePulsePerLiter);
+    TEST_ASSERT_UINT32_WITHIN(10, 513, result.startupVolumeMl);
+    TEST_ASSERT_GREATER_THAN_UINT32(0, result.maxErrorMl);
+}
+
+void test_trace_store_updates_actual_ml_by_record() {
+    WaterPulseTrace traces[2]{};
+    WaterPulseTraceSample samples[16]{};
+    WaterPulseTraceStore ram(traces, 2, samples, 16, 1024);
+    const std::uint32_t id = ram.beginTrace(1000);
+    fillTrace(ram, id, {2, 3, 4});
+    WaterRecord record = makeRecord(1000, 9, 1000);
+    TEST_ASSERT_TRUE(ram.finishTrace(id, record, WaterPulseTraceState::Completed));
+
+    TEST_ASSERT_TRUE(ram.setActualMlByRecord(record, 1502));
+
+    const WaterPulseTrace* trace = ram.findById(id);
+    TEST_ASSERT_NOT_NULL(trace);
+    TEST_ASSERT_EQUAL_UINT32(1502, trace->actualMl);
+}
+
+void test_saved_trace_file_store_updates_actual_ml_by_record_and_lists_samples() {
+    WaterPulseTrace traces[2]{};
+    WaterPulseTraceSample samples[16]{};
+    WaterPulseTraceStore ram(traces, 2, samples, 16, 1024);
+    const std::uint32_t id = ram.beginTrace(1000);
+    fillTrace(ram, id, {2, 3, 4});
+    WaterRecord record = makeRecord(1000, 9, 1000);
+    TEST_ASSERT_TRUE(ram.finishTrace(id, record, WaterPulseTraceState::Completed));
+    const WaterPulseTrace* trace = ram.findById(id);
+    TEST_ASSERT_NOT_NULL(trace);
+
+    WaterPulseTraceSample copy[8]{};
+    for (std::size_t i = 0; i < trace->sampleCount; ++i) {
+        copy[i] = *ram.sampleAt(*trace, i);
+    }
+
+    MemoryFileBackend backend;
+    WaterPulseTraceFileStore saved(backend, "/faucet_pulse_traces_v2.bin", 8, 4);
+    TEST_ASSERT_TRUE(saved.begin());
+    std::uint32_t savedId = 0;
+    TEST_ASSERT_TRUE(saved.save(*trace, copy, trace->sampleCount, &savedId));
+
+    TEST_ASSERT_TRUE(saved.setActualMlByRecord(record, 1502));
+
+    WaterPulseTrace loaded{};
+    TEST_ASSERT_TRUE(saved.findById(savedId, loaded));
+    TEST_ASSERT_EQUAL_UINT32(1502, loaded.actualMl);
+
+    WaterPulseTrace listed[4]{};
+    const std::size_t listedCount = saved.list(listed, 4);
+    TEST_ASSERT_EQUAL_size_t(1, listedCount);
+    TEST_ASSERT_EQUAL_UINT32(savedId, listed[0].traceId);
+    TEST_ASSERT_EQUAL_UINT32(1502, listed[0].actualMl);
+
+    WaterPulseTraceSample loadedSamples[8]{};
+    TEST_ASSERT_EQUAL_size_t(3, saved.readSamples(savedId, loadedSamples, 8));
+    TEST_ASSERT_EQUAL_UINT16(2, loadedSamples[0].pulseDelta);
+    TEST_ASSERT_EQUAL_UINT16(4, loadedSamples[2].pulseDelta);
+}
+
 void test_saved_trace_file_store_persists_and_deletes_selected_trace() {
     WaterPulseTrace traces[2]{};
     WaterPulseTraceSample samples[16]{};
@@ -631,6 +716,9 @@ int main(int argc, char** argv) {
     RUN_TEST(test_trace_bucket_aggregation_sums_pulses_by_selected_seconds);
     RUN_TEST(test_trace_bucket_aggregation_accepts_four_second_bucket);
     RUN_TEST(test_segmented_calibration_uses_two_valid_samples);
+    RUN_TEST(test_segmented_calibration_fits_all_valid_samples);
+    RUN_TEST(test_trace_store_updates_actual_ml_by_record);
+    RUN_TEST(test_saved_trace_file_store_updates_actual_ml_by_record_and_lists_samples);
     RUN_TEST(test_saved_trace_file_store_persists_and_deletes_selected_trace);
     RUN_TEST(test_saved_trace_file_store_begin_does_not_touch_flash);
     RUN_TEST(test_saved_trace_file_store_first_save_does_not_preallocate_all_slots);

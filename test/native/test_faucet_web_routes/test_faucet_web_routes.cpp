@@ -264,7 +264,15 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "计量诊断"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "临时缓存"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "已保存明细"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "最近校准"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "控制P/L"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "稳态P/L"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "启动等效"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "样本范围"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "建议补偿"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "拟合误差"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "候选已生成"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "样本不足"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "最近校准"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "占用 <b>%s / %s</b>"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "<span><b>%u%%</b></span>"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "单条最多 <b>%lu 点</b>"));
@@ -397,8 +405,12 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "未修改"));
     TEST_ASSERT_NULL(std::strstr(buffer, "step='10' value='%lu'></label>"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "step='1' value='%lu'></label>"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "只保存这条记录的实际容量，用于核对本次脉冲/升；不会修改原始脉冲和当前控制参数。"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "保存为分段样本"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "保存这条记录的实际容量，并自动更新分段样本库和候选参数；不会修改原始脉冲和当前关阀控制 P/L。"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "样本状态"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "样本已入库"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "未输入实测容量"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "请在最新记录的容量校准页输入实际出水量。"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "保存为分段样本"));
     TEST_ASSERT_NULL(std::strstr(buffer, "保存并自动校准"));
     TEST_ASSERT_NULL(std::strstr(buffer, "启动阶段的等效脉冲/升"));
     TEST_ASSERT_NULL(std::strstr(buffer, "启动段 P/L"));
@@ -625,7 +637,7 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NULL(std::strstr(buffer, "<th>诊断</th>"));
 }
 
-void test_record_calibration_api_rejects_unchanged_actual_measurement() {
+void test_record_calibration_api_syncs_segmented_samples_after_actual_measurement() {
     FILE* file = std::fopen("src/web/FaucetWeb.cpp", "rb");
     TEST_ASSERT_NOT_NULL(file);
     static char buffer[240000]{};
@@ -641,15 +653,21 @@ void test_record_calibration_api_rejects_unchanged_actual_measurement() {
     const char* findExisting = std::strstr(handler, "const bool calibrated = findRecordCalibration(record, calibration);");
     const char* defaultActual =
         std::strstr(handler, "const std::uint32_t defaultActualMl = calibrated ? calibration.actualMl : record.volumeMl;");
-    const char* unchangedGuard = std::strstr(handler, "if (actualMl == defaultActualMl)");
+    const char* unchangedGuard = std::strstr(handler, "if (calibrated && actualMl == defaultActualMl)");
     const char* unchangedRedirect =
         std::strstr(handler, "Esp32BaseWeb::redirectSeeOther(\"/faucet/records?error=calibration_unchanged\")");
+    const char* saveMeasurement = std::strstr(handler, "saveRecordActualMeasurement(record, actualMl)");
+    const char* syncSamples = std::strstr(handler, "syncSegmentedCalibrationFromActual(record, actualMl)");
 
     TEST_ASSERT_TRUE(findExisting != nullptr && findExisting < nextHandler);
     TEST_ASSERT_TRUE(defaultActual != nullptr && defaultActual < nextHandler);
     TEST_ASSERT_TRUE(unchangedGuard != nullptr && unchangedGuard < nextHandler);
     TEST_ASSERT_TRUE(unchangedRedirect != nullptr && unchangedRedirect < nextHandler);
-    TEST_ASSERT_TRUE(unchangedGuard < std::strstr(handler, "saveRecordActualMeasurement(record, actualMl)"));
+    TEST_ASSERT_TRUE(unchangedGuard < saveMeasurement);
+    TEST_ASSERT_TRUE(saveMeasurement != nullptr && saveMeasurement < syncSamples);
+    TEST_ASSERT_TRUE(syncSamples != nullptr && syncSamples < nextHandler);
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "autoSaveTraceAsSegmentedSample"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "applySegmentedCalibrationFromAvailableSamples"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "实际出水量未变化，未保存校准。"));
 }
 
@@ -746,7 +764,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_web_page_source_has_no_remote_water_control_forms);
     RUN_TEST(test_web_page_source_links_cacheable_app_css);
     RUN_TEST(test_web_page_source_contains_expected_ui_improvements);
-    RUN_TEST(test_record_calibration_api_rejects_unchanged_actual_measurement);
+    RUN_TEST(test_record_calibration_api_syncs_segmented_samples_after_actual_measurement);
     RUN_TEST(test_main_source_renders_live_display_frame_for_web);
     RUN_TEST(test_app_config_source_uses_clear_business_labels_and_help);
     RUN_TEST(test_app_config_save_migrates_before_marking_current_version);

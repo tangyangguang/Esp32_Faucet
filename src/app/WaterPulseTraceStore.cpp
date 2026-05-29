@@ -179,6 +179,19 @@ bool WaterPulseTraceStore::setActualMl(std::uint32_t traceId, std::uint32_t actu
     return true;
 }
 
+bool WaterPulseTraceStore::setActualMlByRecord(const WaterRecord& record, std::uint32_t actualMl) {
+    if (actualMl == 0) {
+        return false;
+    }
+    for (std::size_t i = 0; i < traceCount_; ++i) {
+        if (traces_[i].finished && sameRecordIdentity(traces_[i].record, record)) {
+            traces_[i].actualMl = actualMl;
+            return true;
+        }
+    }
+    return false;
+}
+
 const WaterPulseTrace* WaterPulseTraceStore::findById(std::uint32_t traceId) const {
     const std::size_t index = indexOf(traceId);
     return index < traceCount_ ? &traces_[index] : nullptr;
@@ -466,6 +479,25 @@ std::size_t WaterPulseTraceFileStore::findByRecords(const WaterRecord* records,
     return matched;
 }
 
+std::size_t WaterPulseTraceFileStore::list(WaterPulseTrace* output, std::size_t outputCapacity) const {
+    if (!output || outputCapacity == 0 || !ready()) {
+        return 0;
+    }
+    std::size_t count = 0;
+    if (loadIndex()) {
+        for (std::size_t slot = 0; slot < maxTraceCount_ && count < outputCapacity; ++slot) {
+            const IndexEntry& entry = index_[slot];
+            if (entry.key == 0 || entry.entryChecksum != indexEntryChecksum(entry)) {
+                continue;
+            }
+            if (populateTraceFromEntry(entry, output[count])) {
+                ++count;
+            }
+        }
+    }
+    return count;
+}
+
 std::size_t WaterPulseTraceFileStore::readSamples(std::uint32_t traceId,
                                                   WaterPulseTraceSample* output,
                                                   std::size_t outputCapacity) const {
@@ -489,6 +521,45 @@ std::size_t WaterPulseTraceFileStore::readSamples(std::uint32_t traceId,
         }
     }
     return 0;
+}
+
+bool WaterPulseTraceFileStore::setActualMl(std::uint32_t traceId, std::uint32_t actualMl) {
+    if (!ready() || traceId == 0 || actualMl == 0 || !loadIndex()) {
+        return false;
+    }
+    const std::size_t slot = findSlotByKey(traceId);
+    if (slot >= maxTraceCount_) {
+        return false;
+    }
+    IndexEntry entry = index_[slot];
+    if (entry.key == 0 || entry.entryChecksum != indexEntryChecksum(entry)) {
+        return false;
+    }
+    entry.actualMl = actualMl;
+    entry.entryChecksum = indexEntryChecksum(entry);
+    if (!writeIndexEntry(slot, entry)) {
+        return false;
+    }
+    index_[slot] = entry;
+    return true;
+}
+
+bool WaterPulseTraceFileStore::setActualMlByRecord(const WaterRecord& record, std::uint32_t actualMl) {
+    if (!ready() || actualMl == 0 || !loadIndex()) {
+        return false;
+    }
+    const std::size_t slot = findSlotByRecord(record);
+    if (slot >= maxTraceCount_) {
+        return false;
+    }
+    IndexEntry entry = index_[slot];
+    entry.actualMl = actualMl;
+    entry.entryChecksum = indexEntryChecksum(entry);
+    if (!writeIndexEntry(slot, entry)) {
+        return false;
+    }
+    index_[slot] = entry;
+    return true;
 }
 
 bool WaterPulseTraceFileStore::containsRecord(const WaterRecord& record) const {
@@ -942,46 +1013,80 @@ bool computeSegmentedCalibration(const SegmentedCalibrationSample* samples,
     if (!samples || sampleCount < 2) {
         return false;
     }
-    const SegmentedCalibrationSample* low = nullptr;
-    const SegmentedCalibrationSample* high = nullptr;
+    double sumX = 0.0;
+    double sumY = 0.0;
+    double sumXX = 0.0;
+    double sumXY = 0.0;
+    std::uint32_t highTotalPulses = 0;
+    std::uint32_t highActualMl = 0;
+    std::uint64_t totalStartupDurationSec = 0;
+    std::uint64_t totalStartupPulseCount = 0;
+    std::uint32_t minActualMl = UINT32_MAX;
+    std::uint32_t maxActualMl = 0;
+    std::uint16_t validCount = 0;
     for (std::size_t i = 0; i < sampleCount; ++i) {
         if (samples[i].actualMl == 0 || samples[i].stablePulseCount == 0 || samples[i].totalPulses == 0) {
             continue;
         }
-        if (!low || samples[i].actualMl < low->actualMl) {
-            low = &samples[i];
+        const double x = static_cast<double>(samples[i].stablePulseCount);
+        const double y = static_cast<double>(samples[i].actualMl);
+        sumX += x;
+        sumY += y;
+        sumXX += x * x;
+        sumXY += x * y;
+        if (samples[i].actualMl >= highActualMl) {
+            highActualMl = samples[i].actualMl;
+            highTotalPulses = samples[i].totalPulses;
         }
-        if (!high || samples[i].actualMl > high->actualMl) {
-            high = &samples[i];
+        totalStartupDurationSec += samples[i].startupDurationSec;
+        totalStartupPulseCount += samples[i].startupPulseCount;
+        minActualMl = std::min(minActualMl, samples[i].actualMl);
+        maxActualMl = std::max(maxActualMl, samples[i].actualMl);
+        ++validCount;
+    }
+    if (validCount < 2 || maxActualMl <= minActualMl + 500UL) {
+        return false;
+    }
+    const double n = static_cast<double>(validCount);
+    const double denominator = n * sumXX - sumX * sumX;
+    if (!(denominator > 0.0)) {
+        return false;
+    }
+    const double mlPerStablePulse = (n * sumXY - sumX * sumY) / denominator;
+    const double startupVolumeMl = (sumY - mlPerStablePulse * sumX) / n;
+    if (!(mlPerStablePulse > 0.0) || !(startupVolumeMl > 0.0)) {
+        return false;
+    }
+    std::uint32_t maxErrorMl = 0;
+    for (std::size_t i = 0; i < sampleCount; ++i) {
+        if (samples[i].actualMl == 0 || samples[i].stablePulseCount == 0 || samples[i].totalPulses == 0) {
+            continue;
         }
-    }
-    if (!low || !high || low == high || high->actualMl <= low->actualMl + 500UL ||
-        high->stablePulseCount <= low->stablePulseCount) {
-        return false;
-    }
-    const float stablePulsePerMl =
-        static_cast<float>(high->stablePulseCount - low->stablePulseCount) /
-        static_cast<float>(high->actualMl - low->actualMl);
-    if (!(stablePulsePerMl > 0.0f)) {
-        return false;
-    }
-    const float startupVolumeMl =
-        static_cast<float>(low->actualMl) - static_cast<float>(low->stablePulseCount) / stablePulsePerMl;
-    if (!(startupVolumeMl > 0.0f)) {
-        return false;
+        const double estimated =
+            startupVolumeMl + mlPerStablePulse * static_cast<double>(samples[i].stablePulseCount);
+        const double error = std::fabs(estimated - static_cast<double>(samples[i].actualMl));
+        maxErrorMl = std::max(maxErrorMl, roundU32(static_cast<float>(error)));
     }
     result.valid = true;
-    result.startupDurationSec = low->startupDurationSec;
-    result.startupPulseCount = low->startupPulseCount;
-    result.startupVolumeMl = roundU32(startupVolumeMl);
+    result.sampleCount = validCount;
+    result.startupDurationSec =
+        static_cast<std::uint32_t>((totalStartupDurationSec + validCount / 2U) / validCount);
+    result.startupPulseCount =
+        static_cast<std::uint32_t>((totalStartupPulseCount + validCount / 2U) / validCount);
+    result.startupVolumeMl = roundU32(static_cast<float>(startupVolumeMl));
     result.startupPulsePerLiter =
         result.startupVolumeMl == 0
             ? 0
             : roundU32(static_cast<float>(result.startupPulseCount) * 1000.0f /
                        static_cast<float>(result.startupVolumeMl));
-    result.stablePulsePerLiter = roundU32(stablePulsePerMl * 1000.0f);
+    result.stablePulsePerLiter = roundU32(static_cast<float>(1000.0 / mlPerStablePulse));
     result.overallPulsePerLiter =
-        roundU32(static_cast<float>(high->totalPulses) * 1000.0f / static_cast<float>(high->actualMl));
+        highActualMl == 0 ? 0 : static_cast<std::uint32_t>(
+                                  (static_cast<std::uint64_t>(highTotalPulses) * 1000ULL + highActualMl / 2ULL) /
+                                  highActualMl);
+    result.minActualMl = minActualMl;
+    result.maxActualMl = maxActualMl;
+    result.maxErrorMl = maxErrorMl;
     return true;
 }
 

@@ -273,6 +273,73 @@ void test_app_controller_small_record_calibration_updates_startup_compensation()
     TEST_ASSERT_TRUE(app.consumeConfigDirty());
 }
 
+void test_app_controller_pause_timeout_trace_is_not_marked_error_and_can_calibrate() {
+    SystemConfig config = makeDefaultConfig();
+    config.pulsePerMl = 1.0f;
+    config.pauseTimeoutSec = 10;
+    StatisticsStore statistics;
+    statistics.reset({20260506, 202619, 202605});
+    FilterStore filters(config.filters);
+    MemoryRecordWriter records;
+    WaterPulseTrace traces[2]{};
+    WaterPulseTraceSample samples[16]{};
+    WaterPulseTraceStore pulseTraces(traces, 2, samples, 16, 1024);
+    AppController app(config, statistics, filters, records, &pulseTraces);
+
+    app.resetInputs({false, false, false, false}, 0);
+    pressAndReleaseOk(app, 100);
+    pressAndReleaseOk(app, 300);
+    for (std::uint32_t i = 0; i < 600; ++i) {
+        app.onFlowPulse(1000000UL + i * 2000UL);
+    }
+    app.tick(input({false, false, false, false}, 1800, 1800000, 1714502400));
+    pressAndReleaseOk(app, 1900);
+    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(WaterState::Paused),
+                            static_cast<std::uint8_t>(app.snapshot().water.state));
+
+    app.tick(input({false, false, false, false}, 12100, 12100000, 1714502412));
+
+    TEST_ASSERT_EQUAL_size_t(1, records.records.size());
+    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(WaterResult::PauseTimeout),
+                            static_cast<std::uint8_t>(records.records[0].result));
+    TEST_ASSERT_TRUE(app.snapshot().calibrationReady);
+    const WaterPulseTrace* trace = pulseTraces.traceAt(0);
+    TEST_ASSERT_NOT_NULL(trace);
+    TEST_ASSERT_TRUE(trace->finished);
+    TEST_ASSERT_GREATER_THAN_size_t(0, trace->sampleCount);
+    const WaterPulseTraceSample* lastSample = pulseTraces.sampleAt(*trace, trace->sampleCount - 1);
+    TEST_ASSERT_NOT_NULL(lastSample);
+    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(WaterPulseTraceState::PauseTimeout),
+                            static_cast<std::uint8_t>(lastSample->state));
+}
+
+void test_app_controller_applies_calibration_from_pause_timeout_record() {
+    SystemConfig config = makeDefaultConfig();
+    config.pulsePerMl = 1.0f;
+    StatisticsStore statistics;
+    FilterStore filters(config.filters);
+    MemoryRecordWriter records;
+    AppController app(config, statistics, filters, records);
+    WaterRecord record{
+        1714502400,
+        1470,
+        7500,
+        326,
+        0,
+        51,
+        WaterMode::Volume,
+        WaterResult::PauseTimeout,
+        0,
+        0,
+        1.0f,
+        {0, 0, 0, 0},
+    };
+
+    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(CalibrationApplyResult::Saved),
+                            static_cast<std::uint8_t>(app.applyCalibrationFromRecord(record, 1470)));
+    TEST_ASSERT_TRUE(app.consumeConfigDirty());
+}
+
 void test_app_controller_offline_completion_marks_unknown_time_with_boot_id() {
     SystemConfig config = makeDefaultConfig();
     config.pulsePerMl = 1.0f;
@@ -629,6 +696,8 @@ int main(int argc, char** argv) {
     RUN_TEST(test_app_controller_ok_saves_local_calibration);
     RUN_TEST(test_app_controller_applies_calibration_from_raw_record);
     RUN_TEST(test_app_controller_small_record_calibration_updates_startup_compensation);
+    RUN_TEST(test_app_controller_pause_timeout_trace_is_not_marked_error_and_can_calibrate);
+    RUN_TEST(test_app_controller_applies_calibration_from_pause_timeout_record);
     RUN_TEST(test_app_controller_result_display_exits_after_configured_timeout);
     return UNITY_END();
 }

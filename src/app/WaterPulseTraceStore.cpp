@@ -35,6 +35,12 @@ WaterPulseTraceState mergeState(WaterPulseTraceState current, WaterPulseTraceSta
     if (current == WaterPulseTraceState::Error || next == WaterPulseTraceState::Error) {
         return WaterPulseTraceState::Error;
     }
+    if (current == WaterPulseTraceState::SafetyStopped || next == WaterPulseTraceState::SafetyStopped) {
+        return WaterPulseTraceState::SafetyStopped;
+    }
+    if (current == WaterPulseTraceState::PauseTimeout || next == WaterPulseTraceState::PauseTimeout) {
+        return WaterPulseTraceState::PauseTimeout;
+    }
     if (current == WaterPulseTraceState::Stopped || next == WaterPulseTraceState::Stopped) {
         return WaterPulseTraceState::Stopped;
     }

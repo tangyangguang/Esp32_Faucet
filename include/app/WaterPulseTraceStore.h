@@ -15,6 +15,8 @@ enum class WaterPulseTraceState : std::uint8_t {
     Completed = 2,
     Stopped = 3,
     Error = 4,
+    PauseTimeout = 5,
+    SafetyStopped = 6,
 };
 
 struct WaterPulseTraceSample {

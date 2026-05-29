@@ -18,12 +18,24 @@ std::uint32_t msFromSeconds(std::uint32_t seconds) {
     return seconds > maxMs / 1000UL ? maxMs : seconds * 1000UL;
 }
 
-bool resultAllowsCalibration(WaterResult result) {
-    return result == WaterResult::Completed || result == WaterResult::StoppedByUser;
-}
-
 bool finitePulsePerMl(float value) {
     return std::isfinite(value) && value >= kMinPulsePerMl && value <= kMaxPulsePerMl;
+}
+
+WaterPulseTraceState traceStateForResult(WaterResult result) {
+    switch (result) {
+        case WaterResult::Completed:
+            return WaterPulseTraceState::Completed;
+        case WaterResult::StoppedByUser:
+            return WaterPulseTraceState::Stopped;
+        case WaterResult::PauseTimeout:
+            return WaterPulseTraceState::PauseTimeout;
+        case WaterResult::SafetyStopped:
+            return WaterPulseTraceState::SafetyStopped;
+        case WaterResult::FlowError:
+        default:
+            return WaterPulseTraceState::Error;
+    }
 }
 
 }  // namespace
@@ -220,7 +232,7 @@ CalibrationApplyResult AppController::applyCalibrationFromRecordInternal(const W
     if (actualMl < kCalibrationMinActualMl || actualMl > kMaxVolumePresetMl) {
         return CalibrationApplyResult::InvalidActual;
     }
-    if (record.pulseCount == 0 || !resultAllowsCalibration(record.result)) {
+    if (record.pulseCount == 0 || !waterResultAllowsCalibration(record.result)) {
         return CalibrationApplyResult::InvalidRecord;
     }
     const float oldPulsePerMl = finitePulsePerMl(config_.pulsePerMl) ? config_.pulsePerMl : kDefaultPulsePerMl;
@@ -413,7 +425,8 @@ void AppController::toggleCalibrationStep() {
 }
 
 void AppController::enterCalibrationFromResult(std::uint32_t) {
-    if (!lastResultRecordValid_ || !resultAllowsCalibration(lastResultRecord_.result) || lastResultRecord_.pulseCount == 0) {
+    if (!lastResultRecordValid_ || !waterResultAllowsCalibration(lastResultRecord_.result) ||
+        lastResultRecord_.pulseCount == 0) {
         pendingBeep_ = BeepPattern::Error;
         return;
     }
@@ -564,14 +577,11 @@ void AppController::processResult(std::uint32_t startTime,
         markWaterRecordBootId(record, bootId);
     }
 
-    const WaterPulseTraceState traceState =
-        result.result == WaterResult::Completed
-            ? WaterPulseTraceState::Completed
-            : result.result == WaterResult::StoppedByUser ? WaterPulseTraceState::Stopped : WaterPulseTraceState::Error;
+    const WaterPulseTraceState traceState = traceStateForResult(result.result);
     finishPulseTrace(record, traceState, flow);
 
     lastResultRecord_ = record;
-    lastResultRecordValid_ = record.pulseCount > 0 && resultAllowsCalibration(record.result);
+    lastResultRecordValid_ = record.pulseCount > 0 && waterResultAllowsCalibration(record.result);
     lastRecordWriteOk_ = records_.append(record);
     if (periodKeysValid) {
         statistics_.addWater(result.volumeMl, periodKeys);

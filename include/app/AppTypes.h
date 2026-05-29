@@ -31,6 +31,11 @@ enum class WaterResult : std::uint8_t {
     PauseTimeout = 4,
 };
 
+inline bool waterResultAllowsCalibration(WaterResult result) {
+    return result == WaterResult::Completed || result == WaterResult::StoppedByUser ||
+           result == WaterResult::PauseTimeout;
+}
+
 struct PresetConfig {
     bool enabled;
     PresetType type;

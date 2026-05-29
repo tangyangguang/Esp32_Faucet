@@ -315,6 +315,8 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "beginResponse(200, \"text/plain; charset=utf-8\""));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "时间\\t脉冲数\\t累计脉冲数\\t状态\\n"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "%lu秒\\t%u\\t%lu\\t%s\\n"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "WaterPulseTraceState::PauseTimeout"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "waterResultAllowsCalibration(record.result)"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "原始秒级数据共 %lu 行。"));
     TEST_ASSERT_NULL(std::strstr(buffer, "加载原始明细"));
     TEST_ASSERT_NULL(std::strstr(buffer, "下载文本"));
@@ -465,9 +467,10 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, ".machine-task-card{display:flex;flex-direction:column;justify-content:center;min-height:68px;padding:11px 12px;border:1px solid #dde6eb;border-radius:7px;background:#fff;box-shadow:0 1px 2px rgba(16,24,40,.025)}"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, ".machine-status-item{display:inline-flex;align-items:center"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "background:#f7f9fb;color:#66737c"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, ".machine-eyebrow{display:block;color:var(--muted);font-size:13px;font-weight:400"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, ".machine-note{margin:8px 0 0;color:#405059;font-weight:400"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, ".machine-preset-line{margin:5px 0 0;color:var(--muted);font-weight:400"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, ".machine-hero-head{display:grid;grid-template-columns:max-content minmax(0,1fr);align-items:center;gap:14px"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, ".machine-context{display:flex;flex-direction:column;gap:3px;min-width:0"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, ".machine-alert{margin:0;color:#8a6f3d;font-size:13px;font-weight:400"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, ".machine-preset-line{margin:0;color:var(--muted);font-size:13px;font-weight:400"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, ".machine-progress-head{display:flex;align-items:center;justify-content:space-between;gap:10px;color:var(--muted);font-size:13px;font-weight:400"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, ".machine-task-card span{display:block;color:var(--muted);font-size:12px;font-weight:400"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, ".machine-task-card small{display:block;margin-top:4px;color:var(--muted);font-size:12px;line-height:1.2;font-weight:400"));
@@ -476,7 +479,9 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NULL(std::strstr(buffer, "align-items:baseline;gap:5px;min-height:28px"));
     TEST_ASSERT_NULL(std::strstr(buffer, "machine-kpis"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "machine-hero"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "machine-note"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "machine-hero-head"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "machine-context"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "machine-alert"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "machine-preset-line"));
     TEST_ASSERT_NULL(std::strstr(buffer, "machine-indicator"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "设备可用，等待按键启动"));
@@ -566,7 +571,8 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NULL(std::strstr(buffer, "sendMetricCard(\"平均单次\""));
     TEST_ASSERT_NULL(std::strstr(buffer, "本地显示"));
     TEST_ASSERT_NULL(std::strstr(buffer, "local-display-card"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "当前状态"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "当前状态"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "faucetToggle('machineStatusNote',s.state==='running')"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "\"screenStatus\", \"屏幕\", screenOn"));
     TEST_ASSERT_NULL(std::strstr(buffer, "local-display-meta"));
     TEST_ASSERT_NULL(std::strstr(buffer, ".local-display-card{grid-column:1/-1;max-width:320px}"));

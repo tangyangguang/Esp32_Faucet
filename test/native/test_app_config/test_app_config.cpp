@@ -20,6 +20,7 @@ void test_default_config_matches_product_defaults() {
     TEST_ASSERT_EQUAL_UINT32(kDefaultHighFlowMlPerMin, config.highFlowMlPerMin);
     TEST_ASSERT_EQUAL_UINT32(kDefaultHighFlowDurationSec, config.highFlowDurationSec);
     TEST_ASSERT_EQUAL_UINT32(kDefaultPauseTimeoutSec, config.pauseTimeoutSec);
+    TEST_ASSERT_EQUAL_UINT32(90, config.pauseTimeoutSec);
     TEST_ASSERT_EQUAL_UINT32(kDefaultVolumeAdjustStepMl, config.volumeAdjustStepMl);
     TEST_ASSERT_EQUAL_UINT32(kDefaultTimeAdjustStepSec, config.timeAdjustStepSec);
     TEST_ASSERT_EQUAL_UINT32(kDefaultStartupCompensationMl, config.startupCompensationMl);

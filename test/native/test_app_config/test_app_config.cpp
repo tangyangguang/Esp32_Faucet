@@ -39,6 +39,8 @@ void test_default_config_matches_product_defaults() {
     TEST_ASSERT_EQUAL_UINT32(0, config.candidateStablePulsePerLiter);
     TEST_ASSERT_EQUAL_UINT32(0, config.candidateSampleCount);
     TEST_ASSERT_FALSE(config.segmentedPreviousReady);
+    TEST_ASSERT_FLOAT_WITHIN(0.0001f, 0.0f, config.previousPulsePerMl);
+    TEST_ASSERT_EQUAL_UINT32(0, config.previousStartupCompensationMl);
     TEST_ASSERT_EQUAL_UINT32(0, config.previousStablePulsePerLiter);
     TEST_ASSERT_FLOAT_WITHIN(0.0001f, kDefaultPulsePerMl, config.pulsePerMl);
     TEST_ASSERT_EQUAL_UINT32(kDefaultValveFullPowerSec, config.valveFullPowerSec);
@@ -131,6 +133,8 @@ void test_sanitize_config_clamps_scalar_ranges() {
     config.candidateMaxErrorMl = 999999;
     config.segmentedPreviousReady = true;
     config.previousOverallPulsePerLiter = 999999;
+    config.previousPulsePerMl = 999.0f;
+    config.previousStartupCompensationMl = 999999;
     config.previousStartupDurationSec = 999999;
     config.previousStartupPulseCount = 999999;
     config.previousStartupVolumeMl = 999999;
@@ -174,8 +178,10 @@ void test_sanitize_config_clamps_scalar_ranges() {
     TEST_ASSERT_EQUAL_UINT32(kMaxSegmentedPulsePerLiter, config.candidateStablePulsePerLiter);
     TEST_ASSERT_EQUAL_UINT32(kMaxSegmentedCandidateSamples, config.candidateSampleCount);
     TEST_ASSERT_EQUAL_UINT32(kMinVolumePresetMl, config.candidateMaxActualMl);
-    TEST_ASSERT_FALSE(config.segmentedPreviousReady);
+    TEST_ASSERT_TRUE(config.segmentedPreviousReady);
     TEST_ASSERT_EQUAL_UINT32(kMaxSegmentedPulsePerLiter, config.previousOverallPulsePerLiter);
+    TEST_ASSERT_FLOAT_WITHIN(0.0001f, kMaxPulsePerMl, config.previousPulsePerMl);
+    TEST_ASSERT_EQUAL_UINT32(kMaxStartupCompensationMl, config.previousStartupCompensationMl);
     TEST_ASSERT_EQUAL_UINT32(kMaxSegmentedStartupDurationSec, config.previousStartupDurationSec);
     TEST_ASSERT_EQUAL_UINT32(kMaxSegmentedStartupPulseCount, config.previousStartupPulseCount);
     TEST_ASSERT_EQUAL_UINT32(kMaxSegmentedStartupVolumeMl, config.previousStartupVolumeMl);

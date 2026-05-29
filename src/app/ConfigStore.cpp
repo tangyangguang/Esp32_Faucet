@@ -11,7 +11,7 @@ namespace {
 constexpr const char* kConfigNs = "faucet_cfg";
 constexpr const char* kStatNs = "faucet_stat";
 constexpr const char* kRunNs = "faucet_run";
-constexpr std::int32_t kConfigVersion = 8;
+constexpr std::int32_t kConfigVersion = 9;
 constexpr std::int32_t kRuntimeVersion = 1;
 
 std::int32_t toInt(std::uint32_t value) {
@@ -129,6 +129,9 @@ void loadCommonSystemConfig(ConfigBackend& backend, SystemConfig& config) {
     config.segmentedPreviousReady = backend.getBool(kConfigNs, "prev_ready", config.segmentedPreviousReady);
     config.previousSegmentedMeteringCalibrated =
         backend.getBool(kConfigNs, "prev_cal", config.previousSegmentedMeteringCalibrated);
+    config.previousPulsePerMl = pulseFromMilli(backend.getInt(kConfigNs, "prev_pulse_m", pulseToMilli(config.previousPulsePerMl)));
+    config.previousStartupCompensationMl =
+        static_cast<std::uint32_t>(backend.getInt(kConfigNs, "prev_comp_ml", toInt(config.previousStartupCompensationMl)));
     config.previousOverallPulsePerLiter =
         static_cast<std::uint32_t>(backend.getInt(kConfigNs, "prev_all_p", toInt(config.previousOverallPulsePerLiter)));
     config.previousStartupDurationSec =
@@ -302,6 +305,8 @@ bool ConfigStore::saveSystemConfig(const SystemConfig& config) {
     ok = okAll(ok, backend_.setInt(kConfigNs, "cand_at", toInt(safe.candidateGeneratedAt)));
     ok = okAll(ok, backend_.setBool(kConfigNs, "prev_ready", safe.segmentedPreviousReady));
     ok = okAll(ok, backend_.setBool(kConfigNs, "prev_cal", safe.previousSegmentedMeteringCalibrated));
+    ok = okAll(ok, backend_.setInt(kConfigNs, "prev_pulse_m", pulseToMilli(safe.previousPulsePerMl)));
+    ok = okAll(ok, backend_.setInt(kConfigNs, "prev_comp_ml", toInt(safe.previousStartupCompensationMl)));
     ok = okAll(ok, backend_.setInt(kConfigNs, "prev_all_p", toInt(safe.previousOverallPulsePerLiter)));
     ok = okAll(ok, backend_.setInt(kConfigNs, "prev_start_s", toInt(safe.previousStartupDurationSec)));
     ok = okAll(ok, backend_.setInt(kConfigNs, "prev_start_p", toInt(safe.previousStartupPulseCount)));

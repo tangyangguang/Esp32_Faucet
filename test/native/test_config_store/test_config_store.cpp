@@ -126,7 +126,7 @@ void test_config_migrates_v1_without_losing_user_values() {
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(ConfigStore::LoadStatus::MigratedLegacy),
                             static_cast<std::uint8_t>(store.lastSystemConfigLoadStatus()));
     TEST_ASSERT_FALSE(store.systemConfigReadOnly());
-    TEST_ASSERT_EQUAL_INT32(8, backend.getInt("faucet_cfg", "ver", 0));
+    TEST_ASSERT_EQUAL_INT32(9, backend.getInt("faucet_cfg", "ver", 0));
     TEST_ASSERT_EQUAL_INT32(90, backend.getInt("faucet_cfg", "f0_life_min", 0));
     TEST_ASSERT_EQUAL_INT32(90, backend.getInt("faucet_cfg", "f0_life_max", 0));
     TEST_ASSERT_EQUAL_UINT32(22, loaded.confirmTimeoutSec);
@@ -162,7 +162,7 @@ void test_config_migrates_v2_filter_ranges_and_single_calibration_target() {
 
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(ConfigStore::LoadStatus::MigratedLegacy),
                             static_cast<std::uint8_t>(store.lastSystemConfigLoadStatus()));
-    TEST_ASSERT_EQUAL_INT32(8, backend.getInt("faucet_cfg", "ver", 0));
+    TEST_ASSERT_EQUAL_INT32(9, backend.getInt("faucet_cfg", "ver", 0));
     TEST_ASSERT_TRUE(loaded.filters[1].enabled);
     TEST_ASSERT_EQUAL_STRING("RO", loaded.filters[1].name);
     TEST_ASSERT_EQUAL_UINT32(360, loaded.filters[1].recommendDays);
@@ -231,6 +231,8 @@ void test_config_save_and_load_round_trips_system_config() {
     config.candidateMaxErrorMl = 35;
     config.candidateGeneratedAt = 1770000000;
     config.segmentedPreviousReady = true;
+    config.previousPulsePerMl = 0.615f;
+    config.previousStartupCompensationMl = 77;
     config.previousOverallPulsePerLiter = 211;
     config.previousStartupDurationSec = 5;
     config.previousStartupPulseCount = 40;
@@ -282,6 +284,8 @@ void test_config_save_and_load_round_trips_system_config() {
     TEST_ASSERT_EQUAL_UINT32(35, loaded.candidateMaxErrorMl);
     TEST_ASSERT_EQUAL_UINT32(1770000000, loaded.candidateGeneratedAt);
     TEST_ASSERT_TRUE(loaded.segmentedPreviousReady);
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.615f, loaded.previousPulsePerMl);
+    TEST_ASSERT_EQUAL_UINT32(77, loaded.previousStartupCompensationMl);
     TEST_ASSERT_EQUAL_UINT32(211, loaded.previousOverallPulsePerLiter);
     TEST_ASSERT_EQUAL_UINT32(5, loaded.previousStartupDurationSec);
     TEST_ASSERT_EQUAL_UINT32(40, loaded.previousStartupPulseCount);

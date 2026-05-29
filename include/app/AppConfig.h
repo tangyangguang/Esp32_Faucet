@@ -94,6 +94,8 @@ struct SystemConfig {
     std::uint32_t candidateGeneratedAt;
     bool segmentedPreviousReady;
     bool previousSegmentedMeteringCalibrated;
+    float previousPulsePerMl;
+    std::uint32_t previousStartupCompensationMl;
     std::uint32_t previousOverallPulsePerLiter;
     std::uint32_t previousStartupDurationSec;
     std::uint32_t previousStartupPulseCount;

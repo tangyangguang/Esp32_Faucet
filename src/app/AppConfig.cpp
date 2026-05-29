@@ -74,6 +74,8 @@ SystemConfig makeDefaultConfig() {
     config.candidateGeneratedAt = 0;
     config.segmentedPreviousReady = false;
     config.previousSegmentedMeteringCalibrated = false;
+    config.previousPulsePerMl = 0.0f;
+    config.previousStartupCompensationMl = 0;
     config.previousOverallPulsePerLiter = 0;
     config.previousStartupDurationSec = 0;
     config.previousStartupPulseCount = 0;
@@ -165,6 +167,11 @@ void sanitizeConfig(SystemConfig& config) {
     }
     config.previousOverallPulsePerLiter =
         clampValue<std::uint32_t>(config.previousOverallPulsePerLiter, 0, kMaxSegmentedPulsePerLiter);
+    config.previousPulsePerMl = std::isfinite(config.previousPulsePerMl)
+                                    ? clampValue<float>(config.previousPulsePerMl, 0.0f, kMaxPulsePerMl)
+                                    : 0.0f;
+    config.previousStartupCompensationMl =
+        clampValue<std::uint32_t>(config.previousStartupCompensationMl, 0, kMaxStartupCompensationMl);
     config.previousStartupDurationSec =
         clampValue<std::uint32_t>(config.previousStartupDurationSec, 0, kMaxSegmentedStartupDurationSec);
     config.previousStartupPulseCount =
@@ -176,8 +183,10 @@ void sanitizeConfig(SystemConfig& config) {
     config.previousStablePulsePerLiter =
         clampValue<std::uint32_t>(config.previousStablePulsePerLiter, 0, kMaxSegmentedPulsePerLiter);
     if (config.segmentedPreviousReady &&
-        (config.previousStartupDurationSec == 0 || config.previousStartupPulseCount == 0 ||
-         config.previousStablePulsePerLiter == 0)) {
+        (config.previousPulsePerMl <= 0.0f ||
+         (config.previousSegmentedMeteringCalibrated &&
+          (config.previousStartupDurationSec == 0 || config.previousStartupPulseCount == 0 ||
+           config.previousStablePulsePerLiter == 0)))) {
         config.segmentedPreviousReady = false;
     }
     config.pulsePerMl = std::isfinite(config.pulsePerMl)

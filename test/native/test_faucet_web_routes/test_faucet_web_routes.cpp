@@ -268,6 +268,7 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "稳态P/L"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "启动等效"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "有效样本"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, ".diagnostic-metric strong{display:block;color:var(--text);font-size:14px;line-height:1.2;font-weight:650;font-variant-numeric:tabular-nums;white-space:nowrap;overflow-wrap:normal}"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "已保存明细 <b>%u条</b>"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "已测容量 <b>%u条</b>"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "还需 <b>%s</b>"));
@@ -673,9 +674,11 @@ void test_record_calibration_api_syncs_segmented_samples_after_actual_measuremen
         std::strstr(handler, "const std::uint32_t defaultActualMl = calibrated ? calibration.actualMl : record.volumeMl;");
     const char* unchangedGuard = std::strstr(handler, "if (calibrated && actualMl == defaultActualMl)");
     const char* unchangedRedirect =
-        std::strstr(handler, "Esp32BaseWeb::redirectSeeOther(\"/faucet/records?error=calibration_unchanged\")");
+        unchangedGuard ? std::strstr(unchangedGuard, "Esp32BaseWeb::redirectSeeOther(\"/faucet/records?saved=actual\")") : nullptr;
     const char* saveMeasurement = std::strstr(handler, "saveRecordActualMeasurement(record, actualMl)");
-    const char* syncBeforeUnchangedRedirect =
+    const char* fastSyncBeforeUnchangedRedirect =
+        unchangedGuard ? std::strstr(unchangedGuard, "autoSaveTraceAsSegmentedSample(record, actualMl);") : nullptr;
+    const char* fullSyncBeforeSave =
         unchangedGuard ? std::strstr(unchangedGuard, "syncSegmentedCalibrationFromActual(record, actualMl);") : nullptr;
     const char* syncAfterSave =
         saveMeasurement ? std::strstr(saveMeasurement, "syncSegmentedCalibrationFromActual(record, actualMl)") : nullptr;
@@ -684,13 +687,14 @@ void test_record_calibration_api_syncs_segmented_samples_after_actual_measuremen
     TEST_ASSERT_TRUE(defaultActual != nullptr && defaultActual < nextHandler);
     TEST_ASSERT_TRUE(unchangedGuard != nullptr && unchangedGuard < nextHandler);
     TEST_ASSERT_TRUE(unchangedRedirect != nullptr && unchangedRedirect < nextHandler);
-    TEST_ASSERT_TRUE(syncBeforeUnchangedRedirect != nullptr && syncBeforeUnchangedRedirect < unchangedRedirect);
+    TEST_ASSERT_TRUE(fastSyncBeforeUnchangedRedirect != nullptr && fastSyncBeforeUnchangedRedirect < unchangedRedirect);
+    TEST_ASSERT_TRUE(fullSyncBeforeSave == nullptr || saveMeasurement < fullSyncBeforeSave);
     TEST_ASSERT_TRUE(unchangedGuard < saveMeasurement);
     TEST_ASSERT_TRUE(saveMeasurement != nullptr && saveMeasurement < syncAfterSave);
     TEST_ASSERT_TRUE(syncAfterSave != nullptr && syncAfterSave < nextHandler);
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "autoSaveTraceAsSegmentedSample"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "applySegmentedCalibrationFromAvailableSamples"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "实际出水量未变化，未保存校准。"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "校准已保存。"));
 }
 
 void test_main_source_renders_live_display_frame_for_web() {

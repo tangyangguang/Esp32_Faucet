@@ -31,6 +31,7 @@ namespace {
 constexpr std::uint32_t kChartDays = kUsageSummaryMaxDays;
 constexpr std::size_t kHomeTodayRecordLimit = 5;
 constexpr std::size_t kRawTracePreviewLastSecond = 30;
+constexpr std::uint16_t kSegmentedCalibrationRequiredSamples = 2;
 constexpr std::size_t kSegmentedCalibrationMaxSamples = kSavedPulseTraceMaxCountLimit;
 FaucetWebContext g_context{};
 
@@ -45,6 +46,8 @@ struct TodayOverview {
 
 struct SegmentedSampleDiagnostics {
     SegmentedCalibrationResult result{};
+    std::uint16_t savedTraceCount = 0;
+    std::uint16_t measuredSampleCount = 0;
     std::uint16_t validSampleCount = 0;
     std::uint32_t latestSampleTime = 0;
     std::uint32_t latestActualMl = 0;
@@ -507,6 +510,14 @@ bool findRecordCalibration(const WaterRecord& record, WaterRecordCalibration& ca
            g_context.recordCalibrations->find(record, calibration);
 }
 
+std::uint32_t actualMlForSegmentedSample(const WaterPulseTrace& trace) {
+    if (trace.actualMl > 0) {
+        return trace.actualMl;
+    }
+    WaterRecordCalibration calibration{};
+    return findRecordCalibration(trace.record, calibration) ? calibration.actualMl : 0;
+}
+
 void indexPagePulseTraces(const WaterRecord* records,
                           std::size_t recordCount,
                           const WaterPulseTraceStore* store,
@@ -631,11 +642,22 @@ bool appendSegmentedSampleFromTrace(const WaterPulseTrace& trace,
                                     bool savedSource,
                                     SegmentedCalibrationSample* samples,
                                     WaterRecord* seenRecords,
+                                    std::size_t& seenCount,
                                     std::size_t& sampleCount,
                                     SegmentedSampleDiagnostics& diagnostics) {
-    if (!samples || !seenRecords || sampleCount >= kSegmentedCalibrationMaxSamples || trace.actualMl == 0 ||
-        trace.sampleCount < 6 || trace.totalPulses == 0 ||
-        segmentedSampleAlreadySeen(seenRecords, sampleCount, trace.record)) {
+    if (!samples || !seenRecords || seenCount >= kSegmentedCalibrationMaxSamples ||
+        segmentedSampleAlreadySeen(seenRecords, seenCount, trace.record)) {
+        return false;
+    }
+    seenRecords[seenCount] = trace.record;
+    ++seenCount;
+
+    const std::uint32_t actualMl = actualMlForSegmentedSample(trace);
+    if (actualMl > 0) {
+        ++diagnostics.measuredSampleCount;
+    }
+    if (sampleCount >= kSegmentedCalibrationMaxSamples || actualMl == 0 || trace.sampleCount < 6 ||
+        trace.totalPulses == 0) {
         return false;
     }
     WaterPulseTraceSample* traceSamples = new (std::nothrow) WaterPulseTraceSample[trace.sampleCount]{};
@@ -654,18 +676,17 @@ bool appendSegmentedSampleFromTrace(const WaterPulseTrace& trace,
         return false;
     }
     samples[sampleCount] = SegmentedCalibrationSample{
-        trace.actualMl,
+        actualMl,
         trace.totalPulses,
         analysis.startupPulseCount,
         analysis.stablePulseCount,
         analysis.stableStartSec,
     };
-    seenRecords[sampleCount] = trace.record;
     ++sampleCount;
     diagnostics.validSampleCount = static_cast<std::uint16_t>(sampleCount);
     if (trace.startTime >= diagnostics.latestSampleTime) {
         diagnostics.latestSampleTime = trace.startTime;
-        diagnostics.latestActualMl = trace.actualMl;
+        diagnostics.latestActualMl = actualMl;
     }
     return true;
 }
@@ -674,6 +695,7 @@ SegmentedSampleDiagnostics collectSegmentedSampleDiagnostics() {
     SegmentedSampleDiagnostics diagnostics{};
     SegmentedCalibrationSample samples[kSegmentedCalibrationMaxSamples]{};
     WaterRecord seenRecords[kSegmentedCalibrationMaxSamples]{};
+    std::size_t seenCount = 0;
     std::size_t sampleCount = 0;
 
     if (ensureSavedPulseTracesReady()) {
@@ -681,9 +703,11 @@ SegmentedSampleDiagnostics collectSegmentedSampleDiagnostics() {
         if (savedTraces) {
             const std::size_t savedCount =
                 g_context.savedPulseTraces->list(savedTraces, kSavedPulseTraceMaxCountLimit);
+            diagnostics.savedTraceCount = static_cast<std::uint16_t>(
+                std::min<std::size_t>(savedCount, static_cast<std::size_t>(UINT16_MAX)));
             for (std::size_t i = 0; i < savedCount && sampleCount < kSegmentedCalibrationMaxSamples; ++i) {
                 appendSegmentedSampleFromTrace(
-                    savedTraces[i], true, samples, seenRecords, sampleCount, diagnostics);
+                    savedTraces[i], true, samples, seenRecords, seenCount, sampleCount, diagnostics);
             }
             delete[] savedTraces;
         }
@@ -696,7 +720,7 @@ SegmentedSampleDiagnostics collectSegmentedSampleDiagnostics() {
             const std::size_t index = g_context.pulseTraces->count() - 1 - offset;
             const WaterPulseTrace* trace = g_context.pulseTraces->traceAt(index);
             if (trace) {
-                appendSegmentedSampleFromTrace(*trace, false, samples, seenRecords, sampleCount, diagnostics);
+                appendSegmentedSampleFromTrace(*trace, false, samples, seenRecords, seenCount, sampleCount, diagnostics);
             }
         }
     }
@@ -881,7 +905,8 @@ void sendSegmentedMeteringPanel() {
     char control[24]{};
     char stable[24]{};
     char startup[64]{};
-    char sampleRange[64]{};
+    char effectiveSamples[64]{};
+    char sampleNeed[48]{};
     char compensation[24]{};
     char error[24]{};
     char overall[24]{};
@@ -910,19 +935,27 @@ void sendSegmentedMeteringPanel() {
         char maxVolume[24]{};
         formatLiters(result.minActualMl, minVolume, sizeof(minVolume));
         formatLiters(result.maxActualMl, maxVolume, sizeof(maxVolume));
-        std::snprintf(sampleRange,
-                      sizeof(sampleRange),
+        std::snprintf(effectiveSamples,
+                      sizeof(effectiveSamples),
                       "%u条 / %s-%s",
                       static_cast<unsigned>(result.sampleCount),
                       minVolume,
                       maxVolume);
-    } else if (diagnostics.validSampleCount > 0) {
-        std::snprintf(sampleRange,
-                      sizeof(sampleRange),
-                      "%u条 / 需差异样本",
-                      static_cast<unsigned>(diagnostics.validSampleCount));
+        std::snprintf(sampleNeed, sizeof(sampleNeed), "0条");
     } else {
-        std::snprintf(sampleRange, sizeof(sampleRange), "0条");
+        std::snprintf(effectiveSamples,
+                      sizeof(effectiveSamples),
+                      "%u/%u 条",
+                      static_cast<unsigned>(diagnostics.validSampleCount),
+                      static_cast<unsigned>(kSegmentedCalibrationRequiredSamples));
+        if (diagnostics.validSampleCount < kSegmentedCalibrationRequiredSamples) {
+            std::snprintf(sampleNeed,
+                          sizeof(sampleNeed),
+                          "%u条有效样本",
+                          static_cast<unsigned>(kSegmentedCalibrationRequiredSamples - diagnostics.validSampleCount));
+        } else {
+            std::snprintf(sampleNeed, sizeof(sampleNeed), "容量差异>0.50 L的样本");
+        }
     }
     if (stablePulsePerLiter > 0 && startupVolumeMl > 0) {
         const std::uint32_t startupPulseMl =
@@ -946,16 +979,26 @@ void sendSegmentedMeteringPanel() {
                   static_cast<unsigned long>(overallPulsePerLiter));
     Esp32BaseWeb::sendChunk("<section class='panel records-diagnostic-panel metering-diagnostic'><div class='diagnostic-head'><h3>计量诊断</h3>");
     sendFmt("<span class='status-pill %s'>%s</span></div><div class='diagnostic-metric-grid three'>",
-            candidateReady ? "status-ok" : "status-muted",
-            candidateReady ? "候选已生成" : "样本不足");
+            result.valid ? "status-ok" : "status-muted",
+            result.valid ? "候选已生成" : "有效样本不足");
     sendFmt("<div class='diagnostic-metric'><span>控制P/L</span><strong>%s</strong></div>", control);
     sendFmt("<div class='diagnostic-metric'><span>稳态P/L</span><strong>%s</strong></div>", stable);
     sendFmt("<div class='diagnostic-metric'><span>启动等效</span><strong>%s</strong></div>", startup);
-    sendFmt("<div class='diagnostic-metric'><span>样本范围</span><strong>%s</strong></div>", sampleRange);
-    sendFmt("</div><div class='diagnostic-foot'><span>建议补偿 <b>%s</b></span><span>拟合误差 <b>%s</b></span><span>全程平均 <b>%s</b></span></div></section>",
-            compensation,
-            error,
-            overall);
+    sendFmt("<div class='diagnostic-metric'><span>有效样本</span><strong>%s</strong></div>", effectiveSamples);
+    Esp32BaseWeb::sendChunk("</div><div class='diagnostic-foot'>");
+    sendFmt("<span>已保存明细 <b>%u条</b></span><span>已测容量 <b>%u条</b></span>",
+            static_cast<unsigned>(diagnostics.savedTraceCount),
+            static_cast<unsigned>(diagnostics.measuredSampleCount));
+    if (!result.valid) {
+        sendFmt("<span>还需 <b>%s</b></span>", sampleNeed);
+    }
+    if (candidateReady) {
+        sendFmt("<span>建议补偿 <b>%s</b></span><span>拟合误差 <b>%s</b></span><span>全程平均 <b>%s</b></span>",
+                compensation,
+                error,
+                overall);
+    }
+    Esp32BaseWeb::sendChunk("</div></section>");
 }
 
 void sendPulseTraceCachePanel() {
@@ -2542,6 +2585,9 @@ void handleRecordDetailPage() {
     formatKb(traceBytes, traceKb, sizeof(traceKb));
     const bool savedStoreReady = ensureSavedPulseTracesReady();
     const bool alreadySaved = savedStoreReady && g_context.savedPulseTraces->containsRecord(trace->record);
+    const std::uint32_t traceActualMl = actualMlForSegmentedSample(*trace);
+    const bool traceActualSynced = trace->actualMl > 0;
+    const bool traceActualFromRecord = !traceActualSynced && traceActualMl > 0;
     Esp32BaseWeb::sendHeader("脉冲明细");
     Esp32BaseWeb::sendChunk("<h2>脉冲明细</h2><div class='form-actions'><a class='btn-link' href='/faucet/records'>返回记录</a>");
     if (savedSource) {
@@ -2565,6 +2611,37 @@ void handleRecordDetailPage() {
                 static_cast<unsigned long>(trace->traceId));
     }
     Esp32BaseWeb::sendChunk("</div>");
+
+    Esp32BaseWeb::sendChunk("<section class='panel sample-status-panel'><h3>样本状态</h3><table class='kv'>");
+    if (traceActualSynced) {
+        Esp32BaseWeb::sendChunk("<tr><th>状态</th><td><span class='status-pill status-ok'>样本已入库</span></td></tr>");
+    } else if (traceActualFromRecord) {
+        Esp32BaseWeb::sendChunk("<tr><th>状态</th><td><span class='status-pill status-ok'>记录已校准</span></td></tr>");
+    } else {
+        Esp32BaseWeb::sendChunk("<tr><th>状态</th><td><span class='status-pill status-muted'>未输入实测容量</span></td></tr>"
+                                "<tr><th>下一步</th><td>请在最新记录的容量校准页输入实际出水量。</td></tr>");
+    }
+    if (traceActualMl > 0) {
+        Esp32BaseWeb::sendChunk("<tr><th>实测容量</th><td>");
+        sendLitersMl(traceActualMl);
+        Esp32BaseWeb::sendChunk("</td></tr>");
+        Esp32BaseWeb::sendChunk(traceActualFromRecord
+                                    ? "<tr><th>来源</th><td>来自记录容量校准；保存校准会同步写入样本库。</td></tr>"
+                                    : "<tr><th>来源</th><td>来自脉冲明细样本库。</td></tr>");
+    }
+    if (traceActualMl > 0 && analysis.stable) {
+        sendFmt("<tr><th>可用性</th><td>可用于拟合，稳态从第 %lu 秒开始。</td></tr>",
+                static_cast<unsigned long>(analysis.stableStartSec));
+    } else if (analysis.stable) {
+        sendFmt("<tr><th>可用性</th><td>脉冲稳定，输入实测容量后可用于拟合；稳态从第 %lu 秒开始。</td></tr>",
+                static_cast<unsigned long>(analysis.stableStartSec));
+    } else if (traceActualMl > 0) {
+        Esp32BaseWeb::sendChunk("<tr><th>可用性</th><td>实测容量已记录，但稳态识别失败，暂不能用于拟合。</td></tr>");
+    } else {
+        Esp32BaseWeb::sendChunk("<tr><th>可用性</th><td>缺少实测容量且稳态识别失败，暂不能用于拟合。</td></tr>");
+    }
+    Esp32BaseWeb::sendChunk("</table><p class='hint'>实际容量统一从最新记录的容量校准页保存；系统会自动同步匹配的脉冲明细并重算分段候选参数。</p></section>");
+
     Esp32BaseWeb::sendChunk("<section class='panel'><h3>明细概况</h3><table class='kv'>");
     sendFmt("<tr><th>开始时间</th><td>%s</td></tr>"
             "<tr><th>目标</th><td>",
@@ -2765,23 +2842,6 @@ void handleRecordDetailPage() {
     }
     Esp32BaseWeb::sendChunk("</table></section>");
 
-    Esp32BaseWeb::sendChunk("<section class='panel'><h3>样本状态</h3><table class='kv'>");
-    if (trace->actualMl > 0) {
-        Esp32BaseWeb::sendChunk("<tr><th>状态</th><td><span class='status-pill status-ok'>样本已入库</span></td></tr>"
-                                "<tr><th>实测容量</th><td>");
-        sendLitersMl(trace->actualMl);
-        Esp32BaseWeb::sendChunk("</td></tr>");
-    } else {
-        Esp32BaseWeb::sendChunk("<tr><th>状态</th><td><span class='status-pill status-muted'>未输入实测容量</span></td></tr>"
-                                "<tr><th>下一步</th><td>请在最新记录的容量校准页输入实际出水量。</td></tr>");
-    }
-    if (analysis.stable) {
-        sendFmt("<tr><th>可用性</th><td>可用于拟合，稳态从第 %lu 秒开始。</td></tr>",
-                static_cast<unsigned long>(analysis.stableStartSec));
-    } else {
-        Esp32BaseWeb::sendChunk("<tr><th>可用性</th><td>暂不能用于拟合，稳态识别失败。</td></tr>");
-    }
-    Esp32BaseWeb::sendChunk("</table><p class='hint'>实际容量统一从最新记录的容量校准页保存；系统会自动同步匹配的脉冲明细并重算分段候选参数。</p></section>");
     delete[] samples;
     delete[] buckets;
     sendPageEnd();
@@ -3303,6 +3363,7 @@ void handleRecordCalibrationApi() {
     const bool calibrated = findRecordCalibration(record, calibration);
     const std::uint32_t defaultActualMl = calibrated ? calibration.actualMl : record.volumeMl;
     if (calibrated && actualMl == defaultActualMl) {
+        syncSegmentedCalibrationFromActual(record, actualMl);
         Esp32BaseWeb::redirectSeeOther("/faucet/records?error=calibration_unchanged");
         return;
     }

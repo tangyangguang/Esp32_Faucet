@@ -213,7 +213,7 @@ bool AppController::applyConfig(const SystemConfig& config) {
     adjustmentStepMl_ = config_.volumeAdjustStepMl;
     timeAdjustmentStepSec_ = config_.timeAdjustStepSec;
     if (pulseTraces_) {
-        pulseTraces_->setBudgetBytes(static_cast<std::size_t>(config_.pulseTraceMemoryKb) * 1024U);
+        pulseTraces_->setRecentTraceLimit(config_.recentPulseTraceCount);
     }
     return true;
 }
@@ -405,7 +405,7 @@ void AppController::startSelectedPreset(std::uint32_t nowMs,
         flow_.reset();
         lastFlowVolumeMl_ = 0;
         if (pulseTraces_) {
-            pulseTraces_->setBudgetBytes(static_cast<std::size_t>(config_.pulseTraceMemoryKb) * 1024U);
+            pulseTraces_->setRecentTraceLimit(config_.recentPulseTraceCount);
             activeTraceId_ = pulseTraces_->beginTrace(nowSeconds);
             lastTraceSampleMs_ = nowMs;
             lastTracePulseCount_ = 0;

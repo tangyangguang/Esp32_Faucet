@@ -13,7 +13,7 @@ namespace {
 
 constexpr const char* kConfigNs = "faucet_cfg";
 constexpr const char* kVersionKey = "ver";
-constexpr std::int32_t kConfigVersion = 7;
+constexpr std::int32_t kConfigVersion = 10;
 
 FaucetAppConfigContext g_context{};
 
@@ -34,7 +34,7 @@ const char kKeyPauseTimeout[] = "pause_s";
 const char kKeyVolumeStep[] = "vol_step";
 const char kKeyTimeStep[] = "time_step";
 const char kKeyStartupCompensation[] = "start_ml";
-const char kKeyPulseTraceMemory[] = "trace_kb";
+const char kKeyRecentPulseTraceCount[] = "trace_count";
 const char kKeySegmentedOverall[] = "seg_all_p";
 const char kKeySegmentedStartupSeconds[] = "seg_start_s";
 const char kKeySegmentedStartupPulses[] = "seg_start_p";
@@ -158,7 +158,7 @@ bool addCoreFields(const SystemConfig& defaults) {
     ok = Esp32BaseAppConfig::addBool({kGroupLocal, kConfigNs, kKeyBeep, "蜂鸣器提示音", defaults.beepEnabled, "控制按键、完成和异常提示音。立即生效。", false, nullptr}) && ok;
 
     ok = Esp32BaseAppConfig::addDecimal({kGroupMetering, kConfigNs, kKeyPulseMilli, "当前控制用 P/L", static_cast<std::int32_t>(defaults.pulsePerMl * 1000.0f), static_cast<std::int32_t>(kMinPulsePerMl * 1000.0f), static_cast<std::int32_t>(kMaxPulsePerMl * 1000.0f), 1, 0, "脉冲/L", "关阀控制系数；可由记录实测更新，也可手动修正。", false, nullptr}) && ok;
-    ok = Esp32BaseAppConfig::addInt({kGroupMetering, kConfigNs, kKeyPulseTraceMemory, "脉冲明细缓存", static_cast<std::int32_t>(defaults.pulseTraceMemoryKb), static_cast<std::int32_t>(kMinPulseTraceMemoryKb), static_cast<std::int32_t>(kMaxPulseTraceMemoryKb), 1, "KB", "RAM 中保留最近脉冲明细；超限删除最旧明细。", false, nullptr}) && ok;
+    ok = Esp32BaseAppConfig::addInt({kGroupMetering, kConfigNs, kKeyRecentPulseTraceCount, "最近脉冲明细条数", static_cast<std::int32_t>(defaults.recentPulseTraceCount), static_cast<std::int32_t>(kMinRecentPulseTraceCount), static_cast<std::int32_t>(kMaxRecentPulseTraceCount), 1, "条", "RAM 中保留最近 N 条脉冲明细；超限删除最旧明细。", false, nullptr}) && ok;
 
     return ok;
 }

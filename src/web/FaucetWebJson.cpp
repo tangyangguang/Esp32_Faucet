@@ -242,7 +242,7 @@ bool writeConfigJson(const SystemConfig& config, char* out, std::size_t len) {
     writer.append("{\"confirmTimeoutSec\":%lu,\"maxOutTimeSec\":%lu,\"maxOutVolumeMl\":%lu,"
                   "\"overflowPercent\":%u,\"noFlowTimeoutSec\":%lu,\"highFlowMlPerMin\":%lu,"
                   "\"highFlowDurationSec\":%lu,\"pauseTimeoutSec\":%lu,\"volumeAdjustStepMl\":%lu,"
-                  "\"timeAdjustStepSec\":%lu,\"startupCompensationMl\":%lu,\"pulseTraceMemoryKb\":%lu,"
+                  "\"timeAdjustStepSec\":%lu,\"startupCompensationMl\":%lu,\"recentPulseTraceCount\":%lu,"
                   "\"overallPulsePerLiter\":%lu,\"startupDurationSec\":%lu,\"startupPulseCount\":%lu,"
                   "\"startupVolumeMl\":%lu,\"startupPulsePerLiter\":%lu,\"stablePulsePerLiter\":%lu,"
                   "\"segmentedMeteringCalibrated\":%s,\"pulsePerMl\":%.3f,"
@@ -260,7 +260,7 @@ bool writeConfigJson(const SystemConfig& config, char* out, std::size_t len) {
                   static_cast<unsigned long>(config.volumeAdjustStepMl),
                   static_cast<unsigned long>(config.timeAdjustStepSec),
                   static_cast<unsigned long>(config.startupCompensationMl),
-                  static_cast<unsigned long>(config.pulseTraceMemoryKb),
+                  static_cast<unsigned long>(config.recentPulseTraceCount),
                   static_cast<unsigned long>(config.overallPulsePerLiter),
                   static_cast<unsigned long>(config.startupDurationSec),
                   static_cast<unsigned long>(config.startupPulseCount),

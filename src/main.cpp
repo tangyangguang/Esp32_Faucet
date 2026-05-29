@@ -39,9 +39,9 @@ constexpr std::size_t kWaterRecordCapacity = 20000;
 constexpr std::size_t kWaterRecordCalibrationCapacity = 512;
 constexpr std::size_t kPulseTraceCapacity = 64;
 constexpr std::size_t kSavedPulseTraceMaxCount = 32;
-constexpr std::size_t kSavedPulseTraceSamplesPerTrace = 1024;
+constexpr std::size_t kSavedPulseTraceSamplesPerTrace = faucet::kPulseTraceSamplesPerTrace;
 constexpr std::size_t kPulseTraceMaxSamples =
-    (static_cast<std::size_t>(faucet::kMaxPulseTraceMemoryKb) * 1024U) / sizeof(faucet::WaterPulseTraceSample);
+    static_cast<std::size_t>(faucet::kMaxRecentPulseTraceCount) * faucet::kPulseTraceSamplesPerTrace;
 constexpr const char* kWaterRecordPath = "/faucet_records_v1.bin";
 constexpr const char* kWaterRecordCalibrationPath = "/faucet_record_cal_v1.bin";
 constexpr const char* kSavedPulseTracePath = "/faucet_pulse_traces_v2.bin";
@@ -429,7 +429,7 @@ void initializeApplication() {
             kPulseTraceCapacity,
             g_pulseTraceSamples,
             kPulseTraceMaxSamples,
-            static_cast<std::size_t>(g_config.pulseTraceMemoryKb) * 1024U);
+            g_config.recentPulseTraceCount);
     }
     if (!g_pulseTraces) {
         ESP32BASE_LOG_W("app", "pulse trace store allocation failed, trace diagnostics disabled");
@@ -448,7 +448,7 @@ void initializeApplication() {
         return;
     }
     if (g_pulseTraces) {
-        g_pulseTraces->setBudgetBytes(static_cast<std::size_t>(g_config.pulseTraceMemoryKb) * 1024U);
+        g_pulseTraces->setRecentTraceLimit(g_config.recentPulseTraceCount);
     }
     g_app = new (std::nothrow) faucet::AppController(g_config, g_statistics, *g_filters, g_records, g_pulseTraces);
     if (!g_app) {

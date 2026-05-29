@@ -11,7 +11,7 @@ namespace {
 constexpr const char* kConfigNs = "faucet_cfg";
 constexpr const char* kStatNs = "faucet_stat";
 constexpr const char* kRunNs = "faucet_run";
-constexpr std::int32_t kConfigVersion = 9;
+constexpr std::int32_t kConfigVersion = 10;
 constexpr std::int32_t kRuntimeVersion = 1;
 
 std::int32_t toInt(std::uint32_t value) {
@@ -87,8 +87,8 @@ void loadCommonSystemConfig(ConfigBackend& backend, SystemConfig& config) {
         static_cast<std::uint32_t>(backend.getInt(kConfigNs, "time_step", toInt(config.timeAdjustStepSec)));
     config.startupCompensationMl =
         static_cast<std::uint32_t>(backend.getInt(kConfigNs, "start_ml", toInt(config.startupCompensationMl)));
-    config.pulseTraceMemoryKb =
-        static_cast<std::uint32_t>(backend.getInt(kConfigNs, "trace_kb", toInt(config.pulseTraceMemoryKb)));
+    config.recentPulseTraceCount =
+        static_cast<std::uint32_t>(backend.getInt(kConfigNs, "trace_count", toInt(config.recentPulseTraceCount)));
     config.overallPulsePerLiter =
         static_cast<std::uint32_t>(backend.getInt(kConfigNs, "seg_all_p", toInt(config.overallPulsePerLiter)));
     config.startupDurationSec =
@@ -283,7 +283,7 @@ bool ConfigStore::saveSystemConfig(const SystemConfig& config) {
     ok = okAll(ok, backend_.setInt(kConfigNs, "vol_step", toInt(safe.volumeAdjustStepMl)));
     ok = okAll(ok, backend_.setInt(kConfigNs, "time_step", toInt(safe.timeAdjustStepSec)));
     ok = okAll(ok, backend_.setInt(kConfigNs, "start_ml", toInt(safe.startupCompensationMl)));
-    ok = okAll(ok, backend_.setInt(kConfigNs, "trace_kb", toInt(safe.pulseTraceMemoryKb)));
+    ok = okAll(ok, backend_.setInt(kConfigNs, "trace_count", toInt(safe.recentPulseTraceCount)));
     ok = okAll(ok, backend_.setInt(kConfigNs, "seg_all_p", toInt(safe.overallPulsePerLiter)));
     ok = okAll(ok, backend_.setInt(kConfigNs, "seg_start_s", toInt(safe.startupDurationSec)));
     ok = okAll(ok, backend_.setInt(kConfigNs, "seg_start_p", toInt(safe.startupPulseCount)));

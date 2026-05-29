@@ -100,18 +100,18 @@ WaterPulseTraceStore::WaterPulseTraceStore(WaterPulseTrace* traces,
                                            std::size_t traceCapacity,
                                            WaterPulseTraceSample* samples,
                                            std::size_t sampleCapacity,
-                                           std::size_t budgetBytes)
+                                           std::size_t recentTraceLimit)
     : traces_(traces),
       traceCapacity_(traceCapacity),
       traceCount_(0),
       samples_(samples),
       sampleCapacity_(sampleCapacity),
       sampleCount_(0),
-      budgetBytes_(budgetBytes),
+      recentTraceLimit_(recentTraceLimit),
       nextTraceId_(1) {}
 
-void WaterPulseTraceStore::setBudgetBytes(std::size_t budgetBytes) {
-    budgetBytes_ = budgetBytes;
+void WaterPulseTraceStore::setRecentTraceLimit(std::size_t recentTraceLimit) {
+    recentTraceLimit_ = recentTraceLimit;
     enforceBudget();
 }
 
@@ -119,7 +119,10 @@ std::uint32_t WaterPulseTraceStore::beginTrace(std::uint32_t startTime) {
     if (!traces_ || !samples_ || traceCapacity_ == 0 || sampleCapacity_ == 0) {
         return 0;
     }
-    while (traceCount_ >= traceCapacity_) {
+    enforceBudget();
+    const std::size_t effectiveTraceLimit =
+        recentTraceLimit_ == 0 ? traceCapacity_ : std::min(traceCapacity_, recentTraceLimit_);
+    while (traceCount_ >= effectiveTraceLimit) {
         dropOldest();
     }
     WaterPulseTrace& trace = traces_[traceCount_++];
@@ -136,8 +139,15 @@ std::uint32_t WaterPulseTraceStore::beginTrace(std::uint32_t startTime) {
 
 bool WaterPulseTraceStore::appendSecond(std::uint32_t traceId, std::uint32_t pulseDelta, WaterPulseTraceState state) {
     WaterPulseTrace* trace = findById(traceId);
-    if (!trace || trace->finished || sampleCount_ >= sampleCapacity_) {
+    if (!trace || trace->finished) {
         return false;
+    }
+    const std::uint16_t clipped =
+        pulseDelta > UINT16_MAX ? UINT16_MAX : static_cast<std::uint16_t>(pulseDelta);
+    if (trace->sampleCount >= kPulseTraceSamplesPerTrace) {
+        trace->truncated = true;
+        trace->totalPulses += clipped;
+        return true;
     }
     while (sampleCount_ >= sampleCapacity_) {
         dropOldest();
@@ -146,8 +156,6 @@ bool WaterPulseTraceStore::appendSecond(std::uint32_t traceId, std::uint32_t pul
             return false;
         }
     }
-    const std::uint16_t clipped =
-        pulseDelta > UINT16_MAX ? UINT16_MAX : static_cast<std::uint16_t>(pulseDelta);
     samples_[sampleCount_++] = WaterPulseTraceSample{clipped, state, 0};
     ++trace->sampleCount;
     trace->totalPulses += clipped;
@@ -228,11 +236,8 @@ WaterPulseTraceStats WaterPulseTraceStore::stats() const {
     out.traceCapacity = traceCapacity_;
     out.sampleCount = sampleCount_;
     out.sampleCapacity = sampleCapacity_;
+    out.sampleCapacityPerTrace = kPulseTraceSamplesPerTrace;
     out.usedBytes = usedBytes();
-    out.budgetBytes = budgetBytes_;
-    out.usagePercent = budgetBytes_ == 0
-                           ? 0
-                           : static_cast<std::uint8_t>(std::min<std::size_t>(100, (out.usedBytes * 100U) / budgetBytes_));
     if (traceCount_ > 0) {
         out.oldestStartTime = traces_[0].startTime;
         out.latestStartTime = traces_[traceCount_ - 1].startTime;
@@ -249,7 +254,9 @@ std::size_t WaterPulseTraceStore::usedBytes() const {
 }
 
 void WaterPulseTraceStore::enforceBudget() {
-    while (traceCount_ > 1 && budgetBytes_ > 0 && usedBytes() > budgetBytes_) {
+    const std::size_t effectiveTraceLimit =
+        recentTraceLimit_ == 0 ? traceCapacity_ : std::min(traceCapacity_, recentTraceLimit_);
+    while (traceCount_ > effectiveTraceLimit) {
         dropOldest();
     }
 }
@@ -318,7 +325,7 @@ bool WaterPulseTraceFileStore::save(const WaterPulseTrace& trace,
         *status = WaterPulseTraceSaveStatus::Ok;
     }
     if (!ready() || !samples || sampleCount == 0 || sampleCount > sampleCapacityPerTrace_ ||
-        sampleCount != trace.sampleCount) {
+        sampleCount != trace.sampleCount || trace.truncated) {
         if (status) {
             *status = ready() ? WaterPulseTraceSaveStatus::InvalidInput : WaterPulseTraceSaveStatus::NotReady;
         }

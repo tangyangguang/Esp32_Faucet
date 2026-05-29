@@ -24,10 +24,10 @@ void test_default_config_matches_product_defaults() {
     TEST_ASSERT_EQUAL_UINT32(kDefaultVolumeAdjustStepMl, config.volumeAdjustStepMl);
     TEST_ASSERT_EQUAL_UINT32(kDefaultTimeAdjustStepSec, config.timeAdjustStepSec);
     TEST_ASSERT_EQUAL_UINT32(kDefaultStartupCompensationMl, config.startupCompensationMl);
-    TEST_ASSERT_EQUAL_UINT32(kDefaultPulseTraceMemoryKb, config.pulseTraceMemoryKb);
-    TEST_ASSERT_EQUAL_UINT32(50, config.pulseTraceMemoryKb);
-    TEST_ASSERT_EQUAL_UINT32(10, kMinPulseTraceMemoryKb);
-    TEST_ASSERT_EQUAL_UINT32(50, kMaxPulseTraceMemoryKb);
+    TEST_ASSERT_EQUAL_UINT32(kDefaultRecentPulseTraceCount, config.recentPulseTraceCount);
+    TEST_ASSERT_EQUAL_UINT32(10, config.recentPulseTraceCount);
+    TEST_ASSERT_EQUAL_UINT32(1, kMinRecentPulseTraceCount);
+    TEST_ASSERT_EQUAL_UINT32(10, kMaxRecentPulseTraceCount);
     TEST_ASSERT_EQUAL_UINT32(0, config.overallPulsePerLiter);
     TEST_ASSERT_EQUAL_UINT32(0, config.startupDurationSec);
     TEST_ASSERT_EQUAL_UINT32(0, config.startupPulseCount);
@@ -112,7 +112,7 @@ void test_sanitize_config_clamps_scalar_ranges() {
     config.volumeAdjustStepMl = 0;
     config.timeAdjustStepSec = 0;
     config.startupCompensationMl = 999999;
-    config.pulseTraceMemoryKb = 999999;
+    config.recentPulseTraceCount = 999999;
     config.overallPulsePerLiter = 999999;
     config.startupDurationSec = 999999;
     config.startupPulseCount = 999999;
@@ -160,8 +160,8 @@ void test_sanitize_config_clamps_scalar_ranges() {
     TEST_ASSERT_EQUAL_UINT32(10, config.volumeAdjustStepMl);
     TEST_ASSERT_EQUAL_UINT32(1, config.timeAdjustStepSec);
     TEST_ASSERT_EQUAL_UINT32(kMaxStartupCompensationMl, config.startupCompensationMl);
-    TEST_ASSERT_EQUAL_UINT32(kMaxPulseTraceMemoryKb, config.pulseTraceMemoryKb);
-    TEST_ASSERT_EQUAL_UINT32(50, config.pulseTraceMemoryKb);
+    TEST_ASSERT_EQUAL_UINT32(kMaxRecentPulseTraceCount, config.recentPulseTraceCount);
+    TEST_ASSERT_EQUAL_UINT32(10, config.recentPulseTraceCount);
     TEST_ASSERT_EQUAL_UINT32(kMaxSegmentedPulsePerLiter, config.overallPulsePerLiter);
     TEST_ASSERT_EQUAL_UINT32(kMaxSegmentedStartupDurationSec, config.startupDurationSec);
     TEST_ASSERT_EQUAL_UINT32(kMaxSegmentedStartupPulseCount, config.startupPulseCount);
@@ -195,10 +195,9 @@ void test_sanitize_config_clamps_scalar_ranges() {
     TEST_ASSERT_EQUAL_UINT8(0x03, config.lcdI2cAddress);
 
     config = makeDefaultConfig();
-    config.pulseTraceMemoryKb = 1;
+    config.recentPulseTraceCount = 0;
     sanitizeConfig(config);
-    TEST_ASSERT_EQUAL_UINT32(kMinPulseTraceMemoryKb, config.pulseTraceMemoryKb);
-    TEST_ASSERT_EQUAL_UINT32(10, config.pulseTraceMemoryKb);
+    TEST_ASSERT_EQUAL_UINT32(kMinRecentPulseTraceCount, config.recentPulseTraceCount);
 }
 
 void test_sanitize_config_replaces_non_finite_pulse_factor() {

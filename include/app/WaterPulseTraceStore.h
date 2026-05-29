@@ -1,6 +1,6 @@
 #pragma once
 
-#include "app/AppTypes.h"
+#include "app/AppConfig.h"
 #include "app/WaterRecordFileStore.h"
 #include "app/WaterRecordStore.h"
 
@@ -34,6 +34,7 @@ struct WaterPulseTrace {
     std::uint32_t totalPulses;
     std::uint32_t actualMl;
     bool finished;
+    bool truncated;
 };
 
 struct WaterPulseTraceStats {
@@ -41,9 +42,8 @@ struct WaterPulseTraceStats {
     std::size_t traceCapacity;
     std::size_t sampleCount;
     std::size_t sampleCapacity;
+    std::size_t sampleCapacityPerTrace;
     std::size_t usedBytes;
-    std::size_t budgetBytes;
-    std::uint8_t usagePercent;
     std::uint32_t oldestStartTime;
     std::uint32_t latestStartTime;
 };
@@ -115,9 +115,9 @@ public:
                          std::size_t traceCapacity,
                          WaterPulseTraceSample* samples,
                          std::size_t sampleCapacity,
-                         std::size_t budgetBytes);
+                         std::size_t recentTraceLimit);
 
-    void setBudgetBytes(std::size_t budgetBytes);
+    void setRecentTraceLimit(std::size_t recentTraceLimit);
     std::uint32_t beginTrace(std::uint32_t startTime);
     bool appendSecond(std::uint32_t traceId, std::uint32_t pulseDelta, WaterPulseTraceState state);
     bool finishTrace(std::uint32_t traceId, const WaterRecord& record, WaterPulseTraceState finalState);
@@ -144,7 +144,7 @@ private:
     WaterPulseTraceSample* samples_;
     std::size_t sampleCapacity_;
     std::size_t sampleCount_;
-    std::size_t budgetBytes_;
+    std::size_t recentTraceLimit_;
     std::uint32_t nextTraceId_;
 };
 

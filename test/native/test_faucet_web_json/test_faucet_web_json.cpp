@@ -125,7 +125,7 @@ void test_config_json_contains_safety_and_display_settings() {
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"volumeAdjustStepMl\":100"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"timeAdjustStepSec\":10"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"startupCompensationMl\":0"));
-    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"pulseTraceMemoryKb\":50"));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"recentPulseTraceCount\":10"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"segmentedMeteringCalibrated\":false"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"valveHoldDutyPercent\":70"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"beepEnabled\":false"));

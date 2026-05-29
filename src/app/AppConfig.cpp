@@ -52,7 +52,7 @@ SystemConfig makeDefaultConfig() {
     config.volumeAdjustStepMl = kDefaultVolumeAdjustStepMl;
     config.timeAdjustStepSec = kDefaultTimeAdjustStepSec;
     config.startupCompensationMl = kDefaultStartupCompensationMl;
-    config.pulseTraceMemoryKb = kDefaultPulseTraceMemoryKb;
+    config.recentPulseTraceCount = kDefaultRecentPulseTraceCount;
     config.overallPulsePerLiter = 0;
     config.startupDurationSec = 0;
     config.startupPulseCount = 0;
@@ -121,8 +121,8 @@ void sanitizeConfig(SystemConfig& config) {
         clampValue<std::uint32_t>(config.timeAdjustStepSec, kMinTimeAdjustStepSec, kMaxTimeAdjustStepSec);
     config.startupCompensationMl =
         clampValue<std::uint32_t>(config.startupCompensationMl, 0, kMaxStartupCompensationMl);
-    config.pulseTraceMemoryKb =
-        clampValue<std::uint32_t>(config.pulseTraceMemoryKb, kMinPulseTraceMemoryKb, kMaxPulseTraceMemoryKb);
+    config.recentPulseTraceCount =
+        clampValue<std::uint32_t>(config.recentPulseTraceCount, kMinRecentPulseTraceCount, kMaxRecentPulseTraceCount);
     config.overallPulsePerLiter =
         clampValue<std::uint32_t>(config.overallPulsePerLiter, 0, kMaxSegmentedPulsePerLiter);
     config.startupDurationSec =

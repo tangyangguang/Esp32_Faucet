@@ -112,7 +112,7 @@ Commit: `git commit -m "Move calibration into top-level page"`
 
 - [ ] **Step 1: Write failing source tests**
 
-Assert `handleRecordCalibrationApi()` no longer calls `syncSegmentedCalibrationFromActual(record, actualMl)` after saving. Assert it checks a `saveTrace` parameter and redirects to `/faucet/calibration?saved=actual`.
+Assert `handleRecordCalibrationApi()` only saves record-level capacity metadata, synchronizes matching trace `actualMl`, and redirects to `/faucet/calibration?saved=actual`. It must not generate candidates, apply parameters, or save RAM traces to Flash.
 
 - [ ] **Step 2: Run route tests and verify failure**
 
@@ -125,18 +125,15 @@ Expected: source assertions fail while old code still redirects to `/faucet/reco
 Change capacity save behavior so it:
 
 ```cpp
-const bool saveTrace = checkboxParam("saveTrace");
 if (!saveRecordActualMeasurement(record, actualMl)) {
     Esp32BaseWeb::redirectSeeOther("/faucet/calibration?error=calibration_mark_failed");
     return;
 }
-if (saveTrace) {
-    autoSaveTraceAsSegmentedSample(record, actualMl);
-}
+syncTraceActualMeasurement(record, actualMl);
 Esp32BaseWeb::redirectSeeOther("/faucet/calibration?saved=actual");
 ```
 
-Do not call `applySegmentedCalibrationFromAvailableSamples()` from this path.
+Do not generate candidates, apply parameters, or save RAM traces to Flash from this path.
 
 - [ ] **Step 4: Run route tests and commit**
 
@@ -260,7 +257,7 @@ Commit: `git commit -m "Build calibration workbench page"`
 
 - [ ] **Step 1: Update docs**
 
-Replace old “自动校准” wording with “手动校准工作流”: save actual capacity, generate candidate, apply candidate, restore previous.
+Replace old automatic-generation wording with “手动校准工作流”: confirm capacity, save traces to device, generate candidate, apply candidate, restore previous.
 
 - [ ] **Step 2: Run full verification**
 

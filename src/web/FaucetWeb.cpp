@@ -617,40 +617,6 @@ bool copySavedTraceSamples(const WaterPulseTrace& trace, WaterPulseTraceSample* 
            g_context.savedPulseTraces->readSamples(trace.traceId, output, outputCapacity) == trace.sampleCount;
 }
 
-bool autoSaveTraceAsSegmentedSample(const WaterRecord& record, std::uint32_t actualMl) {
-    bool updated = false;
-    const WaterPulseTrace* ramTrace = g_context.pulseTraces ? g_context.pulseTraces->findByRecord(record) : nullptr;
-    if (g_context.pulseTraces && g_context.pulseTraces->setActualMlByRecord(record, actualMl)) {
-        updated = true;
-        ramTrace = g_context.pulseTraces->findByRecord(record);
-    }
-
-    if (!ensureSavedPulseTracesReady()) {
-        return updated;
-    }
-
-    WaterPulseTrace savedTrace{};
-    if (g_context.savedPulseTraces->findByRecord(record, savedTrace)) {
-        return g_context.savedPulseTraces->setActualMl(savedTrace.traceId, actualMl) || updated;
-    }
-    if (!ramTrace || ramTrace->sampleCount == 0 ||
-        ramTrace->sampleCount > g_context.savedPulseTraces->sampleCapacityPerTrace()) {
-        return updated;
-    }
-
-    WaterPulseTraceSample* samples = new (std::nothrow) WaterPulseTraceSample[ramTrace->sampleCount]{};
-    if (!samples) {
-        return updated;
-    }
-    const bool copied = copyRamTraceSamples(*ramTrace, samples, ramTrace->sampleCount);
-    std::uint32_t savedTraceId = 0;
-    WaterPulseTraceSaveStatus status = WaterPulseTraceSaveStatus::Ok;
-    const bool saved =
-        copied && g_context.savedPulseTraces->save(*ramTrace, samples, ramTrace->sampleCount, &savedTraceId, &status);
-    delete[] samples;
-    return updated || saved;
-}
-
 bool segmentedSampleAlreadySeen(const WaterRecord* records, std::size_t count, const WaterRecord& record) {
     for (std::size_t i = 0; i < count; ++i) {
         if (sameWaterRecordIdentity(records[i], record)) {
@@ -713,7 +679,7 @@ bool appendSegmentedSampleFromTrace(const WaterPulseTrace& trace,
     return true;
 }
 
-SegmentedSampleDiagnostics collectSegmentedSampleDiagnostics(bool includeRam = true) {
+SegmentedSampleDiagnostics collectSegmentedSampleDiagnostics(bool includeRam) {
     SegmentedSampleDiagnostics diagnostics{};
     SegmentedCalibrationSample samples[kSegmentedCalibrationMaxSamples]{};
     WaterRecord seenRecords[kSegmentedCalibrationMaxSamples]{};
@@ -750,31 +716,6 @@ SegmentedSampleDiagnostics collectSegmentedSampleDiagnostics(bool includeRam = t
     computeSegmentedCalibration(samples, sampleCount, diagnostics.result);
     diagnostics.validSampleCount = static_cast<std::uint16_t>(sampleCount);
     return diagnostics;
-}
-
-bool applySegmentedCalibrationFromAvailableSamples() {
-    if (!g_context.config) {
-        return false;
-    }
-    const SegmentedSampleDiagnostics diagnostics = collectSegmentedSampleDiagnostics();
-    if (!diagnostics.result.valid) {
-        return false;
-    }
-    SystemConfig next = *g_context.config;
-    next.overallPulsePerLiter = diagnostics.result.overallPulsePerLiter;
-    next.startupDurationSec = diagnostics.result.startupDurationSec;
-    next.startupPulseCount = diagnostics.result.startupPulseCount;
-    next.startupVolumeMl = diagnostics.result.startupVolumeMl;
-    next.startupPulsePerLiter = diagnostics.result.startupPulsePerLiter;
-    next.stablePulsePerLiter = diagnostics.result.stablePulsePerLiter;
-    next.segmentedMeteringCalibrated = true;
-    return persistConfig(next);
-}
-
-bool syncSegmentedCalibrationFromActual(const WaterRecord& record, std::uint32_t actualMl) {
-    const bool sampleSynced = autoSaveTraceAsSegmentedSample(record, actualMl);
-    const bool fitted = applySegmentedCalibrationFromAvailableSamples();
-    return sampleSynced || fitted;
 }
 
 bool latestCalibratableRecord(WaterRecord& record) {
@@ -1135,7 +1076,7 @@ void sendSegmentedMeteringPanel() {
         if (diagnostics.validSampleCount < kSegmentedCalibrationRequiredSamples) {
             std::snprintf(sampleNeed,
                           sizeof(sampleNeed),
-                          "%u条有效样本",
+                          "%u条可生成样本",
                           static_cast<unsigned>(kSegmentedCalibrationRequiredSamples - diagnostics.validSampleCount));
         } else {
             std::snprintf(sampleNeed, sizeof(sampleNeed), "容量差异>0.50 L的样本");
@@ -1164,7 +1105,7 @@ void sendSegmentedMeteringPanel() {
     sendFmt("<div class='diagnostic-metric'><span>控制P/L</span><strong>%s</strong></div>", control);
     sendFmt("<div class='diagnostic-metric'><span>稳态P/L</span><strong>%s</strong></div>", stable);
     sendFmt("<div class='diagnostic-metric'><span>启动等效</span><strong>%s</strong></div>", startup);
-    sendFmt("<div class='diagnostic-metric'><span>有效样本</span><strong>%s</strong></div>", effectiveSamples);
+    sendFmt("<div class='diagnostic-metric'><span>可生成样本</span><strong>%s</strong></div>", effectiveSamples);
     Esp32BaseWeb::sendChunk("</div><div class='diagnostic-foot'>");
     sendFmt("<span>已保存明细 <b>%u条</b></span><span>已测容量 <b>%u条</b></span>",
             static_cast<unsigned>(diagnostics.savedTraceCount),
@@ -1366,69 +1307,254 @@ void sendCalibrationParameterPanels() {
                                 0);
 }
 
-void sendSavedSegmentedSamplesPanel() {
-    Esp32BaseWeb::sendChunk("<section class='panel'><div class='panel-head'><h3>有效样本</h3>"
-                            "<a class='btn-link' href='/faucet/records'>历史记录</a></div>");
-    if (!ensureSavedPulseTracesReady()) {
-        Esp32BaseWeb::sendChunk("<p class='err'>已保存明细不可用。</p></section>");
+struct CalibrationSampleState {
+    std::uint32_t actualMl = 0;
+    std::uint32_t stableStartSec = 0;
+    bool stable = false;
+    bool qualityValid = false;
+};
+
+CalibrationSampleState inspectCalibrationSample(const WaterPulseTrace& trace, bool savedSource) {
+    CalibrationSampleState state{};
+    state.actualMl = actualMlForSegmentedSample(trace);
+    if (trace.sampleCount < 6 || trace.totalPulses == 0) {
+        return state;
+    }
+    WaterPulseTraceSample* samples = new (std::nothrow) WaterPulseTraceSample[trace.sampleCount]{};
+    if (!samples) {
+        return state;
+    }
+    const bool copied = savedSource ? copySavedTraceSamples(trace, samples, trace.sampleCount)
+                                    : copyRamTraceSamples(trace, samples, trace.sampleCount);
+    if (copied) {
+        const WaterPulseTraceAnalysis analysis = analyzeWaterPulseTrace(trace, samples, trace.sampleCount);
+        state.stable = analysis.stable && analysis.stablePulseCount > 0;
+        state.stableStartSec = analysis.stableStartSec;
+        state.qualityValid = state.actualMl > 0 && state.stable;
+    }
+    delete[] samples;
+    return state;
+}
+
+void sendTraceSourcePill(bool savedSource) {
+    Esp32BaseWeb::sendChunk(savedSource ? "<span class='status-pill status-ok'>已保存到设备</span>"
+                                        : "<span class='status-pill status-muted'>RAM 临时</span>");
+}
+
+void sendCalibrationSampleStatusPills(const CalibrationSampleState& state, bool savedSource) {
+    if (state.actualMl == 0) {
+        Esp32BaseWeb::sendChunk("<span class='status-pill status-muted'>待确认容量</span>");
         return;
     }
-    WaterPulseTrace* traces = new (std::nothrow) WaterPulseTrace[kSavedPulseTraceMaxCountLimit]{};
-    if (!traces) {
-        Esp32BaseWeb::sendChunk("<p class='err'>内存不足，无法列出样本。</p></section>");
+    Esp32BaseWeb::sendChunk("<span class='status-pill status-ok'>容量已确认</span>");
+    if (!state.stable) {
+        Esp32BaseWeb::sendChunk("<span class='status-pill status-warn'>稳态失败</span>");
         return;
     }
-    const std::size_t count = g_context.savedPulseTraces->list(traces, kSavedPulseTraceMaxCountLimit);
-    if (count == 0) {
-        delete[] traces;
-        Esp32BaseWeb::sendChunk("<p class='hint'>还没有已保存脉冲明细。</p></section>");
-        return;
-    }
-    Esp32BaseWeb::sendChunk("<table class='calibration-sample-table'><tr><th>时间</th><th>实测</th><th>脉冲</th><th>稳态</th><th>状态</th><th>明细</th></tr>");
+    Esp32BaseWeb::sendChunk(savedSource ? "<span class='status-pill status-ok'>可参与生成</span>"
+                                        : "<span class='status-pill status-warn'>可入库</span>");
+}
+
+bool traceAlreadyListed(const WaterRecord* records, std::size_t count, const WaterRecord& record) {
     for (std::size_t i = 0; i < count; ++i) {
-        char startTime[40]{};
-        formatWaterRecordListTime(traces[i].record, startTime, sizeof(startTime));
-        const std::uint32_t actualMl = actualMlForSegmentedSample(traces[i]);
-        bool stable = false;
-        std::uint32_t stableStartSec = 0;
-        if (traces[i].sampleCount > 0) {
-            WaterPulseTraceSample* samples = new (std::nothrow) WaterPulseTraceSample[traces[i].sampleCount]{};
-            if (samples) {
-                const bool copied = copySavedTraceSamples(traces[i], samples, traces[i].sampleCount);
-                if (copied) {
-                    const WaterPulseTraceAnalysis analysis =
-                        analyzeWaterPulseTrace(traces[i], samples, traces[i].sampleCount);
-                    stable = analysis.stable;
-                    stableStartSec = analysis.stableStartSec;
-                }
-                delete[] samples;
+        if (sameWaterRecordIdentity(records[i], record)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool latestRamTraceCanEnterSampleStore(const WaterRecord& record) {
+    const WaterPulseTrace* ramTrace = g_context.pulseTraces ? g_context.pulseTraces->findByRecord(record) : nullptr;
+    if (!ramTrace) {
+        return false;
+    }
+    WaterPulseTrace savedTrace{};
+    if (ensureSavedPulseTracesReady() && g_context.savedPulseTraces->findByRecord(record, savedTrace)) {
+        return false;
+    }
+    return inspectCalibrationSample(*ramTrace, false).qualityValid;
+}
+
+void sendLatestCalibrationRecordPanel(bool canCalibrate, const WaterRecord& record) {
+    Esp32BaseWeb::sendChunk("<section class='panel latest-record-panel'><div class='panel-head'><h3>最后一条出水记录</h3></div>");
+    if (!canCalibrate) {
+        Esp32BaseWeb::sendChunk("<p class='err'>最新记录不可确认容量：没有可用原始脉冲或结束状态不适合校准。</p></section>");
+        return;
+    }
+
+    char startTime[40]{};
+    char targetText[32]{};
+    formatWaterRecordListTime(record, startTime, sizeof(startTime));
+    formatRecordTargetValue(record, targetText, sizeof(targetText));
+    WaterRecordCalibration calibration{};
+    const bool calibrated = findRecordCalibration(record, calibration);
+    const std::uint32_t defaultActualMl = calibrated ? calibration.actualMl : record.volumeMl;
+    const std::uint32_t pulsePerLiter = pulsePerLiterFromPulsePerMl(record.pulsePerMlAtRun);
+    const WaterPulseTrace* ramTrace = g_context.pulseTraces ? g_context.pulseTraces->findByRecord(record) : nullptr;
+    WaterPulseTrace savedTrace{};
+    const bool hasSavedTrace =
+        ensureSavedPulseTracesReady() && g_context.savedPulseTraces->findByRecord(record, savedTrace);
+    const WaterPulseTrace* sampleTrace = hasSavedTrace ? &savedTrace : ramTrace;
+    const bool sampleSavedSource = hasSavedTrace;
+    CalibrationSampleState sampleState{};
+    if (sampleTrace) {
+        sampleState = inspectCalibrationSample(*sampleTrace, sampleSavedSource);
+    } else if (calibrated) {
+        sampleState.actualMl = calibration.actualMl;
+    }
+
+    Esp32BaseWeb::sendChunk("<table class='latest-record-table'><tr><th>时间</th><th>目标</th><th>估算出水</th>"
+                            "<th>脉冲</th><th>明细</th><th>样本状态</th><th>操作</th></tr><tr><td>");
+    Esp32BaseWeb::sendChunk(startTime);
+    Esp32BaseWeb::sendChunk("</td><td>");
+    Esp32BaseWeb::sendChunk(targetText);
+    Esp32BaseWeb::sendChunk("</td><td>");
+    sendLiters(record.volumeMl);
+    if (calibrated) {
+        Esp32BaseWeb::sendChunk("<span class='inline-note measured-note'>实测 ");
+        sendLitersMl(calibration.actualMl);
+        Esp32BaseWeb::sendChunk("</span>");
+    }
+    sendFmt("</td><td>%luP (%luP/L)</td><td>",
+            static_cast<unsigned long>(record.pulseCount),
+            static_cast<unsigned long>(pulsePerLiter));
+    if (sampleTrace) {
+        sendTraceSourcePill(sampleSavedSource);
+        sendFmt("<a class='trace-badge' href='/faucet/records/detail?%strace=%lu&bucket=1'>查看</a>",
+                sampleSavedSource ? "saved=1&" : "",
+                static_cast<unsigned long>(sampleTrace->traceId));
+    } else {
+        Esp32BaseWeb::sendChunk("<span class='status-pill status-muted'>无明细</span>");
+    }
+    Esp32BaseWeb::sendChunk("</td><td>");
+    if (sampleTrace) {
+        sendCalibrationSampleStatusPills(sampleState, sampleSavedSource);
+    } else {
+        Esp32BaseWeb::sendChunk(calibrated ? "<span class='status-pill status-ok'>容量已确认</span>"
+                                           : "<span class='status-pill status-muted'>待确认容量</span>");
+        Esp32BaseWeb::sendChunk("<span class='status-pill status-muted'>不参与分段生成</span>");
+    }
+    Esp32BaseWeb::sendChunk("</td><td><div class='row-actions'><a class='btn-link' href='#confirm-volume'>确认/校准</a>");
+    if (hasSavedTrace) {
+        Esp32BaseWeb::sendChunk("<form method='post' action='/faucet/calibration' onsubmit=\"return confirm('确认删除这条已保存明细？')&&once(this)\">"
+                                "<input type='hidden' name='action' value='delete_latest_trace'>"
+                                "<input class='secondary' type='submit' value='删除已保存明细'></form>");
+    } else if (ramTrace) {
+        Esp32BaseWeb::sendChunk("<form method='post' action='/faucet/calibration' onsubmit=\"return confirm('确认将这条脉冲明细保存到设备存储？')&&once(this)\">"
+                                "<input type='hidden' name='action' value='save_latest_trace'>"
+                                "<input class='secondary' type='submit' value='保存到设备'></form>");
+    }
+    Esp32BaseWeb::sendChunk("</div></td></tr></table>");
+
+    if (calibrated) {
+        char calibratedAt[40]{};
+        formatWaterRecordTime(WaterRecord{calibration.calibratedAt,
+                                          0,
+                                          0,
+                                          0,
+                                          0,
+                                          0,
+                                          WaterMode::Volume,
+                                          WaterResult::Completed,
+                                          0,
+                                          0,
+                                          0.0f,
+                                          {0, 0, 0, 0}},
+                              calibratedAt,
+                              sizeof(calibratedAt));
+        const std::int32_t estimateDiff =
+            static_cast<std::int32_t>(record.volumeMl) - static_cast<std::int32_t>(calibration.actualMl);
+        Esp32BaseWeb::sendChunk("<p class='hint'>上次校准记录：第 ");
+        sendFmt("%u 次 / %s / 实测脉冲/升 %luP/L / 估算差 ",
+                static_cast<unsigned>(calibration.calibrationCount),
+                calibratedAt[0] ? calibratedAt : "未知",
+                static_cast<unsigned long>(measuredPulsePerLiter(record, calibration)));
+        sendSignedLiters(estimateDiff);
+        Esp32BaseWeb::sendChunk(" / 控制参数未修改。</p>");
+    }
+    Esp32BaseWeb::sendChunk("</section>");
+
+    Esp32BaseWeb::sendChunk("<details id='confirm-volume' class='panel calibration-volume-panel'><summary>确认/校准容量</summary>"
+                            "<form method='post' action='/faucet/calibration' onsubmit='return once(this)'>"
+                            "<input type='hidden' name='action' value='calibrate'>"
+                            "<div class='form-grid'><label class='field span-3'><span>实际出水量 (ml)</span>");
+    sendFmt("<input name='actualMl' type='number' min='%lu' max='%lu' step='1' value='%lu'></label>",
+            static_cast<unsigned long>(kMinVolumePresetMl),
+            static_cast<unsigned long>(kMaxVolumePresetMl),
+            static_cast<unsigned long>(defaultActualMl));
+    Esp32BaseWeb::sendChunk("</div><p class='hint'>如果估算准确，直接确认即可；如果不准确，请改为量杯读数。确认后该容量可作为样本真值。"
+                            "保存后只记录实测容量并同步匹配明细，不会修改原始脉冲、当前关阀控制 P/L 或分段拟合参数。</p>"
+                            "<div class='form-actions'><input type='submit' value='确认容量'></div></form></details>");
+}
+
+void sendCalibrationSampleRow(const WaterPulseTrace& trace, bool savedSource) {
+    char startTime[40]{};
+    formatWaterRecordListTime(trace.record, startTime, sizeof(startTime));
+    const CalibrationSampleState state = inspectCalibrationSample(trace, savedSource);
+    Esp32BaseWeb::sendChunk("<tr><td>");
+    Esp32BaseWeb::sendChunk(startTime);
+    Esp32BaseWeb::sendChunk("</td><td>");
+    if (state.actualMl > 0) {
+        sendLitersMl(state.actualMl);
+    } else {
+        Esp32BaseWeb::sendChunk("-");
+    }
+    sendFmt("</td><td>%luP / %lu点</td><td>",
+            static_cast<unsigned long>(trace.totalPulses),
+            static_cast<unsigned long>(trace.sampleCount));
+    if (state.stable) {
+        sendFmt("第 %lus", static_cast<unsigned long>(state.stableStartSec));
+    } else {
+        Esp32BaseWeb::sendChunk("-");
+    }
+    Esp32BaseWeb::sendChunk("</td><td>");
+    sendTraceSourcePill(savedSource);
+    Esp32BaseWeb::sendChunk("</td><td>");
+    sendCalibrationSampleStatusPills(state, savedSource);
+    sendFmt("</td><td><a class='btn-link' href='/faucet/records/detail?%strace=%lu&bucket=1'>查看</a></td></tr>",
+            savedSource ? "saved=1&" : "",
+            static_cast<unsigned long>(trace.traceId));
+}
+
+void sendCalibrationSamplesPanel() {
+    Esp32BaseWeb::sendChunk("<section class='panel'><div class='panel-head'><h3>样本</h3></div>"
+                            "<p class='hint'>这里展示有脉冲明细的数据。RAM 临时样本重启会丢失；只有已保存到设备、容量已确认且稳态识别成功的样本才参与候选参数生成。</p>");
+    WaterPulseTrace* savedTraces = nullptr;
+    std::size_t savedCount = 0;
+    if (ensureSavedPulseTracesReady()) {
+        savedTraces = new (std::nothrow) WaterPulseTrace[kSavedPulseTraceMaxCountLimit]{};
+        if (savedTraces) {
+            savedCount = g_context.savedPulseTraces->list(savedTraces, kSavedPulseTraceMaxCountLimit);
+        }
+    }
+    const std::size_t ramCount = g_context.pulseTraces ? g_context.pulseTraces->count() : 0;
+    if (savedCount == 0 && ramCount == 0) {
+        delete[] savedTraces;
+        Esp32BaseWeb::sendChunk("<p class='hint'>还没有脉冲明细样本。</p></section>");
+        return;
+    }
+    Esp32BaseWeb::sendChunk("<table class='calibration-sample-table'><tr><th>时间</th><th>确认容量</th><th>脉冲</th><th>稳态</th><th>来源</th><th>状态</th><th>明细</th></tr>");
+    WaterRecord listed[kSavedPulseTraceMaxCountLimit]{};
+    std::size_t listedCount = 0;
+    for (std::size_t i = 0; i < savedCount; ++i) {
+        sendCalibrationSampleRow(savedTraces[i], true);
+        if (listedCount < kSavedPulseTraceMaxCountLimit) {
+            listed[listedCount++] = savedTraces[i].record;
+        }
+    }
+    if (g_context.pulseTraces) {
+        for (std::size_t offset = 0; offset < ramCount; ++offset) {
+            const std::size_t index = ramCount - 1 - offset;
+            const WaterPulseTrace* trace = g_context.pulseTraces->traceAt(index);
+            if (!trace || !trace->finished || traceAlreadyListed(listed, listedCount, trace->record)) {
+                continue;
             }
+            sendCalibrationSampleRow(*trace, false);
         }
-        const bool valid = actualMl > 0 && stable && traces[i].totalPulses > 0 && traces[i].sampleCount >= 6;
-        Esp32BaseWeb::sendChunk("<tr><td>");
-        Esp32BaseWeb::sendChunk(startTime);
-        Esp32BaseWeb::sendChunk("</td><td>");
-        if (actualMl > 0) {
-            sendLitersMl(actualMl);
-        } else {
-            Esp32BaseWeb::sendChunk("-");
-        }
-        sendFmt("</td><td>%luP / %lu点</td><td>",
-                static_cast<unsigned long>(traces[i].totalPulses),
-                static_cast<unsigned long>(traces[i].sampleCount));
-        if (stable) {
-            sendFmt("第 %lus", static_cast<unsigned long>(stableStartSec));
-        } else {
-            Esp32BaseWeb::sendChunk("-");
-        }
-        sendFmt("</td><td><span class='status-pill %s'>%s</span></td>"
-                "<td><a class='btn-link' href='/faucet/records/detail?saved=1&trace=%lu&bucket=1'>查看</a></td></tr>",
-                valid ? "status-ok" : "status-muted",
-                valid ? "可用于拟合" : actualMl == 0 ? "缺实测" : "不可用",
-                static_cast<unsigned long>(traces[i].traceId));
     }
     Esp32BaseWeb::sendChunk("</table></section>");
-    delete[] traces;
+    delete[] savedTraces;
 }
 
 std::uint32_t sumRealRecordVolumeSince(std::uint32_t startTime) {
@@ -1725,7 +1851,7 @@ void sendNoticeFromQuery() {
     } else if (std::strcmp(text, "calibration_drift") == 0) {
         message = "新系数和旧系数偏差过大，请重新接水测量。";
     } else if (std::strcmp(text, "sample_not_enough") == 0) {
-        message = "有效样本不足，至少需要两条容量差异明显且已保存明细的样本。";
+        message = "可生成样本不足，至少需要两条容量差异明显、已保存到设备、容量已确认且稳态识别成功的样本。";
     } else if (std::strcmp(text, "no_candidate") == 0) {
         message = "还没有可应用的候选参数，请先生成候选参数。";
     } else if (std::strcmp(text, "no_previous") == 0) {
@@ -2746,109 +2872,25 @@ void handleCalibrationPage() {
     sendPulseTraceCachePanel();
     Esp32BaseWeb::sendChunk("</div>");
 
-    Esp32BaseWeb::sendChunk("<section class='panel'><div class='panel-head'><h3>最后一条出水记录</h3></div>");
-    if (!canCalibrate) {
-        Esp32BaseWeb::sendChunk("<p class='err'>最新记录不可校准。</p></section>");
-    } else {
-        char startTime[40]{};
-        formatWaterRecordTime(record, startTime, sizeof(startTime));
-        WaterRecordCalibration calibration{};
-        const bool calibrated = findRecordCalibration(record, calibration);
-        const std::uint32_t defaultActualMl = calibrated ? calibration.actualMl : record.volumeMl;
-        const std::uint32_t pulsePerLiter = pulsePerLiterFromPulsePerMl(record.pulsePerMlAtRun);
-        const std::uint32_t measuredPpl = calibrated ? measuredPulsePerLiter(record, calibration) : 0;
-        const WaterPulseTrace* ramTrace = g_context.pulseTraces ? g_context.pulseTraces->findByRecord(record) : nullptr;
-        WaterPulseTrace savedTrace{};
-        const bool hasSavedTrace =
-            ensureSavedPulseTracesReady() && g_context.savedPulseTraces->findByRecord(record, savedTrace);
-        char targetText[32]{};
-        char estimatedText[24]{};
-        formatRecordTargetValue(record, targetText, sizeof(targetText));
-        formatLiters(record.volumeMl, estimatedText, sizeof(estimatedText));
-
-        Esp32BaseWeb::sendChunk("<table class='kv'>");
-        sendFmt("<tr><th>开始时间</th><td>%s</td></tr>", startTime);
-        sendFmt("<tr><th>目标</th><td>%s</td></tr>", targetText);
-        Esp32BaseWeb::sendChunk("<tr><th>出水信息</th><td>");
-        Esp32BaseWeb::sendChunk(estimatedText);
-        if (calibrated) {
-            Esp32BaseWeb::sendChunk("<span class='inline-note measured-note'>实测 ");
-            sendLitersMl(calibration.actualMl);
-            Esp32BaseWeb::sendChunk("</span>");
-        }
-        Esp32BaseWeb::sendChunk("</td></tr>");
-        sendFmt("<tr><th>原始脉冲</th><td>%luP / %luP/L</td></tr>",
-                static_cast<unsigned long>(record.pulseCount),
-                static_cast<unsigned long>(pulsePerLiter));
-        sendFmt("<tr><th>用时</th><td>%u s</td></tr>", static_cast<unsigned>(record.durationSec));
-        sendFmt("<tr><th>结束原因</th><td>%s</td></tr>", resultText(record.result));
-        Esp32BaseWeb::sendChunk("<tr><th>明细文件</th><td>");
-        if (hasSavedTrace) {
-            sendFmt("<span class='status-pill status-ok'>已保存到设备</span>"
-                    "<a class='btn-link' href='/faucet/records/detail?saved=1&trace=%lu&bucket=1'>查看</a>",
-                    static_cast<unsigned long>(savedTrace.traceId));
-        } else if (ramTrace) {
-            Esp32BaseWeb::sendChunk("<span class='status-pill status-muted'>仅临时缓存</span>");
-        } else {
-            Esp32BaseWeb::sendChunk("<span class='status-pill status-muted'>无可保存明细</span>");
-        }
-        Esp32BaseWeb::sendChunk("</td></tr>");
-        if (calibrated) {
-            char calibratedAt[40]{};
-            formatWaterRecordTime(WaterRecord{calibration.calibratedAt,
-                                              0,
-                                              0,
-                                              0,
-                                              0,
-                                              0,
-                                              WaterMode::Volume,
-                                              WaterResult::Completed,
-                                              0,
-                                              0,
-                                              0.0f,
-                                              {0, 0, 0, 0}},
-                                  calibratedAt,
-                                  sizeof(calibratedAt));
-            const std::int32_t estimateDiff =
-                static_cast<std::int32_t>(record.volumeMl) - static_cast<std::int32_t>(calibration.actualMl);
-            Esp32BaseWeb::sendChunk("<tr><th>实测脉冲/升</th><td>");
-            sendFmt("%luP/L</td></tr><tr><th>估算差</th><td>", static_cast<unsigned long>(measuredPpl));
-            sendSignedLiters(estimateDiff);
-            sendFmt("</td></tr><tr><th>上次校准记录</th><td>第 %u 次 / %s / 控制参数未修改</td></tr>",
-                    static_cast<unsigned>(calibration.calibrationCount),
-                    calibratedAt[0] ? calibratedAt : "未知");
-        }
-        Esp32BaseWeb::sendChunk("</table><div class='form-actions'>");
-        if (hasSavedTrace) {
-            Esp32BaseWeb::sendChunk("<form method='post' action='/faucet/calibration' onsubmit=\"return confirm('确认删除这条已保存明细？')&&once(this)\">"
-                                    "<input type='hidden' name='action' value='delete_latest_trace'>"
-                                    "<input class='secondary' type='submit' value='删除已保存明细'></form>");
-        } else if (ramTrace) {
-            Esp32BaseWeb::sendChunk("<form method='post' action='/faucet/calibration' onsubmit=\"return confirm('确认将这条脉冲明细保存到设备存储？')&&once(this)\">"
-                                    "<input type='hidden' name='action' value='save_latest_trace'>"
-                                    "<input class='secondary' type='submit' value='保存到设备'></form>");
-        }
-        Esp32BaseWeb::sendChunk("</div></section>");
-
-        Esp32BaseWeb::sendChunk("<details class='panel calibration-volume-panel'><summary>容量校准</summary>"
-                                "<form method='post' action='/faucet/calibration' onsubmit='return once(this)'>"
-                                "<input type='hidden' name='action' value='calibrate'>"
-                                "<div class='form-grid'><label class='field span-3'><span>实际出水量 (ml)</span>");
-        sendFmt("<input name='actualMl' type='number' min='%lu' max='%lu' step='1' value='%lu'></label>",
-                static_cast<unsigned long>(kMinVolumePresetMl),
-                static_cast<unsigned long>(kMaxVolumePresetMl),
-                static_cast<unsigned long>(defaultActualMl));
-        Esp32BaseWeb::sendChunk("</div><p class='hint'>保存这条记录的实际容量；不会修改原始脉冲、当前关阀控制 P/L 或分段拟合参数。</p>"
-                                "<div class='form-actions'><input type='submit' value='保存容量'></div></form></details>");
-    }
+    sendLatestCalibrationRecordPanel(canCalibrate, record);
 
     Esp32BaseWeb::sendChunk("<section class='panel'><h3>参数生成</h3>"
-                            "<p class='hint'>手动执行：扫描已保存且带实测容量的脉冲明细，生成候选参数；应用前不会改变当前出水估算。</p>"
-                            "<div class='form-actions'>"
-                            "<form method='post' action='/faucet/calibration' onsubmit='return once(this)'>"
-                            "<input type='hidden' name='action' value='generate_segmented'>"
-                            "<input type='submit' value='生成候选参数'></form>"
-                            "<form method='post' action='/faucet/calibration' onsubmit=\"return confirm('确认应用候选参数？')&&once(this)\">"
+                            "<p class='hint'>手动执行：只扫描已保存到设备、容量已确认且稳态识别成功的样本，生成候选参数；应用前不会改变当前出水估算。</p>");
+    const bool hasStorableLatestRamSample = canCalibrate && latestRamTraceCanEnterSampleStore(record);
+    if (hasStorableLatestRamSample) {
+        Esp32BaseWeb::sendChunk("<p class='hint'>有临时样本未保存：最新记录已确认容量且稳态识别成功，保存到设备后才能参与候选参数生成。</p>");
+    }
+    Esp32BaseWeb::sendChunk("<div class='form-actions'>");
+    if (hasStorableLatestRamSample) {
+        Esp32BaseWeb::sendChunk("<form method='post' action='/faucet/calibration' onsubmit=\"return confirm('确认将这条脉冲明细保存到设备存储？')&&once(this)\">"
+                                "<input type='hidden' name='action' value='save_latest_trace'>"
+                                "<input class='secondary' type='submit' value='保存最新样本'></form>");
+    }
+    Esp32BaseWeb::sendChunk("<form method='post' action='/faucet/calibration' onsubmit='return once(this)'>"
+                            "<input type='hidden' name='action' value='generate_segmented'>");
+    sendFmt("<input type='submit' value='%s'></form>",
+            hasStorableLatestRamSample ? "仍然生成候选" : "生成候选参数");
+    Esp32BaseWeb::sendChunk("<form method='post' action='/faucet/calibration' onsubmit=\"return confirm('确认应用候选参数？')&&once(this)\">"
                             "<input type='hidden' name='action' value='apply_segmented'>"
                             "<input class='secondary' type='submit' value='应用候选'></form>"
                             "<form method='post' action='/faucet/calibration' onsubmit=\"return confirm('确认恢复上一套参数？')&&once(this)\">"
@@ -2858,7 +2900,7 @@ void handleCalibrationPage() {
     Esp32BaseWeb::sendChunk("<div class='metric-grid calibration-param-grid'>");
     sendCalibrationParameterPanels();
     Esp32BaseWeb::sendChunk("</div>");
-    sendSavedSegmentedSamplesPanel();
+    sendCalibrationSamplesPanel();
     sendPageEnd();
 }
 
@@ -3028,15 +3070,15 @@ void handleRecordDetailPage() {
     } else if (traceActualFromRecord) {
         Esp32BaseWeb::sendChunk("<tr><th>状态</th><td><span class='status-pill status-ok'>记录已校准</span></td></tr>");
     } else {
-        Esp32BaseWeb::sendChunk("<tr><th>状态</th><td><span class='status-pill status-muted'>未输入实测容量</span></td></tr>"
-                                "<tr><th>下一步</th><td>请在校准页输入最新记录的实际出水量。</td></tr>");
+        Esp32BaseWeb::sendChunk("<tr><th>状态</th><td><span class='status-pill status-muted'>待确认容量</span></td></tr>"
+                                "<tr><th>下一步</th><td>请在校准页确认这条记录的实际出水量。</td></tr>");
     }
     if (traceActualMl > 0) {
         Esp32BaseWeb::sendChunk("<tr><th>实测容量</th><td>");
         sendLitersMl(traceActualMl);
         Esp32BaseWeb::sendChunk("</td></tr>");
         Esp32BaseWeb::sendChunk(traceActualFromRecord
-                                    ? "<tr><th>来源</th><td>来自记录容量校准；永久样本由校准页选项决定。</td></tr>"
+                                    ? "<tr><th>来源</th><td>来自确认/校准容量记录。</td></tr>"
                                     : "<tr><th>来源</th><td>来自脉冲明细样本库。</td></tr>");
     }
     if (traceActualMl > 0 && analysis.stable) {
@@ -3050,7 +3092,7 @@ void handleRecordDetailPage() {
     } else {
         Esp32BaseWeb::sendChunk("<tr><th>可用性</th><td>缺少实测容量且稳态识别失败，暂不能用于拟合。</td></tr>");
     }
-    Esp32BaseWeb::sendChunk("</table><p class='hint'>实际容量统一从校准页保存；是否保存为长期样本由容量校准表单控制。</p></section>");
+    Esp32BaseWeb::sendChunk("</table><p class='hint'>确认容量统一从校准页保存；只有已保存到设备且容量已确认的样本才参与候选参数生成。</p></section>");
 
     Esp32BaseWeb::sendChunk("<section class='panel'><h3>明细概况</h3><table class='kv'>");
     sendFmt("<tr><th>开始时间</th><td>%s</td></tr>"
@@ -4247,6 +4289,9 @@ Esp32BaseWeb::Handler handlerFor(const FaucetWebRoute& route) {
     if (std::strcmp(route.path, "/faucet/records/detail") == 0) {
         return handleRecordDetailPage;
     }
+    if (std::strcmp(route.path, "/faucet/calibration") == 0) {
+        return handleCalibrationPost;
+    }
     if (std::strcmp(route.path, "/api/faucet/presets") == 0) {
         return handlePresetsApi;
     }
@@ -4285,7 +4330,7 @@ bool registerFaucetWeb() {
             ok = false;
             continue;
         }
-        if (routes[i].kind == FaucetWebRouteKind::Page) {
+        if (routes[i].kind == FaucetWebRouteKind::Page && routes[i].method == FaucetWebMethod::Get) {
             ok = Esp32BaseWeb::addPage(routes[i].path, routes[i].title, handlerFor(routes[i])) && ok;
         } else {
             ok = Esp32BaseWeb::addRoute(routes[i].path, toBaseMethod(routes[i].method), handlerFor(routes[i])) && ok;

@@ -65,8 +65,8 @@ void handleCalibrationPage();
 void handleCalibrationPost();
 void handleRecordCalibrationApi();
 void handleGenerateSegmentedCalibrationApi();
-void handleApplySegmentedCalibrationApi();
-void handleRestoreSegmentedCalibrationApi();
+void handleSaveSegmentedCandidateApi();
+void handleUpdateMeteringSlotApi();
 void handleDeleteLatestTraceApi();
 void handleTraceCalibrationApi();
 void handleTraceDeleteApi();
@@ -507,11 +507,11 @@ bool sameWaterRecordIdentity(const WaterRecord& a, const WaterRecord& b) {
            a.result == b.result;
 }
 
-std::uint32_t pulsePerLiterFromPulsePerMl(float pulsePerMl) {
-    if (!std::isfinite(pulsePerMl) || pulsePerMl <= 0.0f) {
+std::uint32_t historicalPulsePerLiter(float pulsePerMlAtRun) {
+    if (!std::isfinite(pulsePerMlAtRun) || pulsePerMlAtRun <= 0.0f) {
         return 0;
     }
-    return static_cast<std::uint32_t>(std::lround(pulsePerMl * 1000.0f));
+    return static_cast<std::uint32_t>(std::lround(pulsePerMlAtRun * 1000.0f));
 }
 
 bool findRecordCalibration(const WaterRecord& record, WaterRecordCalibration& calibration) {
@@ -570,10 +570,12 @@ bool saveRecordActualMeasurement(const WaterRecord& record, std::uint32_t actual
     WaterRecordCalibration calibration = makeWaterRecordCalibration(record);
     calibration.actualMl = actualMl;
     calibration.calibratedAt = g_context.nowSeconds ? g_context.nowSeconds() : 0;
-    calibration.oldPulsePerMl = g_context.config->pulsePerMl;
-    calibration.newPulsePerMl = g_context.config->pulsePerMl;
-    calibration.oldStartupCompensationMl = g_context.config->startupCompensationMl;
-    calibration.newStartupCompensationMl = g_context.config->startupCompensationMl;
+    const float stablePulsePerMl =
+        static_cast<float>(activeMeteringParameters(*g_context.config).stablePulsePerLiter) / 1000.0f;
+    calibration.oldPulsePerMl = stablePulsePerMl;
+    calibration.newPulsePerMl = stablePulsePerMl;
+    calibration.oldStartupCompensationMl = 0;
+    calibration.newStartupCompensationMl = 0;
     calibration.kind = WaterRecordCalibrationKind::PulsePerMl;
     return g_context.recordCalibrationWriter->upsert(calibration);
 }
@@ -806,34 +808,19 @@ bool deleteLatestTraceFromDevice(const WaterRecord& record) {
            g_context.savedPulseTraces->remove(savedTrace.traceId);
 }
 
-std::uint32_t startupCompensationFromSegmentedParams(std::uint32_t startupVolumeMl,
-                                                     std::uint32_t startupPulseCount,
-                                                     std::uint32_t stablePulsePerLiter) {
-    if (startupVolumeMl == 0 || startupPulseCount == 0 || stablePulsePerLiter == 0) {
-        return 0;
-    }
-    const std::uint32_t startupPulseMl =
-        static_cast<std::uint32_t>((static_cast<std::uint64_t>(startupPulseCount) * 1000ULL +
-                                    stablePulsePerLiter / 2ULL) /
-                                   stablePulsePerLiter);
-    const std::uint32_t compensation =
-        startupVolumeMl > startupPulseMl ? startupVolumeMl - startupPulseMl : 0;
-    return std::min<std::uint32_t>(compensation, kMaxStartupCompensationMl);
-}
-
 void storeSegmentedCandidate(SystemConfig& config, const SegmentedCalibrationResult& result) {
-    config.segmentedCandidateReady = result.valid;
-    config.candidateOverallPulsePerLiter = result.overallPulsePerLiter;
-    config.candidateStartupDurationSec = result.startupDurationSec;
-    config.candidateStartupPulseCount = result.startupPulseCount;
-    config.candidateStartupVolumeMl = result.startupVolumeMl;
-    config.candidateStartupPulsePerLiter = result.startupPulsePerLiter;
-    config.candidateStablePulsePerLiter = result.stablePulsePerLiter;
-    config.candidateSampleCount = result.sampleCount;
-    config.candidateMinActualMl = result.minActualMl;
-    config.candidateMaxActualMl = result.maxActualMl;
-    config.candidateMaxErrorMl = result.maxErrorMl;
-    config.candidateGeneratedAt = g_context.nowSeconds ? g_context.nowSeconds() : 0;
+    config.meteringCandidate.ready = result.valid;
+    config.meteringCandidate.params =
+        MeteringParameters{result.startupPulseCount, result.startupVolumeMl, result.stablePulsePerLiter};
+    config.meteringCandidate.generatedAt = g_context.nowSeconds ? g_context.nowSeconds() : 0;
+    std::snprintf(config.meteringCandidate.note,
+                  sizeof(config.meteringCandidate.note),
+                  "样本数量 %u，容量范围 %luml-%luml，最大误差 %luml，启动阶段典型 %lus。",
+                  static_cast<unsigned>(result.sampleCount),
+                  static_cast<unsigned long>(result.minActualMl),
+                  static_cast<unsigned long>(result.maxActualMl),
+                  static_cast<unsigned long>(result.maxErrorMl),
+                  static_cast<unsigned long>(result.startupDurationSec));
 }
 
 bool generateSegmentedCalibrationCandidateFromSavedSamples() {
@@ -849,54 +836,25 @@ bool generateSegmentedCalibrationCandidateFromSavedSamples() {
     return persistConfig(next);
 }
 
-bool applySegmentedCalibrationCandidate() {
-    if (!g_context.config || !g_context.config->segmentedCandidateReady) {
+bool saveCandidateToActiveMeteringSlot() {
+    if (!g_context.config || !g_context.config->meteringCandidate.ready) {
         return false;
     }
-    const SystemConfig& config = *g_context.config;
-    SystemConfig next = config;
-    next.segmentedPreviousReady = true;
-    next.previousSegmentedMeteringCalibrated = config.segmentedMeteringCalibrated;
-    next.previousPulsePerMl = config.pulsePerMl;
-    next.previousStartupCompensationMl = config.startupCompensationMl;
-    next.previousOverallPulsePerLiter = config.overallPulsePerLiter;
-    next.previousStartupDurationSec = config.startupDurationSec;
-    next.previousStartupPulseCount = config.startupPulseCount;
-    next.previousStartupVolumeMl = config.startupVolumeMl;
-    next.previousStartupPulsePerLiter = config.startupPulsePerLiter;
-    next.previousStablePulsePerLiter = config.stablePulsePerLiter;
-
-    next.overallPulsePerLiter = config.candidateOverallPulsePerLiter;
-    next.startupDurationSec = config.candidateStartupDurationSec;
-    next.startupPulseCount = config.candidateStartupPulseCount;
-    next.startupVolumeMl = config.candidateStartupVolumeMl;
-    next.startupPulsePerLiter = config.candidateStartupPulsePerLiter;
-    next.stablePulsePerLiter = config.candidateStablePulsePerLiter;
-    next.segmentedMeteringCalibrated = true;
-    if (config.candidateStablePulsePerLiter > 0) {
-        next.pulsePerMl = static_cast<float>(config.candidateStablePulsePerLiter) / 1000.0f;
+    SystemConfig next = *g_context.config;
+    if (!saveCandidateToMeteringSlot(next, next.activeMeteringSlot, g_context.nowSeconds ? g_context.nowSeconds() : 0)) {
+        return false;
     }
-    next.startupCompensationMl = startupCompensationFromSegmentedParams(
-        config.candidateStartupVolumeMl, config.candidateStartupPulseCount, config.candidateStablePulsePerLiter);
     return persistConfig(next);
 }
 
-bool restorePreviousSegmentedCalibration() {
-    if (!g_context.config || !g_context.config->segmentedPreviousReady) {
+bool saveCandidateToRequestedMeteringSlot(std::uint8_t slotIndex) {
+    if (!g_context.config || !g_context.config->meteringCandidate.ready || slotIndex >= kMeteringSlotCount) {
         return false;
     }
-    const SystemConfig& config = *g_context.config;
-    SystemConfig next = config;
-    next.segmentedMeteringCalibrated = config.previousSegmentedMeteringCalibrated;
-    next.pulsePerMl = config.previousPulsePerMl;
-    next.startupCompensationMl = config.previousStartupCompensationMl;
-    next.overallPulsePerLiter = config.previousOverallPulsePerLiter;
-    next.startupDurationSec = config.previousStartupDurationSec;
-    next.startupPulseCount = config.previousStartupPulseCount;
-    next.startupVolumeMl = config.previousStartupVolumeMl;
-    next.startupPulsePerLiter = config.previousStartupPulsePerLiter;
-    next.stablePulsePerLiter = config.previousStablePulsePerLiter;
-    next.segmentedPreviousReady = false;
+    SystemConfig next = *g_context.config;
+    if (!saveCandidateToMeteringSlot(next, slotIndex, g_context.nowSeconds ? g_context.nowSeconds() : 0)) {
+        return false;
+    }
     return persistConfig(next);
 }
 
@@ -1038,60 +996,22 @@ void formatKb(std::size_t bytes, char* out, std::size_t len) {
 void sendSegmentedMeteringPanel() {
     const SystemConfig& config = *g_context.config;
     const SegmentedSampleDiagnostics diagnostics = collectSegmentedSampleDiagnostics(false);
-    const SegmentedCalibrationResult& scanned = diagnostics.result;
-    const bool candidateReady = config.segmentedCandidateReady;
-    const bool parameterReady = candidateReady || config.segmentedMeteringCalibrated;
-    const bool canGenerate = scanned.valid;
-    const std::uint32_t stablePulsePerLiter =
-        candidateReady ? config.candidateStablePulsePerLiter : config.stablePulsePerLiter;
-    const std::uint32_t startupVolumeMl =
-        candidateReady ? config.candidateStartupVolumeMl : config.startupVolumeMl;
-    const std::uint32_t startupPulseCount =
-        candidateReady ? config.candidateStartupPulseCount : config.startupPulseCount;
-    const std::uint32_t startupDurationSec =
-        candidateReady ? config.candidateStartupDurationSec : config.startupDurationSec;
-    const std::uint32_t overallPulsePerLiter =
-        candidateReady ? config.candidateOverallPulsePerLiter : config.overallPulsePerLiter;
-    char control[24]{};
+    const bool candidateReady = config.meteringCandidate.ready;
+    const bool canGenerate = diagnostics.result.valid;
+    const MeteringParameters& active = activeMeteringParameters(config);
     char stable[24]{};
-    char startup[64]{};
+    char startupPulse[24]{};
+    char startupVolume[24]{};
     char sampleCountText[32]{};
     char sampleRange[48]{};
     char sampleNeed[48]{};
-    char compensation[24]{};
     char error[24]{};
-    char overall[24]{};
-    char startupCompensation[24]{};
-    std::snprintf(control,
-                  sizeof(control),
-                  "%luP/L",
-                  static_cast<unsigned long>(pulsePerLiterFromPulsePerMl(config.pulsePerMl)));
-    std::snprintf(stable,
-                  sizeof(stable),
-                  stablePulsePerLiter == 0 ? "待拟合" : "%luP/L",
-                  static_cast<unsigned long>(stablePulsePerLiter));
-    if (startupDurationSec > 0 || startupPulseCount > 0 || startupVolumeMl > 0) {
-        char volume[24]{};
-        formatLiters(startupVolumeMl, volume, sizeof(volume));
-        std::snprintf(startup,
-                      sizeof(startup),
-                      "%s / %lus / %luP",
-                      volume,
-                      static_cast<unsigned long>(startupDurationSec),
-                      static_cast<unsigned long>(startupPulseCount));
-    } else {
-        std::snprintf(startup, sizeof(startup), "待拟合");
-    }
+    std::snprintf(stable, sizeof(stable), "%luP/L", static_cast<unsigned long>(active.stablePulsePerLiter));
+    std::snprintf(startupPulse, sizeof(startupPulse), "%luP", static_cast<unsigned long>(active.startupPulseCount));
+    formatLiters(active.startupVolumeMl, startupVolume, sizeof(startupVolume));
     if (candidateReady) {
-        char minVolume[24]{};
-        char maxVolume[24]{};
-        formatLiters(config.candidateMinActualMl, minVolume, sizeof(minVolume));
-        formatLiters(config.candidateMaxActualMl, maxVolume, sizeof(maxVolume));
-        std::snprintf(sampleCountText,
-                      sizeof(sampleCountText),
-                      "%u条",
-                      static_cast<unsigned>(config.candidateSampleCount));
-        std::snprintf(sampleRange, sizeof(sampleRange), "%s-%s", minVolume, maxVolume);
+        std::snprintf(sampleCountText, sizeof(sampleCountText), "已生成");
+        std::snprintf(sampleRange, sizeof(sampleRange), "见创建说明");
         std::snprintf(sampleNeed, sizeof(sampleNeed), "0条");
     } else {
         std::snprintf(sampleCountText,
@@ -1109,36 +1029,20 @@ void sendSegmentedMeteringPanel() {
             std::snprintf(sampleNeed, sizeof(sampleNeed), "容量差异>0.50 L的样本");
         }
     }
-    if (stablePulsePerLiter > 0 && startupVolumeMl > 0) {
-        const std::uint32_t compensationMl =
-            startupCompensationFromSegmentedParams(startupVolumeMl, startupPulseCount, stablePulsePerLiter);
-        formatLiters(compensationMl, compensation, sizeof(compensation));
-    } else {
-        std::snprintf(compensation, sizeof(compensation), "-");
-    }
-    formatLiters(config.startupCompensationMl, startupCompensation, sizeof(startupCompensation));
-    if (candidateReady) {
-        std::snprintf(error, sizeof(error), "±%luml", static_cast<unsigned long>(config.candidateMaxErrorMl));
-    } else {
-        std::snprintf(error, sizeof(error), "-");
-    }
-    std::snprintf(overall,
-                  sizeof(overall),
-                  overallPulsePerLiter == 0 ? "-" : "%luP/L",
-                  static_cast<unsigned long>(overallPulsePerLiter));
+    std::snprintf(error, sizeof(error), candidateReady ? "见说明" : "-");
     Esp32BaseWeb::sendChunk("<section class='panel records-diagnostic-panel metering-status-diagnostic'><div class='diagnostic-head'><h3>计量状态</h3>");
     sendFmt("<span class='status-pill %s'>%s</span></div><div class='diagnostic-metric-grid three'>",
-            candidateReady ? "status-ok" : config.segmentedMeteringCalibrated ? "status-ok" : canGenerate ? "status-warn" : "status-muted",
-            candidateReady ? "候选已生成" : config.segmentedMeteringCalibrated ? "已应用" : canGenerate ? "可生成" : "样本不足");
-    sendFmt("<div class='diagnostic-metric'><span>控制P/L</span><strong>%s</strong></div>", control);
+            candidateReady ? "status-ok" : canGenerate ? "status-warn" : "status-muted",
+            candidateReady ? "候选已生成，不自动启用" : canGenerate ? "可生成" : "样本不足");
+    sendFmt("<div class='diagnostic-metric'><span>当前启用参数槽</span><strong>%u</strong></div>",
+            static_cast<unsigned>(config.activeMeteringSlot + 1));
     sendFmt("<div class='diagnostic-metric'><span>稳态P/L</span><strong>%s</strong></div>", stable);
-    sendFmt("<div class='diagnostic-metric'><span>启动补偿</span><strong>%s</strong></div>", startupCompensation);
-    sendFmt("<div class='diagnostic-metric'><span>启动等效</span><strong>%s</strong></div>", startup);
+    sendFmt("<div class='diagnostic-metric'><span>启动脉冲数</span><strong>%s</strong></div>", startupPulse);
+    sendFmt("<div class='diagnostic-metric'><span>启动水量</span><strong>%s</strong></div>", startupVolume);
     Esp32BaseWeb::sendChunk("</div><div class='diagnostic-foot'>");
-    sendFmt("<span>全程平均 <b>%s</b></span>", overall);
-    if (parameterReady) {
-        sendFmt("<span>建议补偿 <b>%s</b></span>", compensation);
-    }
+    sendFmt("<span>当前名称 <b>");
+    sendHtmlEscapedBounded(config.meteringSlots[config.activeMeteringSlot].name, sizeof(config.meteringSlots[config.activeMeteringSlot].name));
+    Esp32BaseWeb::sendChunk("</b></span>");
     Esp32BaseWeb::sendChunk("</div></section>");
 
     Esp32BaseWeb::sendChunk("<section class='panel records-diagnostic-panel sample-coverage-diagnostic'><div class='diagnostic-head'><h3>样本覆盖</h3>");
@@ -1175,7 +1079,7 @@ void sendPulseTraceCachePanel() {
                       sizeof(traces),
                       "%lu / %lu 条",
                       static_cast<unsigned long>(stats.traceCount),
-                      static_cast<unsigned long>(stats.traceCapacity));
+                      static_cast<unsigned long>(g_context.config ? g_context.config->recentPulseTraceCount : stats.traceCapacity));
         std::snprintf(samples,
                       sizeof(samples),
                       "%lu / %lu 点",
@@ -1225,127 +1129,89 @@ void sendPulseTraceCachePanel() {
     Esp32BaseWeb::sendChunk("</section>");
 }
 
-void sendSegmentedParameterPanel(const char* title,
-                                 bool ready,
-                                 bool applied,
-                                 std::uint32_t overallPulsePerLiter,
-                                 std::uint32_t startupDurationSec,
-                                 std::uint32_t startupPulseCount,
-                                 std::uint32_t startupVolumeMl,
-                                 std::uint32_t startupPulsePerLiter,
-                                 std::uint32_t stablePulsePerLiter,
-                                 float pulsePerMl,
-                                 std::uint32_t startupCompensationMl,
-                                 std::uint32_t sampleCount,
-                                 std::uint32_t minActualMl,
-                                 std::uint32_t maxActualMl,
-                                 std::uint32_t maxErrorMl) {
-    char statusClass[16]{};
-    std::snprintf(statusClass, sizeof(statusClass), "%s", ready ? (applied ? "status-ok" : "status-warn") : "status-muted");
-    Esp32BaseWeb::sendChunk("<section class='panel calibration-param-panel'><div class='panel-head'><h3>");
-    Esp32BaseWeb::sendChunk(title);
-    sendFmt("</h3><span class='status-pill %s'>%s</span></div><table class='kv'>",
-            statusClass,
-            ready ? (applied ? "当前使用" : "待应用") : "未生成");
-    if (!ready) {
-        Esp32BaseWeb::sendChunk("<tr><th>状态</th><td>暂无参数</td></tr></table></section>");
-        return;
-    }
-    char startupVolume[24]{};
-    char compensation[24]{};
-    char rangeMin[24]{};
-    char rangeMax[24]{};
-    formatLiters(startupVolumeMl, startupVolume, sizeof(startupVolume));
-    formatLiters(startupCompensationMl, compensation, sizeof(compensation));
-    formatLiters(minActualMl, rangeMin, sizeof(rangeMin));
-    formatLiters(maxActualMl, rangeMax, sizeof(rangeMax));
-    sendFmt("<tr><th>控制 P/L</th><td>%luP/L</td></tr>"
-            "<tr><th>启动补偿</th><td>%s</td></tr>"
-            "<tr><th>稳态 P/L</th><td>%luP/L</td></tr>"
-            "<tr><th>启动等效</th><td>%s / %lus / %luP / %luP/L</td></tr>"
-            "<tr><th>全程平均</th><td>%luP/L</td></tr>",
-            static_cast<unsigned long>(pulsePerLiterFromPulsePerMl(pulsePerMl)),
-            compensation,
-            static_cast<unsigned long>(stablePulsePerLiter),
-            startupVolume,
-            static_cast<unsigned long>(startupDurationSec),
-            static_cast<unsigned long>(startupPulseCount),
-            static_cast<unsigned long>(startupPulsePerLiter),
-            static_cast<unsigned long>(overallPulsePerLiter));
-    if (sampleCount > 0) {
-        sendFmt("<tr><th>样本范围</th><td>%lu 条，%s-%s，最大误差 ±%luml</td></tr>",
-                static_cast<unsigned long>(sampleCount),
-                rangeMin,
-                rangeMax,
-                static_cast<unsigned long>(maxErrorMl));
-    }
-    Esp32BaseWeb::sendChunk("</table></section>");
-}
-
 void sendCalibrationParameterPanels() {
     const SystemConfig& config = *g_context.config;
-    const std::uint32_t activeCompensation = startupCompensationFromSegmentedParams(
-        config.startupVolumeMl, config.startupPulseCount, config.stablePulsePerLiter);
-    const std::uint32_t candidateCompensation = startupCompensationFromSegmentedParams(
-        config.candidateStartupVolumeMl, config.candidateStartupPulseCount, config.candidateStablePulsePerLiter);
-    sendSegmentedParameterPanel("当前参数",
-                                config.segmentedMeteringCalibrated,
-                                true,
-                                config.overallPulsePerLiter,
-                                config.startupDurationSec,
-                                config.startupPulseCount,
-                                config.startupVolumeMl,
-                                config.startupPulsePerLiter,
-                                config.stablePulsePerLiter,
-                                config.pulsePerMl,
-                                config.startupCompensationMl,
-                                0,
-                                0,
-                                0,
-                                0);
-    sendSegmentedParameterPanel("候选参数",
-                                config.segmentedCandidateReady,
-                                false,
-                                config.candidateOverallPulsePerLiter,
-                                config.candidateStartupDurationSec,
-                                config.candidateStartupPulseCount,
-                                config.candidateStartupVolumeMl,
-                                config.candidateStartupPulsePerLiter,
-                                config.candidateStablePulsePerLiter,
-                                config.candidateStablePulsePerLiter > 0
-                                    ? static_cast<float>(config.candidateStablePulsePerLiter) / 1000.0f
-                                    : 0.0f,
-                                candidateCompensation,
-                                config.candidateSampleCount,
-                                config.candidateMinActualMl,
-                                config.candidateMaxActualMl,
-                                config.candidateMaxErrorMl);
-    sendSegmentedParameterPanel("上一套参数",
-                                config.segmentedPreviousReady,
-                                false,
-                                config.previousOverallPulsePerLiter,
-                                config.previousStartupDurationSec,
-                                config.previousStartupPulseCount,
-                                config.previousStartupVolumeMl,
-                                config.previousStartupPulsePerLiter,
-                                config.previousStablePulsePerLiter,
-                                config.previousPulsePerMl,
-                                config.previousStartupCompensationMl ? config.previousStartupCompensationMl : activeCompensation,
-                                0,
-                                0,
-                                0,
-                                0);
+    Esp32BaseWeb::sendChunk("<section class='panel calibration-param-panel'><div class='panel-head'><h3>参数槽</h3>"
+                            "<span class='status-pill status-ok'>固定 4 槽</span></div>"
+                            "<table class='kv'><tr><th>槽位</th><th>名称</th><th>启动脉冲数</th><th>启动水量</th><th>稳态P/L</th><th>说明</th><th>编辑</th></tr>");
+    for (std::size_t i = 0; i < kMeteringSlotCount; ++i) {
+        const SystemConfig::MeteringSlot& slot = config.meteringSlots[i];
+        char startupVolume[24]{};
+        formatLiters(slot.params.startupVolumeMl, startupVolume, sizeof(startupVolume));
+        sendFmt("<tr><td>%u%s</td><td>",
+                static_cast<unsigned>(i + 1),
+                i == config.activeMeteringSlot ? "（当前启用）" : "");
+        sendHtmlEscapedBounded(slot.name, sizeof(slot.name));
+        sendFmt("</td><td>%luP</td><td>%s</td><td>%luP/L</td><td>",
+                static_cast<unsigned long>(slot.params.startupPulseCount),
+                startupVolume,
+                static_cast<unsigned long>(slot.params.stablePulsePerLiter));
+        sendHtmlEscapedBounded(slot.lastModifiedNote[0] ? slot.lastModifiedNote : slot.creationNote,
+                               slot.lastModifiedNote[0] ? sizeof(slot.lastModifiedNote) : sizeof(slot.creationNote));
+        sendFmt("</td><td><form method='post' action='/faucet/calibration' onsubmit='return once(this)'>"
+                "<input type='hidden' name='action' value='update_metering_slot'>"
+                "<input type='hidden' name='slot' value='%u'>"
+                "<label class='compact-field'><span>名称</span><input name='name' maxlength='%u' value='",
+                static_cast<unsigned>(i),
+                static_cast<unsigned>(kMeteringSlotNameLength - 1));
+        sendHtmlAttrEscapedBounded(slot.name, sizeof(slot.name));
+        sendFmt("'></label><label class='compact-field'><span>启动脉冲数</span><input name='startupPulseCount' type='number' min='0' max='%lu' step='1' value='%lu'></label>"
+                "<label class='compact-field'><span>启动水量</span><input name='startupVolumeMl' type='number' min='0' max='%lu' step='1' value='%lu'></label>"
+                "<label class='compact-field'><span>稳态P/L</span><input name='stablePulsePerLiter' type='number' min='%lu' max='%lu' step='1' value='%lu'></label>"
+                "<input class='secondary' type='submit' value='保存槽位'></form></td></tr>",
+                static_cast<unsigned long>(kMaxSegmentedStartupPulseCount),
+                static_cast<unsigned long>(slot.params.startupPulseCount),
+                static_cast<unsigned long>(kMaxSegmentedStartupVolumeMl),
+                static_cast<unsigned long>(slot.params.startupVolumeMl),
+                static_cast<unsigned long>(kMinSegmentedPulsePerLiter),
+                static_cast<unsigned long>(kMaxSegmentedPulsePerLiter),
+                static_cast<unsigned long>(slot.params.stablePulsePerLiter));
+    }
+    Esp32BaseWeb::sendChunk("</table></section>");
+
+    Esp32BaseWeb::sendChunk("<section class='panel calibration-param-panel'><div class='panel-head'><h3>候选参数</h3>");
+    sendFmt("<span class='status-pill %s'>%s</span></div><table class='kv'>",
+            config.meteringCandidate.ready ? "status-warn" : "status-muted",
+            config.meteringCandidate.ready ? "需先保存到参数槽" : "未生成");
+    if (!config.meteringCandidate.ready) {
+        Esp32BaseWeb::sendChunk("<tr><th>状态</th><td>暂无候选参数</td></tr></table></section>");
+        return;
+    }
+    char candidateStartupVolume[24]{};
+    formatLiters(config.meteringCandidate.params.startupVolumeMl, candidateStartupVolume, sizeof(candidateStartupVolume));
+    sendFmt("<tr><th>启动脉冲数</th><td>%luP</td></tr>"
+            "<tr><th>启动水量</th><td>%s</td></tr>"
+            "<tr><th>稳态P/L</th><td>%luP/L</td></tr>"
+            "<tr><th>创建说明</th><td>",
+            static_cast<unsigned long>(config.meteringCandidate.params.startupPulseCount),
+            candidateStartupVolume,
+            static_cast<unsigned long>(config.meteringCandidate.params.stablePulsePerLiter));
+    sendHtmlEscapedBounded(config.meteringCandidate.note, sizeof(config.meteringCandidate.note));
+    Esp32BaseWeb::sendChunk("</td></tr></table><div class='form-actions'>");
+    for (std::size_t i = 0; i < kMeteringSlotCount; ++i) {
+        const bool activeSlot = i == config.activeMeteringSlot;
+        sendFmt("<form method='post' action='/faucet/calibration' onsubmit=\"return confirm('%s')&&once(this)\">"
+                "<input type='hidden' name='action' value='save_candidate_slot'>"
+                "<input type='hidden' name='slot' value='%u'>"
+                "<input class='%s' type='submit' value='%s %u'></form>",
+                activeSlot ? "确认覆盖当前启用参数？保存后立即生效。" : "确认保存候选参数到该槽位？不会自动启用。",
+                static_cast<unsigned>(i),
+                activeSlot ? "danger" : "secondary",
+                activeSlot ? "覆盖当前启用参数：槽" : "保存到槽",
+                static_cast<unsigned>(i + 1));
+    }
+    Esp32BaseWeb::sendChunk("</div></section>");
 }
 
 void sendCalibrationFormulaPanel() {
     Esp32BaseWeb::sendChunk("<section class='panel calibration-formula-panel'><h3>参数说明与计算公式</h3>"
                             "<table class='kv'>"
-                            "<tr><th>控制 P/L</th><td>当前关阀和记录估算真正使用的脉冲系数；控制P/ml = 控制P/L ÷ 1000。</td></tr>"
-                            "<tr><th>启动补偿</th><td>第一颗有效脉冲后追加到估算容量上的固定补偿，用来抵消启动爬坡阶段的少算水量。</td></tr>"
-                            "<tr><th>实时估算</th><td><code>估算出水量 = round(脉冲数 / 控制P/ml) + 启动补偿</code>，无有效脉冲时为 0。</td></tr>"
-                            "<tr><th>候选拟合</th><td><code>实测容量 ≈ 启动等效水量 + 稳态脉冲数 × 1000 / 稳态P/L</code>。</td></tr>"
-                            "<tr><th>全程平均</th><td>全程平均只做长期诊断：取最大容量样本的总脉冲 ÷ 实测容量，用来和历史大容量实验对照，不直接控制关阀。</td></tr>"
-                            "<tr><th>应用候选</th><td>应用后会把控制 P/L 设为候选稳态 P/L，并把启动等效折算成启动补偿；候选参数本身仍保留用于对比。</td></tr>"
+                            "<tr><th>核心字段</th><td>运行时只使用启动脉冲数、启动水量、稳态P/L。</td></tr>"
+                            "<tr><th>P = 0</th><td><code>估算出水量 = 0</code>。</td></tr>"
+                            "<tr><th>0 &lt; P &lt;= Ns</th><td><code>估算出水量 = round(P × Vs / Ns)</code>。</td></tr>"
+                            "<tr><th>P &gt; Ns</th><td><code>估算出水量 = Vs + round((P - Ns) × 1000 / Ps)</code>。</td></tr>"
+                            "<tr><th>候选参数</th><td>候选生成后不会直接启用，必须先保存到参数槽；保存到非当前槽位不会自动启用。</td></tr>"
+                            "<tr><th>当前槽位</th><td>保存到当前启用槽位会覆盖当前启用参数，并立即按新参数计量。</td></tr>"
                             "</table></section>");
 }
 
@@ -1475,7 +1341,7 @@ void sendLatestCalibrationRecordPanel(bool canCalibrate, const WaterRecord& reco
     WaterRecordCalibration calibration{};
     const bool calibrated = findRecordCalibration(record, calibration);
     const std::uint32_t defaultActualMl = calibrated ? calibration.actualMl : record.volumeMl;
-    const std::uint32_t pulsePerLiter = pulsePerLiterFromPulsePerMl(record.pulsePerMlAtRun);
+    const std::uint32_t pulsePerLiter = historicalPulsePerLiter(record.pulsePerMlAtRun);
     const WaterPulseTrace* ramTrace = g_context.pulseTraces ? g_context.pulseTraces->findByRecord(record) : nullptr;
     WaterPulseTrace savedTrace{};
     const bool hasSavedTrace =
@@ -1536,7 +1402,7 @@ void sendLatestCalibrationRecordPanel(bool canCalibrate, const WaterRecord& reco
                             "<div class='form-actions'><input type='submit' value='确认容量'><a class='btn-link' href='#latest-record'>取消</a></div>"
                             "</form></td></tr></table>");
     Esp32BaseWeb::sendChunk("<p class='hint'>确认/校准容量：如果估算准确，直接确认即可；如果不准确，请改为量杯读数。确认后该容量可作为样本真值。"
-                            "保存后会同步匹配明细并自动入库；已截断或已淘汰的明细不会入库，不会修改原始脉冲、当前关阀控制 P/L 或分段拟合参数。</p>");
+                            "保存后会同步匹配明细并自动入库；已截断或已淘汰的明细不会入库，不会修改原始脉冲或当前启用参数。</p>");
 
     if (calibrated) {
         char calibratedAt[40]{};
@@ -1656,19 +1522,14 @@ void sendCalibrationSamplesPanel(std::uint32_t samplePulseWindowSec) {
 
 void sendCalibrationGenerationPanel(bool canCalibrate, const WaterRecord& record) {
     Esp32BaseWeb::sendChunk("<section class='panel'><h3>参数生成</h3>"
-                            "<p class='hint'>手动执行：只扫描已保存到设备、容量已确认且稳态识别成功的样本，生成候选参数；应用前不会改变当前出水估算。</p>");
+                            "<p class='hint'>手动执行：只扫描已保存到设备、容量已确认且稳态识别成功的样本，生成候选参数；候选保存到参数槽前不会改变当前出水估算。</p>");
     (void)canCalibrate;
     (void)record;
     Esp32BaseWeb::sendChunk("<div class='form-actions'>"
                             "<form method='post' action='/faucet/calibration' onsubmit='return once(this)'>"
                             "<input type='hidden' name='action' value='generate_segmented'>");
     Esp32BaseWeb::sendChunk("<input type='submit' value='生成候选参数'></form>");
-    Esp32BaseWeb::sendChunk("<form method='post' action='/faucet/calibration' onsubmit=\"return confirm('确认应用候选参数？')&&once(this)\">"
-                            "<input type='hidden' name='action' value='apply_segmented'>"
-                            "<input class='secondary' type='submit' value='应用候选'></form>"
-                            "<form method='post' action='/faucet/calibration' onsubmit=\"return confirm('确认恢复上一套参数？')&&once(this)\">"
-                            "<input type='hidden' name='action' value='restore_segmented'>"
-                            "<input class='secondary' type='submit' value='恢复上一套'></form></div></section>");
+    Esp32BaseWeb::sendChunk("</div></section>");
 }
 
 std::uint32_t sumRealRecordVolumeSince(std::uint32_t startTime) {
@@ -2910,7 +2771,7 @@ void handleRecordsPage() {
         } else if (savedPulseTracesReady) {
             hasSavedTrace = g_context.savedPulseTraces->findByRecord(records[i], savedTrace);
         }
-        const std::uint32_t pulsePerLiter = pulsePerLiterFromPulsePerMl(records[i].pulsePerMlAtRun);
+        const std::uint32_t pulsePerLiter = historicalPulsePerLiter(records[i].pulsePerMlAtRun);
         Esp32BaseWeb::sendChunk("<tr><td>");
         Esp32BaseWeb::sendChunk(startTime);
         Esp32BaseWeb::sendChunk("</td><td>");
@@ -3668,12 +3529,12 @@ void handleCalibrationPost() {
         handleGenerateSegmentedCalibrationApi();
         return;
     }
-    if (std::strcmp(text, "apply_segmented") == 0) {
-        handleApplySegmentedCalibrationApi();
+    if (std::strcmp(text, "save_candidate_slot") == 0) {
+        handleSaveSegmentedCandidateApi();
         return;
     }
-    if (std::strcmp(text, "restore_segmented") == 0) {
-        handleRestoreSegmentedCalibrationApi();
+    if (std::strcmp(text, "update_metering_slot") == 0) {
+        handleUpdateMeteringSlotApi();
         return;
     }
     Esp32BaseWeb::redirectSeeOther("/faucet/calibration?error=invalid_value");
@@ -3834,12 +3695,12 @@ void handleRecordsApi() {
             handleGenerateSegmentedCalibrationApi();
             return;
         }
-        if (std::strcmp(text, "apply_segmented") == 0) {
-            handleApplySegmentedCalibrationApi();
+        if (std::strcmp(text, "save_candidate_slot") == 0) {
+            handleSaveSegmentedCandidateApi();
             return;
         }
-        if (std::strcmp(text, "restore_segmented") == 0) {
-            handleRestoreSegmentedCalibrationApi();
+        if (std::strcmp(text, "update_metering_slot") == 0) {
+            handleUpdateMeteringSlotApi();
             return;
         }
         if (std::strcmp(text, "delete") == 0) {
@@ -4033,7 +3894,7 @@ void handleGenerateSegmentedCalibrationApi() {
     Esp32BaseWeb::redirectSeeOther("/faucet/calibration?saved=candidate");
 }
 
-void handleApplySegmentedCalibrationApi() {
+void handleSaveSegmentedCandidateApi() {
     if (!Esp32BaseWeb::checkAuth() || !requireContext()) {
         return;
     }
@@ -4045,18 +3906,26 @@ void handleApplySegmentedCalibrationApi() {
         Esp32BaseWeb::redirectSeeOther("/faucet/calibration?error=busy");
         return;
     }
-    if (!g_context.config || !g_context.config->segmentedCandidateReady) {
+    if (!g_context.config || !g_context.config->meteringCandidate.ready) {
         Esp32BaseWeb::redirectSeeOther("/faucet/calibration?error=no_candidate");
         return;
     }
-    if (!applySegmentedCalibrationCandidate()) {
+    char text[16]{};
+    std::uint32_t slot = 0;
+    if (!getParam("slot", text, sizeof(text)) || !parseU32(text, slot) || slot >= kMeteringSlotCount) {
+        Esp32BaseWeb::redirectSeeOther("/faucet/calibration?error=invalid_value");
+        return;
+    }
+    if (!saveCandidateToRequestedMeteringSlot(static_cast<std::uint8_t>(slot))) {
         Esp32BaseWeb::redirectSeeOther("/faucet/calibration?error=save_failed");
         return;
     }
-    Esp32BaseWeb::redirectSeeOther("/faucet/calibration?saved=applied");
+    Esp32BaseWeb::redirectSeeOther(slot == g_context.config->activeMeteringSlot
+                                       ? "/faucet/calibration?saved=slot_current"
+                                       : "/faucet/calibration?saved=slot");
 }
 
-void handleRestoreSegmentedCalibrationApi() {
+void handleUpdateMeteringSlotApi() {
     if (!Esp32BaseWeb::checkAuth() || !requireContext()) {
         return;
     }
@@ -4068,15 +3937,40 @@ void handleRestoreSegmentedCalibrationApi() {
         Esp32BaseWeb::redirectSeeOther("/faucet/calibration?error=busy");
         return;
     }
-    if (!g_context.config || !g_context.config->segmentedPreviousReady) {
-        Esp32BaseWeb::redirectSeeOther("/faucet/calibration?error=no_previous");
-        return;
-    }
-    if (!restorePreviousSegmentedCalibration()) {
+    if (!g_context.config) {
         Esp32BaseWeb::redirectSeeOther("/faucet/calibration?error=save_failed");
         return;
     }
-    Esp32BaseWeb::redirectSeeOther("/faucet/calibration?saved=restored");
+    char text[32]{};
+    std::uint32_t slot = 0;
+    if (!getParam("slot", text, sizeof(text)) || !parseU32(text, slot) || slot >= kMeteringSlotCount) {
+        Esp32BaseWeb::redirectSeeOther("/faucet/calibration?error=invalid_value");
+        return;
+    }
+    MeteringParameters params{};
+    if (!getParam("startupPulseCount", text, sizeof(text)) || !parseU32(text, params.startupPulseCount) ||
+        !getParam("startupVolumeMl", text, sizeof(text)) || !parseU32(text, params.startupVolumeMl) ||
+        !getParam("stablePulsePerLiter", text, sizeof(text)) || !parseU32(text, params.stablePulsePerLiter) ||
+        !validMeteringParameters(params)) {
+        Esp32BaseWeb::redirectSeeOther("/faucet/calibration?error=invalid_value");
+        return;
+    }
+    SystemConfig next = *g_context.config;
+    Esp32BaseWeb::getParam("name", next.meteringSlots[slot].name, sizeof(next.meteringSlots[slot].name));
+    if (!updateMeteringSlot(next,
+                            static_cast<std::uint8_t>(slot),
+                            params,
+                            g_context.nowSeconds ? g_context.nowSeconds() : 0)) {
+        Esp32BaseWeb::redirectSeeOther("/faucet/calibration?error=invalid_value");
+        return;
+    }
+    if (!persistConfig(next)) {
+        Esp32BaseWeb::redirectSeeOther("/faucet/calibration?error=save_failed");
+        return;
+    }
+    Esp32BaseWeb::redirectSeeOther(slot == g_context.config->activeMeteringSlot
+                                       ? "/faucet/calibration?saved=slot_current"
+                                       : "/faucet/calibration?saved=slot");
 }
 
 void handleTraceCalibrationApi() {
@@ -4152,18 +4046,12 @@ void handleTraceCalibrationApi() {
     SegmentedCalibrationResult result{};
     if (computeSegmentedCalibration(calibrationSamples, calibrationCount, result)) {
         SystemConfig next = *g_context.config;
-        next.overallPulsePerLiter = result.overallPulsePerLiter;
-        next.startupDurationSec = result.startupDurationSec;
-        next.startupPulseCount = result.startupPulseCount;
-        next.startupVolumeMl = result.startupVolumeMl;
-        next.startupPulsePerLiter = result.startupPulsePerLiter;
-        next.stablePulsePerLiter = result.stablePulsePerLiter;
-        next.segmentedMeteringCalibrated = true;
+        storeSegmentedCandidate(next, result);
         if (!persistConfig(next)) {
             Esp32BaseWeb::redirectSeeOther("/faucet/records?error=save_failed");
             return;
         }
-        Esp32BaseWeb::redirectSeeOther("/faucet/records?saved=1");
+        Esp32BaseWeb::redirectSeeOther("/faucet/calibration?saved=candidate");
         return;
     }
 

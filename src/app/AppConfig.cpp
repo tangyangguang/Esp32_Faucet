@@ -1,7 +1,6 @@
 #include "app/AppConfig.h"
 
 #include <algorithm>
-#include <cmath>
 #include <cstdio>
 #include <cstring>
 
@@ -14,8 +13,8 @@ T clampValue(T value, T minValue, T maxValue) {
 }
 
 template <std::size_t N>
-void copyName(char (&dest)[N], const char* src) {
-    std::strncpy(dest, src, N - 1);
+void copyText(char (&dest)[N], const char* src) {
+    std::strncpy(dest, src ? src : "", N - 1);
     dest[N - 1] = '\0';
 }
 
@@ -23,7 +22,7 @@ void setPreset(PresetConfig& preset, bool enabled, PresetType type, std::uint32_
     preset.enabled = enabled;
     preset.type = type;
     preset.value = value;
-    copyName(preset.name, name);
+    copyText(preset.name, name);
 }
 
 void setFilter(FilterRecord& filter, bool enabled, const char* name) {
@@ -34,10 +33,59 @@ void setFilter(FilterRecord& filter, bool enabled, const char* name) {
     filter.startTime = 0;
     filter.usedMl = 0;
     filter.startBootId = 0;
-    copyName(filter.name, name);
+    copyText(filter.name, name);
+}
+
+void setDefaultMeteringSlot(SystemConfig::MeteringSlot& slot, std::size_t index) {
+    slot.valid = true;
+    std::snprintf(slot.name, sizeof(slot.name), "参数槽 %u", static_cast<unsigned>(index + 1));
+    slot.params = MeteringParameters{0, 0, kDefaultStablePulsePerLiter};
+    std::snprintf(slot.creationNote,
+                  sizeof(slot.creationNote),
+                  "默认参数：启动脉冲数 0P，启动水量 0ml，稳态 P/L %lu。",
+                  static_cast<unsigned long>(kDefaultStablePulsePerLiter));
+    slot.lastModifiedNote[0] = '\0';
+    slot.modifiedAt = 0;
+}
+
+void formatCoreParams(char* out, std::size_t len, const MeteringParameters& params) {
+    std::snprintf(out,
+                  len,
+                  "启动脉冲数 %luP，启动水量 %luml，稳态 P/L %lu",
+                  static_cast<unsigned long>(params.startupPulseCount),
+                  static_cast<unsigned long>(params.startupVolumeMl),
+                  static_cast<unsigned long>(params.stablePulsePerLiter));
+}
+
+void writeLastModified(SystemConfig::MeteringSlot& slot,
+                       const MeteringParameters& before,
+                       const MeteringParameters& after,
+                       std::uint32_t nowSeconds) {
+    char beforeText[80]{};
+    char afterText[80]{};
+    formatCoreParams(beforeText, sizeof(beforeText), before);
+    formatCoreParams(afterText, sizeof(afterText), after);
+    std::snprintf(slot.lastModifiedNote,
+                  sizeof(slot.lastModifiedNote),
+                  "最近修改：%lu；修改前：%s；修改后：%s。",
+                  static_cast<unsigned long>(nowSeconds),
+                  beforeText,
+                  afterText);
+    slot.modifiedAt = nowSeconds;
 }
 
 }  // namespace
+
+bool validMeteringParameters(const MeteringParameters& params) {
+    if (params.stablePulsePerLiter < kMinSegmentedPulsePerLiter ||
+        params.stablePulsePerLiter > kMaxSegmentedPulsePerLiter ||
+        params.startupPulseCount > kMaxSegmentedStartupPulseCount ||
+        params.startupVolumeMl > kMaxSegmentedStartupVolumeMl) {
+        return false;
+    }
+    return (params.startupPulseCount == 0 && params.startupVolumeMl == 0) ||
+           (params.startupPulseCount > 0 && params.startupVolumeMl > 0);
+}
 
 SystemConfig makeDefaultConfig() {
     SystemConfig config{};
@@ -51,38 +99,15 @@ SystemConfig makeDefaultConfig() {
     config.pauseTimeoutSec = kDefaultPauseTimeoutSec;
     config.volumeAdjustStepMl = kDefaultVolumeAdjustStepMl;
     config.timeAdjustStepSec = kDefaultTimeAdjustStepSec;
-    config.startupCompensationMl = kDefaultStartupCompensationMl;
     config.recentPulseTraceCount = kDefaultRecentPulseTraceCount;
-    config.overallPulsePerLiter = 0;
-    config.startupDurationSec = 0;
-    config.startupPulseCount = 0;
-    config.startupVolumeMl = 0;
-    config.startupPulsePerLiter = 0;
-    config.stablePulsePerLiter = 0;
-    config.segmentedMeteringCalibrated = false;
-    config.segmentedCandidateReady = false;
-    config.candidateOverallPulsePerLiter = 0;
-    config.candidateStartupDurationSec = 0;
-    config.candidateStartupPulseCount = 0;
-    config.candidateStartupVolumeMl = 0;
-    config.candidateStartupPulsePerLiter = 0;
-    config.candidateStablePulsePerLiter = 0;
-    config.candidateSampleCount = 0;
-    config.candidateMinActualMl = 0;
-    config.candidateMaxActualMl = 0;
-    config.candidateMaxErrorMl = 0;
-    config.candidateGeneratedAt = 0;
-    config.segmentedPreviousReady = false;
-    config.previousSegmentedMeteringCalibrated = false;
-    config.previousPulsePerMl = 0.0f;
-    config.previousStartupCompensationMl = 0;
-    config.previousOverallPulsePerLiter = 0;
-    config.previousStartupDurationSec = 0;
-    config.previousStartupPulseCount = 0;
-    config.previousStartupVolumeMl = 0;
-    config.previousStartupPulsePerLiter = 0;
-    config.previousStablePulsePerLiter = 0;
-    config.pulsePerMl = kDefaultPulsePerMl;
+    for (std::size_t i = 0; i < kMeteringSlotCount; ++i) {
+        setDefaultMeteringSlot(config.meteringSlots[i], i);
+    }
+    config.meteringCandidate.ready = false;
+    config.meteringCandidate.params = MeteringParameters{0, 0, kDefaultStablePulsePerLiter};
+    config.meteringCandidate.note[0] = '\0';
+    config.meteringCandidate.generatedAt = 0;
+    config.activeMeteringSlot = 0;
     config.valveFullPowerSec = kDefaultValveFullPowerSec;
     config.valveHoldDutyPercent = kDefaultValveHoldDutyPercent;
     config.displaySleepSec = kDefaultDisplaySleepSec;
@@ -102,7 +127,6 @@ SystemConfig makeDefaultConfig() {
         std::snprintf(name, sizeof(name), "第%u级滤芯", static_cast<unsigned>(i + 1));
         setFilter(config.filters[i], false, name);
     }
-
     return config;
 }
 
@@ -119,79 +143,37 @@ void sanitizeConfig(SystemConfig& config) {
         clampValue<std::uint32_t>(config.volumeAdjustStepMl, kMinVolumeAdjustStepMl, kMaxVolumeAdjustStepMl);
     config.timeAdjustStepSec =
         clampValue<std::uint32_t>(config.timeAdjustStepSec, kMinTimeAdjustStepSec, kMaxTimeAdjustStepSec);
-    config.startupCompensationMl =
-        clampValue<std::uint32_t>(config.startupCompensationMl, 0, kMaxStartupCompensationMl);
     config.recentPulseTraceCount =
         clampValue<std::uint32_t>(config.recentPulseTraceCount, kMinRecentPulseTraceCount, kMaxRecentPulseTraceCount);
-    config.overallPulsePerLiter =
-        clampValue<std::uint32_t>(config.overallPulsePerLiter, 0, kMaxSegmentedPulsePerLiter);
-    config.startupDurationSec =
-        clampValue<std::uint32_t>(config.startupDurationSec, 0, kMaxSegmentedStartupDurationSec);
-    config.startupPulseCount =
-        clampValue<std::uint32_t>(config.startupPulseCount, 0, kMaxSegmentedStartupPulseCount);
-    config.startupVolumeMl =
-        clampValue<std::uint32_t>(config.startupVolumeMl, 0, kMaxSegmentedStartupVolumeMl);
-    config.startupPulsePerLiter =
-        clampValue<std::uint32_t>(config.startupPulsePerLiter, 0, kMaxSegmentedPulsePerLiter);
-    config.stablePulsePerLiter =
-        clampValue<std::uint32_t>(config.stablePulsePerLiter, 0, kMaxSegmentedPulsePerLiter);
-    if (config.segmentedMeteringCalibrated &&
-        (config.startupDurationSec == 0 || config.startupPulseCount == 0 || config.stablePulsePerLiter == 0)) {
-        config.segmentedMeteringCalibrated = false;
+    if (config.activeMeteringSlot >= kMeteringSlotCount) {
+        config.activeMeteringSlot = 0;
     }
-    config.candidateOverallPulsePerLiter =
-        clampValue<std::uint32_t>(config.candidateOverallPulsePerLiter, 0, kMaxSegmentedPulsePerLiter);
-    config.candidateStartupDurationSec =
-        clampValue<std::uint32_t>(config.candidateStartupDurationSec, 0, kMaxSegmentedStartupDurationSec);
-    config.candidateStartupPulseCount =
-        clampValue<std::uint32_t>(config.candidateStartupPulseCount, 0, kMaxSegmentedStartupPulseCount);
-    config.candidateStartupVolumeMl =
-        clampValue<std::uint32_t>(config.candidateStartupVolumeMl, 0, kMaxSegmentedStartupVolumeMl);
-    config.candidateStartupPulsePerLiter =
-        clampValue<std::uint32_t>(config.candidateStartupPulsePerLiter, 0, kMaxSegmentedPulsePerLiter);
-    config.candidateStablePulsePerLiter =
-        clampValue<std::uint32_t>(config.candidateStablePulsePerLiter, 0, kMaxSegmentedPulsePerLiter);
-    config.candidateSampleCount =
-        clampValue<std::uint32_t>(config.candidateSampleCount, 0, kMaxSegmentedCandidateSamples);
-    config.candidateMinActualMl =
-        clampValue<std::uint32_t>(config.candidateMinActualMl, 0, kMaxVolumePresetMl);
-    config.candidateMaxActualMl =
-        clampValue<std::uint32_t>(config.candidateMaxActualMl, 0, kMaxVolumePresetMl);
-    config.candidateMaxErrorMl =
-        clampValue<std::uint32_t>(config.candidateMaxErrorMl, 0, kMaxVolumePresetMl);
-    if (config.segmentedCandidateReady &&
-        (config.candidateSampleCount < 2 || config.candidateStablePulsePerLiter == 0 ||
-         config.candidateStartupDurationSec == 0 || config.candidateStartupPulseCount == 0 ||
-         config.candidateMaxActualMl <= config.candidateMinActualMl + 500UL)) {
-        config.segmentedCandidateReady = false;
+    for (std::size_t i = 0; i < kMeteringSlotCount; ++i) {
+        SystemConfig::MeteringSlot& slot = config.meteringSlots[i];
+        slot.name[kMeteringSlotNameLength - 1] = '\0';
+        slot.creationNote[kMeteringNoteLength - 1] = '\0';
+        slot.lastModifiedNote[kMeteringNoteLength - 1] = '\0';
+        slot.params.startupPulseCount =
+            clampValue<std::uint32_t>(slot.params.startupPulseCount, 0, kMaxSegmentedStartupPulseCount);
+        slot.params.startupVolumeMl =
+            clampValue<std::uint32_t>(slot.params.startupVolumeMl, 0, kMaxSegmentedStartupVolumeMl);
+        slot.params.stablePulsePerLiter =
+            clampValue<std::uint32_t>(slot.params.stablePulsePerLiter,
+                                      kMinSegmentedPulsePerLiter,
+                                      kMaxSegmentedPulsePerLiter);
+        if (!slot.valid || !validMeteringParameters(slot.params)) {
+            setDefaultMeteringSlot(slot, i);
+        }
     }
-    config.previousOverallPulsePerLiter =
-        clampValue<std::uint32_t>(config.previousOverallPulsePerLiter, 0, kMaxSegmentedPulsePerLiter);
-    config.previousPulsePerMl = std::isfinite(config.previousPulsePerMl)
-                                    ? clampValue<float>(config.previousPulsePerMl, 0.0f, kMaxPulsePerMl)
-                                    : 0.0f;
-    config.previousStartupCompensationMl =
-        clampValue<std::uint32_t>(config.previousStartupCompensationMl, 0, kMaxStartupCompensationMl);
-    config.previousStartupDurationSec =
-        clampValue<std::uint32_t>(config.previousStartupDurationSec, 0, kMaxSegmentedStartupDurationSec);
-    config.previousStartupPulseCount =
-        clampValue<std::uint32_t>(config.previousStartupPulseCount, 0, kMaxSegmentedStartupPulseCount);
-    config.previousStartupVolumeMl =
-        clampValue<std::uint32_t>(config.previousStartupVolumeMl, 0, kMaxSegmentedStartupVolumeMl);
-    config.previousStartupPulsePerLiter =
-        clampValue<std::uint32_t>(config.previousStartupPulsePerLiter, 0, kMaxSegmentedPulsePerLiter);
-    config.previousStablePulsePerLiter =
-        clampValue<std::uint32_t>(config.previousStablePulsePerLiter, 0, kMaxSegmentedPulsePerLiter);
-    if (config.segmentedPreviousReady &&
-        (config.previousPulsePerMl <= 0.0f ||
-         (config.previousSegmentedMeteringCalibrated &&
-          (config.previousStartupDurationSec == 0 || config.previousStartupPulseCount == 0 ||
-           config.previousStablePulsePerLiter == 0)))) {
-        config.segmentedPreviousReady = false;
+    if (!config.meteringSlots[config.activeMeteringSlot].valid) {
+        config.activeMeteringSlot = 0;
     }
-    config.pulsePerMl = std::isfinite(config.pulsePerMl)
-                            ? clampValue<float>(config.pulsePerMl, kMinPulsePerMl, kMaxPulsePerMl)
-                            : kDefaultPulsePerMl;
+    config.meteringCandidate.note[kMeteringNoteLength - 1] = '\0';
+    if (!validMeteringParameters(config.meteringCandidate.params)) {
+        config.meteringCandidate.ready = false;
+        config.meteringCandidate.params = MeteringParameters{0, 0, kDefaultStablePulsePerLiter};
+    }
+
     config.valveFullPowerSec = clampValue<std::uint32_t>(config.valveFullPowerSec, 1, 10);
     config.valveHoldDutyPercent = clampValue<std::uint8_t>(
         config.valveHoldDutyPercent, kMinValveHoldDutyPercent, kMaxValveHoldDutyPercent);
@@ -219,6 +201,75 @@ void sanitizeConfig(SystemConfig& config) {
         }
         filter.lifeMl = clampValue<std::uint32_t>(filter.lifeMl, 0, kMaxFilterLifeMl);
     }
+}
+
+const MeteringParameters& activeMeteringParameters(const SystemConfig& config) {
+    const std::uint8_t slot = config.activeMeteringSlot < kMeteringSlotCount ? config.activeMeteringSlot : 0;
+    return config.meteringSlots[slot].params;
+}
+
+bool enableMeteringSlot(SystemConfig& config, std::uint8_t slot) {
+    if (slot >= kMeteringSlotCount || !config.meteringSlots[slot].valid ||
+        !validMeteringParameters(config.meteringSlots[slot].params)) {
+        return false;
+    }
+    config.activeMeteringSlot = slot;
+    return true;
+}
+
+bool saveCandidateToMeteringSlot(SystemConfig& config, std::uint8_t slot, std::uint32_t nowSeconds) {
+    if (slot >= kMeteringSlotCount || !config.meteringCandidate.ready ||
+        !validMeteringParameters(config.meteringCandidate.params)) {
+        return false;
+    }
+    SystemConfig::MeteringSlot& target = config.meteringSlots[slot];
+    const MeteringParameters before = target.params;
+    target.valid = true;
+    target.params = config.meteringCandidate.params;
+    if (target.name[0] == '\0') {
+        std::snprintf(target.name, sizeof(target.name), "参数槽 %u", static_cast<unsigned>(slot + 1));
+    }
+    copyText(target.creationNote, config.meteringCandidate.note);
+    if (target.creationNote[0] == '\0') {
+        formatCoreParams(target.creationNote, sizeof(target.creationNote), target.params);
+    }
+    writeLastModified(target, before, target.params, nowSeconds);
+    return true;
+}
+
+bool createManualMeteringSlot(SystemConfig& config,
+                              std::uint8_t slot,
+                              const MeteringParameters& params,
+                              std::uint32_t nowSeconds) {
+    if (slot >= kMeteringSlotCount || !validMeteringParameters(params)) {
+        return false;
+    }
+    SystemConfig::MeteringSlot& target = config.meteringSlots[slot];
+    const MeteringParameters before = target.params;
+    target.valid = true;
+    target.params = params;
+    if (target.name[0] == '\0') {
+        std::snprintf(target.name, sizeof(target.name), "参数槽 %u", static_cast<unsigned>(slot + 1));
+    }
+    char paramsText[80]{};
+    formatCoreParams(paramsText, sizeof(paramsText), params);
+    std::snprintf(target.creationNote, sizeof(target.creationNote), "手工创建：%s。", paramsText);
+    writeLastModified(target, before, params, nowSeconds);
+    return true;
+}
+
+bool updateMeteringSlot(SystemConfig& config,
+                        std::uint8_t slot,
+                        const MeteringParameters& params,
+                        std::uint32_t nowSeconds) {
+    if (slot >= kMeteringSlotCount || !config.meteringSlots[slot].valid || !validMeteringParameters(params)) {
+        return false;
+    }
+    SystemConfig::MeteringSlot& target = config.meteringSlots[slot];
+    const MeteringParameters before = target.params;
+    target.params = params;
+    writeLastModified(target, before, params, nowSeconds);
+    return true;
 }
 
 std::uint16_t sanitizeRecordPageSize(std::uint16_t pageSize) {

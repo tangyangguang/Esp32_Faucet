@@ -124,9 +124,12 @@ void test_config_json_contains_safety_and_display_settings() {
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"maxOutVolumeMl\":30000"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"volumeAdjustStepMl\":100"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"timeAdjustStepSec\":10"));
-    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"startupCompensationMl\":0"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"recentPulseTraceCount\":10"));
-    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"segmentedMeteringCalibrated\":false"));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"activeMeteringSlot\":0"));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"startupPulseCount\":0"));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"startupVolumeMl\":0"));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"stablePulsePerLiter\":450"));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"meteringCandidateReady\":false"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"valveHoldDutyPercent\":70"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"beepEnabled\":false"));
 }
@@ -183,7 +186,8 @@ void test_water_records_json_is_paged_and_read_only() {
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"targetValue\":60"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"pulseCount\":675"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"rejectedPulseCount\":1"));
-    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"pulsePerMlAtRun\":0.450"));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"stablePulsePerLiterAtRun\":450"));
+    TEST_ASSERT_NULL(std::strstr(json, "\"pulsePerMlAtRun\""));
     TEST_ASSERT_NULL(std::strstr(json, "startWater"));
 }
 

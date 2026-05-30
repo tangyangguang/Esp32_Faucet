@@ -5,7 +5,7 @@
 using namespace faucet;
 
 void test_counts_valid_pulses_and_converts_to_volume() {
-    FlowMeter meter(0.5f);
+    FlowMeter meter(MeteringParameters{0, 0, 500});
 
     for (std::uint32_t i = 0; i < 10; ++i) {
         TEST_ASSERT_TRUE(meter.onPulse(1000 + i * 2000));
@@ -17,17 +17,31 @@ void test_counts_valid_pulses_and_converts_to_volume() {
     TEST_ASSERT_EQUAL_UINT32(0, snapshot.rejectedPulses);
 }
 
-void test_startup_compensation_applies_only_after_first_valid_pulse() {
-    FlowMeter meter(1.0f, kDefaultPulseFilterUs, 80);
+void test_segmented_startup_volume_is_spread_across_startup_pulses() {
+    FlowMeter meter(MeteringParameters{4, 80, 200}, kDefaultPulseFilterUs);
 
     TEST_ASSERT_EQUAL_UINT32(0, meter.snapshot(1000).volumeMl);
 
     TEST_ASSERT_TRUE(meter.onPulse(1000));
-    TEST_ASSERT_EQUAL_UINT32(81, meter.snapshot(1000).volumeMl);
+    TEST_ASSERT_EQUAL_UINT32(20, meter.snapshot(1000).volumeMl);
+    TEST_ASSERT_TRUE(meter.onPulse(2000));
+    TEST_ASSERT_TRUE(meter.onPulse(3000));
+    TEST_ASSERT_TRUE(meter.onPulse(4000));
+    TEST_ASSERT_EQUAL_UINT32(80, meter.snapshot(4000).volumeMl);
+}
+
+void test_segmented_stable_stage_uses_stable_pulse_per_liter_after_startup() {
+    FlowMeter meter(MeteringParameters{4, 80, 200}, kDefaultPulseFilterUs);
+
+    for (std::uint32_t i = 0; i < 6; ++i) {
+        TEST_ASSERT_TRUE(meter.onPulse(1000 + i * 1000));
+    }
+
+    TEST_ASSERT_EQUAL_UINT32(90, meter.snapshot(6000).volumeMl);
 }
 
 void test_filters_pulses_inside_filter_window() {
-    FlowMeter meter(0.5f, 1000);
+    FlowMeter meter(MeteringParameters{0, 0, 500}, 1000);
 
     TEST_ASSERT_TRUE(meter.onPulse(1000));
     TEST_ASSERT_FALSE(meter.onPulse(1500));
@@ -39,7 +53,7 @@ void test_filters_pulses_inside_filter_window() {
 }
 
 void test_pulse_exactly_at_filter_boundary_is_accepted() {
-    FlowMeter meter(0.5f, 1000);
+    FlowMeter meter(MeteringParameters{0, 0, 500}, 1000);
 
     TEST_ASSERT_TRUE(meter.onPulse(1000));
     TEST_ASSERT_TRUE(meter.onPulse(2000));
@@ -48,7 +62,7 @@ void test_pulse_exactly_at_filter_boundary_is_accepted() {
 }
 
 void test_current_flow_uses_recent_pulse_interval() {
-    FlowMeter meter(1.0f);
+    FlowMeter meter(MeteringParameters{0, 0, 1000});
 
     TEST_ASSERT_TRUE(meter.onPulse(1000000));
     TEST_ASSERT_TRUE(meter.onPulse(2000000));
@@ -58,7 +72,7 @@ void test_current_flow_uses_recent_pulse_interval() {
 }
 
 void test_current_flow_survives_micros_wrap() {
-    FlowMeter meter(1.0f);
+    FlowMeter meter(MeteringParameters{0, 0, 1000});
     const std::uint32_t firstPulseUs = 0xFFFFF000UL;
     const std::uint32_t secondPulseUs = firstPulseUs + static_cast<std::uint32_t>(1000000);
 
@@ -70,7 +84,7 @@ void test_current_flow_survives_micros_wrap() {
 }
 
 void test_current_flow_expires_when_no_recent_pulse() {
-    FlowMeter meter(1.0f);
+    FlowMeter meter(MeteringParameters{0, 0, 1000});
 
     TEST_ASSERT_TRUE(meter.onPulse(1000000));
     TEST_ASSERT_TRUE(meter.onPulse(2000000));
@@ -79,19 +93,20 @@ void test_current_flow_expires_when_no_recent_pulse() {
     TEST_ASSERT_EQUAL_UINT32(0, snapshot.currentFlowMlPerMin);
 }
 
-void test_rejects_invalid_pulse_coefficients() {
-    FlowMeter meter(0.5f);
+void test_rejects_invalid_metering_parameters() {
+    FlowMeter meter(MeteringParameters{0, 0, 500});
 
-    TEST_ASSERT_FALSE(meter.setPulsePerMl(0.0f));
-    TEST_ASSERT_FALSE(meter.setPulsePerMl(99.0f));
-    TEST_ASSERT_TRUE(meter.setPulsePerMl(1.0f));
+    TEST_ASSERT_FALSE(meter.setMeteringParameters(MeteringParameters{4, 80, 0}));
+    TEST_ASSERT_FALSE(meter.setMeteringParameters(MeteringParameters{0, 80, 500}));
+    TEST_ASSERT_FALSE(meter.setMeteringParameters(MeteringParameters{4, 0, 500}));
+    TEST_ASSERT_TRUE(meter.setMeteringParameters(MeteringParameters{0, 0, 1000}));
 }
 
-void test_pulse_coefficient_boundaries_are_accepted() {
-    FlowMeter meter(kMinPulsePerMl);
+void test_pulse_per_liter_boundaries_are_accepted() {
+    FlowMeter meter(MeteringParameters{0, 0, kMinSegmentedPulsePerLiter});
 
-    TEST_ASSERT_TRUE(meter.setPulsePerMl(kMaxPulsePerMl));
-    TEST_ASSERT_TRUE(meter.setPulsePerMl(kMinPulsePerMl));
+    TEST_ASSERT_TRUE(meter.setMeteringParameters(MeteringParameters{0, 0, kMaxSegmentedPulsePerLiter}));
+    TEST_ASSERT_TRUE(meter.setMeteringParameters(MeteringParameters{0, 0, kMinSegmentedPulsePerLiter}));
     TEST_ASSERT_TRUE(meter.onPulse(1000));
     TEST_ASSERT_TRUE(meter.onPulse(2000));
 
@@ -99,7 +114,7 @@ void test_pulse_coefficient_boundaries_are_accepted() {
 }
 
 void test_high_frequency_flow_saturates_without_overflow() {
-    FlowMeter meter(kMinPulsePerMl, 0);
+    FlowMeter meter(MeteringParameters{0, 0, kMinSegmentedPulsePerLiter}, 0);
 
     TEST_ASSERT_TRUE(meter.onPulse(1000));
     TEST_ASSERT_TRUE(meter.onPulse(1001));
@@ -108,7 +123,7 @@ void test_high_frequency_flow_saturates_without_overflow() {
 }
 
 void test_reset_clears_counts_and_flow() {
-    FlowMeter meter(1.0f);
+    FlowMeter meter(MeteringParameters{0, 0, 1000});
     meter.onPulse(1000);
     meter.onPulse(2000);
 
@@ -126,14 +141,15 @@ int main(int argc, char** argv) {
 
     UNITY_BEGIN();
     RUN_TEST(test_counts_valid_pulses_and_converts_to_volume);
-    RUN_TEST(test_startup_compensation_applies_only_after_first_valid_pulse);
+    RUN_TEST(test_segmented_startup_volume_is_spread_across_startup_pulses);
+    RUN_TEST(test_segmented_stable_stage_uses_stable_pulse_per_liter_after_startup);
     RUN_TEST(test_filters_pulses_inside_filter_window);
     RUN_TEST(test_pulse_exactly_at_filter_boundary_is_accepted);
     RUN_TEST(test_current_flow_uses_recent_pulse_interval);
     RUN_TEST(test_current_flow_survives_micros_wrap);
     RUN_TEST(test_current_flow_expires_when_no_recent_pulse);
-    RUN_TEST(test_rejects_invalid_pulse_coefficients);
-    RUN_TEST(test_pulse_coefficient_boundaries_are_accepted);
+    RUN_TEST(test_rejects_invalid_metering_parameters);
+    RUN_TEST(test_pulse_per_liter_boundaries_are_accepted);
     RUN_TEST(test_high_frequency_flow_saturates_without_overflow);
     RUN_TEST(test_reset_clears_counts_and_flow);
     return UNITY_END();

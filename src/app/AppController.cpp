@@ -2,7 +2,6 @@
 
 #include "app/TimeUtils.h"
 
-#include <cmath>
 #include <limits>
 
 namespace faucet {
@@ -11,15 +10,10 @@ namespace {
 constexpr std::uint32_t kResultCalibrationHoldMs = 5000;
 constexpr std::uint32_t kCalibrationMinActualMl = 100;
 constexpr std::uint32_t kCalibrationMaxDriftPercent = 30;
-constexpr std::uint32_t kStartupCalibrationMaxActualMl = 2000;
 
 std::uint32_t msFromSeconds(std::uint32_t seconds) {
     constexpr std::uint32_t maxMs = std::numeric_limits<std::uint32_t>::max();
     return seconds > maxMs / 1000UL ? maxMs : seconds * 1000UL;
-}
-
-bool finitePulsePerMl(float value) {
-    return std::isfinite(value) && value >= kMinPulsePerMl && value <= kMaxPulsePerMl;
 }
 
 WaterPulseTraceState traceStateForResult(WaterResult result) {
@@ -49,7 +43,7 @@ AppController::AppController(const SystemConfig& config,
       water_(config_),
       localMode_(LocalUiMode::Normal),
       buttons_(),
-      flow_(config_.pulsePerMl, kDefaultPulseFilterUs, config_.startupCompensationMl),
+      flow_(activeMeteringParameters(config_), kDefaultPulseFilterUs),
       valve_(config_.valveFullPowerSec, config_.valveHoldDutyPercent),
       statistics_(statistics),
       filters_(filters),
@@ -144,7 +138,7 @@ AppSnapshot AppController::snapshot() const {
     snapshot.calibrationActualMl = calibrationActualMl_;
     snapshot.calibrationStepMl = calibrationStepMl_;
     snapshot.calibrationReady = lastResultRecordValid_;
-    snapshot.pulsePerLiter = static_cast<std::uint32_t>(std::lround(config_.pulsePerMl * 1000.0f));
+    snapshot.pulsePerLiter = activeMeteringParameters(config_).stablePulsePerLiter;
     snapshot.flowDroppedPulses = flowDroppedPulses_;
     return snapshot;
 }
@@ -207,8 +201,7 @@ bool AppController::applyConfig(const SystemConfig& config) {
     SystemConfig safe = config;
     sanitizeConfig(safe);
     config_ = safe;
-    flow_.setPulsePerMl(config_.pulsePerMl);
-    flow_.setStartupCompensationMl(config_.startupCompensationMl);
+    flow_.setMeteringParameters(activeMeteringParameters(config_));
     valve_.configure(config_.valveFullPowerSec, config_.valveHoldDutyPercent);
     adjustmentStepMl_ = config_.volumeAdjustStepMl;
     timeAdjustmentStepSec_ = config_.timeAdjustStepSec;
@@ -235,31 +228,6 @@ CalibrationApplyResult AppController::applyCalibrationFromRecordInternal(const W
     if (record.pulseCount == 0 || !waterResultAllowsCalibration(record.result)) {
         return CalibrationApplyResult::InvalidRecord;
     }
-    const float oldPulsePerMl = finitePulsePerMl(config_.pulsePerMl) ? config_.pulsePerMl : kDefaultPulsePerMl;
-    const float pulseBasedMl = static_cast<float>(record.pulseCount) / oldPulsePerMl;
-    if (actualMl <= kStartupCalibrationMaxActualMl && pulseBasedMl <= static_cast<float>(actualMl)) {
-        const float missingMl = static_cast<float>(actualMl) - pulseBasedMl;
-        config_.startupCompensationMl =
-            missingMl >= static_cast<float>(kMaxStartupCompensationMl)
-                ? kMaxStartupCompensationMl
-                : static_cast<std::uint32_t>(missingMl + 0.5f);
-        flow_.setStartupCompensationMl(config_.startupCompensationMl);
-        configDirty_ = true;
-        pendingBeep_ = BeepPattern::Done;
-        localMode_ = LocalUiMode::Result;
-        return CalibrationApplyResult::Saved;
-    }
-    const float nextPulsePerMl = static_cast<float>(record.pulseCount) / static_cast<float>(actualMl);
-    if (!finitePulsePerMl(nextPulsePerMl)) {
-        return CalibrationApplyResult::InvalidFactor;
-    }
-    const float ratio = nextPulsePerMl > oldPulsePerMl ? nextPulsePerMl / oldPulsePerMl : oldPulsePerMl / nextPulsePerMl;
-    if (ratio > 1.0f + static_cast<float>(kCalibrationMaxDriftPercent) / 100.0f) {
-        return CalibrationApplyResult::TooMuchDrift;
-    }
-    config_.pulsePerMl = nextPulsePerMl;
-    flow_.setPulsePerMl(config_.pulsePerMl);
-    configDirty_ = true;
     pendingBeep_ = BeepPattern::Done;
     localMode_ = LocalUiMode::Result;
     return CalibrationApplyResult::Saved;
@@ -570,7 +538,7 @@ void AppController::processResult(std::uint32_t startTime,
         result.result,
         result.selectedPreset,
         0,
-        config_.pulsePerMl,
+        static_cast<float>(activeMeteringParameters(config_).stablePulsePerLiter) / 1000.0f,
         {0, 0, 0, 0},
     };
     if (!startTimeSynced) {

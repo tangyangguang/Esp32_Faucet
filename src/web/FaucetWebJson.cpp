@@ -239,13 +239,14 @@ bool writeUsageSummaryJson(const WaterUsageSummary& summary,
 
 bool writeConfigJson(const SystemConfig& config, char* out, std::size_t len) {
     JsonWriter writer(out, len);
+    const MeteringParameters& active = activeMeteringParameters(config);
     writer.append("{\"confirmTimeoutSec\":%lu,\"maxOutTimeSec\":%lu,\"maxOutVolumeMl\":%lu,"
                   "\"overflowPercent\":%u,\"noFlowTimeoutSec\":%lu,\"highFlowMlPerMin\":%lu,"
                   "\"highFlowDurationSec\":%lu,\"pauseTimeoutSec\":%lu,\"volumeAdjustStepMl\":%lu,"
-                  "\"timeAdjustStepSec\":%lu,\"startupCompensationMl\":%lu,\"recentPulseTraceCount\":%lu,"
-                  "\"overallPulsePerLiter\":%lu,\"startupDurationSec\":%lu,\"startupPulseCount\":%lu,"
-                  "\"startupVolumeMl\":%lu,\"startupPulsePerLiter\":%lu,\"stablePulsePerLiter\":%lu,"
-                  "\"segmentedMeteringCalibrated\":%s,\"pulsePerMl\":%.3f,"
+                  "\"timeAdjustStepSec\":%lu,\"recentPulseTraceCount\":%lu,"
+                  "\"activeMeteringSlot\":%u,\"startupPulseCount\":%lu,"
+                  "\"startupVolumeMl\":%lu,\"stablePulsePerLiter\":%lu,"
+                  "\"meteringCandidateReady\":%s,"
                   "\"valveFullPowerSec\":%lu,"
                   "\"valveHoldDutyPercent\":%u,\"displaySleepSec\":%lu,\"resultDisplaySec\":%lu,"
                   "\"lcdI2cAddress\":%u,\"beepEnabled\":%s}",
@@ -259,16 +260,12 @@ bool writeConfigJson(const SystemConfig& config, char* out, std::size_t len) {
                   static_cast<unsigned long>(config.pauseTimeoutSec),
                   static_cast<unsigned long>(config.volumeAdjustStepMl),
                   static_cast<unsigned long>(config.timeAdjustStepSec),
-                  static_cast<unsigned long>(config.startupCompensationMl),
                   static_cast<unsigned long>(config.recentPulseTraceCount),
-                  static_cast<unsigned long>(config.overallPulsePerLiter),
-                  static_cast<unsigned long>(config.startupDurationSec),
-                  static_cast<unsigned long>(config.startupPulseCount),
-                  static_cast<unsigned long>(config.startupVolumeMl),
-                  static_cast<unsigned long>(config.startupPulsePerLiter),
-                  static_cast<unsigned long>(config.stablePulsePerLiter),
-                  config.segmentedMeteringCalibrated ? "true" : "false",
-                  static_cast<double>(config.pulsePerMl),
+                  static_cast<unsigned>(config.activeMeteringSlot),
+                  static_cast<unsigned long>(active.startupPulseCount),
+                  static_cast<unsigned long>(active.startupVolumeMl),
+                  static_cast<unsigned long>(active.stablePulsePerLiter),
+                  config.meteringCandidate.ready ? "true" : "false",
                   static_cast<unsigned long>(config.valveFullPowerSec),
                   static_cast<unsigned>(config.valveHoldDutyPercent),
                   static_cast<unsigned long>(config.displaySleepSec),
@@ -332,9 +329,13 @@ bool writeWaterRecordsJson(const WaterRecord* records,
                   static_cast<unsigned>(recordCount));
     for (std::size_t i = 0; i < recordCount; ++i) {
         const WaterRecord& record = records[i];
+        const std::uint32_t stablePulsePerLiterAtRun =
+            record.pulsePerMlAtRun <= 0.0f
+                ? 0
+                : static_cast<std::uint32_t>(record.pulsePerMlAtRun * 1000.0f + 0.5f);
         writer.append("%s{\"startTime\":%lu,\"volumeMl\":%lu,\"durationSec\":%u,"
                       "\"mode\":\"%s\",\"result\":\"%s\",\"targetValue\":%lu,\"selectedPreset\":%u,"
-                      "\"pulseCount\":%lu,\"rejectedPulseCount\":%lu,\"pulsePerMlAtRun\":%.3f}",
+                      "\"pulseCount\":%lu,\"rejectedPulseCount\":%lu,\"stablePulsePerLiterAtRun\":%lu}",
                       i == 0 ? "" : ",",
                       static_cast<unsigned long>(record.startTime),
                       static_cast<unsigned long>(record.volumeMl),
@@ -345,7 +346,7 @@ bool writeWaterRecordsJson(const WaterRecord* records,
                       static_cast<unsigned>(record.selectedPreset),
                       static_cast<unsigned long>(record.pulseCount),
                       static_cast<unsigned long>(record.rejectedPulseCount),
-                      static_cast<double>(record.pulsePerMlAtRun));
+                      static_cast<unsigned long>(stablePulsePerLiterAtRun));
     }
     writer.append("]}");
     return writer.ok();

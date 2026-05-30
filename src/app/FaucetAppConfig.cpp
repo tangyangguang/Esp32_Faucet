@@ -13,7 +13,7 @@ namespace {
 
 constexpr const char* kConfigNs = "faucet_cfg";
 constexpr const char* kVersionKey = "ver";
-constexpr std::int32_t kConfigVersion = 10;
+constexpr std::int32_t kConfigVersion = 11;
 
 FaucetAppConfigContext g_context{};
 
@@ -33,16 +33,7 @@ const char kKeyHighDuration[] = "high_s";
 const char kKeyPauseTimeout[] = "pause_s";
 const char kKeyVolumeStep[] = "vol_step";
 const char kKeyTimeStep[] = "time_step";
-const char kKeyStartupCompensation[] = "start_ml";
 const char kKeyRecentPulseTraceCount[] = "trace_count";
-const char kKeySegmentedOverall[] = "seg_all_p";
-const char kKeySegmentedStartupSeconds[] = "seg_start_s";
-const char kKeySegmentedStartupPulses[] = "seg_start_p";
-const char kKeySegmentedStartupMl[] = "seg_start_ml";
-const char kKeySegmentedStartupPl[] = "seg_start_pl";
-const char kKeySegmentedStablePl[] = "seg_stable_p";
-const char kKeySegmentedCalibrated[] = "seg_cal";
-const char kKeyPulseMilli[] = "pulse_m";
 const char kKeyValveFullPower[] = "valve_s";
 const char kKeyValveHoldDuty[] = "hold_pct";
 const char kKeyDisplaySleep[] = "disp_s";
@@ -129,7 +120,7 @@ void onAppConfigSave(const Esp32BaseAppConfig::SaveSummary& summary) {
     }
 }
 
-bool addCoreFields(const SystemConfig& defaults) {
+bool addCoreFields() {
     bool ok = true;
     ok = Esp32BaseAppConfig::addGroup({kGroupSafety, "安全限制"}) && ok;
     ok = Esp32BaseAppConfig::addGroup({kGroupFlow, "流量保护"}) && ok;
@@ -137,28 +128,27 @@ bool addCoreFields(const SystemConfig& defaults) {
     ok = Esp32BaseAppConfig::addGroup({kGroupLocal, "本地交互"}) && ok;
     ok = Esp32BaseAppConfig::addGroup({kGroupMetering, "计量"}) && ok;
 
-    ok = Esp32BaseAppConfig::addInt({kGroupSafety, kConfigNs, kKeyConfirmTimeout, "确认页超时", static_cast<std::int32_t>(defaults.confirmTimeoutSec), 3, 60, 1, "s", "进入确认页后无操作自动取消。立即生效。", false, nullptr}) && ok;
-    ok = Esp32BaseAppConfig::addInt({kGroupSafety, kConfigNs, kKeyMaxTime, "最大出水时长", static_cast<std::int32_t>(defaults.maxOutTimeSec), 30, 7200, 5, "s", "单次出水达到该时长强制关阀。立即生效。", false, nullptr}) && ok;
-    ok = Esp32BaseAppConfig::addInt({kGroupSafety, kConfigNs, kKeyMaxMl, "最大出水量", static_cast<std::int32_t>(defaults.maxOutVolumeMl), 1000, 100000, 100, "ml", "单次出水达到该水量强制关阀。立即生效。", false, nullptr}) && ok;
-    ok = Esp32BaseAppConfig::addInt({kGroupSafety, kConfigNs, kKeyOverflow, "超量保护比例", defaults.overflowPercent, 1, 50, 1, "%", "超过目标量该比例后强制停止，防止过冲。", false, nullptr}) && ok;
+    ok = Esp32BaseAppConfig::addInt({kGroupSafety, kConfigNs, kKeyConfirmTimeout, "确认页超时", static_cast<std::int32_t>(kDefaultConfirmTimeoutSec), 3, 60, 1, "s", "进入确认页后无操作自动取消。立即生效。", false, nullptr}) && ok;
+    ok = Esp32BaseAppConfig::addInt({kGroupSafety, kConfigNs, kKeyMaxTime, "最大出水时长", static_cast<std::int32_t>(kDefaultMaxOutTimeSec), 30, 7200, 5, "s", "单次出水达到该时长强制关阀。立即生效。", false, nullptr}) && ok;
+    ok = Esp32BaseAppConfig::addInt({kGroupSafety, kConfigNs, kKeyMaxMl, "最大出水量", static_cast<std::int32_t>(kDefaultMaxOutVolumeMl), 1000, 100000, 100, "ml", "单次出水达到该水量强制关阀。立即生效。", false, nullptr}) && ok;
+    ok = Esp32BaseAppConfig::addInt({kGroupSafety, kConfigNs, kKeyOverflow, "超量保护比例", kDefaultOverflowPercent, 1, 50, 1, "%", "超过目标量该比例后强制停止，防止过冲。", false, nullptr}) && ok;
 
-    ok = Esp32BaseAppConfig::addInt({kGroupFlow, kConfigNs, kKeyNoFlow, "无流量判定超时", static_cast<std::int32_t>(defaults.noFlowTimeoutSec), 1, 30, 1, "s", "开阀后持续无脉冲超过该时间判为异常。", false, nullptr}) && ok;
-    ok = Esp32BaseAppConfig::addInt({kGroupFlow, kConfigNs, kKeyHighFlow, "高流量阈值", static_cast<std::int32_t>(defaults.highFlowMlPerMin), 1000, 100000, 100, "ml/min", "实时流量高于该值会进入高流量观察。", false, nullptr}) && ok;
-    ok = Esp32BaseAppConfig::addInt({kGroupFlow, kConfigNs, kKeyHighDuration, "高流量持续时间", static_cast<std::int32_t>(defaults.highFlowDurationSec), 1, 30, 1, "s", "高流量连续超过该时间才判为异常。", false, nullptr}) && ok;
-    ok = Esp32BaseAppConfig::addInt({kGroupFlow, kConfigNs, kKeyPauseTimeout, "暂停保持时间", static_cast<std::int32_t>(defaults.pauseTimeoutSec), 10, 3600, 10, "s", "暂停超过该时间自动结束本次出水。", false, nullptr}) && ok;
+    ok = Esp32BaseAppConfig::addInt({kGroupFlow, kConfigNs, kKeyNoFlow, "无流量判定超时", static_cast<std::int32_t>(kDefaultNoFlowTimeoutSec), 1, 30, 1, "s", "开阀后持续无脉冲超过该时间判为异常。", false, nullptr}) && ok;
+    ok = Esp32BaseAppConfig::addInt({kGroupFlow, kConfigNs, kKeyHighFlow, "高流量阈值", static_cast<std::int32_t>(kDefaultHighFlowMlPerMin), 1000, 100000, 100, "ml/min", "实时流量高于该值会进入高流量观察。", false, nullptr}) && ok;
+    ok = Esp32BaseAppConfig::addInt({kGroupFlow, kConfigNs, kKeyHighDuration, "高流量持续时间", static_cast<std::int32_t>(kDefaultHighFlowDurationSec), 1, 30, 1, "s", "高流量连续超过该时间才判为异常。", false, nullptr}) && ok;
+    ok = Esp32BaseAppConfig::addInt({kGroupFlow, kConfigNs, kKeyPauseTimeout, "暂停保持时间", static_cast<std::int32_t>(kDefaultPauseTimeoutSec), 10, 3600, 10, "s", "暂停超过该时间自动结束本次出水。", false, nullptr}) && ok;
 
-    ok = Esp32BaseAppConfig::addInt({kGroupValve, kConfigNs, kKeyValveFullPower, "阀门全功率时间", static_cast<std::int32_t>(defaults.valveFullPowerSec), 1, 10, 1, "s", "开阀初段全功率吸合的持续时间。", false, nullptr}) && ok;
-    ok = Esp32BaseAppConfig::addInt({kGroupValve, kConfigNs, kKeyValveHoldDuty, "阀门保持占空比", defaults.valveHoldDutyPercent, kMinValveHoldDutyPercent, kMaxValveHoldDutyPercent, 1, "%", "100% 为全压保持；低于 100% 时启用降功耗 PWM 保持。", false, nullptr}) && ok;
+    ok = Esp32BaseAppConfig::addInt({kGroupValve, kConfigNs, kKeyValveFullPower, "阀门全功率时间", static_cast<std::int32_t>(kDefaultValveFullPowerSec), 1, 10, 1, "s", "开阀初段全功率吸合的持续时间。", false, nullptr}) && ok;
+    ok = Esp32BaseAppConfig::addInt({kGroupValve, kConfigNs, kKeyValveHoldDuty, "阀门保持占空比", kDefaultValveHoldDutyPercent, kMinValveHoldDutyPercent, kMaxValveHoldDutyPercent, 1, "%", "100% 为全压保持；低于 100% 时启用降功耗 PWM 保持。", false, nullptr}) && ok;
 
-    ok = Esp32BaseAppConfig::addInt({kGroupLocal, kConfigNs, kKeyDisplaySleep, "LCD 熄屏时间", static_cast<std::int32_t>(defaults.displaySleepSec), 5, 300, 5, "s", "待机无操作超过该时间关闭背光。立即生效。", false, nullptr}) && ok;
-    ok = Esp32BaseAppConfig::addInt({kGroupLocal, kConfigNs, kKeyResultDisplay, "结果页显示时间", static_cast<std::int32_t>(defaults.resultDisplaySec), 0, 60, 1, "s", "出水结束后结果页停留时间，0 表示立即返回。", false, nullptr}) && ok;
-    ok = Esp32BaseAppConfig::addInt({kGroupLocal, kConfigNs, kKeyVolumeStep, "容量步进", static_cast<std::int32_t>(defaults.volumeAdjustStepMl), static_cast<std::int32_t>(kMinVolumeAdjustStepMl), static_cast<std::int32_t>(kMaxVolumeAdjustStepMl), 10, "ml", "按键确认页容量步进；Web 表单不受影响。", false, nullptr}) && ok;
-    ok = Esp32BaseAppConfig::addInt({kGroupLocal, kConfigNs, kKeyTimeStep, "时间步进", static_cast<std::int32_t>(defaults.timeAdjustStepSec), static_cast<std::int32_t>(kMinTimeAdjustStepSec), static_cast<std::int32_t>(kMaxTimeAdjustStepSec), 1, "s", "按键确认页时间步进；Web 表单不受影响。", false, nullptr}) && ok;
-    ok = Esp32BaseAppConfig::addInt({kGroupLocal, kConfigNs, kKeyLcdAddress, "LCD I2C 地址", defaults.lcdI2cAddress, 0x03, 0x77, 1, nullptr, "保存后需重启，重启后重新探测 LCD。", true, nullptr}) && ok;
-    ok = Esp32BaseAppConfig::addBool({kGroupLocal, kConfigNs, kKeyBeep, "蜂鸣器提示音", defaults.beepEnabled, "控制按键、完成和异常提示音。立即生效。", false, nullptr}) && ok;
+    ok = Esp32BaseAppConfig::addInt({kGroupLocal, kConfigNs, kKeyDisplaySleep, "LCD 熄屏时间", static_cast<std::int32_t>(kDefaultDisplaySleepSec), 5, 300, 5, "s", "待机无操作超过该时间关闭背光。立即生效。", false, nullptr}) && ok;
+    ok = Esp32BaseAppConfig::addInt({kGroupLocal, kConfigNs, kKeyResultDisplay, "结果页显示时间", static_cast<std::int32_t>(kDefaultResultDisplaySec), 0, 60, 1, "s", "出水结束后结果页停留时间，0 表示立即返回。", false, nullptr}) && ok;
+    ok = Esp32BaseAppConfig::addInt({kGroupLocal, kConfigNs, kKeyVolumeStep, "容量步进", static_cast<std::int32_t>(kDefaultVolumeAdjustStepMl), static_cast<std::int32_t>(kMinVolumeAdjustStepMl), static_cast<std::int32_t>(kMaxVolumeAdjustStepMl), 10, "ml", "按键确认页容量步进；Web 表单不受影响。", false, nullptr}) && ok;
+    ok = Esp32BaseAppConfig::addInt({kGroupLocal, kConfigNs, kKeyTimeStep, "时间步进", static_cast<std::int32_t>(kDefaultTimeAdjustStepSec), static_cast<std::int32_t>(kMinTimeAdjustStepSec), static_cast<std::int32_t>(kMaxTimeAdjustStepSec), 1, "s", "按键确认页时间步进；Web 表单不受影响。", false, nullptr}) && ok;
+    ok = Esp32BaseAppConfig::addInt({kGroupLocal, kConfigNs, kKeyLcdAddress, "LCD I2C 地址", kDefaultLcdI2cAddress, 0x03, 0x77, 1, nullptr, "保存后需重启，重启后重新探测 LCD。", true, nullptr}) && ok;
+    ok = Esp32BaseAppConfig::addBool({kGroupLocal, kConfigNs, kKeyBeep, "蜂鸣器提示音", true, "控制按键、完成和异常提示音。立即生效。", false, nullptr}) && ok;
 
-    ok = Esp32BaseAppConfig::addDecimal({kGroupMetering, kConfigNs, kKeyPulseMilli, "当前控制用 P/L", static_cast<std::int32_t>(defaults.pulsePerMl * 1000.0f), static_cast<std::int32_t>(kMinPulsePerMl * 1000.0f), static_cast<std::int32_t>(kMaxPulsePerMl * 1000.0f), 1, 0, "脉冲/L", "关阀控制系数；可由记录实测更新，也可手动修正。", false, nullptr}) && ok;
-    ok = Esp32BaseAppConfig::addInt({kGroupMetering, kConfigNs, kKeyRecentPulseTraceCount, "RAM 最近脉冲明细条数", static_cast<std::int32_t>(defaults.recentPulseTraceCount), static_cast<std::int32_t>(kMinRecentPulseTraceCount), static_cast<std::int32_t>(kMaxRecentPulseTraceCount), 1, "条", "仅保存在 RAM 中，重启会丢失；用于查看最近出水明细和校准后自动入库。", false, nullptr}) && ok;
+    ok = Esp32BaseAppConfig::addInt({kGroupMetering, kConfigNs, kKeyRecentPulseTraceCount, "RAM 最近脉冲明细条数", static_cast<std::int32_t>(kDefaultRecentPulseTraceCount), static_cast<std::int32_t>(kMinRecentPulseTraceCount), static_cast<std::int32_t>(kMaxRecentPulseTraceCount), 1, "条", "仅保存在 RAM 中，重启会丢失；用于查看最近出水明细。", false, nullptr}) && ok;
 
     return ok;
 }
@@ -170,12 +160,11 @@ void setFaucetAppConfigContext(const FaucetAppConfigContext& context) {
 }
 
 bool registerFaucetAppConfig() {
-    SystemConfig defaults = makeDefaultConfig();
     Esp32BaseAppConfig::setTitle("出水系统参数");
     Esp32BaseAppConfig::setPageValidateCallback(validateAppConfigPage);
     Esp32BaseAppConfig::setChangeCallback(onAppConfigChange);
     Esp32BaseAppConfig::setSaveCallback(onAppConfigSave);
-    return addCoreFields(defaults);
+    return addCoreFields();
 }
 
 }  // namespace faucet

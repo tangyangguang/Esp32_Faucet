@@ -290,8 +290,6 @@ void test_segmented_calibration_uses_two_valid_samples() {
 
     TEST_ASSERT_EQUAL_UINT32(222, result.stablePulsePerLiter);
     TEST_ASSERT_EQUAL_UINT32(553, result.startupVolumeMl);
-    TEST_ASSERT_EQUAL_UINT32(72, result.startupPulsePerLiter);
-    TEST_ASSERT_EQUAL_UINT32(211, result.overallPulsePerLiter);
     TEST_ASSERT_EQUAL_UINT16(5, result.startupDurationSec);
     TEST_ASSERT_EQUAL_UINT32(40, result.startupPulseCount);
 }
@@ -648,6 +646,40 @@ void test_saved_trace_file_store_matches_page_records_in_one_call() {
     TEST_ASSERT_EQUAL_UINT32(3, matches[2].totalPulses);
 }
 
+void test_saved_trace_file_store_lists_newest_first() {
+    WaterPulseTrace traces[4]{};
+    WaterPulseTraceSample samples[32]{};
+    WaterPulseTraceStore ram(traces, 4, samples, 32, 4);
+    const std::uint32_t first = ram.beginTrace(1000);
+    fillTrace(ram, first, {1, 2});
+    TEST_ASSERT_TRUE(ram.finishTrace(first, makeRecord(1000, 3, 1000), WaterPulseTraceState::Completed));
+    const std::uint32_t second = ram.beginTrace(2000);
+    fillTrace(ram, second, {3, 4});
+    TEST_ASSERT_TRUE(ram.finishTrace(second, makeRecord(2000, 7, 2000), WaterPulseTraceState::Completed));
+    const std::uint32_t third = ram.beginTrace(3000);
+    fillTrace(ram, third, {5, 6});
+    TEST_ASSERT_TRUE(ram.finishTrace(third, makeRecord(3000, 11, 3000), WaterPulseTraceState::Completed));
+
+    MemoryFileBackend backend;
+    WaterPulseTraceFileStore saved(backend, "/faucet_pulse_traces_v2.bin", 8, 4);
+    TEST_ASSERT_TRUE(saved.begin());
+    for (std::size_t i = 0; i < ram.count(); ++i) {
+        const WaterPulseTrace* trace = ram.traceAt(i);
+        TEST_ASSERT_NOT_NULL(trace);
+        WaterPulseTraceSample copy[8]{};
+        for (std::size_t sample = 0; sample < trace->sampleCount; ++sample) {
+            copy[sample] = *ram.sampleAt(*trace, sample);
+        }
+        TEST_ASSERT_TRUE(saved.save(*trace, copy, trace->sampleCount));
+    }
+
+    WaterPulseTrace listed[3]{};
+    TEST_ASSERT_EQUAL_size_t(3, saved.list(listed, 3));
+    TEST_ASSERT_EQUAL_UINT32(3000, listed[0].startTime);
+    TEST_ASSERT_EQUAL_UINT32(2000, listed[1].startTime);
+    TEST_ASSERT_EQUAL_UINT32(1000, listed[2].startTime);
+}
+
 void test_saved_trace_file_store_loads_v2_index_in_bulk_for_page_match() {
     WaterPulseTrace traces[4]{};
     WaterPulseTraceSample samples[32]{};
@@ -781,6 +813,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_saved_trace_file_store_duplicate_save_reuses_existing_slot);
     RUN_TEST(test_saved_trace_file_store_refuses_new_trace_when_capacity_full);
     RUN_TEST(test_saved_trace_file_store_matches_page_records_in_one_call);
+    RUN_TEST(test_saved_trace_file_store_lists_newest_first);
     RUN_TEST(test_saved_trace_file_store_loads_v2_index_in_bulk_for_page_match);
     RUN_TEST(test_saved_trace_file_store_empty_store_does_not_read_samples_for_page_match);
     RUN_TEST(test_saved_trace_file_store_uses_v2_index_without_reading_unrelated_files);

@@ -263,7 +263,7 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NULL(std::strstr(buffer, "<th>脉冲/升</th>"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "formatWaterRecordListTime(records[i], startTime"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "%luP (%luP/L)"));
-    TEST_ASSERT_NULL(std::strstr(buffer, "</td><td>%luP/L"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "stablePulsePerLiter"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "std::uint32_t requestedPageSize = kDefaultRecordPageSize"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "std::uint32_t requestedPageNo = 0"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "page = requestedPageNo - 1"));
@@ -289,15 +289,18 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "RAM 最近明细"));
     TEST_ASSERT_NULL(std::strstr(buffer, "临时缓存"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "已保存明细"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "控制P/L"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "控制P/L"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "当前启用参数槽"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "稳态P/L"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "启动等效"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "启动脉冲数"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "启动水量"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "启动等效"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "可生成样本"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, ".diagnostic-metric strong{display:block;color:var(--text);font-size:14px;line-height:1.2;font-weight:650;font-variant-numeric:tabular-nums;white-space:nowrap;overflow-wrap:normal}"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "已保存明细 <b>%u条</b>"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "已测容量 <b>%u条</b>"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "还需 <b>%s</b>"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "建议补偿"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "建议补偿"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "拟合误差"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "候选已生成"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "样本不足"));
@@ -510,15 +513,20 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NULL(std::strstr(buffer, "handleSaveLatestTraceApi"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "明细文件"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "name='action' value='generate_segmented'"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "name='action' value='apply_segmented'"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "name='action' value='restore_segmented'"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "name='action' value='save_candidate_slot'"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "name='action' value='update_metering_slot'"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "name='action' value='apply_segmented'"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "name='action' value='restore_segmented'"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "覆盖当前启用参数"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "不会自动启用"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "action='/faucet/calibration'"));
     TEST_ASSERT_NULL(std::strstr(buffer, "<span class='status-pill status-muted'>手动执行</span>"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "手动执行：只扫描已保存到设备、容量已确认且稳态识别成功的样本"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "参数说明与计算公式"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "估算出水量 = round(脉冲数 / 控制P/ml) + 启动补偿"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "实测容量 ≈ 启动等效水量 + 稳态脉冲数 × 1000 / 稳态P/L"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "全程平均只做长期诊断"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "估算出水量 = Vs + round((P - Ns) × 1000 / Ps)"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "估算出水量 = round(脉冲数 / 控制P/ml) + 启动补偿"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "实测容量 ≈ 启动等效水量 + 稳态脉冲数 × 1000 / 稳态P/L"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "全程平均只做长期诊断"));
     TEST_ASSERT_NULL(std::strstr(buffer, "有临时样本未保存"));
     TEST_ASSERT_NULL(std::strstr(buffer, "请进入明细页保存后再生成"));
     TEST_ASSERT_NULL(std::strstr(buffer, "仍然生成候选"));
@@ -865,8 +873,8 @@ void test_app_config_source_uses_clear_business_labels_and_help() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "确认页超时"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "最大出水时长"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "无流量判定超时"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "当前控制用 P/L"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "脉冲/L"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "当前控制用 P/L"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "脉冲/L"));
     TEST_ASSERT_NULL(std::strstr(buffer, "当前实际参与关阀控制的单系数"));
     TEST_ASSERT_NULL(std::strstr(buffer, "本地确认页容量调整步进"));
     TEST_ASSERT_NULL(std::strstr(buffer, "本地确认页时间调整步进"));
@@ -874,6 +882,9 @@ void test_app_config_source_uses_clear_business_labels_and_help() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "容量步进"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "时间步进"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "RAM 最近脉冲明细条数"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "kConfigVersion = 11"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "SystemConfig defaults = makeDefaultConfig()"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "addCoreFields(const SystemConfig& defaults)"));
     TEST_ASSERT_NULL(std::strstr(buffer, "启动补偿水量"));
     TEST_ASSERT_NULL(std::strstr(buffer, "全程平均脉冲数"));
     TEST_ASSERT_NULL(std::strstr(buffer, "启动段时长"));
@@ -885,6 +896,8 @@ void test_app_config_source_uses_clear_business_labels_and_help() {
     TEST_ASSERT_NULL(std::strstr(buffer, "高级救援参数"));
     TEST_ASSERT_NULL(std::strstr(buffer, "pulse/ml"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "保存后需重启，重启后重新探测 LCD。"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "仅保存在 RAM 中，重启会丢失；用于查看最近出水明细。"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "用于查看最近出水明细和校准后自动入库。"));
 }
 
 void test_app_config_save_migrates_before_marking_current_version() {

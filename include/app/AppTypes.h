@@ -54,6 +54,12 @@ struct FilterRecord {
     std::uint32_t startBootId;
 };
 
+struct MeteringParameters {
+    std::uint32_t startupPulseCount;
+    std::uint32_t startupVolumeMl;
+    std::uint32_t stablePulsePerLiter;
+};
+
 struct WaterRecord {
     std::uint32_t startTime;
     std::uint32_t volumeMl;

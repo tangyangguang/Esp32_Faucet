@@ -79,9 +79,7 @@ struct SegmentedCalibrationResult {
     std::uint32_t startupDurationSec;
     std::uint32_t startupPulseCount;
     std::uint32_t startupVolumeMl;
-    std::uint32_t startupPulsePerLiter;
     std::uint32_t stablePulsePerLiter;
-    std::uint32_t overallPulsePerLiter;
     std::uint32_t minActualMl;
     std::uint32_t maxActualMl;
     std::uint32_t maxErrorMl;

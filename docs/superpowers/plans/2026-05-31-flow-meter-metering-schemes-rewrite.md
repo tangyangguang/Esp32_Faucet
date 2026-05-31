@@ -199,7 +199,7 @@ Use the existing in-memory `WaterRecordFileBackend` test pattern from `test/nati
 
 ```cpp
 RUN_TEST(test_begin_initializes_default_scheme_file);
-RUN_TEST(test_save_candidate_reloads_after_restart);
+RUN_TEST(test_save_generated_result_reloads_after_restart);
 RUN_TEST(test_manual_create_reuses_deleted_unused_slot_with_new_id);
 RUN_TEST(test_used_scheme_delete_is_rejected_and_disable_is_explicit);
 RUN_TEST(test_enable_updates_active_id_and_last_activated);
@@ -310,7 +310,7 @@ backend.setBool("faucet_cfg", "mc_ready", true);
 backend.setInt("faucet_cfg", "mc_sp", 41);
 backend.setInt("faucet_cfg", "mc_sv", 520);
 backend.setInt("faucet_cfg", "mc_pl", 224);
-backend.setStr("faucet_cfg", "mc_note", "旧候选说明");
+backend.setStr("faucet_cfg", "mc_note", "旧生成结果说明");
 backend.setInt("faucet_cfg", "mc_at", 1770000000);
 ```
 
@@ -640,7 +640,7 @@ Cover:
 
 ```cpp
 RUN_TEST(test_calibration_json_contains_current_candidate_and_scheme_list);
-RUN_TEST(test_save_candidate_creates_new_scheme_without_enabling);
+RUN_TEST(test_save_generated_result_creates_new_scheme_without_enabling);
 RUN_TEST(test_enable_scheme_applies_runtime_scheme);
 RUN_TEST(test_disable_used_scheme_hides_from_default_enable_list);
 RUN_TEST(test_delete_unused_scheme_removes_it_from_list);
@@ -660,7 +660,7 @@ Expected result: tests fail because Web still exposes fixed slots.
 Calibration page sections:
 
 1. 当前计量方案: name, current marker, 3 params, source, usage count, dirty warning.
-2. 候选计量方案: 3 params, sample range, max error, max relative error, startup duration min/max/median/average, save/discard actions.
+2. 计量方案生成结果: 3 params, sample range, max error, max relative error, startup duration min/max/median/average, save/discard actions.
 3. 流量计计量方案: dynamic list, default current + enabled schemes, optional disabled filter.
 4. 新建计量方案: name + 3 core params.
 5. 样本和明细: existing trace/sample tools.

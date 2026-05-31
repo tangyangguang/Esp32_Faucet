@@ -384,7 +384,7 @@ TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(MeteringSchemeStore::LoadStatu
 TEST_ASSERT_EQUAL_UINT32(1, loaded.activeSchemeId);
 TEST_ASSERT_EQUAL_UINT32(620, activeMeteringSchemeParameters(loaded).stablePulsePerLiter);
 TEST_ASSERT_TRUE(loaded.candidate.ready);
-TEST_ASSERT_NOT_NULL(std::strstr(loaded.candidate.creationSummary, "旧候选"));
+TEST_ASSERT_NOT_NULL(std::strstr(loaded.candidate.creationSummary, "旧生成结果"));
 ```
 
 - [ ] **Step 2: Run migration tests and verify RED**
@@ -594,9 +594,9 @@ Expected: all trace tests pass.
 
 Update calibration route tests to assert:
 
-- page contains `流量计计量方案`, `当前计量方案`, `候选计量方案`.
+- page contains `流量计计量方案`, `当前计量方案`, `计量方案生成结果`.
 - page does not contain `参数槽`, `保存到槽`, or `覆盖当前启用参数`.
-- candidate form action is `save_candidate_scheme`.
+- candidate form action is `save_generated_scheme`.
 - manual create form action is `create_metering_scheme`.
 - edit form action is `update_metering_scheme`.
 - enable form action is `enable_metering_scheme`.
@@ -605,7 +605,7 @@ Update calibration route tests to assert:
 Concrete assertions:
 
 ```cpp
-TEST_ASSERT_NOT_NULL(std::strstr(buffer, "name='action' value='save_candidate_scheme'"));
+TEST_ASSERT_NOT_NULL(std::strstr(buffer, "name='action' value='save_generated_scheme'"));
 TEST_ASSERT_NOT_NULL(std::strstr(buffer, "name='action' value='create_metering_scheme'"));
 TEST_ASSERT_NULL(std::strstr(buffer, "参数槽"));
 TEST_ASSERT_NULL(std::strstr(buffer, "覆盖当前启用参数"));
@@ -628,7 +628,7 @@ Replace `sendCalibrationParameterPanels()` with sections:
 
 Use these actions:
 
-- `save_candidate_scheme` with required `name`.
+- `save_generated_scheme` with required `name`.
 - `discard_candidate_scheme`.
 - `create_metering_scheme`.
 - `update_metering_scheme` with `schemeId`.

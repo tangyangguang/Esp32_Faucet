@@ -32,6 +32,12 @@ WaterPulseTraceState traceStateForResult(WaterResult result) {
     }
 }
 
+MeteringSchemeRecord schemeFromLegacyConfig(const SystemConfig& config) {
+    MeteringSchemeRecord scheme{};
+    initializeManualMeteringScheme(scheme, 1, "运行计量方案", activeMeteringParameters(config), 0);
+    return scheme;
+}
+
 }  // namespace
 
 AppController::AppController(const SystemConfig& config,
@@ -40,14 +46,17 @@ AppController::AppController(const SystemConfig& config,
                              WaterRecordWriter& records,
                              WaterPulseTraceStore* pulseTraces)
     : config_(config),
+      activeMeteringScheme_(schemeFromLegacyConfig(config)),
       water_(config_),
       localMode_(LocalUiMode::Normal),
       buttons_(),
-      flow_(activeMeteringParameters(config_), config_.pulseMinIntervalUs),
+      flow_(activeMeteringScheme_.params, config_.pulseMinIntervalUs),
       valve_(config_.valveFullPowerSec, config_.valveHoldDutyPercent),
       statistics_(statistics),
       filters_(filters),
       records_(records),
+      meteringSnapshots_(nullptr),
+      meteringSchemes_(nullptr),
       pulseTraces_(pulseTraces),
       activeTraceId_(0),
       activeTraceStartUs_(0),
@@ -75,6 +84,59 @@ AppController::AppController(const SystemConfig& config,
       calibrationStepMl_(100),
       calibrationIgnoreOkUntilReleased_(false) {
     sanitizeConfig(config_);
+}
+
+AppController::AppController(const SystemConfig& config,
+                             const MeteringSchemeRecord& activeScheme,
+                             StatisticsStore& statistics,
+                             FilterStore& filters,
+                             WaterRecordWriter& records,
+                             WaterRecordMeteringSnapshotWriter& meteringSnapshots,
+                             MeteringSchemeStore& meteringSchemes,
+                             WaterPulseTraceStore* pulseTraces)
+    : config_(config),
+      activeMeteringScheme_(activeScheme),
+      water_(config_),
+      localMode_(LocalUiMode::Normal),
+      buttons_(),
+      flow_(activeMeteringScheme_.params, config_.pulseMinIntervalUs),
+      valve_(config_.valveFullPowerSec, config_.valveHoldDutyPercent),
+      statistics_(statistics),
+      filters_(filters),
+      records_(records),
+      meteringSnapshots_(&meteringSnapshots),
+      meteringSchemes_(&meteringSchemes),
+      pulseTraces_(pulseTraces),
+      activeTraceId_(0),
+      activeTraceStartUs_(0),
+      lastFlowVolumeMl_(0),
+      activeStartTimeSec_(0),
+      activeStartTimeSynced_(false),
+      activeStartBootId_(0),
+      lastValveDesiredOpen_(false),
+      calibrationValveOpen_(false),
+      lastRecordWriteOk_(true),
+      persistenceDirty_(false),
+      configDirty_(false),
+      factoryResetRequested_(false),
+      pendingBeep_(BeepPattern::None),
+      flowDroppedPulses_(0),
+      resultDisplayStartMs_(0),
+      adjustmentStepMl_(config_.volumeAdjustStepMl),
+      timeAdjustmentStepSec_(config_.timeAdjustStepSec),
+      lastResultRecordValid_(false),
+      lastResultRecord_{},
+      resultOkHoldTracking_(false),
+      resultOkHoldTriggered_(false),
+      resultOkHoldStartMs_(0),
+      calibrationActualMl_(0),
+      calibrationStepMl_(100),
+      calibrationIgnoreOkUntilReleased_(false) {
+    sanitizeConfig(config_);
+    if (!activeMeteringScheme_.valid || !validMeteringSchemeParameters(activeMeteringScheme_.params)) {
+        activeMeteringScheme_ = schemeFromLegacyConfig(config_);
+        flow_.setMeteringParameters(activeMeteringScheme_.params);
+    }
 }
 
 void AppController::resetInputs(ButtonLevels levels, std::uint32_t nowMs) {
@@ -119,7 +181,14 @@ void AppController::tick(const AppTickInput& input) {
             resultStartSynced = true;
             resultBootId = 0;
         }
-        processResult(resultStartTime, input.periodKeys, input.periodKeysValid, resultStartSynced, resultBootId, flow, input.nowUs);
+        processResult(resultStartTime,
+                      input.periodKeys,
+                      input.periodKeysValid,
+                      resultStartSynced,
+                      resultBootId,
+                      input.timeSynced ? input.nowSeconds : 0,
+                      flow,
+                      input.nowUs);
         water_.clearResult();
     }
 
@@ -139,7 +208,7 @@ AppSnapshot AppController::snapshot() const {
     snapshot.calibrationActualMl = calibrationActualMl_;
     snapshot.calibrationStepMl = calibrationStepMl_;
     snapshot.calibrationReady = lastResultRecordValid_;
-    snapshot.pulsePerLiter = activeMeteringParameters(config_).stablePulsePerLiter;
+    snapshot.pulsePerLiter = activeMeteringScheme_.params.stablePulsePerLiter;
     snapshot.flowDroppedPulses = flowDroppedPulses_;
     return snapshot;
 }
@@ -162,6 +231,10 @@ bool AppController::consumeConfigDirty() {
 
 const SystemConfig& AppController::config() const {
     return config_;
+}
+
+const MeteringSchemeRecord& AppController::activeMeteringScheme() const {
+    return activeMeteringScheme_;
 }
 
 bool AppController::consumeFactoryResetRequest() {
@@ -202,7 +275,6 @@ bool AppController::applyConfig(const SystemConfig& config) {
     SystemConfig safe = config;
     sanitizeConfig(safe);
     config_ = safe;
-    flow_.setMeteringParameters(activeMeteringParameters(config_));
     flow_.setPulseFilterUs(config_.pulseMinIntervalUs);
     valve_.configure(config_.valveFullPowerSec, config_.valveHoldDutyPercent);
     adjustmentStepMl_ = config_.volumeAdjustStepMl;
@@ -210,6 +282,16 @@ bool AppController::applyConfig(const SystemConfig& config) {
     if (pulseTraces_) {
         pulseTraces_->setRecentTraceLimit(config_.recentPulseTraceCount);
     }
+    return true;
+}
+
+bool AppController::applyActiveMeteringScheme(const MeteringSchemeRecord& activeScheme) {
+    if (!canApplyConfig() || !activeScheme.valid || !activeScheme.enabled ||
+        !validMeteringSchemeParameters(activeScheme.params)) {
+        return false;
+    }
+    activeMeteringScheme_ = activeScheme;
+    flow_.setMeteringParameters(activeMeteringScheme_.params);
     return true;
 }
 
@@ -515,6 +597,7 @@ void AppController::processResult(std::uint32_t startTime,
                                   bool periodKeysValid,
                                   bool startTimeSynced,
                                   std::uint32_t bootId,
+                                  std::uint32_t nowSeconds,
                                   const FlowSnapshot& flow,
                                   std::uint32_t nowUs) {
     const WaterTaskResult result = water_.result();
@@ -533,7 +616,7 @@ void AppController::processResult(std::uint32_t startTime,
         result.result,
         result.selectedPreset,
         0,
-        static_cast<float>(activeMeteringParameters(config_).stablePulsePerLiter) / 1000.0f,
+        static_cast<float>(activeMeteringScheme_.params.stablePulsePerLiter) / 1000.0f,
         {0, 0, 0, 0},
     };
     if (!startTimeSynced) {
@@ -546,6 +629,21 @@ void AppController::processResult(std::uint32_t startTime,
     lastResultRecord_ = record;
     lastResultRecordValid_ = record.pulseCount > 0 && waterResultAllowsCalibration(record.result);
     lastRecordWriteOk_ = records_.append(record);
+    if (lastRecordWriteOk_ && meteringSnapshots_) {
+        WaterRecordMeteringSnapshot snapshot = makeWaterRecordMeteringSnapshot(record);
+        snapshot.meteringSchemeId = activeMeteringScheme_.id;
+        snapshot.meteringSchemeRevision = activeMeteringScheme_.revision;
+        snapshot.params = activeMeteringScheme_.params;
+        if (!meteringSnapshots_->upsert(snapshot)) {
+            lastRecordWriteOk_ = false;
+            if (meteringSchemes_) {
+                meteringSchemes_->markUsageStatsDirty(activeMeteringScheme_.id);
+            }
+        } else if (meteringSchemes_ &&
+                   !meteringSchemes_->incrementUsageAfterRecordWrite(activeMeteringScheme_.id, nowSeconds)) {
+            lastRecordWriteOk_ = false;
+        }
+    }
     if (periodKeysValid) {
         statistics_.addWater(result.volumeMl, periodKeys);
     }

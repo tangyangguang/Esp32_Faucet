@@ -4,9 +4,11 @@
 #include "app/BeepDriver.h"
 #include "app/FilterStore.h"
 #include "app/FlowMeter.h"
+#include "app/MeteringSchemeStore.h"
 #include "app/StatisticsStore.h"
 #include "app/ValveDriver.h"
 #include "app/WaterController.h"
+#include "app/WaterRecordMeteringSnapshotStore.h"
 #include "app/WaterPulseTraceStore.h"
 
 #include <cstdint>
@@ -66,6 +68,14 @@ public:
                   FilterStore& filters,
                   WaterRecordWriter& records,
                   WaterPulseTraceStore* pulseTraces = nullptr);
+    AppController(const SystemConfig& config,
+                  const MeteringSchemeRecord& activeScheme,
+                  StatisticsStore& statistics,
+                  FilterStore& filters,
+                  WaterRecordWriter& records,
+                  WaterRecordMeteringSnapshotWriter& meteringSnapshots,
+                  MeteringSchemeStore& meteringSchemes,
+                  WaterPulseTraceStore* pulseTraces = nullptr);
 
     void resetInputs(ButtonLevels levels, std::uint32_t nowMs);
     void onFlowPulse(std::uint32_t nowUs);
@@ -81,8 +91,10 @@ public:
     void setFlowDroppedPulses(std::uint32_t droppedPulses);
     bool canApplyConfig() const;
     bool applyConfig(const SystemConfig& config);
+    bool applyActiveMeteringScheme(const MeteringSchemeRecord& activeScheme);
     CalibrationApplyResult applyCalibrationFromRecord(const WaterRecord& record, std::uint32_t actualMl);
     const SystemConfig& config() const;
+    const MeteringSchemeRecord& activeMeteringScheme() const;
 
 private:
     void handleButtonEvent(ButtonEvent event,
@@ -116,10 +128,12 @@ private:
                        bool periodKeysValid,
                        bool startTimeSynced,
                        std::uint32_t bootId,
+                       std::uint32_t nowSeconds,
                        const FlowSnapshot& flow,
                        std::uint32_t nowUs);
 
     SystemConfig config_;
+    MeteringSchemeRecord activeMeteringScheme_;
     WaterController water_;
     LocalUiMode localMode_;
     ButtonInput buttons_;
@@ -128,6 +142,8 @@ private:
     StatisticsStore& statistics_;
     FilterStore& filters_;
     WaterRecordWriter& records_;
+    WaterRecordMeteringSnapshotWriter* meteringSnapshots_;
+    MeteringSchemeStore* meteringSchemes_;
     WaterPulseTraceStore* pulseTraces_;
     std::uint32_t activeTraceId_;
     std::uint32_t activeTraceStartUs_;

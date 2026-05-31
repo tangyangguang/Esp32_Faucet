@@ -1,7 +1,12 @@
 #include <unity.h>
 
 #include "app/AppController.h"
+#include "app/MeteringSchemeStore.h"
+#include "app/WaterRecordMeteringSnapshotStore.h"
 
+#include <cstring>
+#include <map>
+#include <string>
 #include <vector>
 
 using namespace faucet;
@@ -21,6 +26,100 @@ public:
         return true;
     }
 };
+
+class MemorySnapshotWriter : public WaterRecordMeteringSnapshotWriter {
+public:
+    bool ok = true;
+    std::vector<WaterRecordMeteringSnapshot> snapshots;
+
+    bool upsert(const WaterRecordMeteringSnapshot& snapshot) override {
+        if (!ok) {
+            return false;
+        }
+        snapshots.push_back(snapshot);
+        return true;
+    }
+};
+
+class MemoryFileBackend : public WaterRecordFileBackend {
+public:
+    bool exists(const char* path) override {
+        return files.find(path ? path : "") != files.end();
+    }
+
+    std::int64_t fileSize(const char* path) override {
+        const auto it = files.find(path ? path : "");
+        return it == files.end() ? -1 : static_cast<std::int64_t>(it->second.size());
+    }
+
+    bool createSized(const char* path, std::size_t size) override {
+        files[path ? path : ""] = std::vector<std::uint8_t>(size, 0);
+        return path != nullptr;
+    }
+
+    bool appendBytes(const char* path, const std::uint8_t* data, std::size_t len) override {
+        if (!path || (!data && len > 0)) {
+            return false;
+        }
+        std::vector<std::uint8_t>& file = files[path];
+        const std::size_t oldSize = file.size();
+        file.resize(oldSize + len, 0);
+        if (len > 0) {
+            std::memcpy(file.data() + oldSize, data, len);
+        }
+        return true;
+    }
+
+    bool readAt(const char* path, std::size_t offset, std::uint8_t* out, std::size_t len) override {
+        if (!path || !out) {
+            return false;
+        }
+        const auto it = files.find(path);
+        if (it == files.end() || offset + len > it->second.size()) {
+            return false;
+        }
+        std::memcpy(out, it->second.data() + offset, len);
+        return true;
+    }
+
+    bool writeAt(const char* path, std::size_t offset, const std::uint8_t* data, std::size_t len) override {
+        if (!path || (!data && len > 0)) {
+            return false;
+        }
+        std::vector<std::uint8_t>& file = files[path];
+        if (offset + len > file.size()) {
+            file.resize(offset + len, 0);
+        }
+        if (len > 0) {
+            std::memcpy(file.data() + offset, data, len);
+        }
+        return true;
+    }
+
+    bool removeFile(const char* path) override {
+        files.erase(path ? path : "");
+        return true;
+    }
+
+private:
+    std::map<std::string, std::vector<std::uint8_t>> files;
+};
+
+bool prepareMeteringScheme(MeteringSchemeStore& store,
+                           std::uint32_t stablePulsePerLiter,
+                           MeteringSchemeRecord& active) {
+    if (!store.begin()) {
+        return false;
+    }
+    std::uint32_t id = 0;
+    if (!store.createManual("运行方案", MeteringParameters{0, 0, stablePulsePerLiter}, 1714502300, id)) {
+        return false;
+    }
+    if (!store.enableScheme(id, 1714502301)) {
+        return false;
+    }
+    return store.activeScheme(active);
+}
 
 AppTickInput input(ButtonLevels levels, std::uint32_t nowMs, std::uint32_t nowUs, std::uint32_t nowSeconds) {
     return AppTickInput{
@@ -83,7 +182,111 @@ void pressAndReleaseMinus(AppController& app, std::uint32_t baseMs) {
     app.tick(input({false, false, false, false}, baseMs + 60 + kButtonDebounceMs, (baseMs + 60 + kButtonDebounceMs) * 1000UL, 1000));
 }
 
+void finishVolumeRun(AppController& app) {
+    app.resetInputs({false, false, false, false}, 0);
+    pressAndReleaseOk(app, 100);
+    pressAndReleaseOk(app, 300);
+    for (std::uint32_t i = 0; i < 1500; ++i) {
+        app.onFlowPulse(1000000UL + i * 2000UL);
+    }
+    app.tick(input({false, false, false, false}, 5000, 5000000, 1714502400));
+}
+
 }  // namespace
+
+void test_app_controller_uses_active_scheme_parameters_for_flow_meter() {
+    SystemConfig config = makeDefaultConfig();
+    config.meteringSlots[config.activeMeteringSlot].params.stablePulsePerLiter = 450;
+    StatisticsStore statistics;
+    statistics.reset({20260506, 202619, 202605});
+    FilterStore filters(config.filters);
+    MemoryRecordWriter records;
+    MemorySnapshotWriter snapshots;
+    MemoryFileBackend backend;
+    MeteringSchemeStore schemes(backend, "/schemes.bin");
+    MeteringSchemeRecord active{};
+    TEST_ASSERT_TRUE(prepareMeteringScheme(schemes, 1000, active));
+
+    AppController app(config, active, statistics, filters, records, snapshots, schemes);
+
+    TEST_ASSERT_EQUAL_UINT32(1000, app.snapshot().pulsePerLiter);
+}
+
+void test_app_controller_successful_record_writes_metering_snapshot_and_usage_count() {
+    SystemConfig config = makeDefaultConfig();
+    StatisticsStore statistics;
+    statistics.reset({20260506, 202619, 202605});
+    FilterStore filters(config.filters);
+    MemoryRecordWriter records;
+    MemorySnapshotWriter snapshots;
+    MemoryFileBackend backend;
+    MeteringSchemeStore schemes(backend, "/schemes.bin");
+    MeteringSchemeRecord active{};
+    TEST_ASSERT_TRUE(prepareMeteringScheme(schemes, 1000, active));
+    AppController app(config, active, statistics, filters, records, snapshots, schemes);
+
+    finishVolumeRun(app);
+
+    TEST_ASSERT_TRUE(app.lastRecordWriteOk());
+    TEST_ASSERT_EQUAL_size_t(1, records.records.size());
+    TEST_ASSERT_EQUAL_size_t(1, snapshots.snapshots.size());
+    TEST_ASSERT_EQUAL_UINT32(active.id, snapshots.snapshots[0].meteringSchemeId);
+    TEST_ASSERT_EQUAL_UINT32(active.revision, snapshots.snapshots[0].meteringSchemeRevision);
+    TEST_ASSERT_EQUAL_UINT32(1000, snapshots.snapshots[0].params.stablePulsePerLiter);
+    MeteringSchemeRecord updated{};
+    TEST_ASSERT_TRUE(schemes.findById(active.id, updated));
+    TEST_ASSERT_EQUAL_UINT32(1, updated.useCount);
+    TEST_ASSERT_EQUAL_UINT32(1714502400, updated.lastUsedAt);
+    TEST_ASSERT_FALSE(updated.usageStatsDirty);
+}
+
+void test_app_controller_record_write_failure_does_not_write_snapshot_or_usage() {
+    SystemConfig config = makeDefaultConfig();
+    StatisticsStore statistics;
+    statistics.reset({20260506, 202619, 202605});
+    FilterStore filters(config.filters);
+    MemoryRecordWriter records;
+    records.ok = false;
+    MemorySnapshotWriter snapshots;
+    MemoryFileBackend backend;
+    MeteringSchemeStore schemes(backend, "/schemes.bin");
+    MeteringSchemeRecord active{};
+    TEST_ASSERT_TRUE(prepareMeteringScheme(schemes, 1000, active));
+    AppController app(config, active, statistics, filters, records, snapshots, schemes);
+
+    finishVolumeRun(app);
+
+    TEST_ASSERT_FALSE(app.lastRecordWriteOk());
+    TEST_ASSERT_EQUAL_size_t(0, snapshots.snapshots.size());
+    MeteringSchemeRecord updated{};
+    TEST_ASSERT_TRUE(schemes.findById(active.id, updated));
+    TEST_ASSERT_EQUAL_UINT32(0, updated.useCount);
+    TEST_ASSERT_FALSE(updated.usageStatsDirty);
+}
+
+void test_app_controller_snapshot_write_failure_marks_usage_stats_dirty() {
+    SystemConfig config = makeDefaultConfig();
+    StatisticsStore statistics;
+    statistics.reset({20260506, 202619, 202605});
+    FilterStore filters(config.filters);
+    MemoryRecordWriter records;
+    MemorySnapshotWriter snapshots;
+    snapshots.ok = false;
+    MemoryFileBackend backend;
+    MeteringSchemeStore schemes(backend, "/schemes.bin");
+    MeteringSchemeRecord active{};
+    TEST_ASSERT_TRUE(prepareMeteringScheme(schemes, 1000, active));
+    AppController app(config, active, statistics, filters, records, snapshots, schemes);
+
+    finishVolumeRun(app);
+
+    TEST_ASSERT_FALSE(app.lastRecordWriteOk());
+    TEST_ASSERT_EQUAL_size_t(1, records.records.size());
+    MeteringSchemeRecord updated{};
+    TEST_ASSERT_TRUE(schemes.findById(active.id, updated));
+    TEST_ASSERT_EQUAL_UINT32(0, updated.useCount);
+    TEST_ASSERT_TRUE(updated.usageStatsDirty);
+}
 
 void test_app_controller_starts_after_double_ok_and_opens_valve() {
     SystemConfig config = makeDefaultConfig();
@@ -695,6 +898,10 @@ int main(int argc, char** argv) {
     (void)argv;
 
     UNITY_BEGIN();
+    RUN_TEST(test_app_controller_uses_active_scheme_parameters_for_flow_meter);
+    RUN_TEST(test_app_controller_successful_record_writes_metering_snapshot_and_usage_count);
+    RUN_TEST(test_app_controller_record_write_failure_does_not_write_snapshot_or_usage);
+    RUN_TEST(test_app_controller_snapshot_write_failure_marks_usage_stats_dirty);
     RUN_TEST(test_app_controller_starts_after_double_ok_and_opens_valve);
     RUN_TEST(test_app_controller_completion_writes_record_statistics_and_filters);
     RUN_TEST(test_app_controller_offline_completion_marks_unknown_time_with_boot_id);

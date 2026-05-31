@@ -258,15 +258,11 @@ bool writeUsageSummaryJson(const WaterUsageSummary& summary,
 
 bool writeConfigJson(const SystemConfig& config, char* out, std::size_t len) {
     JsonWriter writer(out, len);
-    const MeteringParameters& active = activeMeteringParameters(config);
     writer.append("{\"confirmTimeoutSec\":%lu,\"maxOutTimeSec\":%lu,\"maxOutVolumeMl\":%lu,"
                   "\"overflowPercent\":%u,\"noFlowTimeoutSec\":%lu,\"highFlowMlPerMin\":%lu,"
                   "\"highFlowDurationSec\":%lu,\"pauseTimeoutSec\":%lu,\"volumeAdjustStepMl\":%lu,"
                   "\"timeAdjustStepSec\":%lu,\"pulseMinIntervalUs\":%lu,"
                   "\"pulseMaxEffectiveHz\":%lu,\"recentPulseTraceCount\":%lu,"
-                  "\"activeMeteringSlot\":%u,\"startupPulseCount\":%lu,"
-                  "\"startupVolumeMl\":%lu,\"stablePulsePerLiter\":%lu,"
-                  "\"meteringCandidateReady\":%s,"
                   "\"valveFullPowerSec\":%lu,"
                   "\"valveHoldDutyPercent\":%u,\"displaySleepSec\":%lu,\"resultDisplaySec\":%lu,"
                   "\"lcdI2cAddress\":%u,\"beepEnabled\":%s}",
@@ -283,11 +279,6 @@ bool writeConfigJson(const SystemConfig& config, char* out, std::size_t len) {
                   static_cast<unsigned long>(config.pulseMinIntervalUs),
                   static_cast<unsigned long>(1000000UL / config.pulseMinIntervalUs),
                   static_cast<unsigned long>(config.recentPulseTraceCount),
-                  static_cast<unsigned>(config.activeMeteringSlot),
-                  static_cast<unsigned long>(active.startupPulseCount),
-                  static_cast<unsigned long>(active.startupVolumeMl),
-                  static_cast<unsigned long>(active.stablePulsePerLiter),
-                  config.meteringCandidate.ready ? "true" : "false",
                   static_cast<unsigned long>(config.valveFullPowerSec),
                   static_cast<unsigned>(config.valveHoldDutyPercent),
                   static_cast<unsigned long>(config.displaySleepSec),

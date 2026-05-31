@@ -143,11 +143,11 @@ void test_config_json_contains_safety_and_display_settings() {
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"pulseMinIntervalUs\":1000"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"pulseMaxEffectiveHz\":1000"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"recentPulseTraceCount\":3"));
-    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"activeMeteringSlot\":0"));
-    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"startupPulseCount\":0"));
-    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"startupVolumeMl\":0"));
-    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"stablePulsePerLiter\":450"));
-    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"meteringCandidateReady\":false"));
+    TEST_ASSERT_NULL(std::strstr(json, "activeMeteringSlot"));
+    TEST_ASSERT_NULL(std::strstr(json, "startupPulseCount"));
+    TEST_ASSERT_NULL(std::strstr(json, "startupVolumeMl"));
+    TEST_ASSERT_NULL(std::strstr(json, "stablePulsePerLiter"));
+    TEST_ASSERT_NULL(std::strstr(json, "meteringCandidateReady"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"valveHoldDutyPercent\":70"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"beepEnabled\":false"));
 }

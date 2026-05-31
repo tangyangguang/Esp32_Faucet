@@ -340,6 +340,33 @@ void test_migrates_legacy_config_slots_and_candidate_once() {
     TEST_ASSERT_EQUAL_size_t(1, store.list(list, 4, true));
 }
 
+void test_legacy_migration_avoids_large_metering_scheme_stack_arrays() {
+    FILE* file = std::fopen("src/app/MeteringSchemeStore.cpp", "rb");
+    TEST_ASSERT_NOT_NULL(file);
+    static char buffer[90000]{};
+    const std::size_t read = std::fread(buffer, 1, sizeof(buffer) - 1, file);
+    std::fclose(file);
+    TEST_ASSERT_GREATER_THAN_size_t(0, read);
+
+    const char* migration = std::strstr(buffer, "bool MeteringSchemeStore::migrateLegacyFromConfig");
+    TEST_ASSERT_NOT_NULL(migration);
+    const char* nextFunction = std::strstr(migration, "bool MeteringSchemeStore::validPath()");
+    TEST_ASSERT_NOT_NULL(nextFunction);
+
+    const char* existingAllocation =
+        std::strstr(migration, "new (std::nothrow) MeteringSchemeRecord[2]");
+    const char* migratedAllocation =
+        std::strstr(migration, "new (std::nothrow) MeteringSchemeRecord[kLegacyMeteringSlotCount]");
+    const char* existingStackArray = std::strstr(migration, "MeteringSchemeRecord existing[2]");
+    const char* migratedStackArray = std::strstr(migration, "MeteringSchemeRecord migrated[kLegacyMeteringSlotCount]");
+    TEST_ASSERT_NOT_NULL(existingAllocation);
+    TEST_ASSERT_NOT_NULL(migratedAllocation);
+    TEST_ASSERT_TRUE(existingAllocation < nextFunction);
+    TEST_ASSERT_TRUE(migratedAllocation < nextFunction);
+    TEST_ASSERT_TRUE(existingStackArray == nullptr || existingStackArray > nextFunction);
+    TEST_ASSERT_TRUE(migratedStackArray == nullptr || migratedStackArray > nextFunction);
+}
+
 int main(int argc, char** argv) {
     (void)argc;
     (void)argv;
@@ -351,5 +378,6 @@ int main(int argc, char** argv) {
     RUN_TEST(test_enable_updates_active_id_and_last_activated);
     RUN_TEST(test_increment_usage_marks_dirty_when_record_update_fails);
     RUN_TEST(test_migrates_legacy_config_slots_and_candidate_once);
+    RUN_TEST(test_legacy_migration_avoids_large_metering_scheme_stack_arrays);
     return UNITY_END();
 }

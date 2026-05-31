@@ -136,7 +136,7 @@ bool addCoreFields() {
     ok = Esp32BaseAppConfig::addInt({kGroupFlow, kConfigNs, kKeyHighFlow, "高流量阈值", static_cast<std::int32_t>(kDefaultHighFlowMlPerMin), 1000, 100000, 100, "ml/min", "实时流量高于该值会进入高流量观察。", false, nullptr}) && ok;
     ok = Esp32BaseAppConfig::addInt({kGroupFlow, kConfigNs, kKeyHighDuration, "高流量持续时间", static_cast<std::int32_t>(kDefaultHighFlowDurationSec), 1, 30, 1, "s", "高流量连续超过该时间才判为异常。", false, nullptr}) && ok;
     ok = Esp32BaseAppConfig::addInt({kGroupFlow, kConfigNs, kKeyPauseTimeout, "暂停保持时间", static_cast<std::int32_t>(kDefaultPauseTimeoutSec), 10, 3600, 10, "s", "暂停超过该时间自动结束本次出水。", false, nullptr}) && ok;
-    ok = Esp32BaseAppConfig::addInt({kGroupFlow, kConfigNs, kKeyPulseMinIntervalUs, "有效脉冲最小间隔", static_cast<std::int32_t>(kDefaultPulseMinIntervalUs), static_cast<std::int32_t>(kMinPulseMinIntervalUs), static_cast<std::int32_t>(kMaxPulseMinIntervalUs), 100, "us", "实时计量和明细分析的有效脉冲判定阈值；最大有效频率 = 1000000 / 当前值 Hz。", false, nullptr}) && ok;
+    ok = Esp32BaseAppConfig::addInt({kGroupFlow, kConfigNs, kKeyPulseMinIntervalUs, "有效脉冲最小间隔", static_cast<std::int32_t>(kDefaultPulseMinIntervalUs), static_cast<std::int32_t>(kMinPulseMinIntervalUs), static_cast<std::int32_t>(kMaxPulseMinIntervalUs), 100, "us", "有效脉冲间隔阈值；最大频率 = 1000000 / 当前值 Hz。", false, nullptr}) && ok;
 
     ok = Esp32BaseAppConfig::addInt({kGroupValve, kConfigNs, kKeyValveFullPower, "阀门全功率时间", static_cast<std::int32_t>(kDefaultValveFullPowerSec), 1, 10, 1, "s", "开阀初段全功率吸合的持续时间。", false, nullptr}) && ok;
     ok = Esp32BaseAppConfig::addInt({kGroupValve, kConfigNs, kKeyValveHoldDuty, "阀门保持占空比", kDefaultValveHoldDutyPercent, kMinValveHoldDutyPercent, kMaxValveHoldDutyPercent, 1, "%", "100% 为全压保持；低于 100% 时启用降功耗 PWM 保持。", false, nullptr}) && ok;

@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
+#include <memory>
 
 namespace faucet {
 namespace {
@@ -345,15 +346,21 @@ bool MeteringSchemeStore::migrateLegacyFromConfig(ConfigBackend& config, std::ui
         return false;
     }
 
-    MeteringSchemeRecord existing[2]{};
-    if (list(existing, 2, true) != 1 || existing[0].sourceType != MeteringSchemeSource::Default ||
+    std::unique_ptr<MeteringSchemeRecord[]> existing(
+        new (std::nothrow) MeteringSchemeRecord[2]{});
+    std::unique_ptr<MeteringSchemeRecord[]> migrated(
+        new (std::nothrow) MeteringSchemeRecord[kLegacyMeteringSlotCount]{});
+    if (!existing || !migrated) {
+        return false;
+    }
+
+    if (list(existing.get(), 2, true) != 1 || existing[0].sourceType != MeteringSchemeSource::Default ||
         existing[0].id != 1 || !defaultParams(existing[0].params)) {
         return true;
     }
 
     const std::uint8_t legacyActive =
         static_cast<std::uint8_t>(config.getInt("faucet_cfg", "active_ms", 0));
-    MeteringSchemeRecord migrated[kLegacyMeteringSlotCount]{};
     std::size_t migratedCount = 0;
 
     auto appendLegacySlot = [&](std::size_t index) -> bool {

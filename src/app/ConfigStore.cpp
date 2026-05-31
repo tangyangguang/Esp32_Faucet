@@ -12,7 +12,7 @@ namespace {
 constexpr const char* kConfigNs = "faucet_cfg";
 constexpr const char* kStatNs = "faucet_stat";
 constexpr const char* kRunNs = "faucet_run";
-constexpr std::int32_t kConfigVersion = 12;
+constexpr std::int32_t kConfigVersion = 13;
 constexpr std::int32_t kRuntimeVersion = 1;
 
 std::int32_t toInt(std::uint32_t value) {
@@ -61,10 +61,6 @@ void presetKey(char* out, std::size_t len, std::size_t index, const char* suffix
 
 void filterKey(char* out, std::size_t len, std::size_t index, const char* suffix) {
     std::snprintf(out, len, "f%u_%s", static_cast<unsigned>(index), suffix);
-}
-
-void meteringSlotKey(char* out, std::size_t len, std::size_t index, const char* suffix) {
-    std::snprintf(out, len, "ms%u_%s", static_cast<unsigned>(index), suffix);
 }
 
 bool isKnownSystemConfigVersion(std::int32_t version) {
@@ -197,41 +193,6 @@ void loadCommonSystemConfig(ConfigBackend& backend, SystemConfig& config) {
         static_cast<std::uint32_t>(backend.getInt(kConfigNs, "pulse_min_us", toInt(config.pulseMinIntervalUs)));
     config.recentPulseTraceCount =
         static_cast<std::uint32_t>(backend.getInt(kConfigNs, "trace_count", toInt(config.recentPulseTraceCount)));
-    config.activeMeteringSlot =
-        static_cast<std::uint8_t>(backend.getInt(kConfigNs, "active_ms", config.activeMeteringSlot));
-    for (std::size_t i = 0; i < kMeteringSlotCount; ++i) {
-        char key[16]{};
-        meteringSlotKey(key, sizeof(key), i, "valid");
-        config.meteringSlots[i].valid = backend.getBool(kConfigNs, key, config.meteringSlots[i].valid);
-        meteringSlotKey(key, sizeof(key), i, "name");
-        backend.getStr(kConfigNs, key, config.meteringSlots[i].name, sizeof(config.meteringSlots[i].name), config.meteringSlots[i].name);
-        meteringSlotKey(key, sizeof(key), i, "sp");
-        config.meteringSlots[i].params.startupPulseCount =
-            static_cast<std::uint32_t>(backend.getInt(kConfigNs, key, toInt(config.meteringSlots[i].params.startupPulseCount)));
-        meteringSlotKey(key, sizeof(key), i, "sv");
-        config.meteringSlots[i].params.startupVolumeMl =
-            static_cast<std::uint32_t>(backend.getInt(kConfigNs, key, toInt(config.meteringSlots[i].params.startupVolumeMl)));
-        meteringSlotKey(key, sizeof(key), i, "pl");
-        config.meteringSlots[i].params.stablePulsePerLiter =
-            static_cast<std::uint32_t>(backend.getInt(kConfigNs, key, toInt(config.meteringSlots[i].params.stablePulsePerLiter)));
-        meteringSlotKey(key, sizeof(key), i, "create");
-        backend.getStr(kConfigNs, key, config.meteringSlots[i].creationNote, sizeof(config.meteringSlots[i].creationNote), config.meteringSlots[i].creationNote);
-        meteringSlotKey(key, sizeof(key), i, "modify");
-        backend.getStr(kConfigNs, key, config.meteringSlots[i].lastModifiedNote, sizeof(config.meteringSlots[i].lastModifiedNote), config.meteringSlots[i].lastModifiedNote);
-        meteringSlotKey(key, sizeof(key), i, "mod_at");
-        config.meteringSlots[i].modifiedAt =
-            static_cast<std::uint32_t>(backend.getInt(kConfigNs, key, toInt(config.meteringSlots[i].modifiedAt)));
-    }
-    config.meteringCandidate.ready = backend.getBool(kConfigNs, "mc_ready", config.meteringCandidate.ready);
-    config.meteringCandidate.params.startupPulseCount =
-        static_cast<std::uint32_t>(backend.getInt(kConfigNs, "mc_sp", toInt(config.meteringCandidate.params.startupPulseCount)));
-    config.meteringCandidate.params.startupVolumeMl =
-        static_cast<std::uint32_t>(backend.getInt(kConfigNs, "mc_sv", toInt(config.meteringCandidate.params.startupVolumeMl)));
-    config.meteringCandidate.params.stablePulsePerLiter =
-        static_cast<std::uint32_t>(backend.getInt(kConfigNs, "mc_pl", toInt(config.meteringCandidate.params.stablePulsePerLiter)));
-    backend.getStr(kConfigNs, "mc_note", config.meteringCandidate.note, sizeof(config.meteringCandidate.note), config.meteringCandidate.note);
-    config.meteringCandidate.generatedAt =
-        static_cast<std::uint32_t>(backend.getInt(kConfigNs, "mc_at", toInt(config.meteringCandidate.generatedAt)));
     config.valveFullPowerSec =
         static_cast<std::uint32_t>(backend.getInt(kConfigNs, "valve_s", toInt(config.valveFullPowerSec)));
     config.valveHoldDutyPercent = static_cast<std::uint8_t>(backend.getInt(kConfigNs, "hold_pct", config.valveHoldDutyPercent));
@@ -313,51 +274,6 @@ void loadFilterRanges(ConfigBackend& backend, SystemConfig& config, std::int32_t
     }
 }
 
-void migrateLegacyMetering(ConfigBackend& backend, SystemConfig& config) {
-    const std::uint32_t legacyStable =
-        static_cast<std::uint32_t>(backend.getInt(kConfigNs,
-                                                  "seg_stable_p",
-                                                  backend.getInt(kConfigNs, "pulse_m", kDefaultStablePulsePerLiter)));
-    const std::uint32_t legacyStartupPulse =
-        static_cast<std::uint32_t>(backend.getInt(kConfigNs, "seg_start_p", 0));
-    const std::uint32_t legacyStartupMl =
-        static_cast<std::uint32_t>(backend.getInt(kConfigNs, "seg_start_ml", 0));
-    config.activeMeteringSlot = 0;
-    config.meteringSlots[0].valid = true;
-    config.meteringSlots[0].params = MeteringParameters{legacyStartupPulse, legacyStartupMl, legacyStable};
-    std::snprintf(config.meteringSlots[0].creationNote,
-                  sizeof(config.meteringSlots[0].creationNote),
-                  "由旧配置迁移：启动脉冲数 %luP，启动水量 %luml，稳态 P/L %lu。",
-                  static_cast<unsigned long>(legacyStartupPulse),
-                  static_cast<unsigned long>(legacyStartupMl),
-                  static_cast<unsigned long>(legacyStable));
-    if (backend.getBool(kConfigNs, "cand_ready", false)) {
-        config.meteringCandidate.ready = true;
-        config.meteringCandidate.params.startupPulseCount =
-            static_cast<std::uint32_t>(backend.getInt(kConfigNs, "cand_start_p", 0));
-        config.meteringCandidate.params.startupVolumeMl =
-            static_cast<std::uint32_t>(backend.getInt(kConfigNs, "cand_start_ml", 0));
-        config.meteringCandidate.params.stablePulsePerLiter =
-            static_cast<std::uint32_t>(backend.getInt(kConfigNs, "cand_stable", legacyStable));
-        config.meteringCandidate.generatedAt =
-            static_cast<std::uint32_t>(backend.getInt(kConfigNs, "cand_at", 0));
-        const std::uint32_t sampleCount =
-            static_cast<std::uint32_t>(backend.getInt(kConfigNs, "cand_samples", 0));
-        const std::uint32_t minMl = static_cast<std::uint32_t>(backend.getInt(kConfigNs, "cand_min_ml", 0));
-        const std::uint32_t maxMl = static_cast<std::uint32_t>(backend.getInt(kConfigNs, "cand_max_ml", 0));
-        const std::uint32_t maxError = static_cast<std::uint32_t>(backend.getInt(kConfigNs, "cand_err_ml", 0));
-        const std::uint32_t startupSec = static_cast<std::uint32_t>(backend.getInt(kConfigNs, "cand_start_s", 0));
-        std::snprintf(config.meteringCandidate.note,
-                      sizeof(config.meteringCandidate.note),
-                      "由旧候选迁移：样本数量 %lu，容量范围 %lu-%luml，最大误差 %luml，启动时长典型 %lus。",
-                      static_cast<unsigned long>(sampleCount),
-                      static_cast<unsigned long>(minMl),
-                      static_cast<unsigned long>(maxMl),
-                      static_cast<unsigned long>(maxError),
-                      static_cast<unsigned long>(startupSec));
-    }
-}
-
 }  // namespace
 
 ConfigStore::ConfigStore(ConfigBackend& backend)
@@ -396,9 +312,6 @@ SystemConfig ConfigStore::loadSystemConfig() {
     }
 
     loadCommonSystemConfig(backend_, config);
-    if (version < kConfigVersion) {
-        migrateLegacyMetering(backend_, config);
-    }
     if (version < 4) {
         loadLegacyDisplayConfig(backend_, config);
     }
@@ -444,32 +357,6 @@ bool ConfigStore::saveSystemConfig(const SystemConfig& config) {
     ok = okAll(ok, backend_.setInt(kConfigNs, "time_step", toInt(safe.timeAdjustStepSec)));
     ok = okAll(ok, backend_.setInt(kConfigNs, "pulse_min_us", toInt(safe.pulseMinIntervalUs)));
     ok = okAll(ok, backend_.setInt(kConfigNs, "trace_count", toInt(safe.recentPulseTraceCount)));
-    ok = okAll(ok, backend_.setInt(kConfigNs, "active_ms", safe.activeMeteringSlot));
-    for (std::size_t i = 0; i < kMeteringSlotCount; ++i) {
-        char key[16]{};
-        meteringSlotKey(key, sizeof(key), i, "valid");
-        ok = okAll(ok, backend_.setBool(kConfigNs, key, safe.meteringSlots[i].valid));
-        meteringSlotKey(key, sizeof(key), i, "name");
-        ok = okAll(ok, backend_.setStr(kConfigNs, key, safe.meteringSlots[i].name));
-        meteringSlotKey(key, sizeof(key), i, "sp");
-        ok = okAll(ok, backend_.setInt(kConfigNs, key, toInt(safe.meteringSlots[i].params.startupPulseCount)));
-        meteringSlotKey(key, sizeof(key), i, "sv");
-        ok = okAll(ok, backend_.setInt(kConfigNs, key, toInt(safe.meteringSlots[i].params.startupVolumeMl)));
-        meteringSlotKey(key, sizeof(key), i, "pl");
-        ok = okAll(ok, backend_.setInt(kConfigNs, key, toInt(safe.meteringSlots[i].params.stablePulsePerLiter)));
-        meteringSlotKey(key, sizeof(key), i, "create");
-        ok = okAll(ok, backend_.setStr(kConfigNs, key, safe.meteringSlots[i].creationNote));
-        meteringSlotKey(key, sizeof(key), i, "modify");
-        ok = okAll(ok, backend_.setStr(kConfigNs, key, safe.meteringSlots[i].lastModifiedNote));
-        meteringSlotKey(key, sizeof(key), i, "mod_at");
-        ok = okAll(ok, backend_.setInt(kConfigNs, key, toInt(safe.meteringSlots[i].modifiedAt)));
-    }
-    ok = okAll(ok, backend_.setBool(kConfigNs, "mc_ready", safe.meteringCandidate.ready));
-    ok = okAll(ok, backend_.setInt(kConfigNs, "mc_sp", toInt(safe.meteringCandidate.params.startupPulseCount)));
-    ok = okAll(ok, backend_.setInt(kConfigNs, "mc_sv", toInt(safe.meteringCandidate.params.startupVolumeMl)));
-    ok = okAll(ok, backend_.setInt(kConfigNs, "mc_pl", toInt(safe.meteringCandidate.params.stablePulsePerLiter)));
-    ok = okAll(ok, backend_.setStr(kConfigNs, "mc_note", safe.meteringCandidate.note));
-    ok = okAll(ok, backend_.setInt(kConfigNs, "mc_at", toInt(safe.meteringCandidate.generatedAt)));
     ok = okAll(ok, backend_.setInt(kConfigNs, "valve_s", toInt(safe.valveFullPowerSec)));
     ok = okAll(ok, backend_.setInt(kConfigNs, "hold_pct", safe.valveHoldDutyPercent));
     ok = okAll(ok, backend_.setInt(kConfigNs, "disp_s", toInt(safe.displaySleepSec)));

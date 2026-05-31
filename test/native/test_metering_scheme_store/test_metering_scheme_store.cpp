@@ -1,5 +1,6 @@
 #include <unity.h>
 
+#include "app/ConfigStore.h"
 #include "app/MeteringSchemeStore.h"
 
 #include <cstring>
@@ -83,6 +84,62 @@ public:
 
 private:
     std::map<std::string, std::vector<std::uint8_t>> files;
+};
+
+class FakeConfigBackend : public ConfigBackend {
+public:
+    bool setInt(const char* ns, const char* key, std::int32_t value) override {
+        ints[makeKey(ns, key)] = value;
+        return true;
+    }
+
+    std::int32_t getInt(const char* ns, const char* key, std::int32_t def) override {
+        const auto it = ints.find(makeKey(ns, key));
+        return it == ints.end() ? def : it->second;
+    }
+
+    bool setBool(const char* ns, const char* key, bool value) override {
+        bools[makeKey(ns, key)] = value;
+        return true;
+    }
+
+    bool getBool(const char* ns, const char* key, bool def) override {
+        const auto it = bools.find(makeKey(ns, key));
+        return it == bools.end() ? def : it->second;
+    }
+
+    bool setStr(const char* ns, const char* key, const char* value) override {
+        strings[makeKey(ns, key)] = value ? value : "";
+        return true;
+    }
+
+    bool getStr(const char* ns, const char* key, char* out, std::size_t len, const char* def) override {
+        if (!out || len == 0) {
+            return false;
+        }
+        const auto it = strings.find(makeKey(ns, key));
+        const std::string value = it == strings.end() ? std::string(def ? def : "") : it->second;
+        std::strncpy(out, value.c_str(), len - 1);
+        out[len - 1] = '\0';
+        return it != strings.end();
+    }
+
+    bool clearNamespace(const char* ns) override {
+        (void)ns;
+        ints.clear();
+        bools.clear();
+        strings.clear();
+        return true;
+    }
+
+private:
+    std::string makeKey(const char* ns, const char* key) const {
+        return std::string(ns ? ns : "") + "/" + (key ? key : "");
+    }
+
+    std::map<std::string, std::int32_t> ints;
+    std::map<std::string, bool> bools;
+    std::map<std::string, std::string> strings;
 };
 
 MeteringSchemeCandidate candidate() {
@@ -225,6 +282,64 @@ void test_increment_usage_marks_dirty_when_record_update_fails() {
     TEST_ASSERT_FALSE(store.deleteScheme(id));
 }
 
+void test_migrates_legacy_config_slots_and_candidate_once() {
+    MemoryFileBackend files;
+    FakeConfigBackend config;
+    config.setInt("faucet_cfg", "active_ms", 1);
+    config.setBool("faucet_cfg", "ms0_valid", true);
+    config.setStr("faucet_cfg", "ms0_name", "默认旧槽");
+    config.setInt("faucet_cfg", "ms0_sp", 0);
+    config.setInt("faucet_cfg", "ms0_sv", 0);
+    config.setInt("faucet_cfg", "ms0_pl", kDefaultStablePulsePerLiter);
+    config.setBool("faucet_cfg", "ms1_valid", true);
+    config.setStr("faucet_cfg", "ms1_name", "低压实验");
+    config.setInt("faucet_cfg", "ms1_sp", 40);
+    config.setInt("faucet_cfg", "ms1_sv", 553);
+    config.setInt("faucet_cfg", "ms1_pl", 222);
+    config.setStr("faucet_cfg", "ms1_create", "旧参数槽样本说明");
+    config.setInt("faucet_cfg", "ms1_mod_at", 1770000001);
+    config.setBool("faucet_cfg", "ms2_valid", true);
+    config.setStr("faucet_cfg", "ms2_name", "参数槽 3");
+    config.setInt("faucet_cfg", "ms2_sp", 0);
+    config.setInt("faucet_cfg", "ms2_sv", 0);
+    config.setInt("faucet_cfg", "ms2_pl", kDefaultStablePulsePerLiter);
+    config.setBool("faucet_cfg", "mc_ready", true);
+    config.setInt("faucet_cfg", "mc_sp", 41);
+    config.setInt("faucet_cfg", "mc_sv", 520);
+    config.setInt("faucet_cfg", "mc_pl", 224);
+    config.setStr("faucet_cfg", "mc_note", "旧候选说明");
+    config.setInt("faucet_cfg", "mc_at", 1770000100);
+
+    MeteringSchemeStore store(files, "/schemes.bin");
+    TEST_ASSERT_TRUE(store.begin());
+    TEST_ASSERT_TRUE(store.migrateLegacyFromConfig(config, 1770000200));
+
+    MeteringSchemeRecord list[4]{};
+    TEST_ASSERT_EQUAL_size_t(1, store.list(list, 4, true));
+    TEST_ASSERT_EQUAL_UINT32(1, store.activeSchemeId());
+    TEST_ASSERT_EQUAL_STRING("低压实验", list[0].name);
+    TEST_ASSERT_EQUAL_UINT32(40, list[0].params.startupPulseCount);
+    TEST_ASSERT_EQUAL_UINT32(553, list[0].params.startupVolumeMl);
+    TEST_ASSERT_EQUAL_UINT32(222, list[0].params.stablePulsePerLiter);
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(MeteringSchemeSource::Migrated),
+                            static_cast<unsigned>(list[0].sourceType));
+    TEST_ASSERT_EQUAL_UINT32(0, list[0].useCount);
+    TEST_ASSERT_EQUAL_UINT32(1, list[0].revision);
+    TEST_ASSERT_NOT_NULL(std::strstr(list[0].creationSummary, "旧参数槽样本说明"));
+
+    MeteringSchemeCandidate migratedCandidate{};
+    TEST_ASSERT_TRUE(store.loadCandidate(migratedCandidate));
+    TEST_ASSERT_TRUE(migratedCandidate.ready);
+    TEST_ASSERT_EQUAL_UINT32(41, migratedCandidate.params.startupPulseCount);
+    TEST_ASSERT_EQUAL_UINT32(520, migratedCandidate.params.startupVolumeMl);
+    TEST_ASSERT_EQUAL_UINT32(224, migratedCandidate.params.stablePulsePerLiter);
+    TEST_ASSERT_EQUAL_UINT32(1770000100, migratedCandidate.generatedAt);
+    TEST_ASSERT_NOT_NULL(std::strstr(migratedCandidate.creationSummary, "旧候选说明"));
+
+    TEST_ASSERT_TRUE(store.migrateLegacyFromConfig(config, 1770000300));
+    TEST_ASSERT_EQUAL_size_t(1, store.list(list, 4, true));
+}
+
 int main(int argc, char** argv) {
     (void)argc;
     (void)argv;
@@ -235,5 +350,6 @@ int main(int argc, char** argv) {
     RUN_TEST(test_used_scheme_delete_is_rejected_and_disable_is_explicit);
     RUN_TEST(test_enable_updates_active_id_and_last_activated);
     RUN_TEST(test_increment_usage_marks_dirty_when_record_update_fails);
+    RUN_TEST(test_migrates_legacy_config_slots_and_candidate_once);
     return UNITY_END();
 }

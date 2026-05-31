@@ -1,6 +1,9 @@
 #include "app/MeteringSchemeStore.h"
 
+#include "app/ConfigStore.h"
+
 #include <algorithm>
+#include <cstdio>
 #include <cstring>
 
 namespace faucet {
@@ -37,6 +40,20 @@ MeteringSchemeStoreHeader makeHeader(std::uint32_t activeSchemeId,
     };
     header.checksum = headerChecksum(header);
     return header;
+}
+
+void meteringSlotKey(char* out, std::size_t len, std::size_t index, const char* suffix) {
+    std::snprintf(out, len, "ms%u_%s", static_cast<unsigned>(index), suffix);
+}
+
+template <std::size_t N>
+void readConfigText(ConfigBackend& config, const char* key, char (&out)[N], const char* def = "") {
+    config.getStr("faucet_cfg", key, out, N, def);
+}
+
+bool defaultParams(const MeteringParameters& params) {
+    return params.startupPulseCount == 0 && params.startupVolumeMl == 0 &&
+           params.stablePulsePerLiter == kDefaultStablePulsePerLiter;
 }
 
 }  // namespace
@@ -321,6 +338,135 @@ bool MeteringSchemeStore::markUsageStatsDirty(std::uint32_t schemeId) {
     }
     record.usageStatsDirty = true;
     return writeRecord(slot, record);
+}
+
+bool MeteringSchemeStore::migrateLegacyFromConfig(ConfigBackend& config, std::uint32_t nowSeconds) {
+    if (!ready()) {
+        return false;
+    }
+
+    MeteringSchemeRecord existing[2]{};
+    if (list(existing, 2, true) != 1 || existing[0].sourceType != MeteringSchemeSource::Default ||
+        existing[0].id != 1 || !defaultParams(existing[0].params)) {
+        return true;
+    }
+
+    const std::uint8_t legacyActive =
+        static_cast<std::uint8_t>(config.getInt("faucet_cfg", "active_ms", 0));
+    MeteringSchemeRecord migrated[kMeteringSlotCount]{};
+    std::size_t migratedCount = 0;
+
+    auto appendLegacySlot = [&](std::size_t index) -> bool {
+        if (index >= kMeteringSlotCount || migratedCount >= kMeteringSlotCount) {
+            return false;
+        }
+        char key[16]{};
+        meteringSlotKey(key, sizeof(key), index, "valid");
+        if (!config.getBool("faucet_cfg", key, false)) {
+            return true;
+        }
+
+        char name[kMeteringSchemeNameLength]{};
+        meteringSlotKey(key, sizeof(key), index, "name");
+        readConfigText(config, key, name);
+        if (name[0] == '\0') {
+            std::snprintf(name, sizeof(name), "迁移方案 %u", static_cast<unsigned>(index + 1));
+        }
+
+        meteringSlotKey(key, sizeof(key), index, "sp");
+        const std::uint32_t startupPulse =
+            static_cast<std::uint32_t>(config.getInt("faucet_cfg", key, 0));
+        meteringSlotKey(key, sizeof(key), index, "sv");
+        const std::uint32_t startupVolume =
+            static_cast<std::uint32_t>(config.getInt("faucet_cfg", key, 0));
+        meteringSlotKey(key, sizeof(key), index, "pl");
+        const std::uint32_t stable =
+            static_cast<std::uint32_t>(config.getInt("faucet_cfg", key, kDefaultStablePulsePerLiter));
+        const MeteringParameters params{startupPulse, startupVolume, stable};
+        if (!validMeteringSchemeParameters(params)) {
+            return true;
+        }
+        const bool active = index == legacyActive;
+        if (!active && defaultParams(params)) {
+            return true;
+        }
+
+        meteringSlotKey(key, sizeof(key), index, "mod_at");
+        const std::uint32_t modifiedAt =
+            static_cast<std::uint32_t>(config.getInt("faucet_cfg", key, nowSeconds));
+
+        MeteringSchemeRecord& scheme = migrated[migratedCount];
+        initializeManualMeteringScheme(scheme,
+                                       static_cast<std::uint32_t>(migratedCount + 1),
+                                       name,
+                                       params,
+                                       modifiedAt == 0 ? nowSeconds : modifiedAt);
+        scheme.sourceType = MeteringSchemeSource::Migrated;
+        scheme.lastActivatedAt = active ? nowSeconds : 0;
+        meteringSlotKey(key, sizeof(key), index, "create");
+        readConfigText(config, key, scheme.creationSummary);
+        if (scheme.creationSummary[0] == '\0') {
+            std::snprintf(scheme.creationSummary,
+                          sizeof(scheme.creationSummary),
+                          "由旧参数槽 %u 迁移。",
+                          static_cast<unsigned>(index + 1));
+        }
+        ++migratedCount;
+        return true;
+    };
+
+    if (legacyActive < kMeteringSlotCount && !appendLegacySlot(legacyActive)) {
+        return false;
+    }
+    for (std::size_t i = 0; i < kMeteringSlotCount; ++i) {
+        if (i == legacyActive) {
+            continue;
+        }
+        if (!appendLegacySlot(i)) {
+            return false;
+        }
+    }
+    if (migratedCount == 0) {
+        return true;
+    }
+
+    MeteringSchemeCandidate candidate{};
+    candidate.ready = config.getBool("faucet_cfg", "mc_ready", false);
+    if (candidate.ready) {
+        candidate.params.startupPulseCount =
+            static_cast<std::uint32_t>(config.getInt("faucet_cfg", "mc_sp", 0));
+        candidate.params.startupVolumeMl =
+            static_cast<std::uint32_t>(config.getInt("faucet_cfg", "mc_sv", 0));
+        candidate.params.stablePulsePerLiter =
+            static_cast<std::uint32_t>(config.getInt("faucet_cfg", "mc_pl", kDefaultStablePulsePerLiter));
+        candidate.generatedAt =
+            static_cast<std::uint32_t>(config.getInt("faucet_cfg", "mc_at", 0));
+        readConfigText(config, "mc_note", candidate.creationSummary);
+        if (!validMeteringSchemeParameters(candidate.params)) {
+            candidate = MeteringSchemeCandidate{};
+        }
+    }
+
+    header_ = makeHeader(1, static_cast<std::uint32_t>(migratedCount + 1), static_cast<std::uint32_t>(migratedCount));
+    const std::size_t size = expectedFileSize();
+    if (!backend_.createSized(path_, size)) {
+        return false;
+    }
+    if (!saveHeader()) {
+        return false;
+    }
+    if (!backend_.writeAt(path_,
+                          candidateOffset(),
+                          reinterpret_cast<const std::uint8_t*>(&candidate),
+                          sizeof(candidate))) {
+        return false;
+    }
+    for (std::size_t i = 0; i < migratedCount; ++i) {
+        if (!writeRecord(i, migrated[i])) {
+            return false;
+        }
+    }
+    return true;
 }
 
 bool MeteringSchemeStore::validPath() const {

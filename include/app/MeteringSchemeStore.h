@@ -8,6 +8,8 @@
 
 namespace faucet {
 
+class ConfigBackend;
+
 struct MeteringSchemeStoreHeader {
     std::uint32_t magic;
     std::uint16_t version;
@@ -47,6 +49,7 @@ public:
     bool deleteScheme(std::uint32_t schemeId);
     bool incrementUsageAfterRecordWrite(std::uint32_t schemeId, std::uint32_t nowSeconds);
     bool markUsageStatsDirty(std::uint32_t schemeId);
+    bool migrateLegacyFromConfig(ConfigBackend& config, std::uint32_t nowSeconds);
 
 private:
     bool validPath() const;

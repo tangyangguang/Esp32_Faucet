@@ -888,6 +888,26 @@ void test_main_source_renders_live_display_frame_for_web() {
     TEST_ASSERT_NULL(std::strstr(buffer, "fileStore_ && fileStore_->ready() && fileStore_->upsert(calibration)"));
 }
 
+void test_main_source_wires_metering_scheme_and_snapshot_stores() {
+    FILE* file = std::fopen("src/main.cpp", "rb");
+    TEST_ASSERT_NOT_NULL(file);
+    static char buffer[64000]{};
+    const std::size_t read = std::fread(buffer, 1, sizeof(buffer) - 1, file);
+    std::fclose(file);
+    TEST_ASSERT_GREATER_THAN_size_t(0, read);
+
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "#include \"app/MeteringSchemeStore.h\""));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "#include \"app/WaterRecordMeteringSnapshotStore.h\""));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "\"/faucet_metering_schemes_v1.bin\""));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "\"/faucet_record_metering_v1.bin\""));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "PersistentRecordMeteringSnapshotStore"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "g_meteringSchemes.migrateLegacyFromConfig(g_configBackend, nowSeconds)"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "g_meteringSchemes.activeScheme(activeScheme)"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "g_config, activeScheme"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "g_recordMeteringSnapshots"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "g_meteringSchemes"));
+}
+
 void test_app_config_source_uses_clear_business_labels_and_help() {
     FILE* file = std::fopen("src/app/FaucetAppConfig.cpp", "rb");
     TEST_ASSERT_NOT_NULL(file);
@@ -980,6 +1000,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_web_page_source_contains_expected_ui_improvements);
     RUN_TEST(test_record_calibration_api_saves_actual_without_segmented_generation);
     RUN_TEST(test_main_source_renders_live_display_frame_for_web);
+    RUN_TEST(test_main_source_wires_metering_scheme_and_snapshot_stores);
     RUN_TEST(test_app_config_source_uses_clear_business_labels_and_help);
     RUN_TEST(test_app_config_save_migrates_before_marking_current_version);
     RUN_TEST(test_web_config_writes_reload_current_config_before_persisting);

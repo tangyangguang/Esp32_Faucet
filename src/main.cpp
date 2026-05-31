@@ -10,10 +10,12 @@
 #include "app/Esp32BaseWaterRecordBackend.h"
 #include "app/FaucetAppConfig.h"
 #include "app/FilterStore.h"
+#include "app/MeteringSchemeStore.h"
 #include "app/StatisticsStore.h"
 #include "app/TimeUtils.h"
 #include "app/WaterRecordCalibrationStore.h"
 #include "app/WaterRecordFileStore.h"
+#include "app/WaterRecordMeteringSnapshotStore.h"
 #include "app/WaterRecordStore.h"
 #include "app/WaterPulseTraceStore.h"
 #include "drivers/BoardPins.h"
@@ -35,8 +37,10 @@ constexpr const char* kDefaultWebUser = "admin";
 constexpr const char* kDefaultWebPassword = "admin";
 constexpr std::size_t kRamRecordCapacity = 128;
 constexpr std::size_t kRamRecordCalibrationCapacity = 32;
+constexpr std::size_t kRamRecordMeteringSnapshotCapacity = 32;
 constexpr std::size_t kWaterRecordCapacity = 20000;
 constexpr std::size_t kWaterRecordCalibrationCapacity = 512;
+constexpr std::size_t kWaterRecordMeteringSnapshotCapacity = kWaterRecordCapacity;
 constexpr std::size_t kPulseTraceCapacity = faucet::kMaxRecentPulseTraceCount;
 constexpr std::size_t kSavedPulseTraceMaxCount = faucet::kSavedPulseTraceMaxCount;
 constexpr std::size_t kSavedPulseTraceSamplesPerTrace = faucet::kPulseTraceMaxRawEdgesPerTrace;
@@ -44,6 +48,8 @@ constexpr std::size_t kPulseTraceMaxSamples =
     static_cast<std::size_t>(faucet::kMaxRecentPulseTraceCount) * faucet::kPulseTraceMaxRawEdgesPerTrace;
 constexpr const char* kWaterRecordPath = "/faucet_records_v1.bin";
 constexpr const char* kWaterRecordCalibrationPath = "/faucet_record_cal_v1.bin";
+constexpr const char* kWaterRecordMeteringSnapshotPath = "/faucet_record_metering_v1.bin";
+constexpr const char* kMeteringSchemePath = "/faucet_metering_schemes_v1.bin";
 constexpr const char* kSavedPulseTracePath = "/faucet_pulse_traces_v4.bin";
 
 class PersistentRecordWriter : public faucet::WaterRecordWriter, public faucet::WaterRecordReader {
@@ -148,6 +154,58 @@ private:
     faucet::WaterRecordCalibrationStore ramStore_;
 };
 
+class PersistentRecordMeteringSnapshotStore : public faucet::WaterRecordMeteringSnapshotReader,
+                                             public faucet::WaterRecordMeteringSnapshotWriter {
+public:
+    PersistentRecordMeteringSnapshotStore()
+        : fileStore_(nullptr), ramStore_(snapshots_, kRamRecordMeteringSnapshotCapacity) {}
+
+    void setFileStore(faucet::WaterRecordMeteringSnapshotFileStore* store) {
+        fileStore_ = store;
+    }
+
+    bool upsert(const faucet::WaterRecordMeteringSnapshot& snapshot) override {
+        if (fileStore_ && fileStore_->ready()) {
+            return fileStore_->upsert(snapshot);
+        }
+        return ramStore_.upsert(snapshot);
+    }
+
+    bool find(const faucet::WaterRecord& record, faucet::WaterRecordMeteringSnapshot& output) const override {
+        if (fileStore_ && fileStore_->ready()) {
+            return fileStore_->find(record, output);
+        }
+        return ramStore_.find(record, output);
+    }
+
+    std::size_t findAny(const faucet::WaterRecord* records,
+                        std::size_t recordCount,
+                        faucet::WaterRecordMeteringSnapshot* output,
+                        bool* found) const override {
+        if (fileStore_ && fileStore_->ready()) {
+            return fileStore_->findAny(records, recordCount, output, found);
+        }
+        return ramStore_.findAny(records, recordCount, output, found);
+    }
+
+    std::size_t count() const override {
+        return fileStore_ && fileStore_->ready() ? fileStore_->count() : ramStore_.count();
+    }
+
+    bool ready() const override {
+        return (fileStore_ && fileStore_->ready()) || ramStore_.ready();
+    }
+
+    const char* storageName() const override {
+        return fileStore_ && fileStore_->ready() ? fileStore_->storageName() : ramStore_.storageName();
+    }
+
+private:
+    faucet::WaterRecordMeteringSnapshotFileStore* fileStore_;
+    faucet::WaterRecordMeteringSnapshot snapshots_[kRamRecordMeteringSnapshotCapacity]{};
+    faucet::WaterRecordMeteringSnapshotStore ramStore_;
+};
+
 faucet::Esp32BaseConfigBackend g_configBackend;
 faucet::ConfigStore g_configStore(g_configBackend);
 faucet::SystemConfig g_config{};
@@ -159,6 +217,11 @@ faucet::WaterRecordCalibrationFileStore g_recordCalibrationFile(
     g_waterRecordBackend,
     kWaterRecordCalibrationPath,
     kWaterRecordCalibrationCapacity);
+faucet::WaterRecordMeteringSnapshotFileStore g_recordMeteringSnapshotFile(
+    g_waterRecordBackend,
+    kWaterRecordMeteringSnapshotPath,
+    kWaterRecordMeteringSnapshotCapacity);
+faucet::MeteringSchemeStore g_meteringSchemes(g_waterRecordBackend, kMeteringSchemePath);
 faucet::WaterPulseTraceFileStore g_savedPulseTraceFile(
     g_waterRecordBackend,
     kSavedPulseTracePath,
@@ -166,6 +229,7 @@ faucet::WaterPulseTraceFileStore g_savedPulseTraceFile(
     kSavedPulseTraceMaxCount);
 PersistentRecordWriter g_records;
 PersistentRecordCalibrationStore g_recordCalibrations;
+PersistentRecordMeteringSnapshotStore g_recordMeteringSnapshots;
 faucet::WaterPulseTrace* g_pulseTraceRecords = nullptr;
 faucet::WaterPulseTraceSample* g_pulseTraceSamples = nullptr;
 faucet::WaterPulseTraceStore* g_pulseTraces = nullptr;
@@ -420,8 +484,17 @@ void initializeApplication() {
     g_config = g_configStore.loadSystemConfig();
     logSystemConfigStatus();
     logStartupPhase("config_ready");
+    const std::uint32_t nowSeconds = currentSeconds();
     g_records.setFileStore(g_waterRecordFile.begin() ? &g_waterRecordFile : nullptr);
     g_recordCalibrations.setFileStore(g_recordCalibrationFile.begin() ? &g_recordCalibrationFile : nullptr);
+    g_recordMeteringSnapshots.setFileStore(
+        g_recordMeteringSnapshotFile.begin() ? &g_recordMeteringSnapshotFile : nullptr);
+    const bool meteringSchemesReady = g_meteringSchemes.begin();
+    if (!meteringSchemesReady) {
+        ESP32BASE_LOG_W("app", "metering scheme store unavailable, using config fallback");
+    } else if (!g_meteringSchemes.migrateLegacyFromConfig(g_configBackend, nowSeconds)) {
+        ESP32BASE_LOG_W("app", "legacy metering scheme migration failed");
+    }
     logStartupPhase("record_store_ready");
     g_pulseTraceRecords = new (std::nothrow) faucet::WaterPulseTrace[kPulseTraceCapacity]{};
     g_pulseTraceSamples = new (std::nothrow) faucet::WaterPulseTraceSample[kPulseTraceMaxSamples]{};
@@ -438,7 +511,6 @@ void initializeApplication() {
     }
     logStartupPhase("trace_store_ready");
     checkFileSystemCapacity();
-    const std::uint32_t nowSeconds = currentSeconds();
     faucet::PeriodKeys periodKeys{};
     currentPeriodKeys(nowSeconds, periodKeys);
     g_statistics = faucet::StatisticsStore(g_configStore.loadStatistics(periodKeys));
@@ -452,7 +524,19 @@ void initializeApplication() {
     if (g_pulseTraces) {
         g_pulseTraces->setRecentTraceLimit(g_config.recentPulseTraceCount);
     }
-    g_app = new (std::nothrow) faucet::AppController(g_config, g_statistics, *g_filters, g_records, g_pulseTraces);
+    faucet::MeteringSchemeRecord activeScheme{};
+    if (meteringSchemesReady && g_meteringSchemes.activeScheme(activeScheme)) {
+        g_app = new (std::nothrow) faucet::AppController(
+            g_config, activeScheme,
+            g_statistics,
+            *g_filters,
+            g_records,
+            g_recordMeteringSnapshots,
+            g_meteringSchemes,
+            g_pulseTraces);
+    } else {
+        g_app = new (std::nothrow) faucet::AppController(g_config, g_statistics, *g_filters, g_records, g_pulseTraces);
+    }
     if (!g_app) {
         ESP32BASE_LOG_E("app", "app controller allocation failed");
         return;
@@ -469,6 +553,9 @@ void initializeApplication() {
                                  &g_records,
                                  &g_recordCalibrations,
                                  &g_recordCalibrations,
+                                 &g_recordMeteringSnapshots,
+                                 &g_recordMeteringSnapshots,
+                                 &g_meteringSchemes,
                                  g_pulseTraces,
                                  &g_savedPulseTraceFile,
                                  currentSeconds,

@@ -134,7 +134,6 @@ void test_config_migrates_v1_without_losing_user_values() {
     TEST_ASSERT_EQUAL_UINT32(kDefaultTimeAdjustStepSec, loaded.timeAdjustStepSec);
     TEST_ASSERT_EQUAL_UINT32(kDefaultPulseMinIntervalUs, loaded.pulseMinIntervalUs);
     TEST_ASSERT_EQUAL_UINT32(kDefaultRecentPulseTraceCount, loaded.recentPulseTraceCount);
-    TEST_ASSERT_EQUAL_UINT32(kDefaultStablePulsePerLiter, activeMeteringParameters(loaded).stablePulsePerLiter);
     TEST_ASSERT_TRUE(loaded.presets[2].enabled);
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(PresetType::Time), static_cast<std::uint8_t>(loaded.presets[2].type));
     TEST_ASSERT_EQUAL_UINT32(150, loaded.presets[2].value);
@@ -167,7 +166,6 @@ void test_config_migrates_legacy_fields_when_version_is_missing() {
     TEST_ASSERT_FALSE(store.systemConfigReadOnly());
     TEST_ASSERT_EQUAL_INT32(13, backend.getInt("faucet_cfg", "ver", 0));
     TEST_ASSERT_EQUAL_UINT32(23, loaded.confirmTimeoutSec);
-    TEST_ASSERT_EQUAL_UINT32(kDefaultStablePulsePerLiter, activeMeteringParameters(loaded).stablePulsePerLiter);
     TEST_ASSERT_EQUAL_STRING("Carbon", loaded.filters[0].name);
     TEST_ASSERT_EQUAL_UINT32(120, loaded.filters[0].recommendDays);
     TEST_ASSERT_EQUAL_UINT32(120, loaded.filters[0].maxDays);
@@ -211,7 +209,6 @@ void test_config_migration_failure_preserves_legacy_storage_without_current_vers
 
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(ConfigStore::LoadStatus::MigratedLegacy),
                             static_cast<std::uint8_t>(store.lastSystemConfigLoadStatus()));
-    TEST_ASSERT_EQUAL_UINT32(kDefaultStablePulsePerLiter, activeMeteringParameters(loaded).stablePulsePerLiter);
     TEST_ASSERT_EQUAL_INT32(1, backend.getInt("faucet_cfg", "ver", 0));
     TEST_ASSERT_EQUAL_INT32(620, backend.getInt("faucet_cfg", "pulse_m", 0));
     TEST_ASSERT_EQUAL_INT32(90, backend.getInt("faucet_cfg", "f0_life_d", 0));

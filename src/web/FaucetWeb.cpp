@@ -62,6 +62,7 @@ bool requireContext();
 bool contextReady();
 bool getParam(const char* name, char* out, std::size_t len);
 bool persistConfig(const SystemConfig& config);
+bool activeMeteringSchemeForWeb(MeteringSchemeRecord& output);
 void handleRecordDetailPage();
 void handleRecordInfoPage();
 void handleCalibrationPage();
@@ -583,8 +584,10 @@ bool saveRecordActualMeasurement(const WaterRecord& record, std::uint32_t actual
     WaterRecordCalibration calibration = makeWaterRecordCalibration(record);
     calibration.actualMl = actualMl;
     calibration.calibratedAt = g_context.nowSeconds ? g_context.nowSeconds() : 0;
-    const float stablePulsePerMl =
-        static_cast<float>(activeMeteringParameters(*g_context.config).stablePulsePerLiter) / 1000.0f;
+    MeteringSchemeRecord activeScheme{};
+    const MeteringParameters params =
+        activeMeteringSchemeForWeb(activeScheme) ? activeScheme.params : defaultMeteringParameters();
+    const float stablePulsePerMl = static_cast<float>(params.stablePulsePerLiter) / 1000.0f;
     calibration.oldPulsePerMl = stablePulsePerMl;
     calibration.newPulsePerMl = stablePulsePerMl;
     calibration.oldStartupCompensationMl = 0;

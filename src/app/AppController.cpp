@@ -33,8 +33,9 @@ WaterPulseTraceState traceStateForResult(WaterResult result) {
 }
 
 MeteringSchemeRecord schemeFromLegacyConfig(const SystemConfig& config) {
+    (void)config;
     MeteringSchemeRecord scheme{};
-    initializeManualMeteringScheme(scheme, 1, "运行计量方案", activeMeteringParameters(config), 0);
+    initializeManualMeteringScheme(scheme, 1, "运行计量方案", defaultMeteringParameters(), 0);
     return scheme;
 }
 

@@ -353,11 +353,11 @@ bool MeteringSchemeStore::migrateLegacyFromConfig(ConfigBackend& config, std::ui
 
     const std::uint8_t legacyActive =
         static_cast<std::uint8_t>(config.getInt("faucet_cfg", "active_ms", 0));
-    MeteringSchemeRecord migrated[kMeteringSlotCount]{};
+    MeteringSchemeRecord migrated[kLegacyMeteringSlotCount]{};
     std::size_t migratedCount = 0;
 
     auto appendLegacySlot = [&](std::size_t index) -> bool {
-        if (index >= kMeteringSlotCount || migratedCount >= kMeteringSlotCount) {
+        if (index >= kLegacyMeteringSlotCount || migratedCount >= kLegacyMeteringSlotCount) {
             return false;
         }
         char key[16]{};
@@ -415,10 +415,10 @@ bool MeteringSchemeStore::migrateLegacyFromConfig(ConfigBackend& config, std::ui
         return true;
     };
 
-    if (legacyActive < kMeteringSlotCount && !appendLegacySlot(legacyActive)) {
+    if (legacyActive < kLegacyMeteringSlotCount && !appendLegacySlot(legacyActive)) {
         return false;
     }
-    for (std::size_t i = 0; i < kMeteringSlotCount; ++i) {
+    for (std::size_t i = 0; i < kLegacyMeteringSlotCount; ++i) {
         if (i == legacyActive) {
             continue;
         }

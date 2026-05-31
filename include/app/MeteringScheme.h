@@ -1,6 +1,6 @@
 #pragma once
 
-#include "app/AppConfig.h"
+#include "app/AppTypes.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -14,6 +14,12 @@ constexpr std::size_t kMeteringSchemeConditionLabelLength = 48;
 constexpr std::size_t kMeteringSchemeUserNoteLength = 128;
 constexpr std::size_t kMeteringSchemeSummaryLength = 192;
 constexpr std::size_t kMeteringSchemeTraceIdCapacity = 12;
+constexpr std::size_t kLegacyMeteringSlotCount = 4;
+constexpr std::uint32_t kDefaultStablePulsePerLiter = 450;
+constexpr std::uint32_t kMinSegmentedPulsePerLiter = 50;
+constexpr std::uint32_t kMaxSegmentedPulsePerLiter = 5000;
+constexpr std::uint32_t kMaxSegmentedStartupPulseCount = 100000;
+constexpr std::uint32_t kMaxSegmentedStartupVolumeMl = 20000;
 
 enum class MeteringSchemeSource : std::uint8_t {
     Default = 0,

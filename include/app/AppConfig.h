@@ -34,15 +34,6 @@ constexpr std::uint32_t kMaxRecentPulseTraceCount = 3;
 constexpr std::uint32_t kPulseTraceMaxRawEdgesPerTrace = 4096;
 constexpr std::uint32_t kSavedPulseTraceMaxCount = 12;
 constexpr std::uint32_t kPulseTraceSamplesPerTrace = kPulseTraceMaxRawEdgesPerTrace;
-constexpr std::size_t kMeteringSlotCount = 4;
-constexpr std::size_t kMeteringSlotNameLength = 24;
-constexpr std::size_t kMeteringNoteLength = 192;
-constexpr std::uint32_t kDefaultStablePulsePerLiter = 450;
-constexpr std::uint32_t kMinSegmentedPulsePerLiter = 50;
-constexpr std::uint32_t kMaxSegmentedPulsePerLiter = 5000;
-constexpr std::uint32_t kMaxSegmentedStartupPulseCount = 100000;
-constexpr std::uint32_t kMaxSegmentedStartupVolumeMl = 20000;
-constexpr std::uint32_t kMaxSegmentedCandidateSamples = 32;
 
 constexpr std::uint32_t kDefaultValveFullPowerSec = 5;
 constexpr std::uint8_t kDefaultValveHoldDutyPercent = 70;
@@ -77,21 +68,6 @@ struct SystemConfig {
     std::uint32_t timeAdjustStepSec;
     std::uint32_t pulseMinIntervalUs;
     std::uint32_t recentPulseTraceCount;
-    struct MeteringSlot {
-        bool valid;
-        char name[kMeteringSlotNameLength];
-        MeteringParameters params;
-        char creationNote[kMeteringNoteLength];
-        char lastModifiedNote[kMeteringNoteLength];
-        std::uint32_t modifiedAt;
-    } meteringSlots[kMeteringSlotCount];
-    struct MeteringCandidate {
-        bool ready;
-        MeteringParameters params;
-        char note[kMeteringNoteLength];
-        std::uint32_t generatedAt;
-    } meteringCandidate;
-    std::uint8_t activeMeteringSlot;
     std::uint32_t valveFullPowerSec;
     std::uint8_t valveHoldDutyPercent;
     std::uint32_t displaySleepSec;
@@ -104,18 +80,6 @@ struct SystemConfig {
 
 SystemConfig makeDefaultConfig();
 void sanitizeConfig(SystemConfig& config);
-bool validMeteringParameters(const MeteringParameters& params);
-const MeteringParameters& activeMeteringParameters(const SystemConfig& config);
-bool enableMeteringSlot(SystemConfig& config, std::uint8_t slot);
-bool saveCandidateToMeteringSlot(SystemConfig& config, std::uint8_t slot, std::uint32_t nowSeconds);
-bool createManualMeteringSlot(SystemConfig& config,
-                              std::uint8_t slot,
-                              const MeteringParameters& params,
-                              std::uint32_t nowSeconds);
-bool updateMeteringSlot(SystemConfig& config,
-                        std::uint8_t slot,
-                        const MeteringParameters& params,
-                        std::uint32_t nowSeconds);
 
 std::uint16_t sanitizeRecordPageSize(std::uint16_t pageSize);
 FilterLifeStatus filterLifeStatus(const FilterRecord& filter, std::uint32_t usedDays);

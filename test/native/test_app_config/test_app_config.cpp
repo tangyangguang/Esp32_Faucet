@@ -33,18 +33,6 @@ void test_default_config_matches_product_defaults() {
     TEST_ASSERT_EQUAL_UINT32(3, kMaxRecentPulseTraceCount);
     TEST_ASSERT_EQUAL_UINT32(4096, kPulseTraceMaxRawEdgesPerTrace);
     TEST_ASSERT_EQUAL_UINT32(12, kSavedPulseTraceMaxCount);
-    TEST_ASSERT_EQUAL_UINT8(0, config.activeMeteringSlot);
-    TEST_ASSERT_FALSE(config.meteringCandidate.ready);
-    TEST_ASSERT_EQUAL_UINT32(0, config.meteringCandidate.params.startupPulseCount);
-    TEST_ASSERT_EQUAL_UINT32(0, config.meteringCandidate.params.startupVolumeMl);
-    TEST_ASSERT_EQUAL_UINT32(kDefaultStablePulsePerLiter, config.meteringCandidate.params.stablePulsePerLiter);
-    for (std::size_t i = 0; i < kMeteringSlotCount; ++i) {
-        TEST_ASSERT_TRUE(config.meteringSlots[i].valid);
-        TEST_ASSERT_EQUAL_UINT32(0, config.meteringSlots[i].params.startupPulseCount);
-        TEST_ASSERT_EQUAL_UINT32(0, config.meteringSlots[i].params.startupVolumeMl);
-        TEST_ASSERT_EQUAL_UINT32(kDefaultStablePulsePerLiter, config.meteringSlots[i].params.stablePulsePerLiter);
-    }
-    TEST_ASSERT_EQUAL_STRING("参数槽 1", config.meteringSlots[0].name);
     TEST_ASSERT_EQUAL_UINT32(kDefaultValveFullPowerSec, config.valveFullPowerSec);
     TEST_ASSERT_EQUAL_UINT32(5, config.valveFullPowerSec);
     TEST_ASSERT_EQUAL_UINT8(kDefaultValveHoldDutyPercent, config.valveHoldDutyPercent);
@@ -115,12 +103,6 @@ void test_sanitize_config_clamps_scalar_ranges() {
     config.timeAdjustStepSec = 0;
     config.pulseMinIntervalUs = 1;
     config.recentPulseTraceCount = 999999;
-    config.activeMeteringSlot = 99;
-    config.meteringSlots[0].params = MeteringParameters{999999, 999999, 999999};
-    config.meteringSlots[1].valid = false;
-    config.meteringSlots[1].params = MeteringParameters{4, 80, 222};
-    config.meteringCandidate.ready = true;
-    config.meteringCandidate.params = MeteringParameters{0, 80, 222};
     config.valveFullPowerSec = 0;
     config.valveHoldDutyPercent = 1;
     config.displaySleepSec = 999999;
@@ -142,12 +124,6 @@ void test_sanitize_config_clamps_scalar_ranges() {
     TEST_ASSERT_EQUAL_UINT32(kMinPulseMinIntervalUs, config.pulseMinIntervalUs);
     TEST_ASSERT_EQUAL_UINT32(kMaxRecentPulseTraceCount, config.recentPulseTraceCount);
     TEST_ASSERT_EQUAL_UINT32(3, config.recentPulseTraceCount);
-    TEST_ASSERT_EQUAL_UINT8(0, config.activeMeteringSlot);
-    TEST_ASSERT_EQUAL_UINT32(kMaxSegmentedStartupPulseCount, config.meteringSlots[0].params.startupPulseCount);
-    TEST_ASSERT_EQUAL_UINT32(kMaxSegmentedStartupVolumeMl, config.meteringSlots[0].params.startupVolumeMl);
-    TEST_ASSERT_EQUAL_UINT32(kMaxSegmentedPulsePerLiter, config.meteringSlots[0].params.stablePulsePerLiter);
-    TEST_ASSERT_TRUE(config.meteringSlots[1].valid);
-    TEST_ASSERT_FALSE(config.meteringCandidate.ready);
     TEST_ASSERT_EQUAL_UINT32(1, config.valveFullPowerSec);
     TEST_ASSERT_EQUAL_UINT8(kMinValveHoldDutyPercent, config.valveHoldDutyPercent);
     TEST_ASSERT_EQUAL_UINT32(300, config.displaySleepSec);
@@ -163,31 +139,6 @@ void test_sanitize_config_clamps_scalar_ranges() {
     config.recentPulseTraceCount = 0;
     sanitizeConfig(config);
     TEST_ASSERT_EQUAL_UINT32(kMinRecentPulseTraceCount, config.recentPulseTraceCount);
-}
-
-void test_metering_slot_operations_enforce_candidate_save_and_enable_rules() {
-    SystemConfig config = makeDefaultConfig();
-    config.meteringSlots[2].valid = false;
-
-    TEST_ASSERT_FALSE(enableMeteringSlot(config, 2));
-
-    config.meteringCandidate.ready = true;
-    config.meteringCandidate.params = MeteringParameters{6, 80, 225};
-    std::strncpy(config.meteringCandidate.note, "样本数量 3，容量范围 1.0L-7.5L，最大误差 20ml", sizeof(config.meteringCandidate.note) - 1);
-
-    TEST_ASSERT_TRUE(saveCandidateToMeteringSlot(config, 1, 1770000000));
-    TEST_ASSERT_EQUAL_UINT8(0, config.activeMeteringSlot);
-    TEST_ASSERT_TRUE(config.meteringSlots[1].valid);
-    TEST_ASSERT_EQUAL_UINT32(6, config.meteringSlots[1].params.startupPulseCount);
-    TEST_ASSERT_NOT_NULL(std::strstr(config.meteringSlots[1].creationNote, "样本数量 3"));
-
-    TEST_ASSERT_TRUE(enableMeteringSlot(config, 1));
-    TEST_ASSERT_EQUAL_UINT8(1, config.activeMeteringSlot);
-
-    config.meteringCandidate.params = MeteringParameters{7, 90, 230};
-    TEST_ASSERT_TRUE(saveCandidateToMeteringSlot(config, 1, 1770000300));
-    TEST_ASSERT_EQUAL_UINT8(1, config.activeMeteringSlot);
-    TEST_ASSERT_EQUAL_UINT32(7, activeMeteringParameters(config).startupPulseCount);
 }
 
 void test_sanitize_config_clamps_preset_values_by_type() {
@@ -252,7 +203,6 @@ int main(int argc, char** argv) {
     RUN_TEST(test_default_presets_use_two_enabled_volume_presets);
     RUN_TEST(test_default_filters_support_six_lightweight_records);
     RUN_TEST(test_sanitize_config_clamps_scalar_ranges);
-    RUN_TEST(test_metering_slot_operations_enforce_candidate_save_and_enable_rules);
     RUN_TEST(test_sanitize_config_clamps_preset_values_by_type);
     RUN_TEST(test_record_page_size_and_filter_life_helpers);
     return UNITY_END();

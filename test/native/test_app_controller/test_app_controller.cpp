@@ -192,11 +192,17 @@ void finishVolumeRun(AppController& app) {
     app.tick(input({false, false, false, false}, 5000, 5000000, 1714502400));
 }
 
+void applyTestMeteringScheme(AppController& app, std::uint32_t stablePulsePerLiter = 1000) {
+    MeteringSchemeRecord scheme{};
+    initializeManualMeteringScheme(
+        scheme, 99, "测试计量方案", MeteringParameters{0, 0, stablePulsePerLiter}, 1714502300);
+    TEST_ASSERT_TRUE(app.applyActiveMeteringScheme(scheme));
+}
+
 }  // namespace
 
 void test_app_controller_uses_active_scheme_parameters_for_flow_meter() {
     SystemConfig config = makeDefaultConfig();
-    config.meteringSlots[config.activeMeteringSlot].params.stablePulsePerLiter = 450;
     StatisticsStore statistics;
     statistics.reset({20260506, 202619, 202605});
     FilterStore filters(config.filters);
@@ -295,6 +301,7 @@ void test_app_controller_starts_after_double_ok_and_opens_valve() {
     FilterStore filters(config.filters);
     MemoryRecordWriter records;
     AppController app(config, statistics, filters, records);
+    applyTestMeteringScheme(app);
 
     app.resetInputs({false, false, false, false}, 0);
     pressAndReleaseOk(app, 100);
@@ -311,12 +318,12 @@ void test_app_controller_starts_after_double_ok_and_opens_valve() {
 
 void test_app_controller_completion_writes_record_statistics_and_filters() {
     SystemConfig config = makeDefaultConfig();
-    config.meteringSlots[config.activeMeteringSlot].params.stablePulsePerLiter = 1000;
     StatisticsStore statistics;
     statistics.reset({20260506, 202619, 202605});
     FilterStore filters(config.filters);
     MemoryRecordWriter records;
     AppController app(config, statistics, filters, records);
+    applyTestMeteringScheme(app);
 
     app.resetInputs({false, false, false, false}, 0);
     pressAndReleaseOk(app, 100);
@@ -347,12 +354,12 @@ void test_app_controller_completion_writes_record_statistics_and_filters() {
 
 void test_app_controller_holds_ok_five_seconds_to_enter_local_calibration() {
     SystemConfig config = makeDefaultConfig();
-    config.meteringSlots[config.activeMeteringSlot].params.stablePulsePerLiter = 1000;
     StatisticsStore statistics;
     statistics.reset({20260506, 202619, 202605});
     FilterStore filters(config.filters);
     MemoryRecordWriter records;
     AppController app(config, statistics, filters, records);
+    applyTestMeteringScheme(app);
 
     app.resetInputs({false, false, false, false}, 0);
     pressAndReleaseOk(app, 100);
@@ -381,12 +388,12 @@ void test_app_controller_holds_ok_five_seconds_to_enter_local_calibration() {
 
 void test_app_controller_ok_saves_local_calibration() {
     SystemConfig config = makeDefaultConfig();
-    config.meteringSlots[config.activeMeteringSlot].params.stablePulsePerLiter = 1000;
     StatisticsStore statistics;
     statistics.reset({20260506, 202619, 202605});
     FilterStore filters(config.filters);
     MemoryRecordWriter records;
     AppController app(config, statistics, filters, records);
+    applyTestMeteringScheme(app);
 
     app.resetInputs({false, false, false, false}, 0);
     pressAndReleaseOk(app, 100);
@@ -415,17 +422,17 @@ void test_app_controller_ok_saves_local_calibration() {
 
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(LocalUiMode::Result),
                             static_cast<std::uint8_t>(app.snapshot().localMode));
-    TEST_ASSERT_FLOAT_WITHIN(0.001f, 1.0f, static_cast<float>(activeMeteringParameters(app.config()).stablePulsePerLiter) / 1000.0f);
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 1.0f, static_cast<float>(app.activeMeteringScheme().params.stablePulsePerLiter) / 1000.0f);
     TEST_ASSERT_FALSE(app.consumeConfigDirty());
 }
 
 void test_app_controller_applies_calibration_from_raw_record() {
     SystemConfig config = makeDefaultConfig();
-    config.meteringSlots[config.activeMeteringSlot].params.stablePulsePerLiter = 1000;
     StatisticsStore statistics;
     FilterStore filters(config.filters);
     MemoryRecordWriter records;
     AppController app(config, statistics, filters, records);
+    applyTestMeteringScheme(app);
     WaterRecord record{
         1714502400,
         7500,
@@ -443,17 +450,17 @@ void test_app_controller_applies_calibration_from_raw_record() {
 
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(CalibrationApplyResult::Saved),
                             static_cast<std::uint8_t>(app.applyCalibrationFromRecord(record, 7500)));
-    TEST_ASSERT_FLOAT_WITHIN(0.001f, 1.0f, static_cast<float>(activeMeteringParameters(app.config()).stablePulsePerLiter) / 1000.0f);
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 1.0f, static_cast<float>(app.activeMeteringScheme().params.stablePulsePerLiter) / 1000.0f);
     TEST_ASSERT_FALSE(app.consumeConfigDirty());
 }
 
 void test_app_controller_small_record_calibration_keeps_metering_parameters() {
     SystemConfig config = makeDefaultConfig();
-    config.meteringSlots[config.activeMeteringSlot].params.stablePulsePerLiter = 1000;
     StatisticsStore statistics;
     FilterStore filters(config.filters);
     MemoryRecordWriter records;
     AppController app(config, statistics, filters, records);
+    applyTestMeteringScheme(app);
     WaterRecord record{
         1714502400,
         1000,
@@ -471,13 +478,12 @@ void test_app_controller_small_record_calibration_keeps_metering_parameters() {
 
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(CalibrationApplyResult::Saved),
                             static_cast<std::uint8_t>(app.applyCalibrationFromRecord(record, 1000)));
-    TEST_ASSERT_FLOAT_WITHIN(0.001f, 1.0f, static_cast<float>(activeMeteringParameters(app.config()).stablePulsePerLiter) / 1000.0f);
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 1.0f, static_cast<float>(app.activeMeteringScheme().params.stablePulsePerLiter) / 1000.0f);
     TEST_ASSERT_FALSE(app.consumeConfigDirty());
 }
 
 void test_app_controller_pause_timeout_trace_is_not_marked_error_and_can_calibrate() {
     SystemConfig config = makeDefaultConfig();
-    config.meteringSlots[config.activeMeteringSlot].params.stablePulsePerLiter = 1000;
     config.pauseTimeoutSec = 10;
     StatisticsStore statistics;
     statistics.reset({20260506, 202619, 202605});
@@ -487,6 +493,7 @@ void test_app_controller_pause_timeout_trace_is_not_marked_error_and_can_calibra
     WaterPulseTraceSample samples[700]{};
     WaterPulseTraceStore pulseTraces(traces, 2, samples, 700, 2);
     AppController app(config, statistics, filters, records, &pulseTraces);
+    applyTestMeteringScheme(app);
 
     app.resetInputs({false, false, false, false}, 0);
     pressAndReleaseOk(app, 100);
@@ -522,11 +529,11 @@ void test_app_controller_pause_timeout_trace_is_not_marked_error_and_can_calibra
 
 void test_app_controller_applies_calibration_from_pause_timeout_record() {
     SystemConfig config = makeDefaultConfig();
-    config.meteringSlots[config.activeMeteringSlot].params.stablePulsePerLiter = 1000;
     StatisticsStore statistics;
     FilterStore filters(config.filters);
     MemoryRecordWriter records;
     AppController app(config, statistics, filters, records);
+    applyTestMeteringScheme(app);
     WaterRecord record{
         1714502400,
         1470,
@@ -549,11 +556,11 @@ void test_app_controller_applies_calibration_from_pause_timeout_record() {
 
 void test_app_controller_offline_completion_marks_unknown_time_with_boot_id() {
     SystemConfig config = makeDefaultConfig();
-    config.meteringSlots[config.activeMeteringSlot].params.stablePulsePerLiter = 1000;
     MemoryRecordWriter records;
     StatisticsStore statistics;
     FilterStore filters(config.filters);
     AppController app(config, statistics, filters, records);
+    applyTestMeteringScheme(app);
 
     app.resetInputs({false, false, false, false}, 0);
     app.tick(offlineInput({false, true, false, false}, 100, 100000, 1));
@@ -580,11 +587,11 @@ void test_app_controller_offline_completion_marks_unknown_time_with_boot_id() {
 
 void test_app_controller_offline_start_sync_before_completion_writes_real_time() {
     SystemConfig config = makeDefaultConfig();
-    config.meteringSlots[config.activeMeteringSlot].params.stablePulsePerLiter = 1000;
     MemoryRecordWriter records;
     StatisticsStore statistics;
     FilterStore filters(config.filters);
     AppController app(config, statistics, filters, records);
+    applyTestMeteringScheme(app);
 
     app.resetInputs({false, false, false, false}, 0);
     app.tick(offlineInput({false, true, false, false}, 1000, 1000000, 1));
@@ -607,7 +614,6 @@ void test_app_controller_offline_start_sync_before_completion_writes_real_time()
 
 void test_app_controller_pause_resume_then_completion_updates_persistence_once() {
     SystemConfig config = makeDefaultConfig();
-    config.meteringSlots[config.activeMeteringSlot].params.stablePulsePerLiter = 1000;
     StatisticsStore statistics;
     statistics.reset({20260506, 202619, 202605});
     FilterStore filters(config.filters);
@@ -616,6 +622,7 @@ void test_app_controller_pause_resume_then_completion_updates_persistence_once()
     WaterPulseTraceSample samples[2000]{};
     WaterPulseTraceStore pulseTraces(traces, 2, samples, 2000, 2);
     AppController app(config, statistics, filters, records, &pulseTraces);
+    applyTestMeteringScheme(app);
 
     app.resetInputs({false, false, false, false}, 0);
     pressAndReleaseOk(app, 100);
@@ -663,12 +670,12 @@ void test_app_controller_pause_resume_then_completion_updates_persistence_once()
 
 void test_app_controller_stop_down_closes_valve_and_records_user_stop() {
     SystemConfig config = makeDefaultConfig();
-    config.meteringSlots[config.activeMeteringSlot].params.stablePulsePerLiter = 1000;
     StatisticsStore statistics;
     statistics.reset({20260506, 202619, 202605});
     FilterStore filters(config.filters);
     MemoryRecordWriter records;
     AppController app(config, statistics, filters, records);
+    applyTestMeteringScheme(app);
 
     app.resetInputs({false, false, false, false}, 0);
     pressAndReleaseOk(app, 100);
@@ -692,12 +699,12 @@ void test_app_controller_stop_down_closes_valve_and_records_user_stop() {
 
 void test_app_controller_emergency_stop_closes_valve_without_debounce() {
     SystemConfig config = makeDefaultConfig();
-    config.meteringSlots[config.activeMeteringSlot].params.stablePulsePerLiter = 1000;
     StatisticsStore statistics;
     statistics.reset({20260506, 202619, 202605});
     FilterStore filters(config.filters);
     MemoryRecordWriter records;
     AppController app(config, statistics, filters, records);
+    applyTestMeteringScheme(app);
 
     app.resetInputs({false, false, false, false}, 0);
     pressAndReleaseOk(app, 100);
@@ -717,10 +724,10 @@ void test_app_controller_applies_config_only_while_idle() {
     FilterStore filters(config.filters);
     MemoryRecordWriter records;
     AppController app(config, statistics, filters, records);
+    applyTestMeteringScheme(app);
 
     SystemConfig updated = config;
     updated.presets[0].value = 2000;
-    updated.meteringSlots[updated.activeMeteringSlot].params.stablePulsePerLiter = 1000;
     TEST_ASSERT_TRUE(app.canApplyConfig());
     TEST_ASSERT_TRUE(app.applyConfig(updated));
     TEST_ASSERT_EQUAL_UINT32(2000, app.snapshot().water.targetValue);
@@ -734,12 +741,12 @@ void test_app_controller_applies_config_only_while_idle() {
 
 void test_app_controller_emits_beep_patterns_for_actions_and_completion() {
     SystemConfig config = makeDefaultConfig();
-    config.meteringSlots[config.activeMeteringSlot].params.stablePulsePerLiter = 1000;
     StatisticsStore statistics;
     statistics.reset({20260506, 202619, 202605});
     FilterStore filters(config.filters);
     MemoryRecordWriter records;
     AppController app(config, statistics, filters, records);
+    applyTestMeteringScheme(app);
 
     app.resetInputs({false, false, false, false}, 0);
     pressAndReleaseOk(app, 100);
@@ -760,13 +767,13 @@ void test_app_controller_emits_beep_patterns_for_actions_and_completion() {
 
 void test_app_controller_reports_record_write_failure_without_losing_statistics() {
     SystemConfig config = makeDefaultConfig();
-    config.meteringSlots[config.activeMeteringSlot].params.stablePulsePerLiter = 1000;
     StatisticsStore statistics;
     statistics.reset({20260506, 202619, 202605});
     FilterStore filters(config.filters);
     MemoryRecordWriter records;
     records.ok = false;
     AppController app(config, statistics, filters, records);
+    applyTestMeteringScheme(app);
 
     app.resetInputs({false, false, false, false}, 0);
     pressAndReleaseOk(app, 100);
@@ -789,6 +796,7 @@ void test_app_controller_adjusts_volume_target_with_configured_step_without_ok_l
     FilterStore filters(config.filters);
     MemoryRecordWriter records;
     AppController app(config, statistics, filters, records);
+    applyTestMeteringScheme(app);
 
     app.resetInputs({false, false, false, false}, 0);
     pressAndReleaseOk(app, 100);
@@ -817,6 +825,7 @@ void test_app_controller_adjusts_time_target_with_configured_step() {
     FilterStore filters(config.filters);
     MemoryRecordWriter records;
     AppController app(config, statistics, filters, records);
+    applyTestMeteringScheme(app);
 
     app.resetInputs({false, false, false, false}, 0);
     pressAndReleaseOk(app, 100);
@@ -837,13 +846,13 @@ void test_app_controller_stopped_volume_does_not_clamp_next_confirm_adjustment()
     SystemConfig config = makeDefaultConfig();
     config.presets[0].value = 1500;
     config.presets[1].value = 1000;
-    config.meteringSlots[config.activeMeteringSlot].params.stablePulsePerLiter = 1000;
     config.resultDisplaySec = 0;
     StatisticsStore statistics;
     statistics.reset({20260506, 202619, 202605});
     FilterStore filters(config.filters);
     MemoryRecordWriter records;
     AppController app(config, statistics, filters, records);
+    applyTestMeteringScheme(app);
 
     app.resetInputs({false, false, false, false}, 0);
     pressAndReleaseOk(app, 100);
@@ -871,12 +880,12 @@ void test_app_controller_stopped_volume_does_not_clamp_next_confirm_adjustment()
 void test_app_controller_result_display_exits_after_configured_timeout() {
     SystemConfig config = makeDefaultConfig();
     config.resultDisplaySec = 2;
-    config.meteringSlots[config.activeMeteringSlot].params.stablePulsePerLiter = 1000;
     StatisticsStore statistics;
     statistics.reset({20260506, 202619, 202605});
     FilterStore filters(config.filters);
     MemoryRecordWriter records;
     AppController app(config, statistics, filters, records);
+    applyTestMeteringScheme(app);
 
     app.resetInputs({false, false, false, false}, 0);
     pressAndReleaseOk(app, 100);

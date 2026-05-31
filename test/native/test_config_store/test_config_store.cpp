@@ -126,12 +126,13 @@ void test_config_migrates_v1_without_losing_user_values() {
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(ConfigStore::LoadStatus::MigratedLegacy),
                             static_cast<std::uint8_t>(store.lastSystemConfigLoadStatus()));
     TEST_ASSERT_FALSE(store.systemConfigReadOnly());
-    TEST_ASSERT_EQUAL_INT32(11, backend.getInt("faucet_cfg", "ver", 0));
+    TEST_ASSERT_EQUAL_INT32(12, backend.getInt("faucet_cfg", "ver", 0));
     TEST_ASSERT_EQUAL_INT32(90, backend.getInt("faucet_cfg", "f0_life_min", 0));
     TEST_ASSERT_EQUAL_INT32(90, backend.getInt("faucet_cfg", "f0_life_max", 0));
     TEST_ASSERT_EQUAL_UINT32(22, loaded.confirmTimeoutSec);
     TEST_ASSERT_EQUAL_UINT32(kDefaultVolumeAdjustStepMl, loaded.volumeAdjustStepMl);
     TEST_ASSERT_EQUAL_UINT32(kDefaultTimeAdjustStepSec, loaded.timeAdjustStepSec);
+    TEST_ASSERT_EQUAL_UINT32(kDefaultPulseMinIntervalUs, loaded.pulseMinIntervalUs);
     TEST_ASSERT_EQUAL_UINT32(kDefaultRecentPulseTraceCount, loaded.recentPulseTraceCount);
     TEST_ASSERT_EQUAL_UINT32(620, activeMeteringParameters(loaded).stablePulsePerLiter);
     TEST_ASSERT_TRUE(loaded.presets[2].enabled);
@@ -164,7 +165,7 @@ void test_config_migrates_legacy_fields_when_version_is_missing() {
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(ConfigStore::LoadStatus::MigratedLegacy),
                             static_cast<std::uint8_t>(store.lastSystemConfigLoadStatus()));
     TEST_ASSERT_FALSE(store.systemConfigReadOnly());
-    TEST_ASSERT_EQUAL_INT32(11, backend.getInt("faucet_cfg", "ver", 0));
+    TEST_ASSERT_EQUAL_INT32(12, backend.getInt("faucet_cfg", "ver", 0));
     TEST_ASSERT_EQUAL_UINT32(23, loaded.confirmTimeoutSec);
     TEST_ASSERT_EQUAL_UINT32(615, activeMeteringParameters(loaded).stablePulsePerLiter);
     TEST_ASSERT_EQUAL_STRING("Carbon", loaded.filters[0].name);
@@ -189,7 +190,7 @@ void test_config_migrates_v2_filter_ranges_and_single_calibration_target() {
 
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(ConfigStore::LoadStatus::MigratedLegacy),
                             static_cast<std::uint8_t>(store.lastSystemConfigLoadStatus()));
-    TEST_ASSERT_EQUAL_INT32(11, backend.getInt("faucet_cfg", "ver", 0));
+    TEST_ASSERT_EQUAL_INT32(12, backend.getInt("faucet_cfg", "ver", 0));
     TEST_ASSERT_TRUE(loaded.filters[1].enabled);
     TEST_ASSERT_EQUAL_STRING("RO", loaded.filters[1].name);
     TEST_ASSERT_EQUAL_UINT32(360, loaded.filters[1].recommendDays);
@@ -257,7 +258,8 @@ void test_config_save_and_load_round_trips_system_config() {
     config.lcdI2cAddress = 0x3F;
     config.volumeAdjustStepMl = 250;
     config.timeAdjustStepSec = 15;
-    config.recentPulseTraceCount = 7;
+    config.pulseMinIntervalUs = 2500;
+    config.recentPulseTraceCount = 2;
     config.activeMeteringSlot = 1;
     config.meteringSlots[1].params = MeteringParameters{40, 553, 222};
     std::strncpy(config.meteringSlots[1].name, "实验参数", sizeof(config.meteringSlots[1].name) - 1);
@@ -287,7 +289,8 @@ void test_config_save_and_load_round_trips_system_config() {
     TEST_ASSERT_EQUAL_UINT8(0x3F, loaded.lcdI2cAddress);
     TEST_ASSERT_EQUAL_UINT32(250, loaded.volumeAdjustStepMl);
     TEST_ASSERT_EQUAL_UINT32(15, loaded.timeAdjustStepSec);
-    TEST_ASSERT_EQUAL_UINT32(7, loaded.recentPulseTraceCount);
+    TEST_ASSERT_EQUAL_UINT32(2500, loaded.pulseMinIntervalUs);
+    TEST_ASSERT_EQUAL_UINT32(2, loaded.recentPulseTraceCount);
     TEST_ASSERT_EQUAL_UINT8(1, loaded.activeMeteringSlot);
     TEST_ASSERT_EQUAL_STRING("实验参数", loaded.meteringSlots[1].name);
     TEST_ASSERT_EQUAL_UINT32(40, loaded.meteringSlots[1].params.startupPulseCount);
@@ -318,6 +321,7 @@ void test_config_load_sanitizes_stored_values() {
     config.confirmTimeoutSec = 1;
     config.volumeAdjustStepMl = 999999;
     config.timeAdjustStepSec = 999999;
+    config.pulseMinIntervalUs = 1;
     config.recentPulseTraceCount = 999999;
     config.meteringSlots[0].params = MeteringParameters{999999, 999999, 999999};
     config.presets[0].value = 1;
@@ -328,6 +332,7 @@ void test_config_load_sanitizes_stored_values() {
     TEST_ASSERT_EQUAL_UINT32(3, loaded.confirmTimeoutSec);
     TEST_ASSERT_EQUAL_UINT32(kMaxVolumeAdjustStepMl, loaded.volumeAdjustStepMl);
     TEST_ASSERT_EQUAL_UINT32(kMaxTimeAdjustStepSec, loaded.timeAdjustStepSec);
+    TEST_ASSERT_EQUAL_UINT32(kMinPulseMinIntervalUs, loaded.pulseMinIntervalUs);
     TEST_ASSERT_EQUAL_UINT32(kMaxRecentPulseTraceCount, loaded.recentPulseTraceCount);
     TEST_ASSERT_EQUAL_UINT32(kMaxSegmentedStartupPulseCount, loaded.meteringSlots[0].params.startupPulseCount);
     TEST_ASSERT_EQUAL_UINT32(kMaxSegmentedStartupVolumeMl, loaded.meteringSlots[0].params.startupVolumeMl);

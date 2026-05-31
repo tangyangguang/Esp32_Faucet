@@ -262,7 +262,8 @@ bool writeConfigJson(const SystemConfig& config, char* out, std::size_t len) {
     writer.append("{\"confirmTimeoutSec\":%lu,\"maxOutTimeSec\":%lu,\"maxOutVolumeMl\":%lu,"
                   "\"overflowPercent\":%u,\"noFlowTimeoutSec\":%lu,\"highFlowMlPerMin\":%lu,"
                   "\"highFlowDurationSec\":%lu,\"pauseTimeoutSec\":%lu,\"volumeAdjustStepMl\":%lu,"
-                  "\"timeAdjustStepSec\":%lu,\"recentPulseTraceCount\":%lu,"
+                  "\"timeAdjustStepSec\":%lu,\"pulseMinIntervalUs\":%lu,"
+                  "\"pulseMaxEffectiveHz\":%lu,\"recentPulseTraceCount\":%lu,"
                   "\"activeMeteringSlot\":%u,\"startupPulseCount\":%lu,"
                   "\"startupVolumeMl\":%lu,\"stablePulsePerLiter\":%lu,"
                   "\"meteringCandidateReady\":%s,"
@@ -279,6 +280,8 @@ bool writeConfigJson(const SystemConfig& config, char* out, std::size_t len) {
                   static_cast<unsigned long>(config.pauseTimeoutSec),
                   static_cast<unsigned long>(config.volumeAdjustStepMl),
                   static_cast<unsigned long>(config.timeAdjustStepSec),
+                  static_cast<unsigned long>(config.pulseMinIntervalUs),
+                  static_cast<unsigned long>(1000000UL / config.pulseMinIntervalUs),
                   static_cast<unsigned long>(config.recentPulseTraceCount),
                   static_cast<unsigned>(config.activeMeteringSlot),
                   static_cast<unsigned long>(active.startupPulseCount),

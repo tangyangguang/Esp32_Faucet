@@ -281,8 +281,8 @@ void test_app_controller_pause_timeout_trace_is_not_marked_error_and_can_calibra
     FilterStore filters(config.filters);
     MemoryRecordWriter records;
     WaterPulseTrace traces[2]{};
-    WaterPulseTraceSample samples[16]{};
-    WaterPulseTraceStore pulseTraces(traces, 2, samples, 16, 1024);
+    WaterPulseTraceSample samples[700]{};
+    WaterPulseTraceStore pulseTraces(traces, 2, samples, 700, 2);
     AppController app(config, statistics, filters, records, &pulseTraces);
 
     app.resetInputs({false, false, false, false}, 0);
@@ -309,7 +309,7 @@ void test_app_controller_pause_timeout_trace_is_not_marked_error_and_can_calibra
     const WaterPulseTraceSample* lastSample = pulseTraces.sampleAt(*trace, trace->sampleCount - 1);
     TEST_ASSERT_NOT_NULL(lastSample);
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(WaterPulseTraceState::PauseTimeout),
-                            static_cast<std::uint8_t>(lastSample->state));
+                            static_cast<std::uint8_t>(trace->finalState));
 }
 
 void test_app_controller_applies_calibration_from_pause_timeout_record() {

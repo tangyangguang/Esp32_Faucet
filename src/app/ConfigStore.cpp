@@ -12,7 +12,7 @@ namespace {
 constexpr const char* kConfigNs = "faucet_cfg";
 constexpr const char* kStatNs = "faucet_stat";
 constexpr const char* kRunNs = "faucet_run";
-constexpr std::int32_t kConfigVersion = 11;
+constexpr std::int32_t kConfigVersion = 12;
 constexpr std::int32_t kRuntimeVersion = 1;
 
 std::int32_t toInt(std::uint32_t value) {
@@ -87,6 +87,7 @@ bool hasRecognizedLegacySystemConfig(ConfigBackend& backend) {
         "pause_s",
         "vol_step",
         "time_step",
+        "pulse_min_us",
         "trace_count",
         "active_ms",
         "pulse_m",
@@ -192,6 +193,8 @@ void loadCommonSystemConfig(ConfigBackend& backend, SystemConfig& config) {
         static_cast<std::uint32_t>(backend.getInt(kConfigNs, "vol_step", toInt(config.volumeAdjustStepMl)));
     config.timeAdjustStepSec =
         static_cast<std::uint32_t>(backend.getInt(kConfigNs, "time_step", toInt(config.timeAdjustStepSec)));
+    config.pulseMinIntervalUs =
+        static_cast<std::uint32_t>(backend.getInt(kConfigNs, "pulse_min_us", toInt(config.pulseMinIntervalUs)));
     config.recentPulseTraceCount =
         static_cast<std::uint32_t>(backend.getInt(kConfigNs, "trace_count", toInt(config.recentPulseTraceCount)));
     config.activeMeteringSlot =
@@ -439,6 +442,7 @@ bool ConfigStore::saveSystemConfig(const SystemConfig& config) {
     ok = okAll(ok, backend_.setInt(kConfigNs, "pause_s", toInt(safe.pauseTimeoutSec)));
     ok = okAll(ok, backend_.setInt(kConfigNs, "vol_step", toInt(safe.volumeAdjustStepMl)));
     ok = okAll(ok, backend_.setInt(kConfigNs, "time_step", toInt(safe.timeAdjustStepSec)));
+    ok = okAll(ok, backend_.setInt(kConfigNs, "pulse_min_us", toInt(safe.pulseMinIntervalUs)));
     ok = okAll(ok, backend_.setInt(kConfigNs, "trace_count", toInt(safe.recentPulseTraceCount)));
     ok = okAll(ok, backend_.setInt(kConfigNs, "active_ms", safe.activeMeteringSlot));
     for (std::size_t i = 0; i < kMeteringSlotCount; ++i) {

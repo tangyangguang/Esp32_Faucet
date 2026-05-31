@@ -99,6 +99,7 @@ SystemConfig makeDefaultConfig() {
     config.pauseTimeoutSec = kDefaultPauseTimeoutSec;
     config.volumeAdjustStepMl = kDefaultVolumeAdjustStepMl;
     config.timeAdjustStepSec = kDefaultTimeAdjustStepSec;
+    config.pulseMinIntervalUs = kDefaultPulseMinIntervalUs;
     config.recentPulseTraceCount = kDefaultRecentPulseTraceCount;
     for (std::size_t i = 0; i < kMeteringSlotCount; ++i) {
         setDefaultMeteringSlot(config.meteringSlots[i], i);
@@ -143,6 +144,8 @@ void sanitizeConfig(SystemConfig& config) {
         clampValue<std::uint32_t>(config.volumeAdjustStepMl, kMinVolumeAdjustStepMl, kMaxVolumeAdjustStepMl);
     config.timeAdjustStepSec =
         clampValue<std::uint32_t>(config.timeAdjustStepSec, kMinTimeAdjustStepSec, kMaxTimeAdjustStepSec);
+    config.pulseMinIntervalUs =
+        clampValue<std::uint32_t>(config.pulseMinIntervalUs, kMinPulseMinIntervalUs, kMaxPulseMinIntervalUs);
     config.recentPulseTraceCount =
         clampValue<std::uint32_t>(config.recentPulseTraceCount, kMinRecentPulseTraceCount, kMaxRecentPulseTraceCount);
     if (config.activeMeteringSlot >= kMeteringSlotCount) {

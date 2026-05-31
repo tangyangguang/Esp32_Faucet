@@ -61,6 +61,7 @@ bool contextReady();
 bool getParam(const char* name, char* out, std::size_t len);
 bool persistConfig(const SystemConfig& config);
 void handleRecordDetailPage();
+void handleRecordInfoPage();
 void handleCalibrationPage();
 void handleCalibrationPost();
 void handleRecordCalibrationApi();
@@ -635,10 +636,12 @@ bool firstSecondsPulseTotal(const WaterPulseTrace& trace,
     const bool copied = savedSource ? copySavedTraceSamples(trace, samples, trace.sampleCount)
                                     : copyRamTraceSamples(trace, samples, trace.sampleCount);
     if (copied) {
-        const std::size_t count = std::min<std::size_t>(trace.sampleCount, seconds);
-        for (std::size_t i = 0; i < count; ++i) {
-            totalPulses += samples[i].pulseDelta;
+        std::size_t count = 0;
+        const std::uint32_t endUs = seconds * 1000000UL;
+        while (count < trace.sampleCount && samples[count].elapsedUs < endUs) {
+            ++count;
         }
+        totalPulses = effectivePulseCount(trace, samples, count);
     }
     delete[] samples;
     return copied;
@@ -932,16 +935,26 @@ void sendPulseTraceRawText(const WaterPulseTrace& trace,
     if (!Esp32BaseWeb::beginResponse(200, "text/plain; charset=utf-8", nullptr)) {
         return;
     }
-    Esp32BaseWeb::sendChunk("时间\t脉冲数\t累计脉冲数\t状态\n");
-    std::uint32_t cumulative = 0;
+    Esp32BaseWeb::sendChunk("序号\telapsedUs\t间隔Us\t有效累计\n");
+    std::uint32_t effectiveCumulative = 0;
+    std::uint32_t lastEffectiveElapsedUs = 0;
     const std::size_t sampleCount = rawTraceShowAll ? trace.sampleCount : rawTracePreviewSampleCount(trace);
     for (std::size_t i = 0; i < sampleCount; ++i) {
-        cumulative += samples[i].pulseDelta;
-        sendFmt("%lu秒\t%u\t%lu\t%s\n",
+        const std::uint32_t intervalUs = i == 0 ? 0 : samples[i].elapsedUs - samples[i - 1].elapsedUs;
+        bool effective = i == 0;
+        if (i > 0 && samples[i].elapsedUs >= lastEffectiveElapsedUs &&
+            samples[i].elapsedUs - lastEffectiveElapsedUs >= trace.pulseMinIntervalUs) {
+            effective = true;
+        }
+        if (effective) {
+            ++effectiveCumulative;
+            lastEffectiveElapsedUs = samples[i].elapsedUs;
+        }
+        sendFmt("%lu\t%lu\t%lu\t%lu\n",
                 static_cast<unsigned long>(i),
-                static_cast<unsigned>(samples[i].pulseDelta),
-                static_cast<unsigned long>(cumulative),
-                traceStateText(samples[i].state));
+                static_cast<unsigned long>(samples[i].elapsedUs),
+                static_cast<unsigned long>(intervalUs),
+                static_cast<unsigned long>(effectiveCumulative));
     }
     if (!rawTraceShowAll && trace.sampleCount > sampleCount) {
         sendFmt("仅显示 0秒 到 %lu秒，共 %lu 行；完整明细请使用 all=1。\n",
@@ -954,37 +967,17 @@ void sendPulseTraceRawText(const WaterPulseTrace& trace,
 std::uint32_t bucketRunningPulseDelta(const WaterPulseTraceSample* samples,
                                       std::size_t sampleCount,
                                       const WaterPulseTraceBucket& bucket) {
-    if (!samples || sampleCount == 0) {
-        return bucket.state == WaterPulseTraceState::Running ? bucket.pulseDelta : 0;
-    }
-    const std::size_t begin = std::min<std::size_t>(sampleCount, bucket.startSec);
-    const std::size_t end = std::min<std::size_t>(sampleCount, begin + bucket.durationSec);
-    std::uint32_t total = 0;
-    for (std::size_t i = begin; i < end; ++i) {
-        if (samples[i].state == WaterPulseTraceState::Running) {
-            total += samples[i].pulseDelta;
-        }
-    }
-    return total;
+    (void)samples;
+    (void)sampleCount;
+    return bucket.pulseDelta;
 }
 
 bool bucketOnlyHasRunningSamples(const WaterPulseTraceSample* samples,
                                  std::size_t sampleCount,
                                  const WaterPulseTraceBucket& bucket) {
-    if (!samples || sampleCount == 0) {
-        return bucket.state == WaterPulseTraceState::Running;
-    }
-    const std::size_t begin = std::min<std::size_t>(sampleCount, bucket.startSec);
-    const std::size_t end = std::min<std::size_t>(sampleCount, begin + bucket.durationSec);
-    if (begin >= end) {
-        return false;
-    }
-    for (std::size_t i = begin; i < end; ++i) {
-        if (samples[i].state != WaterPulseTraceState::Running) {
-            return false;
-        }
-    }
-    return true;
+    (void)samples;
+    (void)sampleCount;
+    return bucket.state == WaterPulseTraceState::Running || bucket.state == WaterPulseTraceState::Completed;
 }
 
 void formatKb(std::size_t bytes, char* out, std::size_t len) {
@@ -1133,25 +1126,25 @@ void sendCalibrationParameterPanels() {
     const SystemConfig& config = *g_context.config;
     Esp32BaseWeb::sendChunk("<section class='panel calibration-param-panel'><div class='panel-head'><h3>参数槽</h3>"
                             "<span class='status-pill status-ok'>固定 4 槽</span></div>"
-                            "<table class='kv'><tr><th>槽位</th><th>名称</th><th>启动脉冲数</th><th>启动水量</th><th>稳态P/L</th><th>说明</th><th>编辑</th></tr>");
+                            "<table class='calibration-slot-table'><tr><th>槽位</th><th>名称</th><th>参数</th><th>说明</th><th>编辑</th></tr>");
     for (std::size_t i = 0; i < kMeteringSlotCount; ++i) {
         const SystemConfig::MeteringSlot& slot = config.meteringSlots[i];
         char startupVolume[24]{};
         formatLiters(slot.params.startupVolumeMl, startupVolume, sizeof(startupVolume));
-        sendFmt("<tr><td>%u%s</td><td>",
+        sendFmt("<tr><td class='calibration-slot-index'>槽 %u%s</td><td class='calibration-slot-name'>",
                 static_cast<unsigned>(i + 1),
-                i == config.activeMeteringSlot ? "（当前启用）" : "");
+                i == config.activeMeteringSlot ? "<span class='status-pill status-ok'>当前启用</span>" : "");
         sendHtmlEscapedBounded(slot.name, sizeof(slot.name));
-        sendFmt("</td><td>%luP</td><td>%s</td><td>%luP/L</td><td>",
+        sendFmt("</td><td class='calibration-slot-values'><span><b>启动脉冲</b>%luP</span><span><b>启动水量</b>%s</span><span><b>稳态</b>%luP/L</span></td><td class='calibration-slot-note'>",
                 static_cast<unsigned long>(slot.params.startupPulseCount),
                 startupVolume,
                 static_cast<unsigned long>(slot.params.stablePulsePerLiter));
         sendHtmlEscapedBounded(slot.lastModifiedNote[0] ? slot.lastModifiedNote : slot.creationNote,
                                slot.lastModifiedNote[0] ? sizeof(slot.lastModifiedNote) : sizeof(slot.creationNote));
-        sendFmt("</td><td><form method='post' action='/faucet/calibration' onsubmit='return once(this)'>"
+        sendFmt("</td><td class='calibration-slot-edit'><form class='calibration-slot-form' method='post' action='/faucet/calibration' onsubmit='return once(this)'>"
                 "<input type='hidden' name='action' value='update_metering_slot'>"
                 "<input type='hidden' name='slot' value='%u'>"
-                "<label class='compact-field'><span>名称</span><input name='name' maxlength='%u' value='",
+                "<label class='compact-field slot-name-field'><span>名称</span><input name='name' maxlength='%u' value='",
                 static_cast<unsigned>(i),
                 static_cast<unsigned>(kMeteringSlotNameLength - 1));
         sendHtmlAttrEscapedBounded(slot.name, sizeof(slot.name));
@@ -1866,6 +1859,7 @@ void sendAppCss() {
     Esp32BaseWeb::sendChunk(".form-grid{display:grid;grid-template-columns:repeat(12,1fr);gap:10px 12px;align-items:start}.span-2{grid-column:span 2}.span-3{grid-column:span 3}.span-4{grid-column:span 4}.span-5{grid-column:span 5}.span-6{grid-column:span 6}.span-8{grid-column:span 8}.span-12{grid-column:1/-1}"
                             ".field span,.check-title{display:block;font-size:12px;color:var(--muted);font-weight:650;margin-bottom:4px}.field input,.field select{margin-bottom:0}.check-line{display:inline-flex;align-items:center;gap:6px;min-height:32px;padding:0 8px;border:1px solid var(--line);border-radius:6px;background:#fff;color:var(--text);font-size:14px;white-space:nowrap}.check-line input{margin:0}");
     Esp32BaseWeb::sendChunk(".form-actions{display:flex;align-items:center;justify-content:flex-start;gap:6px;margin-top:10px;flex-wrap:wrap}.form-actions form{margin:0}.form-actions a,.btn-link,.page-link,.page-current,.row-actions a{display:inline-flex;align-items:center;justify-content:center;min-height:32px;padding:0 10px;border:1px solid var(--line);border-radius:6px;background:#f7f9fa;color:#355e66;font:inherit;font-size:13px;line-height:1.2;box-sizing:border-box;text-decoration:none;cursor:pointer}input.secondary{background:#f7f9fa;border:1px solid var(--line);color:#4c565d}input.secondary:hover,input.secondary:focus-visible{background:#10574e;border-color:#10574e;color:#fff}.btn-link:hover,.btn-link:focus-visible,.form-actions a:hover,.form-actions a:focus-visible,.page-link:hover,.page-link:focus-visible,.row-actions a:hover,.row-actions a:focus-visible{background:#10574e;border-color:#10574e;color:#fff;text-decoration:none}.row-actions{display:flex;gap:5px;align-items:center;flex-wrap:wrap}.latest-actions{gap:6px}.latest-record-panel{overflow-x:auto}.latest-record-table{min-width:900px}.latest-calibration-edit-row{display:none;background:#fbfcfb}.latest-calibration-edit-row:target{display:table-row}.latest-calibration-edit-row td{border-top:1px solid #dce8e5}.latest-calibration-form{display:grid;grid-template-columns:minmax(160px,220px) minmax(0,1fr);gap:8px 12px;align-items:end;max-width:720px;margin:0}.latest-volume-field{margin:0}.latest-volume-field input{width:140px;margin:0;text-align:right}.latest-calibration-form .hint{grid-column:2;margin:0}.latest-calibration-form .form-actions{grid-column:1/-1;margin-top:4px}.sample-window-form{display:flex;align-items:flex-end;gap:8px;flex-wrap:wrap;margin:8px 0 4px}.sample-window-field{margin:0}.sample-window-field input{width:96px;margin:0;text-align:right}.latest-status-pills,.sample-status-pills{display:flex;align-items:center;gap:5px;flex-wrap:wrap}.calibration-formula-panel code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;color:#36505b;background:#f3f6f5;border-radius:4px;padding:1px 4px}");
+    Esp32BaseWeb::sendChunk(".calibration-param-layout{display:grid;grid-template-columns:1fr;gap:12px;margin:0 0 12px}.calibration-param-layout .calibration-param-panel{margin:0}.calibration-param-panel{overflow-x:auto}.calibration-slot-table{min-width:1040px;margin:0;border:0;border-radius:0;box-shadow:none;background:transparent}.calibration-slot-table th:nth-child(1){width:92px}.calibration-slot-table th:nth-child(2){width:128px}.calibration-slot-table th:nth-child(3){width:230px}.calibration-slot-table th:nth-child(4){width:280px}.calibration-slot-index{font-weight:700;white-space:nowrap}.calibration-slot-index .status-pill{display:flex;width:max-content;margin-top:5px}.calibration-slot-name{font-weight:650}.calibration-slot-values{min-width:220px}.calibration-slot-values span{display:inline-flex;align-items:center;min-height:24px;margin:0 5px 4px 0;padding:0 7px;border:1px solid #dce6e3;border-radius:999px;background:#f8fbfa;font-variant-numeric:tabular-nums;white-space:nowrap}.calibration-slot-values b{margin-right:4px;color:var(--muted);font-size:11px}.calibration-slot-note{min-width:260px;max-width:360px;color:#536068;font-size:12px;line-height:1.35}.calibration-slot-edit{min-width:520px}.calibration-slot-form{display:grid;grid-template-columns:minmax(128px,1.3fr) repeat(3,98px) 82px;gap:5px;align-items:end;margin:0}.compact-field{display:block;margin:0}.compact-field span{display:block;margin:0 0 3px;color:var(--muted);font-size:11px;font-weight:650;line-height:1.1}.compact-field input{width:100%;height:30px;min-height:30px;margin:0;padding:0 7px;box-sizing:border-box;font:inherit}.calibration-slot-form input[type=number]{text-align:right}.calibration-slot-form input[type=submit]{height:30px;min-height:30px;margin:0;padding:0 8px;font-size:12px}");
     Esp32BaseWeb::sendChunk("table{width:100%;border-collapse:separate;border-spacing:0;margin:0 0 12px;overflow:hidden;font-size:13px}td,th{padding:8px 10px;border-bottom:1px solid #edf1f0;text-align:left;vertical-align:middle}tr:last-child td{border-bottom:0}th{background:#f8faf9;color:var(--muted);font-weight:700}.filters-table th:first-child{width:22%}.filters-table th:last-child{width:150px}.kv th{width:26%}");
     Esp32BaseWeb::sendChunk(".pager{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin:0 0 10px}.pager-links{display:flex;align-items:center;gap:5px;flex-wrap:wrap}.page-current{background:var(--accent-soft);color:#17635b;border-color:#cfe4dc}.page-disabled{color:#9aa3aa;background:#f4f6f6;pointer-events:none}.page-size{display:flex;align-items:center;gap:6px;color:var(--muted);font-size:13px;line-height:32px}.page-size select{width:auto;min-width:80px}.page-size select,.page-size input{height:32px;min-height:32px;margin:0;padding:0 9px;box-sizing:border-box;font:inherit;line-height:32px}.page-size input[name=pageNo]{width:58px;text-align:center}");
     Esp32BaseWeb::sendChunk(".disabled-row{background:#f7f8f8;color:#8a949b}.disabled-row td{color:#8a949b}.disabled-row .status-pill{background:#eef0f0;color:#7b858d}.disabled-row a{color:#6f7a82}"
@@ -2809,6 +2803,16 @@ void handleRecordsPage() {
                 resultStatusClass(records[i].result),
                 resultText(records[i].result));
         Esp32BaseWeb::sendChunk("</td><td><div class='row-actions'>");
+        sendFmt("<a class='btn-link' href='/faucet/records/detail?info=1&start=%lu&volume=%lu&target=%lu&pulses=%lu&rejected=%lu&duration=%lu&mode=%u&result=%u&preset=%u'>详情</a>",
+                static_cast<unsigned long>(records[i].startTime),
+                static_cast<unsigned long>(records[i].volumeMl),
+                static_cast<unsigned long>(records[i].targetValue),
+                static_cast<unsigned long>(records[i].pulseCount),
+                static_cast<unsigned long>(records[i].rejectedPulseCount),
+                static_cast<unsigned long>(records[i].durationSec),
+                static_cast<unsigned>(records[i].mode),
+                static_cast<unsigned>(records[i].result),
+                static_cast<unsigned>(records[i].selectedPreset));
         if (calibrated) {
             Esp32BaseWeb::sendChunk("<span class='status-pill status-ok'>已校准</span>");
         } else {
@@ -2823,6 +2827,66 @@ void handleRecordsPage() {
     delete[] pageSavedTraces;
     delete[] pageSavedTraceFound;
     delete[] records;
+    sendPageEnd();
+}
+
+void handleRecordInfoPage() {
+    if (!Esp32BaseWeb::checkAuth() || !requireContext()) {
+        return;
+    }
+    char text[24]{};
+    WaterRecord record{};
+    std::uint32_t parsed = 0;
+    if (getParam("start", text, sizeof(text)) && parseU32(text, parsed)) {
+        record.startTime = parsed;
+    }
+    if (getParam("volume", text, sizeof(text)) && parseU32(text, parsed)) {
+        record.volumeMl = parsed;
+    }
+    if (getParam("target", text, sizeof(text)) && parseU32(text, parsed)) {
+        record.targetValue = parsed;
+    }
+    if (getParam("pulses", text, sizeof(text)) && parseU32(text, parsed)) {
+        record.pulseCount = parsed;
+    }
+    if (getParam("rejected", text, sizeof(text)) && parseU32(text, parsed)) {
+        record.rejectedPulseCount = parsed;
+    }
+    if (getParam("duration", text, sizeof(text)) && parseU32(text, parsed)) {
+        record.durationSec = parsed;
+    }
+    if (getParam("mode", text, sizeof(text)) && parseU32(text, parsed)) {
+        record.mode = parsed == static_cast<std::uint32_t>(WaterMode::Time) ? WaterMode::Time : WaterMode::Volume;
+    }
+    if (getParam("result", text, sizeof(text)) && parseU32(text, parsed)) {
+        record.result = static_cast<WaterResult>(parsed);
+    }
+    if (getParam("preset", text, sizeof(text)) && parseU32(text, parsed)) {
+        record.selectedPreset = static_cast<std::uint8_t>(parsed);
+    }
+    char startTime[40]{};
+    formatWaterRecordListTime(record, startTime, sizeof(startTime));
+    sendPageStart("接水详情");
+    Esp32BaseWeb::sendChunk("<h2>接水详情</h2><div class='form-actions'><a class='btn-link' href='/faucet/records'>返回记录</a></div>"
+                            "<section class='panel'><h3>记录信息</h3><table class='kv'>");
+    sendFmt("<tr><th>开始时间</th><td>%s</td></tr>", startTime);
+    Esp32BaseWeb::sendChunk("<tr><th>模式</th><td>");
+    Esp32BaseWeb::sendChunk(modeText(record.mode));
+    Esp32BaseWeb::sendChunk("</td></tr><tr><th>目标</th><td>");
+    sendTargetValue(record);
+    Esp32BaseWeb::sendChunk("</td></tr><tr><th>估算出水</th><td>");
+    sendLiters(record.volumeMl);
+    sendFmt("</td></tr><tr><th>持续时间</th><td>%lu s</td></tr>"
+            "<tr><th>有效脉冲</th><td>%lu P</td></tr>"
+            "<tr><th>被过滤脉冲</th><td>%lu P</td></tr>"
+            "<tr><th>运行结果</th><td>%s</td></tr>"
+            "<tr><th>预设序号</th><td>%u</td></tr>",
+            static_cast<unsigned long>(record.durationSec),
+            static_cast<unsigned long>(record.pulseCount),
+            static_cast<unsigned long>(record.rejectedPulseCount),
+            resultText(record.result),
+            static_cast<unsigned>(record.selectedPreset));
+    Esp32BaseWeb::sendChunk("</table></section>");
     sendPageEnd();
 }
 
@@ -2853,7 +2917,7 @@ void handleCalibrationPage() {
     sendLatestCalibrationRecordPanel(canCalibrate, record);
     sendCalibrationGenerationPanel(canCalibrate, record);
 
-    Esp32BaseWeb::sendChunk("<div class='metric-grid calibration-param-grid'>");
+    Esp32BaseWeb::sendChunk("<div class='calibration-param-layout'>");
     sendCalibrationParameterPanels();
     Esp32BaseWeb::sendChunk("</div>");
     sendCalibrationFormulaPanel();
@@ -2863,6 +2927,10 @@ void handleCalibrationPage() {
 
 void handleRecordDetailPage() {
     if (!Esp32BaseWeb::checkAuth()) {
+        return;
+    }
+    if (Esp32BaseWeb::hasParam("info")) {
+        handleRecordInfoPage();
         return;
     }
     char text[24]{};
@@ -3253,19 +3321,29 @@ void handleRecordDetailPage() {
                 rawSavedParam,
                 static_cast<unsigned long>(traceId));
     }
-    sendFmt("</div></div><p class='hint'>默认展示 0秒 到 %lu秒；原始秒级数据共 %lu 行，当前展示 %lu 行。</p>"
-            "<table class='raw-trace-table'><tr><th>时间</th><th>脉冲数</th><th>累计脉冲数</th><th>状态</th></tr>",
+    sendFmt("</div></div><p class='hint'>默认展示前 %lu 个原始边沿；原始边沿共 %lu 个，当前展示 %lu 个。</p>"
+            "<table class='raw-trace-table'><tr><th>序号</th><th>elapsedUs</th><th>间隔Us</th><th>有效累计</th></tr>",
             static_cast<unsigned long>(kRawTracePreviewLastSecond),
             static_cast<unsigned long>(trace->sampleCount),
             static_cast<unsigned long>(rawPreviewCount));
-    std::uint32_t rawPreviewCumulative = 0;
+    std::uint32_t rawPreviewEffective = 0;
+    std::uint32_t lastEffectiveElapsedUs = 0;
     for (std::size_t i = 0; i < rawPreviewCount; ++i) {
-        rawPreviewCumulative += samples[i].pulseDelta;
-        sendFmt("<tr><td>%lu秒</td><td>%u</td><td>%lu</td><td>%s</td></tr>",
+        const std::uint32_t intervalUs = i == 0 ? 0 : samples[i].elapsedUs - samples[i - 1].elapsedUs;
+        bool effective = i == 0;
+        if (i > 0 && samples[i].elapsedUs >= lastEffectiveElapsedUs &&
+            samples[i].elapsedUs - lastEffectiveElapsedUs >= trace->pulseMinIntervalUs) {
+            effective = true;
+        }
+        if (effective) {
+            ++rawPreviewEffective;
+            lastEffectiveElapsedUs = samples[i].elapsedUs;
+        }
+        sendFmt("<tr><td>%lu</td><td>%lu</td><td>%lu</td><td>%lu</td></tr>",
                 static_cast<unsigned long>(i),
-                static_cast<unsigned>(samples[i].pulseDelta),
-                static_cast<unsigned long>(rawPreviewCumulative),
-                traceStateText(samples[i].state));
+                static_cast<unsigned long>(samples[i].elapsedUs),
+                static_cast<unsigned long>(intervalUs),
+                static_cast<unsigned long>(rawPreviewEffective));
     }
     Esp32BaseWeb::sendChunk("</table></section>");
 
@@ -3522,6 +3600,9 @@ void mergeChangedConfigFields(const SystemConfig& before, const SystemConfig& su
     }
     if (submitted.timeAdjustStepSec != before.timeAdjustStepSec) {
         target.timeAdjustStepSec = submitted.timeAdjustStepSec;
+    }
+    if (submitted.pulseMinIntervalUs != before.pulseMinIntervalUs) {
+        target.pulseMinIntervalUs = submitted.pulseMinIntervalUs;
     }
     if (submitted.recentPulseTraceCount != before.recentPulseTraceCount) {
         target.recentPulseTraceCount = submitted.recentPulseTraceCount;

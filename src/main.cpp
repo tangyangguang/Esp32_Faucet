@@ -38,13 +38,13 @@ constexpr std::size_t kRamRecordCalibrationCapacity = 32;
 constexpr std::size_t kWaterRecordCapacity = 20000;
 constexpr std::size_t kWaterRecordCalibrationCapacity = 512;
 constexpr std::size_t kPulseTraceCapacity = faucet::kMaxRecentPulseTraceCount;
-constexpr std::size_t kSavedPulseTraceMaxCount = 32;
-constexpr std::size_t kSavedPulseTraceSamplesPerTrace = faucet::kPulseTraceSamplesPerTrace;
+constexpr std::size_t kSavedPulseTraceMaxCount = faucet::kSavedPulseTraceMaxCount;
+constexpr std::size_t kSavedPulseTraceSamplesPerTrace = faucet::kPulseTraceMaxRawEdgesPerTrace;
 constexpr std::size_t kPulseTraceMaxSamples =
-    static_cast<std::size_t>(faucet::kMaxRecentPulseTraceCount) * faucet::kPulseTraceSamplesPerTrace;
+    static_cast<std::size_t>(faucet::kMaxRecentPulseTraceCount) * faucet::kPulseTraceMaxRawEdgesPerTrace;
 constexpr const char* kWaterRecordPath = "/faucet_records_v1.bin";
 constexpr const char* kWaterRecordCalibrationPath = "/faucet_record_cal_v1.bin";
-constexpr const char* kSavedPulseTracePath = "/faucet_pulse_traces_v2.bin";
+constexpr const char* kSavedPulseTracePath = "/faucet_pulse_traces_v3.bin";
 
 class PersistentRecordWriter : public faucet::WaterRecordWriter, public faucet::WaterRecordReader {
 public:

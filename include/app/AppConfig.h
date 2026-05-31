@@ -25,10 +25,15 @@ constexpr std::uint32_t kMaxVolumeAdjustStepMl = 1000;
 constexpr std::uint32_t kDefaultTimeAdjustStepSec = 10;
 constexpr std::uint32_t kMinTimeAdjustStepSec = 1;
 constexpr std::uint32_t kMaxTimeAdjustStepSec = 300;
-constexpr std::uint32_t kDefaultRecentPulseTraceCount = 10;
+constexpr std::uint32_t kDefaultPulseMinIntervalUs = 1000;
+constexpr std::uint32_t kMinPulseMinIntervalUs = 100;
+constexpr std::uint32_t kMaxPulseMinIntervalUs = 100000;
+constexpr std::uint32_t kDefaultRecentPulseTraceCount = 3;
 constexpr std::uint32_t kMinRecentPulseTraceCount = 1;
-constexpr std::uint32_t kMaxRecentPulseTraceCount = 10;
-constexpr std::uint32_t kPulseTraceSamplesPerTrace = 1024;
+constexpr std::uint32_t kMaxRecentPulseTraceCount = 3;
+constexpr std::uint32_t kPulseTraceMaxRawEdgesPerTrace = 4096;
+constexpr std::uint32_t kSavedPulseTraceMaxCount = 12;
+constexpr std::uint32_t kPulseTraceSamplesPerTrace = kPulseTraceMaxRawEdgesPerTrace;
 constexpr std::size_t kMeteringSlotCount = 4;
 constexpr std::size_t kMeteringSlotNameLength = 24;
 constexpr std::size_t kMeteringNoteLength = 192;
@@ -70,6 +75,7 @@ struct SystemConfig {
     std::uint32_t pauseTimeoutSec;
     std::uint32_t volumeAdjustStepMl;
     std::uint32_t timeAdjustStepSec;
+    std::uint32_t pulseMinIntervalUs;
     std::uint32_t recentPulseTraceCount;
     struct MeteringSlot {
         bool valid;

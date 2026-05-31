@@ -20,9 +20,7 @@ enum class WaterPulseTraceState : std::uint8_t {
 };
 
 struct WaterPulseTraceSample {
-    std::uint16_t pulseDelta;
-    WaterPulseTraceState state;
-    std::uint8_t reserved;
+    std::uint32_t elapsedUs;
 };
 
 struct WaterPulseTrace {
@@ -33,8 +31,11 @@ struct WaterPulseTrace {
     std::size_t sampleCount;
     std::uint32_t totalPulses;
     std::uint32_t actualMl;
+    std::uint32_t pulseMinIntervalUs;
+    WaterPulseTraceState finalState;
     bool finished;
     bool truncated;
+    bool resumedAfterPause;
 };
 
 struct WaterPulseTraceStats {
@@ -61,7 +62,9 @@ struct WaterPulseTraceBucket {
     std::uint32_t startSec;
     std::uint32_t durationSec;
     std::uint32_t pulseDelta;
+    std::uint32_t rawEdgeDelta;
     std::uint32_t cumulativePulses;
+    std::uint32_t cumulativeRawEdges;
     WaterPulseTraceState state;
 };
 
@@ -116,9 +119,10 @@ public:
                          std::size_t recentTraceLimit);
 
     void setRecentTraceLimit(std::size_t recentTraceLimit);
-    std::uint32_t beginTrace(std::uint32_t startTime);
-    bool appendSecond(std::uint32_t traceId, std::uint32_t pulseDelta, WaterPulseTraceState state);
+    std::uint32_t beginTrace(std::uint32_t startTime, std::uint32_t pulseMinIntervalUs);
+    bool appendRawEdge(std::uint32_t traceId, std::uint32_t elapsedUs);
     bool finishTrace(std::uint32_t traceId, const WaterRecord& record, WaterPulseTraceState finalState);
+    bool markResumedAfterPause(std::uint32_t traceId);
     bool setActualMl(std::uint32_t traceId, std::uint32_t actualMl);
     bool setActualMlByRecord(const WaterRecord& record, std::uint32_t actualMl);
 
@@ -183,9 +187,12 @@ private:
         std::uint32_t sampleCount;
         std::uint32_t totalPulses;
         std::uint32_t actualMl;
+        std::uint32_t pulseMinIntervalUs;
         std::uint32_t sampleChecksum;
+        std::uint8_t finalState;
+        std::uint8_t resumedAfterPause;
         std::uint8_t finished;
-        std::uint8_t reserved[3];
+        std::uint8_t reserved;
         std::uint32_t entryChecksum;
     };
 
@@ -234,6 +241,10 @@ WaterPulseTraceAnalysis analyzeWaterPulseTrace(const WaterPulseTrace& trace,
                                                const WaterPulseTraceSample* samples,
                                                std::size_t sampleCount);
 WaterPulseTraceAnalysis analyzeWaterPulseTrace(const WaterPulseTrace& trace, const WaterPulseTraceStore& store);
+std::uint32_t effectivePulseCount(const WaterPulseTrace& trace,
+                                  const WaterPulseTraceSample* samples,
+                                  std::size_t sampleCount);
+bool waterPulseTraceAnalysisEligible(const WaterPulseTrace& trace);
 
 std::size_t aggregateWaterPulseTrace(const WaterPulseTrace& trace,
                                      const WaterPulseTraceStore& store,

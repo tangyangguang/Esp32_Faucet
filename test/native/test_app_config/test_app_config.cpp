@@ -23,10 +23,16 @@ void test_default_config_matches_product_defaults() {
     TEST_ASSERT_EQUAL_UINT32(90, config.pauseTimeoutSec);
     TEST_ASSERT_EQUAL_UINT32(kDefaultVolumeAdjustStepMl, config.volumeAdjustStepMl);
     TEST_ASSERT_EQUAL_UINT32(kDefaultTimeAdjustStepSec, config.timeAdjustStepSec);
+    TEST_ASSERT_EQUAL_UINT32(kDefaultPulseMinIntervalUs, config.pulseMinIntervalUs);
+    TEST_ASSERT_EQUAL_UINT32(1000, config.pulseMinIntervalUs);
+    TEST_ASSERT_EQUAL_UINT32(100, kMinPulseMinIntervalUs);
+    TEST_ASSERT_EQUAL_UINT32(100000, kMaxPulseMinIntervalUs);
     TEST_ASSERT_EQUAL_UINT32(kDefaultRecentPulseTraceCount, config.recentPulseTraceCount);
-    TEST_ASSERT_EQUAL_UINT32(10, config.recentPulseTraceCount);
+    TEST_ASSERT_EQUAL_UINT32(3, config.recentPulseTraceCount);
     TEST_ASSERT_EQUAL_UINT32(1, kMinRecentPulseTraceCount);
-    TEST_ASSERT_EQUAL_UINT32(10, kMaxRecentPulseTraceCount);
+    TEST_ASSERT_EQUAL_UINT32(3, kMaxRecentPulseTraceCount);
+    TEST_ASSERT_EQUAL_UINT32(4096, kPulseTraceMaxRawEdgesPerTrace);
+    TEST_ASSERT_EQUAL_UINT32(12, kSavedPulseTraceMaxCount);
     TEST_ASSERT_EQUAL_UINT8(0, config.activeMeteringSlot);
     TEST_ASSERT_FALSE(config.meteringCandidate.ready);
     TEST_ASSERT_EQUAL_UINT32(0, config.meteringCandidate.params.startupPulseCount);
@@ -107,6 +113,7 @@ void test_sanitize_config_clamps_scalar_ranges() {
     config.pauseTimeoutSec = 999999;
     config.volumeAdjustStepMl = 0;
     config.timeAdjustStepSec = 0;
+    config.pulseMinIntervalUs = 1;
     config.recentPulseTraceCount = 999999;
     config.activeMeteringSlot = 99;
     config.meteringSlots[0].params = MeteringParameters{999999, 999999, 999999};
@@ -132,8 +139,9 @@ void test_sanitize_config_clamps_scalar_ranges() {
     TEST_ASSERT_EQUAL_UINT32(3600, config.pauseTimeoutSec);
     TEST_ASSERT_EQUAL_UINT32(10, config.volumeAdjustStepMl);
     TEST_ASSERT_EQUAL_UINT32(1, config.timeAdjustStepSec);
+    TEST_ASSERT_EQUAL_UINT32(kMinPulseMinIntervalUs, config.pulseMinIntervalUs);
     TEST_ASSERT_EQUAL_UINT32(kMaxRecentPulseTraceCount, config.recentPulseTraceCount);
-    TEST_ASSERT_EQUAL_UINT32(10, config.recentPulseTraceCount);
+    TEST_ASSERT_EQUAL_UINT32(3, config.recentPulseTraceCount);
     TEST_ASSERT_EQUAL_UINT8(0, config.activeMeteringSlot);
     TEST_ASSERT_EQUAL_UINT32(kMaxSegmentedStartupPulseCount, config.meteringSlots[0].params.startupPulseCount);
     TEST_ASSERT_EQUAL_UINT32(kMaxSegmentedStartupVolumeMl, config.meteringSlots[0].params.startupVolumeMl);
@@ -145,6 +153,11 @@ void test_sanitize_config_clamps_scalar_ranges() {
     TEST_ASSERT_EQUAL_UINT32(300, config.displaySleepSec);
     TEST_ASSERT_EQUAL_UINT32(60, config.resultDisplaySec);
     TEST_ASSERT_EQUAL_UINT8(0x03, config.lcdI2cAddress);
+
+    config = makeDefaultConfig();
+    config.pulseMinIntervalUs = 999999;
+    sanitizeConfig(config);
+    TEST_ASSERT_EQUAL_UINT32(kMaxPulseMinIntervalUs, config.pulseMinIntervalUs);
 
     config = makeDefaultConfig();
     config.recentPulseTraceCount = 0;

@@ -43,15 +43,14 @@ AppController::AppController(const SystemConfig& config,
       water_(config_),
       localMode_(LocalUiMode::Normal),
       buttons_(),
-      flow_(activeMeteringParameters(config_), kDefaultPulseFilterUs),
+      flow_(activeMeteringParameters(config_), config_.pulseMinIntervalUs),
       valve_(config_.valveFullPowerSec, config_.valveHoldDutyPercent),
       statistics_(statistics),
       filters_(filters),
       records_(records),
       pulseTraces_(pulseTraces),
       activeTraceId_(0),
-      lastTraceSampleMs_(0),
-      lastTracePulseCount_(0),
+      activeTraceStartUs_(0),
       lastFlowVolumeMl_(0),
       activeStartTimeSec_(0),
       activeStartTimeSynced_(false),
@@ -83,13 +82,16 @@ void AppController::resetInputs(ButtonLevels levels, std::uint32_t nowMs) {
 }
 
 void AppController::onFlowPulse(std::uint32_t nowUs) {
+    if (pulseTraces_ && activeTraceId_ != 0) {
+        pulseTraces_->appendRawEdge(activeTraceId_, elapsedSince(nowUs, activeTraceStartUs_));
+    }
     flow_.onPulse(nowUs);
 }
 
 void AppController::tick(const AppTickInput& input) {
     const ButtonEvent event = buttons_.update(input.buttons, input.nowMs);
     updateResultCalibrationHold(input.buttons.okPressed, input.nowMs);
-    handleButtonEvent(event, input.nowMs, input.nowSeconds, input.timeSynced, input.bootId);
+    handleButtonEvent(event, input.nowMs, input.nowUs, input.nowSeconds, input.timeSynced, input.bootId);
     if (localMode_ == LocalUiMode::Calibration && !input.buttons.okPressed) {
         calibrationIgnoreOkUntilReleased_ = false;
     }
@@ -100,7 +102,6 @@ void AppController::tick(const AppTickInput& input) {
 
     syncFlow(input.nowUs);
     const FlowSnapshot flow = flow_.snapshot(input.nowUs);
-    samplePulseTrace(input.nowMs, flow);
     water_.tick(input.nowMs, flow.currentFlowMlPerMin);
     syncValve(input.nowMs);
 
@@ -202,6 +203,7 @@ bool AppController::applyConfig(const SystemConfig& config) {
     sanitizeConfig(safe);
     config_ = safe;
     flow_.setMeteringParameters(activeMeteringParameters(config_));
+    flow_.setPulseFilterUs(config_.pulseMinIntervalUs);
     valve_.configure(config_.valveFullPowerSec, config_.valveHoldDutyPercent);
     adjustmentStepMl_ = config_.volumeAdjustStepMl;
     timeAdjustmentStepSec_ = config_.timeAdjustStepSec;
@@ -235,6 +237,7 @@ CalibrationApplyResult AppController::applyCalibrationFromRecordInternal(const W
 
 void AppController::handleButtonEvent(ButtonEvent event,
                                       std::uint32_t nowMs,
+                                      std::uint32_t nowUs,
                                       std::uint32_t nowSeconds,
                                       bool timeSynced,
                                       std::uint32_t bootId) {
@@ -324,9 +327,12 @@ void AppController::handleButtonEvent(ButtonEvent event,
                     pendingBeep_ = BeepPattern::Click;
                 }
             } else if (water.state == WaterState::Confirm) {
-                startSelectedPreset(nowMs, nowSeconds, timeSynced, bootId);
+                startSelectedPreset(nowMs, nowUs, nowSeconds, timeSynced, bootId);
             } else if (water.state == WaterState::Running || water.state == WaterState::Paused) {
                 if (water_.togglePause(nowMs)) {
+                    if (water.state == WaterState::Paused && pulseTraces_ && activeTraceId_ != 0) {
+                        pulseTraces_->markResumedAfterPause(activeTraceId_);
+                    }
                     pendingBeep_ = BeepPattern::Click;
                 }
             }
@@ -363,6 +369,7 @@ void AppController::handleButtonEvent(ButtonEvent event,
 }
 
 void AppController::startSelectedPreset(std::uint32_t nowMs,
+                                        std::uint32_t nowUs,
                                         std::uint32_t nowSeconds,
                                         bool timeSynced,
                                         std::uint32_t bootId) {
@@ -374,9 +381,8 @@ void AppController::startSelectedPreset(std::uint32_t nowMs,
         lastFlowVolumeMl_ = 0;
         if (pulseTraces_) {
             pulseTraces_->setRecentTraceLimit(config_.recentPulseTraceCount);
-            activeTraceId_ = pulseTraces_->beginTrace(nowSeconds);
-            lastTraceSampleMs_ = nowMs;
-            lastTracePulseCount_ = 0;
+            activeTraceId_ = pulseTraces_->beginTrace(nowSeconds, config_.pulseMinIntervalUs);
+            activeTraceStartUs_ = nowUs;
         }
         pendingBeep_ = BeepPattern::Click;
     }
@@ -475,48 +481,16 @@ void AppController::syncFlow(std::uint32_t nowUs) {
     }
 }
 
-void AppController::samplePulseTrace(std::uint32_t nowMs, const FlowSnapshot& flow) {
-    if (!pulseTraces_ || activeTraceId_ == 0 || !elapsedAtLeast(nowMs, lastTraceSampleMs_, 1000UL)) {
-        return;
-    }
-    const WaterState state = water_.snapshot().state;
-    const WaterPulseTraceState traceState =
-        state == WaterState::Paused ? WaterPulseTraceState::Paused : WaterPulseTraceState::Running;
-    const std::uint32_t elapsedMs = nowMs - lastTraceSampleMs_;
-    const std::uint32_t delta =
-        flow.pulseCount >= lastTracePulseCount_ ? flow.pulseCount - lastTracePulseCount_ : 0;
-    const std::uint32_t wholeSeconds = elapsedMs / 1000UL;
-    if (wholeSeconds <= 1 || delta == 0) {
-        pulseTraces_->appendSecond(activeTraceId_, delta, traceState);
-    } else {
-        const std::uint32_t basePerSec = delta / wholeSeconds;
-        std::uint32_t remainder = delta - basePerSec * wholeSeconds;
-        for (std::uint32_t i = 0; i < wholeSeconds; ++i) {
-            const std::uint32_t secDelta = basePerSec + (remainder > 0 ? 1 : 0);
-            if (remainder > 0) {
-                --remainder;
-            }
-            pulseTraces_->appendSecond(activeTraceId_, secDelta, traceState);
-        }
-    }
-    lastTraceSampleMs_ = nowMs - (elapsedMs % 1000UL);
-    lastTracePulseCount_ = flow.pulseCount;
-}
-
 void AppController::finishPulseTrace(const WaterRecord& record,
                                      WaterPulseTraceState finalState,
                                      const FlowSnapshot& flow) {
     if (!pulseTraces_ || activeTraceId_ == 0) {
         return;
     }
-    if (flow.pulseCount > lastTracePulseCount_) {
-        pulseTraces_->appendSecond(activeTraceId_, flow.pulseCount - lastTracePulseCount_, finalState);
-        lastTracePulseCount_ = flow.pulseCount;
-    }
+    (void)flow;
     pulseTraces_->finishTrace(activeTraceId_, record, finalState);
     activeTraceId_ = 0;
-    lastTraceSampleMs_ = 0;
-    lastTracePulseCount_ = 0;
+    activeTraceStartUs_ = 0;
 }
 
 void AppController::syncValve(std::uint32_t nowMs) {

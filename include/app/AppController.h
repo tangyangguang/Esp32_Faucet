@@ -87,10 +87,15 @@ public:
 private:
     void handleButtonEvent(ButtonEvent event,
                            std::uint32_t nowMs,
+                           std::uint32_t nowUs,
                            std::uint32_t nowSeconds,
                            bool timeSynced,
                            std::uint32_t bootId);
-    void startSelectedPreset(std::uint32_t nowMs, std::uint32_t nowSeconds, bool timeSynced, std::uint32_t bootId);
+    void startSelectedPreset(std::uint32_t nowMs,
+                             std::uint32_t nowUs,
+                             std::uint32_t nowSeconds,
+                             bool timeSynced,
+                             std::uint32_t bootId);
     void exitResultDisplay(std::uint32_t nowMs);
     void toggleCalibrationStep();
     void enterCalibrationFromResult(std::uint32_t nowMs);
@@ -101,7 +106,6 @@ private:
                                                               std::uint32_t actualMl,
                                                               bool allowLocalCalibration);
     void syncFlow(std::uint32_t nowUs);
-    void samplePulseTrace(std::uint32_t nowMs, const FlowSnapshot& flow);
     void finishPulseTrace(const WaterRecord& record, WaterPulseTraceState finalState, const FlowSnapshot& flow);
     void syncValve(std::uint32_t nowMs);
     void processResult(std::uint32_t startTime,
@@ -122,8 +126,7 @@ private:
     WaterRecordWriter& records_;
     WaterPulseTraceStore* pulseTraces_;
     std::uint32_t activeTraceId_;
-    std::uint32_t lastTraceSampleMs_;
-    std::uint32_t lastTracePulseCount_;
+    std::uint32_t activeTraceStartUs_;
     std::uint32_t lastFlowVolumeMl_;
     std::uint32_t activeStartTimeSec_;
     bool activeStartTimeSynced_;

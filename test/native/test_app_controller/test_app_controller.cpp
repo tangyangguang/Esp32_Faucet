@@ -697,6 +697,43 @@ void test_app_controller_stop_down_closes_valve_and_records_user_stop() {
     TEST_ASSERT_EQUAL_UINT32(300, records.records[0].volumeMl);
 }
 
+void test_app_controller_emergency_stop_keeps_ram_pulse_trace_for_record() {
+    SystemConfig config = makeDefaultConfig();
+    StatisticsStore statistics;
+    statistics.reset({20260506, 202619, 202605});
+    FilterStore filters(config.filters);
+    MemoryRecordWriter records;
+    WaterPulseTrace traces[2]{};
+    WaterPulseTraceSample samples[700]{};
+    WaterPulseTraceStore pulseTraces(traces, 2, samples, 700, 2);
+    AppController app(config, statistics, filters, records, &pulseTraces);
+    applyTestMeteringScheme(app);
+
+    app.resetInputs({false, false, false, false}, 0);
+    pressAndReleaseOk(app, 100);
+    pressAndReleaseOk(app, 300);
+    for (std::uint32_t i = 0; i < 232; ++i) {
+        app.onFlowPulse(1000000UL + i * 3000UL);
+    }
+    app.tick(input({false, false, false, false}, 1500, 1500000, 1714502400));
+
+    TEST_ASSERT_TRUE(app.emergencyStop(1600));
+    app.tick(input({true, false, false, false}, 1600, 1600000, 1714502401));
+
+    TEST_ASSERT_EQUAL_size_t(1, records.records.size());
+    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(WaterResult::StoppedByUser),
+                            static_cast<std::uint8_t>(records.records[0].result));
+    TEST_ASSERT_EQUAL_size_t(1, pulseTraces.count());
+    const WaterPulseTrace* trace = pulseTraces.traceAt(0);
+    TEST_ASSERT_NOT_NULL(trace);
+    TEST_ASSERT_TRUE(trace->finished);
+    TEST_ASSERT_EQUAL_UINT32(records.records[0].pulseCount, trace->totalPulses);
+    TEST_ASSERT_GREATER_THAN_size_t(0, trace->sampleCount);
+    TEST_ASSERT_NOT_NULL(pulseTraces.findByRecord(records.records[0]));
+    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(WaterPulseTraceState::Stopped),
+                            static_cast<std::uint8_t>(trace->finalState));
+}
+
 void test_app_controller_emergency_stop_closes_valve_without_debounce() {
     SystemConfig config = makeDefaultConfig();
     StatisticsStore statistics;
@@ -917,6 +954,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_app_controller_offline_start_sync_before_completion_writes_real_time);
     RUN_TEST(test_app_controller_pause_resume_then_completion_updates_persistence_once);
     RUN_TEST(test_app_controller_stop_down_closes_valve_and_records_user_stop);
+    RUN_TEST(test_app_controller_emergency_stop_keeps_ram_pulse_trace_for_record);
     RUN_TEST(test_app_controller_emergency_stop_closes_valve_without_debounce);
     RUN_TEST(test_app_controller_applies_config_only_while_idle);
     RUN_TEST(test_app_controller_emits_beep_patterns_for_actions_and_completion);

@@ -27,7 +27,7 @@ void test_routes_do_not_register_remote_water_control_paths() {
 void test_navigation_pages_use_requested_order_and_labels() {
     const FaucetWebRoute* routes = faucetWebRoutes();
     const char* expectedPaths[] = {
-        "/faucet", "/faucet/records", "/faucet/calibration", "/faucet/stats", "/faucet/presets", "/faucet/filters"};
+        "/index", "/faucet/records", "/faucet/calibration", "/faucet/stats", "/faucet/presets", "/faucet/filters"};
     const char* expectedTitles[] = {"首页", "记录", "校准", "统计", "预设", "滤芯"};
 
     for (std::size_t i = 0; i < 6; ++i) {
@@ -46,6 +46,8 @@ void test_route_whitelist_rejects_unknown_and_dangerous_control_aliases() {
     TEST_ASSERT_FALSE(faucetWebRouteAllowed("/api/faucet/water/start"));
     TEST_ASSERT_FALSE(faucetWebRouteAllowed("/api/faucet/water/stop"));
     TEST_ASSERT_FALSE(faucetWebRouteAllowed("/api/faucet/records/export"));
+    TEST_ASSERT_TRUE(faucetWebRouteAllowed("/index"));
+    TEST_ASSERT_FALSE(faucetWebRouteAllowed("/faucet"));
     TEST_ASSERT_TRUE(faucetWebRouteAllowed("/api/faucet/today"));
     TEST_ASSERT_FALSE(faucetWebRouteAllowed("/faucet/unknown"));
     TEST_ASSERT_FALSE(faucetWebRouteAllowed("api/faucet/status"));
@@ -1019,6 +1021,8 @@ void test_main_source_renders_live_display_frame_for_web() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "faucet::FaucetDisplayStatus currentDisplayStatus()"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "faucet::DisplayPresenter awakePresenter(0)"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "Esp32BaseWeb::setDeviceName(\"首页\")"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "Esp32BaseWeb::setHomePath(\"/index\")"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "Esp32BaseWeb::setHomePath(\"/faucet\")"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "kSavedPulseTraceMaxCount = faucet::kSavedPulseTraceMaxCount"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "\"/faucet_pulse_traces_v4.bin\""));
     TEST_ASSERT_NULL(std::strstr(buffer, "\"/faucet_saved_traces_v1.bin\""));

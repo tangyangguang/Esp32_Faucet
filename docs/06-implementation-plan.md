@@ -74,7 +74,7 @@ test/native/
    - `RtcClock`：DS3231 自动检测，有则使用，无则降级。I2C 探测、读取和时间策略已接入，待上板验证。
 
 6. Web 页面和 API
-   - 注册 `/faucet`、`/faucet/presets`、`/faucet/records`、`/faucet/stats`、`/faucet/filters`、`/faucet/filters/edit`。
+   - 注册 `/index` 首页，以及 `/faucet/presets`、`/faucet/records`、`/faucet/stats`、`/faucet/filters`、`/faucet/filters/edit`。
    - 注册只读和配置 API：状态、预设、记录、统计、滤芯，以及 records 校准动作。
    - records 页和 `/api/faucet/records` 首版必须支持时间范围筛选，再叠加分页和每页条数。
    - 禁止注册 `/api/faucet/water/*`、`/api/faucet/start`、`/api/faucet/stop` 或同义出水控制接口。
@@ -105,7 +105,7 @@ test/native/
 - 出水记录已接入 LittleFS 文件环形存储：通过 Esp32Base Fs 按偏移读写 API 实现 20000 条目标容量的二进制定长记录，文件不可用时保留 RAM 环形降级写入。记录包含目标值、原始脉冲数、过滤脉冲数和当时流量系数。记录校准元数据使用独立文件保存实测量、校准类型、参数变化和重校次数，不改写出水记录本体。文件启动时只创建头部，记录按需追加，满容量后再环形覆盖，避免裸板首次启动预分配大文件触发 watchdog。
 - 出水记录时间回溯不依赖 32 位 `uptimeMs`：未同步时间时记录启动内相对秒和 boot id；NTP 同步后通过 Esp32Base boot event 回写真实时间，避免 `millis()`/uptime 回绕影响历史记录。
 - LCD1602 页面模型、PCF8574T I2C 驱动、刷新节流、按键/运行唤醒和空闲熄屏已接入，默认地址 0x27。
-- Web 路由壳已接入 Esp32Base：13 条页面/API 路由；滤芯编辑页作为隐藏 HTML 路由注册，不进入导航；已用 native 测试禁止远程出水控制路径。
+- Web 路由壳已接入 Esp32Base：13 条页面/API 路由；首页入口统一为 `/index`，滤芯编辑页作为隐藏 HTML 路由注册，不进入导航；已用 native 测试禁止远程出水控制路径。
 - Web API 已接入真实状态、预设、记录分页、统计、滤芯和 records 校准动作；滤芯配置 POST 与重置 POST 已接入，重置后写入当前时间、清零累计流量并返回滤芯列表。
 - Web 写配置类 API 已通过 Esp32BaseWeb 当前请求方法能力接入 POST 保存：支持配置、单个预设保存；空闲状态下保存后立即热更新到运行中控制器、流量计、电磁阀、LCD 和蜂鸣器，出水/确认/暂停期间拒绝修改并返回 busy。
 - Web 写配置类 API 采用“复制当前配置 -> 修改临时配置 -> 钳位 -> 保存 -> 热更新”的提交路径；checkbox 未提交会按 false 处理，避免用户关闭蜂鸣器或预设时旧值被保留。

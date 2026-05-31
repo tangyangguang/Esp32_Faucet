@@ -10,7 +10,7 @@ build/
 *.swp
 *.swo
 *.bak
-platformio.ini.local
+platformio.local.ini
 
 .claude
 

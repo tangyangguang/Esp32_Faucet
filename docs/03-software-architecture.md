@@ -111,7 +111,7 @@
 - Web 端不得注册启动出水、暂停出水、继续出水、停止出水 API 或按钮。
 - Web records 页支持时间范围筛选和分页；列表保持紧凑，显示目标、出水量、持续时间、模式、结束原因、脉冲/P-L、校准状态和操作。过滤脉冲只在有值时作为脉冲单元格内的辅助诊断信息展示。最新可校准记录可进入校准页输入量杯实际水量并保存校准；已校准的最新记录显示“重校”，输入默认上次实测量；不允许远程打开电磁阀。
 - Web 默认认证通过 Esp32Base `setDefaultAuth()` 设置为 `admin/admin`；用户可通过 `/esp32base/auth` 修改认证，已保存认证优先于应用默认值。
-- WebOTA 目标地址和凭据不写入仓库；本地复制 `platformio.ini.example` 为 `platformio.ini.local` 后填写 `custom_esp32base_webota_*`。
+- WebOTA 目标地址和凭据不写入仓库；本地复制 `platformio.example.ini` 为 `platformio.local.ini` 后填写 `custom_esp32base_webota_*`。
 - 当前构建将 Esp32Base 串口日志等级设为 DEBUG，文件日志等级设为 INFO，用于保留更完整的启动和现场诊断信息。文件日志等级在启动后显式应用为 INFO，避免设备 NVS 中旧的 `eb_log.level` 覆盖当前项目策略。注意：基础库 INFO 日志会输出 WiFi/Web 认证明文凭据，调试日志和文件日志需要按敏感信息管理。
 
 ### Web 页面

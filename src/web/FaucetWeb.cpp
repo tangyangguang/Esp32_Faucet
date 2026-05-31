@@ -4990,7 +4990,7 @@ void handleFiltersResetApi() {
 
 Esp32BaseWeb::Handler handlerFor(const FaucetWebRoute& route) {
     if (route.kind == FaucetWebRouteKind::Page) {
-        if (std::strcmp(route.path, "/faucet") == 0) {
+        if (std::strcmp(route.path, "/index") == 0) {
             return handleFaucetPage;
         }
         if (std::strcmp(route.path, "/faucet/presets") == 0) {

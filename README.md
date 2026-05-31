@@ -14,7 +14,7 @@
 - PlatformIO
 - ESP32 Arduino framework
 - 本地基础库：`../Esp32Base`
-- WebOTA 本地配置：复制 `platformio.ini.example` 为 `platformio.ini.local` 后填写设备地址和认证信息。
+- WebOTA 本地配置：复制 `platformio.example.ini` 为 `platformio.local.ini` 后填写设备地址和认证信息。
 
 ## 常用命令
 

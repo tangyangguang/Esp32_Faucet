@@ -258,7 +258,7 @@ void configureBase() {
 #if ESP32BASE_ENABLE_WEB
     Esp32BaseWeb::setDefaultAuth(kDefaultWebUser, kDefaultWebPassword);
     Esp32BaseWeb::setDeviceName("首页");
-    Esp32BaseWeb::setHomePath("/faucet");
+    Esp32BaseWeb::setHomePath("/index");
     Esp32BaseWeb::setHomeMode(Esp32BaseWeb::HOME_COMBINED);
     Esp32BaseWeb::setSystemNavMode(Esp32BaseWeb::SYSTEM_NAV_SECTION);
     if (!faucet::registerFaucetAppConfig()) {

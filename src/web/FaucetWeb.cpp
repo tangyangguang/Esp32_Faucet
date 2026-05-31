@@ -1155,17 +1155,18 @@ void sendCalibrationParameterPanels() {
                 static_cast<unsigned>(i),
                 static_cast<unsigned>(kMeteringSlotNameLength - 1));
         sendHtmlAttrEscapedBounded(slot.name, sizeof(slot.name));
-        sendFmt("'></label><label class='compact-field'><span>启动脉冲数</span><input name='startupPulseCount' type='number' min='0' max='%lu' step='1' value='%lu'></label>"
-                "<label class='compact-field'><span>启动水量</span><input name='startupVolumeMl' type='number' min='0' max='%lu' step='1' value='%lu'></label>"
-                "<label class='compact-field'><span>稳态P/L</span><input name='stablePulsePerLiter' type='number' min='%lu' max='%lu' step='1' value='%lu'></label>"
-                "<input class='secondary' type='submit' value='保存槽位'></form></td></tr>",
+        Esp32BaseWeb::sendChunk("'></label>");
+        sendFmt("<label class='compact-field'><span>启动脉冲数</span><input name='startupPulseCount' type='number' min='0' max='%lu' step='1' value='%lu'></label>",
                 static_cast<unsigned long>(kMaxSegmentedStartupPulseCount),
-                static_cast<unsigned long>(slot.params.startupPulseCount),
+                static_cast<unsigned long>(slot.params.startupPulseCount));
+        sendFmt("<label class='compact-field'><span>启动水量</span><input name='startupVolumeMl' type='number' min='0' max='%lu' step='1' value='%lu'></label>",
                 static_cast<unsigned long>(kMaxSegmentedStartupVolumeMl),
-                static_cast<unsigned long>(slot.params.startupVolumeMl),
+                static_cast<unsigned long>(slot.params.startupVolumeMl));
+        sendFmt("<label class='compact-field'><span>稳态P/L</span><input name='stablePulsePerLiter' type='number' min='%lu' max='%lu' step='1' value='%lu'></label>",
                 static_cast<unsigned long>(kMinSegmentedPulsePerLiter),
                 static_cast<unsigned long>(kMaxSegmentedPulsePerLiter),
                 static_cast<unsigned long>(slot.params.stablePulsePerLiter));
+        Esp32BaseWeb::sendChunk("<input class='secondary' type='submit' value='保存槽位'></form></td></tr>");
     }
     Esp32BaseWeb::sendChunk("</table></section>");
 
@@ -3074,7 +3075,7 @@ void handleRecordDetailPage() {
             "<tr><th>样本数</th><td>%lu</td></tr>"
             "<tr><th>本条占用</th><td>%s</td></tr>",
             static_cast<unsigned long>(trace->totalPulses),
-            static_cast<unsigned long>(trace->sampleCount),
+            static_cast<unsigned long>(trace->record.durationSec),
             static_cast<unsigned long>(trace->sampleCount),
             traceKb);
     if (analysis.stable) {
@@ -3459,6 +3460,22 @@ bool requireContext() {
     return true;
 }
 
+const char* configLoadStatusName(ConfigStore::LoadStatus status) {
+    switch (status) {
+        case ConfigStore::LoadStatus::DefaultsNoVersion:
+            return "defaults_no_version";
+        case ConfigStore::LoadStatus::LoadedCurrent:
+            return "loaded_current";
+        case ConfigStore::LoadStatus::MigratedLegacy:
+            return "migrated_legacy";
+        case ConfigStore::LoadStatus::LoadedFutureVersionReadOnly:
+            return "future_version_read_only";
+        case ConfigStore::LoadStatus::UnsupportedVersionDefault:
+            return "unsupported_version_default";
+    }
+    return "unknown";
+}
+
 bool getParam(const char* name, char* out, std::size_t len) {
     return Esp32BaseWeb::hasParam(name) && Esp32BaseWeb::getParam(name, out, len);
 }
@@ -3475,13 +3492,98 @@ bool checkboxParam(const char* name) {
     return Esp32BaseWeb::hasParam(name);
 }
 
+void mergeChangedConfigFields(const SystemConfig& before, const SystemConfig& submitted, SystemConfig& target) {
+    if (submitted.confirmTimeoutSec != before.confirmTimeoutSec) {
+        target.confirmTimeoutSec = submitted.confirmTimeoutSec;
+    }
+    if (submitted.maxOutTimeSec != before.maxOutTimeSec) {
+        target.maxOutTimeSec = submitted.maxOutTimeSec;
+    }
+    if (submitted.maxOutVolumeMl != before.maxOutVolumeMl) {
+        target.maxOutVolumeMl = submitted.maxOutVolumeMl;
+    }
+    if (submitted.overflowPercent != before.overflowPercent) {
+        target.overflowPercent = submitted.overflowPercent;
+    }
+    if (submitted.noFlowTimeoutSec != before.noFlowTimeoutSec) {
+        target.noFlowTimeoutSec = submitted.noFlowTimeoutSec;
+    }
+    if (submitted.highFlowMlPerMin != before.highFlowMlPerMin) {
+        target.highFlowMlPerMin = submitted.highFlowMlPerMin;
+    }
+    if (submitted.highFlowDurationSec != before.highFlowDurationSec) {
+        target.highFlowDurationSec = submitted.highFlowDurationSec;
+    }
+    if (submitted.pauseTimeoutSec != before.pauseTimeoutSec) {
+        target.pauseTimeoutSec = submitted.pauseTimeoutSec;
+    }
+    if (submitted.volumeAdjustStepMl != before.volumeAdjustStepMl) {
+        target.volumeAdjustStepMl = submitted.volumeAdjustStepMl;
+    }
+    if (submitted.timeAdjustStepSec != before.timeAdjustStepSec) {
+        target.timeAdjustStepSec = submitted.timeAdjustStepSec;
+    }
+    if (submitted.recentPulseTraceCount != before.recentPulseTraceCount) {
+        target.recentPulseTraceCount = submitted.recentPulseTraceCount;
+    }
+    if (submitted.activeMeteringSlot != before.activeMeteringSlot) {
+        target.activeMeteringSlot = submitted.activeMeteringSlot;
+    }
+    if (std::memcmp(submitted.meteringSlots, before.meteringSlots, sizeof(before.meteringSlots)) != 0) {
+        std::memcpy(target.meteringSlots, submitted.meteringSlots, sizeof(target.meteringSlots));
+    }
+    if (std::memcmp(&submitted.meteringCandidate, &before.meteringCandidate, sizeof(before.meteringCandidate)) != 0) {
+        target.meteringCandidate = submitted.meteringCandidate;
+    }
+    if (submitted.valveFullPowerSec != before.valveFullPowerSec) {
+        target.valveFullPowerSec = submitted.valveFullPowerSec;
+    }
+    if (submitted.valveHoldDutyPercent != before.valveHoldDutyPercent) {
+        target.valveHoldDutyPercent = submitted.valveHoldDutyPercent;
+    }
+    if (submitted.displaySleepSec != before.displaySleepSec) {
+        target.displaySleepSec = submitted.displaySleepSec;
+    }
+    if (submitted.resultDisplaySec != before.resultDisplaySec) {
+        target.resultDisplaySec = submitted.resultDisplaySec;
+    }
+    if (submitted.lcdI2cAddress != before.lcdI2cAddress) {
+        target.lcdI2cAddress = submitted.lcdI2cAddress;
+    }
+    if (submitted.beepEnabled != before.beepEnabled) {
+        target.beepEnabled = submitted.beepEnabled;
+    }
+    if (std::memcmp(submitted.presets, before.presets, sizeof(before.presets)) != 0) {
+        std::memcpy(target.presets, submitted.presets, sizeof(target.presets));
+    }
+    for (std::size_t i = 0; i < kFilterCount; ++i) {
+        FilterRecord submittedBase = submitted.filters[i];
+        FilterRecord beforeBase = before.filters[i];
+        submittedBase.startTime = beforeBase.startTime;
+        submittedBase.usedMl = beforeBase.usedMl;
+        submittedBase.startBootId = beforeBase.startBootId;
+        if (std::memcmp(&submittedBase, &beforeBase, sizeof(FilterRecord)) != 0) {
+            const std::uint32_t startTime = target.filters[i].startTime;
+            const std::uint32_t usedMl = target.filters[i].usedMl;
+            const std::uint32_t startBootId = target.filters[i].startBootId;
+            target.filters[i] = submitted.filters[i];
+            target.filters[i].startTime = startTime;
+            target.filters[i].usedMl = usedMl;
+            target.filters[i].startBootId = startBootId;
+        }
+    }
+}
 
 bool persistConfig(const SystemConfig& config) {
     if (!g_context.app->canApplyConfig()) {
         return false;
     }
 
-    SystemConfig safe = config;
+    SystemConfig safe = g_context.configStore->loadSystemConfig();
+    if (g_context.configStore->systemConfigReadOnly()) {
+        return false;
+    }
+    mergeChangedConfigFields(*g_context.config, config, safe);
     sanitizeConfig(safe);
     if (!g_context.configStore->saveSystemConfig(safe)) {
         return false;
@@ -3545,8 +3647,12 @@ bool persistFilterConfig(const FilterRecord& record, std::size_t index) {
         return false;
     }
 
-    SystemConfig* safe = new (std::nothrow) SystemConfig(*g_context.config);
+    SystemConfig* safe = new (std::nothrow) SystemConfig(g_context.configStore->loadSystemConfig());
     if (!safe) {
+        return false;
+    }
+    if (g_context.configStore->systemConfigReadOnly()) {
+        delete safe;
         return false;
     }
     safe->filters[index] = record;
@@ -3557,13 +3663,19 @@ bool persistFilterConfig(const FilterRecord& record, std::size_t index) {
     for (std::size_t i = 0; i < kFilterCount; ++i) {
         runtime[i] = current[i];
     }
-    runtime[index] = safe->filters[index];
+    runtime[index].startTime = record.startTime;
+    runtime[index].usedMl = record.usedMl;
+    runtime[index].startBootId = record.startBootId;
 
     if (!g_context.configStore->saveSystemConfig(*safe) || !g_context.configStore->saveFilterRuntime(runtime)) {
         delete safe;
         return false;
     }
-    if (!g_context.filters->updateFilter(index, safe->filters[index]) || !g_context.app->applyConfig(*safe)) {
+    FilterRecord liveRecord = safe->filters[index];
+    liveRecord.startTime = runtime[index].startTime;
+    liveRecord.usedMl = runtime[index].usedMl;
+    liveRecord.startBootId = runtime[index].startBootId;
+    if (!g_context.app->applyConfig(*safe) || !g_context.filters->updateFilter(index, liveRecord)) {
         delete safe;
         return false;
     }
@@ -3583,8 +3695,17 @@ void handleStatusApi() {
         g_context.currentDisplayStatus
             ? g_context.currentDisplayStatus()
             : FaucetDisplayStatus{DisplayFrame{DisplayPage::Sleep, false, {}, {}}, false};
-    char json[384]{};
-    sendJsonBuffer(writeStatusJson(g_context.app->snapshot(), displayStatus.screenOn, *g_context.config, json, sizeof(json)), json);
+    const ConfigRuntimeStatus configStatus{
+        configLoadStatusName(g_context.configStore->lastSystemConfigLoadStatus()),
+        g_context.configStore->lastSystemConfigRawVersion(),
+        g_context.configStore->currentSystemConfigVersion(),
+        g_context.configStore->systemConfigReadOnly(),
+        g_context.configStore->lastSystemConfigMigrationWriteBack(),
+    };
+    char json[576]{};
+    sendJsonBuffer(
+        writeStatusJson(g_context.app->snapshot(), displayStatus.screenOn, *g_context.config, &configStatus, json, sizeof(json)),
+        json);
 }
 
 void handleTodayOverviewApi() {

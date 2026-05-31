@@ -142,11 +142,20 @@ bool writeStatusJson(const AppSnapshot& snapshot,
                      const SystemConfig& config,
                      char* out,
                      std::size_t len) {
+    return writeStatusJson(snapshot, screenOn, config, nullptr, out, len);
+}
+
+bool writeStatusJson(const AppSnapshot& snapshot,
+                     bool screenOn,
+                     const SystemConfig& config,
+                     const ConfigRuntimeStatus* configStatus,
+                     char* out,
+                     std::size_t len) {
     JsonWriter writer(out, len);
     writer.append("{\"state\":\"%s\",\"valveOpen\":%s,\"volumeMl\":%lu,\"elapsedSec\":%lu,\"targetValue\":%lu,"
                   "\"lastResult\":\"%s\",\"mode\":\"%s\",\"selectedPreset\":%u,\"pulsePerLiter\":%lu,\"flowDroppedPulses\":%lu,"
                   "\"valveDutyPercent\":%u,\"valveFullPowerSec\":%lu,\"valveHoldDutyPercent\":%u,"
-                  "\"screenOn\":%s,\"waterControl\":false}",
+                  "\"screenOn\":%s,\"waterControl\":false",
                   waterStateName(snapshot.water.state),
                   snapshot.water.valveOpen ? "true" : "false",
                   static_cast<unsigned long>(snapshot.water.volumeMl),
@@ -161,6 +170,16 @@ bool writeStatusJson(const AppSnapshot& snapshot,
                   static_cast<unsigned long>(config.valveFullPowerSec),
                   static_cast<unsigned>(config.valveHoldDutyPercent),
                   screenOn ? "true" : "false");
+    if (configStatus) {
+        writer.append(",\"config\":{\"status\":\"%s\",\"rawVersion\":%ld,\"currentVersion\":%ld,"
+                      "\"readOnly\":%s,\"migrationWriteBack\":%s}",
+                      configStatus->loadStatus ? configStatus->loadStatus : "unknown",
+                      static_cast<long>(configStatus->rawVersion),
+                      static_cast<long>(configStatus->currentVersion),
+                      configStatus->readOnly ? "true" : "false",
+                      configStatus->migrationWriteBack ? "true" : "false");
+    }
+    writer.append("}");
     return writer.ok();
 }
 

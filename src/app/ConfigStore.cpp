@@ -29,6 +29,17 @@ bool setU32(ConfigBackend& backend, const char* ns, const char* key, std::uint32
     return backend.setStr(ns, key, text);
 }
 
+bool hasIntKey(ConfigBackend& backend, const char* ns, const char* key) {
+    constexpr std::int32_t kMissingA = INT32_MIN;
+    constexpr std::int32_t kMissingB = INT32_MAX;
+    return backend.getInt(ns, key, kMissingA) != kMissingA || backend.getInt(ns, key, kMissingB) != kMissingB;
+}
+
+bool hasStrKey(ConfigBackend& backend, const char* ns, const char* key) {
+    char text[2]{};
+    return backend.getStr(ns, key, text, sizeof(text), "");
+}
+
 std::uint32_t getU32(ConfigBackend& backend, const char* ns, const char* key, std::uint32_t def) {
     char defText[11]{};
     char text[11]{};
@@ -62,6 +73,105 @@ bool isKnownSystemConfigVersion(std::int32_t version) {
 
 bool isReadableRuntimeVersion(std::int32_t version) {
     return version >= 1 && version <= kRuntimeVersion;
+}
+
+bool hasRecognizedLegacySystemConfig(ConfigBackend& backend) {
+    const char* scalarKeys[] = {
+        "confirm_s",
+        "max_time",
+        "max_ml",
+        "overflow",
+        "noflow_s",
+        "high_flow",
+        "high_s",
+        "pause_s",
+        "vol_step",
+        "time_step",
+        "trace_count",
+        "active_ms",
+        "pulse_m",
+        "seg_stable_p",
+        "seg_start_p",
+        "seg_start_ml",
+        "oled_s",
+        "valve_s",
+        "hold_pct",
+        "disp_s",
+        "result_s",
+        "lcd_addr",
+        "mc_sp",
+        "mc_sv",
+        "mc_pl",
+        "cand_start_p",
+        "cand_start_ml",
+        "cand_stable",
+    };
+    for (const char* key : scalarKeys) {
+        if (hasIntKey(backend, kConfigNs, key)) {
+            return true;
+        }
+    }
+
+    const char* stringKeys[] = {"mc_note"};
+    for (const char* key : stringKeys) {
+        if (hasStrKey(backend, kConfigNs, key)) {
+            return true;
+        }
+    }
+
+    for (std::size_t i = 0; i < kPresetCount; ++i) {
+        char key[16]{};
+        presetKey(key, sizeof(key), i, "type");
+        if (hasIntKey(backend, kConfigNs, key)) {
+            return true;
+        }
+        presetKey(key, sizeof(key), i, "val");
+        if (hasIntKey(backend, kConfigNs, key)) {
+            return true;
+        }
+        presetKey(key, sizeof(key), i, "name");
+        if (hasStrKey(backend, kConfigNs, key)) {
+            return true;
+        }
+    }
+
+    for (std::size_t i = 0; i < kFilterCount; ++i) {
+        char key[16]{};
+        const char* intSuffixes[] = {"life_d", "life_min", "life_max", "life_ml", "start", "used"};
+        for (const char* suffix : intSuffixes) {
+            filterKey(key, sizeof(key), i, suffix);
+            if (hasIntKey(backend, kConfigNs, key)) {
+                return true;
+            }
+        }
+        filterKey(key, sizeof(key), i, "name");
+        if (hasStrKey(backend, kConfigNs, key)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+bool hasLegacyLifeDays(ConfigBackend& backend) {
+    for (std::size_t i = 0; i < kFilterCount; ++i) {
+        char key[16]{};
+        filterKey(key, sizeof(key), i, "life_d");
+        if (hasIntKey(backend, kConfigNs, key)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+std::int32_t inferLegacyVersionWithoutVersion(ConfigBackend& backend) {
+    if (!hasRecognizedLegacySystemConfig(backend)) {
+        return 0;
+    }
+    return hasLegacyLifeDays(backend) || hasIntKey(backend, kConfigNs, "pulse_m") ||
+                   hasIntKey(backend, kConfigNs, "oled_s")
+               ? 1
+               : 2;
 }
 
 void loadCommonSystemConfig(ConfigBackend& backend, SystemConfig& config) {
@@ -161,6 +271,10 @@ void loadFilterBasics(ConfigBackend& backend, FilterRecord& filter, std::size_t 
     backend.getStr(kConfigNs, key, filter.name, sizeof(filter.name), filter.name);
     filterKey(key, sizeof(key), index, "life_ml");
     filter.lifeMl = static_cast<std::uint32_t>(backend.getInt(kConfigNs, key, toInt(filter.lifeMl)));
+}
+
+void loadLegacyFilterRuntime(ConfigBackend& backend, FilterRecord& filter, std::size_t index) {
+    char key[12]{};
     filterKey(key, sizeof(key), index, "start");
     filter.startTime = static_cast<std::uint32_t>(backend.getInt(kConfigNs, key, toInt(filter.startTime)));
     filterKey(key, sizeof(key), index, "used");
@@ -170,6 +284,7 @@ void loadFilterBasics(ConfigBackend& backend, FilterRecord& filter, std::size_t 
 void loadLegacyFilters(ConfigBackend& backend, SystemConfig& config) {
     for (std::size_t i = 0; i < kFilterCount; ++i) {
         loadFilterBasics(backend, config.filters[i], i);
+        loadLegacyFilterRuntime(backend, config.filters[i], i);
         char key[12]{};
         filterKey(key, sizeof(key), i, "life_d");
         const std::uint32_t lifeDays =
@@ -179,9 +294,12 @@ void loadLegacyFilters(ConfigBackend& backend, SystemConfig& config) {
     }
 }
 
-void loadFilterRanges(ConfigBackend& backend, SystemConfig& config) {
+void loadFilterRanges(ConfigBackend& backend, SystemConfig& config, std::int32_t version) {
     for (std::size_t i = 0; i < kFilterCount; ++i) {
         loadFilterBasics(backend, config.filters[i], i);
+        if (version < kConfigVersion) {
+            loadLegacyFilterRuntime(backend, config.filters[i], i);
+        }
         char key[12]{};
         filterKey(key, sizeof(key), i, "life_min");
         config.filters[i].recommendDays =
@@ -240,15 +358,25 @@ void migrateLegacyMetering(ConfigBackend& backend, SystemConfig& config) {
 }  // namespace
 
 ConfigStore::ConfigStore(ConfigBackend& backend)
-    : backend_(backend), lastSystemStatus_(LoadStatus::DefaultsNoVersion), systemConfigReadOnly_(false) {}
+    : backend_(backend),
+      lastSystemStatus_(LoadStatus::DefaultsNoVersion),
+      systemConfigReadOnly_(false),
+      lastSystemRawVersion_(0),
+      lastSystemMigrationWriteBack_(false) {}
 
 SystemConfig ConfigStore::loadSystemConfig() {
     SystemConfig config = makeDefaultConfig();
-    const std::int32_t version = backend_.getInt(kConfigNs, "ver", 0);
+    const std::int32_t storedVersion = backend_.getInt(kConfigNs, "ver", 0);
+    std::int32_t version = storedVersion;
     systemConfigReadOnly_ = false;
+    lastSystemRawVersion_ = storedVersion;
+    lastSystemMigrationWriteBack_ = false;
     if (version == 0) {
-        lastSystemStatus_ = LoadStatus::DefaultsNoVersion;
-        return config;
+        version = inferLegacyVersionWithoutVersion(backend_);
+        if (version == 0) {
+            lastSystemStatus_ = LoadStatus::DefaultsNoVersion;
+            return config;
+        }
     }
     if (version < 0) {
         lastSystemStatus_ = LoadStatus::UnsupportedVersionDefault;
@@ -275,13 +403,15 @@ SystemConfig ConfigStore::loadSystemConfig() {
     if (version == 1) {
         loadLegacyFilters(backend_, config);
     } else {
-        loadFilterRanges(backend_, config);
+        loadFilterRanges(backend_, config, version);
     }
 
     sanitizeConfig(config);
     if (version != kConfigVersion && !systemConfigReadOnly_) {
-        backend_.clearNamespace(kConfigNs);
-        saveSystemConfig(config);
+        lastSystemMigrationWriteBack_ = saveSystemConfig(config);
+        if (lastSystemMigrationWriteBack_) {
+            saveFilterRuntime(config.filters);
+        }
     }
     return config;
 }
@@ -298,7 +428,7 @@ bool ConfigStore::saveSystemConfig(const SystemConfig& config) {
     sanitizeConfig(*safeStorage);
     const SystemConfig& safe = *safeStorage;
 
-    bool ok = backend_.setInt(kConfigNs, "ver", kConfigVersion);
+    bool ok = true;
     ok = okAll(ok, backend_.setInt(kConfigNs, "confirm_s", toInt(safe.confirmTimeoutSec)));
     ok = okAll(ok, backend_.setInt(kConfigNs, "max_time", toInt(safe.maxOutTimeSec)));
     ok = okAll(ok, backend_.setInt(kConfigNs, "max_ml", toInt(safe.maxOutVolumeMl)));
@@ -367,11 +497,8 @@ bool ConfigStore::saveSystemConfig(const SystemConfig& config) {
         ok = okAll(ok, backend_.setInt(kConfigNs, key, toInt(safe.filters[i].maxDays)));
         filterKey(key, sizeof(key), i, "life_ml");
         ok = okAll(ok, backend_.setInt(kConfigNs, key, toInt(safe.filters[i].lifeMl)));
-        filterKey(key, sizeof(key), i, "start");
-        ok = okAll(ok, backend_.setInt(kConfigNs, key, toInt(safe.filters[i].startTime)));
-        filterKey(key, sizeof(key), i, "used");
-        ok = okAll(ok, backend_.setInt(kConfigNs, key, toInt(safe.filters[i].usedMl)));
     }
+    ok = okAll(ok, backend_.setInt(kConfigNs, "ver", kConfigVersion));
 
     delete safeStorage;
     return ok;
@@ -392,6 +519,18 @@ ConfigStore::LoadStatus ConfigStore::lastSystemConfigLoadStatus() const {
 
 bool ConfigStore::systemConfigReadOnly() const {
     return systemConfigReadOnly_;
+}
+
+std::int32_t ConfigStore::lastSystemConfigRawVersion() const {
+    return lastSystemRawVersion_;
+}
+
+std::int32_t ConfigStore::currentSystemConfigVersion() const {
+    return kConfigVersion;
+}
+
+bool ConfigStore::lastSystemConfigMigrationWriteBack() const {
+    return lastSystemMigrationWriteBack_;
 }
 
 StatisticsRecord ConfigStore::loadStatistics(const PeriodKeys& defaultKeys) {

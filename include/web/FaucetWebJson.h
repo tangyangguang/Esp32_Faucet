@@ -9,11 +9,25 @@
 
 namespace faucet {
 
+struct ConfigRuntimeStatus {
+    const char* loadStatus;
+    std::int32_t rawVersion;
+    std::int32_t currentVersion;
+    bool readOnly;
+    bool migrationWriteBack;
+};
+
 bool writeStatusJson(const AppSnapshot& snapshot, char* out, std::size_t len);
 bool writeStatusJson(const AppSnapshot& snapshot, bool screenOn, char* out, std::size_t len);
 bool writeStatusJson(const AppSnapshot& snapshot,
                      bool screenOn,
                      const SystemConfig& config,
+                     char* out,
+                     std::size_t len);
+bool writeStatusJson(const AppSnapshot& snapshot,
+                     bool screenOn,
+                     const SystemConfig& config,
+                     const ConfigRuntimeStatus* configStatus,
                      char* out,
                      std::size_t len);
 bool writeStatsJson(const StatisticsRecord& record, char* out, std::size_t len);

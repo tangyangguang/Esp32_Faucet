@@ -482,10 +482,24 @@ void AppController::samplePulseTrace(std::uint32_t nowMs, const FlowSnapshot& fl
     const WaterState state = water_.snapshot().state;
     const WaterPulseTraceState traceState =
         state == WaterState::Paused ? WaterPulseTraceState::Paused : WaterPulseTraceState::Running;
+    const std::uint32_t elapsedMs = nowMs - lastTraceSampleMs_;
     const std::uint32_t delta =
         flow.pulseCount >= lastTracePulseCount_ ? flow.pulseCount - lastTracePulseCount_ : 0;
-    pulseTraces_->appendSecond(activeTraceId_, delta, traceState);
-    lastTraceSampleMs_ = nowMs;
+    const std::uint32_t wholeSeconds = elapsedMs / 1000UL;
+    if (wholeSeconds <= 1 || delta == 0) {
+        pulseTraces_->appendSecond(activeTraceId_, delta, traceState);
+    } else {
+        const std::uint32_t basePerSec = delta / wholeSeconds;
+        std::uint32_t remainder = delta - basePerSec * wholeSeconds;
+        for (std::uint32_t i = 0; i < wholeSeconds; ++i) {
+            const std::uint32_t secDelta = basePerSec + (remainder > 0 ? 1 : 0);
+            if (remainder > 0) {
+                --remainder;
+            }
+            pulseTraces_->appendSecond(activeTraceId_, secDelta, traceState);
+        }
+    }
+    lastTraceSampleMs_ = nowMs - (elapsedMs % 1000UL);
     lastTracePulseCount_ = flow.pulseCount;
 }
 

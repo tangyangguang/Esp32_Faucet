@@ -515,6 +515,9 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "name='action' value='generate_segmented'"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "name='action' value='save_candidate_slot'"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "name='action' value='update_metering_slot'"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer,
+                                     "Esp32BaseWeb::sendChunk(\"<input class='secondary' type='submit' value='保存槽位'></form></td></tr>\");"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "value='保存槽位'></form></td></tr>\","));
     TEST_ASSERT_NULL(std::strstr(buffer, "name='action' value='apply_segmented'"));
     TEST_ASSERT_NULL(std::strstr(buffer, "name='action' value='restore_segmented'"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "覆盖当前启用参数"));
@@ -882,7 +885,7 @@ void test_app_config_source_uses_clear_business_labels_and_help() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "容量步进"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "时间步进"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "RAM 最近脉冲明细条数"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "kConfigVersion = 11"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "loadSystemConfig()"));
     TEST_ASSERT_NULL(std::strstr(buffer, "SystemConfig defaults = makeDefaultConfig()"));
     TEST_ASSERT_NULL(std::strstr(buffer, "addCoreFields(const SystemConfig& defaults)"));
     TEST_ASSERT_NULL(std::strstr(buffer, "启动补偿水量"));
@@ -913,8 +916,24 @@ void test_app_config_save_migrates_before_marking_current_version() {
     const char* loadConfig = std::strstr(saveHandler, "g_context.configStore->loadSystemConfig()");
     const char* markVersion = std::strstr(saveHandler, "Esp32BaseConfig::setInt(kConfigNs, kVersionKey, kConfigVersion)");
     TEST_ASSERT_NOT_NULL(loadConfig);
-    TEST_ASSERT_NOT_NULL(markVersion);
-    TEST_ASSERT_TRUE_MESSAGE(loadConfig < markVersion, "AppConfig save must let ConfigStore migrate legacy fields first");
+    TEST_ASSERT_NULL_MESSAGE(markVersion, "AppConfig must not mark business config version directly");
+}
+
+void test_web_config_writes_reload_current_config_before_persisting() {
+    FILE* file = std::fopen("src/web/FaucetWeb.cpp", "rb");
+    TEST_ASSERT_NOT_NULL(file);
+    static char buffer[260000]{};
+    const std::size_t read = std::fread(buffer, 1, sizeof(buffer) - 1, file);
+    std::fclose(file);
+    TEST_ASSERT_GREATER_THAN_size_t(0, read);
+
+    const char* persistHandler = std::strstr(buffer, "bool persistConfig(const SystemConfig& config) {");
+    TEST_ASSERT_NOT_NULL(persistHandler);
+    const char* loadConfig = std::strstr(persistHandler, "g_context.configStore->loadSystemConfig()");
+    const char* saveConfig = std::strstr(persistHandler, "g_context.configStore->saveSystemConfig");
+    TEST_ASSERT_NOT_NULL(loadConfig);
+    TEST_ASSERT_NOT_NULL(saveConfig);
+    TEST_ASSERT_TRUE_MESSAGE(loadConfig < saveConfig, "Web saves must merge changes into loaded migrated config");
 }
 
 int main(int argc, char** argv) {
@@ -939,5 +958,6 @@ int main(int argc, char** argv) {
     RUN_TEST(test_main_source_renders_live_display_frame_for_web);
     RUN_TEST(test_app_config_source_uses_clear_business_labels_and_help);
     RUN_TEST(test_app_config_save_migrates_before_marking_current_version);
+    RUN_TEST(test_web_config_writes_reload_current_config_before_persisting);
     return UNITY_END();
 }

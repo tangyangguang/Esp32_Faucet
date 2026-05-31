@@ -38,6 +38,9 @@ public:
     bool resetSystemConfig();
     LoadStatus lastSystemConfigLoadStatus() const;
     bool systemConfigReadOnly() const;
+    std::int32_t lastSystemConfigRawVersion() const;
+    std::int32_t currentSystemConfigVersion() const;
+    bool lastSystemConfigMigrationWriteBack() const;
 
     StatisticsRecord loadStatistics(const PeriodKeys& defaultKeys);
     bool saveStatistics(const StatisticsRecord& record);
@@ -51,6 +54,8 @@ private:
     ConfigBackend& backend_;
     LoadStatus lastSystemStatus_;
     bool systemConfigReadOnly_;
+    std::int32_t lastSystemRawVersion_;
+    bool lastSystemMigrationWriteBack_;
 };
 
 }  // namespace faucet

@@ -12,8 +12,6 @@ namespace faucet {
 namespace {
 
 constexpr const char* kConfigNs = "faucet_cfg";
-constexpr const char* kVersionKey = "ver";
-constexpr std::int32_t kConfigVersion = 11;
 
 FaucetAppConfigContext g_context{};
 
@@ -106,9 +104,9 @@ void onAppConfigSave(const Esp32BaseAppConfig::SaveSummary& summary) {
     }
 
     SystemConfig loaded = g_context.configStore->loadSystemConfig();
-    if (g_context.configStore->lastSystemConfigLoadStatus() == ConfigStore::LoadStatus::DefaultsNoVersion) {
-        Esp32BaseConfig::setInt(kConfigNs, kVersionKey, kConfigVersion);
-        loaded = g_context.configStore->loadSystemConfig();
+    if (g_context.configStore->systemConfigReadOnly()) {
+        ESP32BASE_LOG_W("appcfg", "runtime apply skipped because business config is read-only");
+        return;
     }
     if (!g_context.app->applyConfig(loaded)) {
         ESP32BASE_LOG_W("appcfg", "runtime apply failed after app config save");

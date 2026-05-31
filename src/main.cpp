@@ -247,15 +247,17 @@ const char* configLoadStatusName(faucet::ConfigStore::LoadStatus status) {
 
 void logSystemConfigStatus() {
     const faucet::ConfigStore::LoadStatus status = g_configStore.lastSystemConfigLoadStatus();
-    if (status == faucet::ConfigStore::LoadStatus::LoadedCurrent) {
-        return;
-    }
+    ESP32BASE_LOG_I("app",
+                    "system config load status=%s raw_version=%ld target_version=%ld migrated_writeback=%s read_only=%s",
+                    configLoadStatusName(status),
+                    static_cast<long>(g_configStore.lastSystemConfigRawVersion()),
+                    static_cast<long>(g_configStore.currentSystemConfigVersion()),
+                    g_configStore.lastSystemConfigMigrationWriteBack() ? "yes" : "no",
+                    g_configStore.systemConfigReadOnly() ? "yes" : "no");
     if (status == faucet::ConfigStore::LoadStatus::LoadedFutureVersionReadOnly) {
         ESP32BASE_LOG_W("app", "system config loaded from future version in read-only mode");
     } else if (status == faucet::ConfigStore::LoadStatus::UnsupportedVersionDefault) {
         ESP32BASE_LOG_W("app", "system config version unsupported, defaults used");
-    } else {
-        ESP32BASE_LOG_I("app", "system config status=%s", configLoadStatusName(status));
     }
 }
 

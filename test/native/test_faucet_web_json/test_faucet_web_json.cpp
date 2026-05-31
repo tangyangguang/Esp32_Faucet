@@ -70,6 +70,22 @@ void test_status_json_uses_configured_valve_pwm_values() {
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"waterControl\":false"));
 }
 
+void test_status_json_can_include_config_migration_diagnostics() {
+    char json[512]{};
+    SystemConfig config = makeDefaultConfig();
+    const ConfigRuntimeStatus status{"migrated_legacy", 0, 11, false, true};
+
+    TEST_ASSERT_TRUE(writeStatusJson(makeSnapshot(), true, config, &status, json, sizeof(json)));
+
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"config\""));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"status\":\"migrated_legacy\""));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"rawVersion\":0"));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"currentVersion\":11"));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"readOnly\":false"));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"migrationWriteBack\":true"));
+    TEST_ASSERT_NULL(std::strstr(json, "password"));
+}
+
 void test_stats_json_contains_all_periods() {
     char json[256]{};
     const StatisticsRecord stats{1, 2, 3, 4000000000UL, 20260506, 202619, 202605};
@@ -204,6 +220,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_status_json_contains_no_remote_control_capability);
     RUN_TEST(test_status_json_can_report_screen_state);
     RUN_TEST(test_status_json_uses_configured_valve_pwm_values);
+    RUN_TEST(test_status_json_can_include_config_migration_diagnostics);
     RUN_TEST(test_stats_json_contains_all_periods);
     RUN_TEST(test_usage_summary_json_contains_aggregated_series);
     RUN_TEST(test_config_json_contains_safety_and_display_settings);

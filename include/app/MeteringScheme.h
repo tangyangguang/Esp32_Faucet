@@ -1,17 +1,12 @@
 #pragma once
 
-#include "app/AppTypes.h"
+#include "app/AppConfig.h"
 
 #include <cstddef>
 #include <cstdint>
 
 namespace faucet {
 
-constexpr std::uint32_t kDefaultStablePulsePerLiter = 450;
-constexpr std::uint32_t kMinSegmentedPulsePerLiter = 50;
-constexpr std::uint32_t kMaxSegmentedPulsePerLiter = 5000;
-constexpr std::uint32_t kMaxSegmentedStartupPulseCount = 100000;
-constexpr std::uint32_t kMaxSegmentedStartupVolumeMl = 20000;
 constexpr std::size_t kMeteringSchemeNameLength = 32;
 constexpr std::size_t kMeteringSchemeMeterLabelLength = 32;
 constexpr std::size_t kMeteringSchemeInstallationLabelLength = 32;

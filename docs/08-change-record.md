@@ -40,5 +40,5 @@
 - 删除 4 个校准候选容量配置，配置保存后不再写入 `cal_ml`、`cal0_ml`、`cal1_ml`、`cal2_ml`、`cal3_ml`。
 - 删除旧校准采样控制器，校准公式统一为 `newPulsePerMl = pulseCount / actualMl`。
 - 出水记录 LittleFS 文件改为 `/faucet_records_v1.bin`，文件 header 使用 records 语义 magic/version。
-- 手动流量系数保留为 Esp32Base 系统参数页的“流量计校准系数”，页面单位为脉冲/L；内部仍按 pulse/ml 计算，不再在业务校准页中维护。
+- 流量计计量参数从系统参数页移出，统一由业务校准页的“流量计计量方案”管理；每套方案保存启动脉冲数、启动水量和稳态 P/L。
 - 系统配置版本从 v4 升到 v5；v5 加载保留安全、阀门、显示、预设、滤芯、流量系数等有效字段，忽略旧校准候选容量字段。

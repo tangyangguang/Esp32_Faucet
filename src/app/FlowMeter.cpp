@@ -23,7 +23,7 @@ bool validParams(const MeteringParameters& params) {
 }  // namespace
 
 FlowMeter::FlowMeter(MeteringParameters params, std::uint32_t pulseFilterUs)
-    : params_(validParams(params) ? params : MeteringParameters{0, 0, kDefaultStablePulsePerLiter}),
+    : params_(validParams(params) ? params : defaultMeteringParameters()),
       pulseFilterUs_(pulseFilterUs),
       pulseCount_(0),
       rejectedPulses_(0),

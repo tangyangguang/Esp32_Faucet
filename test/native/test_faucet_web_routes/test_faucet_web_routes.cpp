@@ -593,6 +593,9 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "生成结果"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "href='/faucet/calibration?scheme=new'"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "href='/faucet/calibration?scheme=%lu'"));
+    const char* schemeEditSource = std::strstr(buffer, "void sendMeteringSchemeEditPage");
+    TEST_ASSERT_NOT_NULL(schemeEditSource);
+    TEST_ASSERT_NOT_NULL(std::strstr(schemeEditSource, "scheme ? scheme->params : defaultMeteringParameters()"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "启用只切换当前计量参数"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "action='/faucet/calibration'"));
     TEST_ASSERT_NULL(std::strstr(buffer, "<span class='status-pill status-muted'>手动执行</span>"));

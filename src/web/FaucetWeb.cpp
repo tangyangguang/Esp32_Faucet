@@ -1274,7 +1274,7 @@ void sendMeteringSchemeEditPage(bool creating, const MeteringSchemeRecord* schem
     Esp32BaseWeb::sendHeader(title);
     sendFmt("<h2>%s</h2><p><a class='btn-link' href='/faucet/calibration'>返回校准</a></p>", title);
     sendNoticeFromQuery();
-    const MeteringParameters params = scheme ? scheme->params : MeteringParameters{0, 0, kDefaultStablePulsePerLiter};
+    const MeteringParameters params = scheme ? scheme->params : defaultMeteringParameters();
     Esp32BaseWeb::sendChunk("<section class='panel calibration-param-panel'><form class='calibration-slot-form scheme-edit-form' method='post' action='/faucet/calibration' onsubmit='return once(this)'>");
     Esp32BaseWeb::sendChunk(creating ? "<input type='hidden' name='action' value='create_metering_scheme'>"
                                      : "<input type='hidden' name='action' value='edit_metering_scheme'>");

@@ -56,7 +56,7 @@ void test_default_scheme_config_has_one_active_default_scheme() {
     TEST_ASSERT_NOT_NULL(active);
     TEST_ASSERT_EQUAL_UINT32(1, active->id);
     TEST_ASSERT_TRUE(active->valid);
-    TEST_ASSERT_EQUAL_STRING("默认计量方案", active->name);
+    TEST_ASSERT_EQUAL_STRING("YF-S201 默认计量方案", active->name);
     TEST_ASSERT_EQUAL_UINT32(0, active->params.startupPulseCount);
     TEST_ASSERT_EQUAL_UINT32(0, active->params.startupVolumeMl);
     TEST_ASSERT_EQUAL_UINT32(kDefaultStablePulsePerLiter, active->params.stablePulsePerLiter);
@@ -213,7 +213,7 @@ bool deleteMeteringScheme(MeteringSchemeConfig& config, std::uint32_t schemeId);
 
 Create `src/app/MeteringScheme.cpp` implementing:
 
-- default config with one valid scheme named `默认计量方案`, id `1`, `nextSchemeId = 2`.
+- default config with one valid scheme named `YF-S201 默认计量方案`, id `1`, `nextSchemeId = 2`.
 - `sanitizeMeteringSchemeConfig()` clamps strings, clears invalid candidates, keeps at least one valid default scheme, and ensures `activeSchemeId` points to a valid scheme.
 - `saveCandidateAsNewMeteringScheme()` finds a free slot, copies candidate metadata, sets source `Generated`, clears candidate, does not change `activeSchemeId`.
 - `createManualMeteringScheme()` creates source `Manual` with sample metadata zeroed and creation summary `手工创建。`.

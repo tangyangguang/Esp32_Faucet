@@ -17,7 +17,7 @@ struct FlowSnapshot {
 
 class FlowMeter {
 public:
-    explicit FlowMeter(MeteringParameters params = MeteringParameters{0, 0, kDefaultStablePulsePerLiter},
+    explicit FlowMeter(MeteringParameters params = defaultMeteringParameters(),
                        std::uint32_t pulseFilterUs = kDefaultPulseFilterUs);
 
     void reset();

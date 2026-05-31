@@ -17,6 +17,18 @@ void test_counts_valid_pulses_and_converts_to_volume() {
     TEST_ASSERT_EQUAL_UINT32(0, snapshot.rejectedPulses);
 }
 
+void test_default_constructor_uses_builtin_yfs201_startup_parameters() {
+    FlowMeter meter;
+
+    TEST_ASSERT_TRUE(meter.onPulse(1000));
+    TEST_ASSERT_EQUAL_UINT32(5, meter.snapshot(1000).volumeMl);
+
+    for (std::uint32_t i = 1; i < 8; ++i) {
+        TEST_ASSERT_TRUE(meter.onPulse(1000 + i * 2000));
+    }
+    TEST_ASSERT_EQUAL_UINT32(36, meter.snapshot(15000).volumeMl);
+}
+
 void test_segmented_startup_volume_is_spread_across_startup_pulses() {
     FlowMeter meter(MeteringParameters{4, 80, 200}, kDefaultPulseFilterUs);
 
@@ -141,6 +153,7 @@ int main(int argc, char** argv) {
 
     UNITY_BEGIN();
     RUN_TEST(test_counts_valid_pulses_and_converts_to_volume);
+    RUN_TEST(test_default_constructor_uses_builtin_yfs201_startup_parameters);
     RUN_TEST(test_segmented_startup_volume_is_spread_across_startup_pulses);
     RUN_TEST(test_segmented_stable_stage_uses_stable_pulse_per_liter_after_startup);
     RUN_TEST(test_filters_pulses_inside_filter_window);

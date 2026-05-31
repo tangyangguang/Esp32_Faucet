@@ -53,10 +53,13 @@ void test_default_store_has_one_enabled_active_default_scheme() {
     TEST_ASSERT_TRUE(active->valid);
     TEST_ASSERT_TRUE(active->enabled);
     TEST_ASSERT_EQUAL_UINT32(1, active->revision);
-    TEST_ASSERT_EQUAL_STRING("默认计量方案", active->name);
-    TEST_ASSERT_EQUAL_UINT32(0, active->params.startupPulseCount);
-    TEST_ASSERT_EQUAL_UINT32(0, active->params.startupVolumeMl);
-    TEST_ASSERT_EQUAL_UINT32(kDefaultStablePulsePerLiter, active->params.stablePulsePerLiter);
+    TEST_ASSERT_EQUAL_STRING("YF-S201 默认计量方案", active->name);
+    TEST_ASSERT_EQUAL_STRING("YF-S201", active->meterLabel);
+    TEST_ASSERT_EQUAL_UINT32(8, active->params.startupPulseCount);
+    TEST_ASSERT_EQUAL_UINT32(36, active->params.startupVolumeMl);
+    TEST_ASSERT_EQUAL_UINT32(225, active->params.stablePulsePerLiter);
+    TEST_ASSERT_NOT_NULL(std::strstr(active->creationSummary, "YF-S201"));
+    TEST_ASSERT_NOT_NULL(std::strstr(active->creationSummary, "启动约 5 秒"));
     TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(MeteringSchemeSource::Default),
                             static_cast<unsigned>(active->sourceType));
 }
@@ -151,7 +154,15 @@ void test_current_scheme_cannot_be_disabled_or_deleted() {
         scheme, 2, "当前", MeteringParameters{12, 180, 360}, 1770000000);
 
     TEST_ASSERT_FALSE(canDisableMeteringScheme(scheme, 2, 2));
-    TEST_ASSERT_FALSE(canPhysicallyDeleteMeteringScheme(scheme, 2));
+    TEST_ASSERT_FALSE(canPhysicallyDeleteMeteringScheme(scheme, 2, 2));
+}
+
+void test_last_valid_scheme_cannot_be_deleted_even_if_not_active() {
+    MeteringSchemeRecord scheme{};
+    initializeManualMeteringScheme(
+        scheme, 2, "最后一套", MeteringParameters{12, 180, 360}, 1770000000);
+
+    TEST_ASSERT_FALSE(canPhysicallyDeleteMeteringScheme(scheme, 1, 1));
 }
 
 void test_used_or_dirty_scheme_cannot_be_physically_deleted() {
@@ -160,11 +171,11 @@ void test_used_or_dirty_scheme_cannot_be_physically_deleted() {
         scheme, 2, "已使用", MeteringParameters{12, 180, 360}, 1770000000);
 
     scheme.useCount = 1;
-    TEST_ASSERT_FALSE(canPhysicallyDeleteMeteringScheme(scheme, 1));
+    TEST_ASSERT_FALSE(canPhysicallyDeleteMeteringScheme(scheme, 1, 2));
 
     scheme.useCount = 0;
     scheme.usageStatsDirty = true;
-    TEST_ASSERT_FALSE(canPhysicallyDeleteMeteringScheme(scheme, 1));
+    TEST_ASSERT_FALSE(canPhysicallyDeleteMeteringScheme(scheme, 1, 2));
 }
 
 void test_unused_non_current_scheme_can_be_physically_deleted() {
@@ -172,7 +183,7 @@ void test_unused_non_current_scheme_can_be_physically_deleted() {
     initializeManualMeteringScheme(
         scheme, 2, "未使用", MeteringParameters{12, 180, 360}, 1770000000);
 
-    TEST_ASSERT_TRUE(canPhysicallyDeleteMeteringScheme(scheme, 1));
+    TEST_ASSERT_TRUE(canPhysicallyDeleteMeteringScheme(scheme, 1, 2));
 }
 
 int main(int argc, char** argv) {
@@ -185,6 +196,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_core_or_environment_edit_increments_revision);
     RUN_TEST(test_name_only_edit_does_not_increment_revision);
     RUN_TEST(test_current_scheme_cannot_be_disabled_or_deleted);
+    RUN_TEST(test_last_valid_scheme_cannot_be_deleted_even_if_not_active);
     RUN_TEST(test_used_or_dirty_scheme_cannot_be_physically_deleted);
     RUN_TEST(test_unused_non_current_scheme_can_be_physically_deleted);
     return UNITY_END();

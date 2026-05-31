@@ -15,7 +15,11 @@ constexpr std::size_t kMeteringSchemeUserNoteLength = 128;
 constexpr std::size_t kMeteringSchemeSummaryLength = 192;
 constexpr std::size_t kMeteringSchemeTraceIdCapacity = 12;
 constexpr std::size_t kLegacyMeteringSlotCount = 4;
-constexpr std::uint32_t kDefaultStablePulsePerLiter = 450;
+constexpr const char* kDefaultMeteringSchemeName = "YF-S201 默认计量方案";
+constexpr const char* kDefaultMeteringSchemeMeterLabel = "YF-S201";
+constexpr std::uint32_t kDefaultStartupPulseCount = 8;
+constexpr std::uint32_t kDefaultStartupVolumeMl = 36;
+constexpr std::uint32_t kDefaultStablePulsePerLiter = 225;
 constexpr std::uint32_t kMinSegmentedPulsePerLiter = 50;
 constexpr std::uint32_t kMaxSegmentedPulsePerLiter = 5000;
 constexpr std::uint32_t kMaxSegmentedStartupPulseCount = 100000;
@@ -145,6 +149,8 @@ bool updateMeteringSchemeRecord(MeteringSchemeRecord& scheme,
 bool canDisableMeteringScheme(const MeteringSchemeRecord& scheme,
                               std::uint32_t activeSchemeId,
                               std::size_t enabledSchemeCount);
-bool canPhysicallyDeleteMeteringScheme(const MeteringSchemeRecord& scheme, std::uint32_t activeSchemeId);
+bool canPhysicallyDeleteMeteringScheme(const MeteringSchemeRecord& scheme,
+                                       std::uint32_t activeSchemeId,
+                                       std::size_t validSchemeCount);
 
 }  // namespace faucet

@@ -157,7 +157,7 @@ struct MeteringSchemeRecord {
 Move metering-specific constants and validation into this module:
 
 ```cpp
-constexpr std::uint32_t kDefaultStablePulsePerLiter = 450;
+constexpr std::uint32_t kDefaultStablePulsePerLiter = 225;
 constexpr std::uint32_t kMinSegmentedPulsePerLiter = 50;
 constexpr std::uint32_t kMaxSegmentedPulsePerLiter = 5000;
 constexpr std::uint32_t kMaxSegmentedStartupPulseCount = 100000;

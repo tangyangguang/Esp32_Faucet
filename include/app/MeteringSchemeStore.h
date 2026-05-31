@@ -54,6 +54,7 @@ public:
 private:
     bool validPath() const;
     bool initializeNewFile();
+    bool upgradeLegacyDefaultSchemeIfNeeded();
     bool loadHeader();
     bool saveHeader() const;
     bool readRecord(std::size_t slot, MeteringSchemeRecord& output) const;

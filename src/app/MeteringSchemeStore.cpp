@@ -52,9 +52,20 @@ void readConfigText(ConfigBackend& config, const char* key, char (&out)[N], cons
     config.getStr("faucet_cfg", key, out, N, def);
 }
 
-bool defaultParams(const MeteringParameters& params) {
-    return params.startupPulseCount == 0 && params.startupVolumeMl == 0 &&
+bool builtInDefaultParams(const MeteringParameters& params) {
+    return params.startupPulseCount == kDefaultStartupPulseCount && params.startupVolumeMl == kDefaultStartupVolumeMl &&
            params.stablePulsePerLiter == kDefaultStablePulsePerLiter;
+}
+
+bool legacyEmptyDefaultParams(const MeteringParameters& params) {
+    return params.startupPulseCount == 0 && params.startupVolumeMl == 0 &&
+           (params.stablePulsePerLiter == kDefaultStablePulsePerLiter || params.stablePulsePerLiter == 450);
+}
+
+bool legacyDefaultText(const MeteringSchemeRecord& scheme) {
+    return (scheme.name[0] == '\0' || std::strcmp(scheme.name, "默认计量方案") == 0 ||
+            std::strcmp(scheme.name, kDefaultMeteringSchemeName) == 0) &&
+           (scheme.meterLabel[0] == '\0' || std::strcmp(scheme.meterLabel, kDefaultMeteringSchemeMeterLabel) == 0);
 }
 
 }  // namespace
@@ -75,6 +86,10 @@ bool MeteringSchemeStore::begin() {
         return initializeNewFile();
     }
     ready_ = true;
+    if (!upgradeLegacyDefaultSchemeIfNeeded()) {
+        backend_.removeFile(path_);
+        return initializeNewFile();
+    }
     MeteringSchemeRecord active{};
     if (!activeScheme(active) || !active.enabled) {
         backend_.removeFile(path_);
@@ -300,9 +315,20 @@ bool MeteringSchemeStore::deleteScheme(std::uint32_t schemeId) {
     if (!ready()) {
         return false;
     }
+    std::size_t validCount = 0;
+    for (std::size_t i = 0; i < header_.slotCount; ++i) {
+        MeteringSchemeRecord listed{};
+        if (!readRecord(i, listed)) {
+            return false;
+        }
+        if (listed.valid) {
+            ++validCount;
+        }
+    }
     MeteringSchemeRecord record{};
     std::size_t slot = 0;
-    if (!findSlotById(schemeId, record, slot) || !canPhysicallyDeleteMeteringScheme(record, header_.activeSchemeId)) {
+    if (!findSlotById(schemeId, record, slot) ||
+        !canPhysicallyDeleteMeteringScheme(record, header_.activeSchemeId, validCount)) {
         return false;
     }
     record.valid = false;
@@ -355,7 +381,7 @@ bool MeteringSchemeStore::migrateLegacyFromConfig(ConfigBackend& config, std::ui
     }
 
     if (list(existing.get(), 2, true) != 1 || existing[0].sourceType != MeteringSchemeSource::Default ||
-        existing[0].id != 1 || !defaultParams(existing[0].params)) {
+        existing[0].id != 1 || !builtInDefaultParams(existing[0].params)) {
         return true;
     }
 
@@ -394,7 +420,7 @@ bool MeteringSchemeStore::migrateLegacyFromConfig(ConfigBackend& config, std::ui
             return true;
         }
         const bool active = index == legacyActive;
-        if (!active && defaultParams(params)) {
+        if (!active && (builtInDefaultParams(params) || legacyEmptyDefaultParams(params))) {
             return true;
         }
 
@@ -502,6 +528,44 @@ bool MeteringSchemeStore::initializeNewFile() {
                               reinterpret_cast<const std::uint8_t*>(&record),
                               sizeof(record));
     return ready_;
+}
+
+bool MeteringSchemeStore::upgradeLegacyDefaultSchemeIfNeeded() {
+    if (!ready()) {
+        return false;
+    }
+
+    MeteringSchemeRecord legacy{};
+    std::size_t legacySlot = 0;
+    std::size_t validCount = 0;
+    for (std::size_t i = 0; i < header_.slotCount; ++i) {
+        MeteringSchemeRecord record{};
+        if (!readRecord(i, record)) {
+            return false;
+        }
+        if (!record.valid) {
+            continue;
+        }
+        ++validCount;
+        legacy = record;
+        legacySlot = i;
+    }
+
+    if (validCount != 1 || legacy.id != 1 || header_.activeSchemeId != 1 || !legacy.enabled ||
+        legacy.sourceType != MeteringSchemeSource::Default || !legacyEmptyDefaultParams(legacy.params) ||
+        !legacyDefaultText(legacy)) {
+        return true;
+    }
+
+    MeteringSchemeRecord upgraded{};
+    MeteringSchemeCollection collection{&upgraded, 1, 0, 0};
+    if (!initializeDefaultMeteringSchemes(collection, legacy.createdAt)) {
+        return false;
+    }
+    upgraded.createdAt = legacy.createdAt;
+    upgraded.updatedAt = legacy.updatedAt;
+    upgraded.lastActivatedAt = legacy.lastActivatedAt;
+    return writeRecord(legacySlot, upgraded);
 }
 
 bool MeteringSchemeStore::loadHeader() {

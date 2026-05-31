@@ -176,9 +176,46 @@ void test_begin_initializes_default_scheme_file() {
 
     MeteringSchemeRecord active{};
     TEST_ASSERT_TRUE(store.activeScheme(active));
-    TEST_ASSERT_EQUAL_STRING("默认计量方案", active.name);
+    TEST_ASSERT_EQUAL_STRING("YF-S201 默认计量方案", active.name);
+    TEST_ASSERT_EQUAL_STRING("YF-S201", active.meterLabel);
     TEST_ASSERT_TRUE(active.enabled);
-    TEST_ASSERT_EQUAL_UINT32(kDefaultStablePulsePerLiter, active.params.stablePulsePerLiter);
+    TEST_ASSERT_EQUAL_UINT32(8, active.params.startupPulseCount);
+    TEST_ASSERT_EQUAL_UINT32(36, active.params.startupVolumeMl);
+    TEST_ASSERT_EQUAL_UINT32(225, active.params.stablePulsePerLiter);
+    TEST_ASSERT_NOT_NULL(std::strstr(active.creationSummary, "YF-S201"));
+    TEST_ASSERT_NOT_NULL(std::strstr(active.creationSummary, "启动约 5 秒"));
+}
+
+void test_begin_upgrades_single_legacy_default_scheme_to_yfs201_builtin_default() {
+    MemoryFileBackend backend;
+    {
+        MeteringSchemeStore store(backend, "/schemes.bin");
+        TEST_ASSERT_TRUE(store.begin());
+
+        MeteringSchemeRecord legacy{};
+        TEST_ASSERT_TRUE(store.activeScheme(legacy));
+        std::strncpy(legacy.name, "默认计量方案", sizeof(legacy.name) - 1);
+        legacy.meterLabel[0] = '\0';
+        legacy.conditionLabel[0] = '\0';
+        legacy.params = MeteringParameters{0, 0, 450};
+        TEST_ASSERT_TRUE(store.updateScheme(legacy, 1770000000));
+    }
+
+    MeteringSchemeStore loaded(backend, "/schemes.bin");
+    TEST_ASSERT_TRUE(loaded.begin());
+
+    MeteringSchemeRecord active{};
+    TEST_ASSERT_TRUE(loaded.activeScheme(active));
+    TEST_ASSERT_EQUAL_UINT32(1, loaded.activeSchemeId());
+    TEST_ASSERT_EQUAL_UINT32(1, active.id);
+    TEST_ASSERT_EQUAL_STRING("YF-S201 默认计量方案", active.name);
+    TEST_ASSERT_EQUAL_STRING("YF-S201", active.meterLabel);
+    TEST_ASSERT_EQUAL_UINT32(8, active.params.startupPulseCount);
+    TEST_ASSERT_EQUAL_UINT32(36, active.params.startupVolumeMl);
+    TEST_ASSERT_EQUAL_UINT32(225, active.params.stablePulsePerLiter);
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(MeteringSchemeSource::Default),
+                            static_cast<unsigned>(active.sourceType));
+    TEST_ASSERT_TRUE(active.enabled);
 }
 
 void test_save_candidate_reloads_after_restart() {
@@ -245,6 +282,26 @@ void test_used_scheme_delete_is_rejected_and_disable_is_explicit() {
     TEST_ASSERT_TRUE(scheme.valid);
     TEST_ASSERT_FALSE(scheme.enabled);
     TEST_ASSERT_EQUAL_UINT32(1, scheme.useCount);
+}
+
+void test_delete_keeps_at_least_one_valid_scheme() {
+    MemoryFileBackend backend;
+    MeteringSchemeStore store(backend, "/schemes.bin");
+    TEST_ASSERT_TRUE(store.begin());
+
+    std::uint32_t id = 0;
+    TEST_ASSERT_TRUE(store.createManual("临时方案", MeteringParameters{12, 180, 360}, 1770000000, id));
+    TEST_ASSERT_TRUE(store.enableScheme(id, 1770000010));
+
+    TEST_ASSERT_TRUE(store.deleteScheme(1));
+    TEST_ASSERT_FALSE(store.deleteScheme(id));
+
+    MeteringSchemeRecord list[4]{};
+    TEST_ASSERT_EQUAL_size_t(1, store.list(list, 4, true));
+    TEST_ASSERT_EQUAL_UINT32(id, store.activeSchemeId());
+    TEST_ASSERT_EQUAL_UINT32(id, list[0].id);
+    TEST_ASSERT_TRUE(list[0].valid);
+    TEST_ASSERT_TRUE(list[0].enabled);
 }
 
 void test_enable_updates_active_id_and_last_activated() {
@@ -372,9 +429,11 @@ int main(int argc, char** argv) {
     (void)argv;
     UNITY_BEGIN();
     RUN_TEST(test_begin_initializes_default_scheme_file);
+    RUN_TEST(test_begin_upgrades_single_legacy_default_scheme_to_yfs201_builtin_default);
     RUN_TEST(test_save_candidate_reloads_after_restart);
     RUN_TEST(test_manual_create_reuses_deleted_unused_slot_with_new_id);
     RUN_TEST(test_used_scheme_delete_is_rejected_and_disable_is_explicit);
+    RUN_TEST(test_delete_keeps_at_least_one_valid_scheme);
     RUN_TEST(test_enable_updates_active_id_and_last_activated);
     RUN_TEST(test_increment_usage_marks_dirty_when_record_update_fails);
     RUN_TEST(test_migrates_legacy_config_slots_and_candidate_once);

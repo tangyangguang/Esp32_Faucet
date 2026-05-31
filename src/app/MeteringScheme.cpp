@@ -84,7 +84,7 @@ void writeManualSummary(MeteringSchemeRecord& scheme) {
 }  // namespace
 
 MeteringParameters defaultMeteringParameters() {
-    return MeteringParameters{0, 0, kDefaultStablePulsePerLiter};
+    return MeteringParameters{kDefaultStartupPulseCount, kDefaultStartupVolumeMl, kDefaultStablePulsePerLiter};
 }
 
 bool validMeteringSchemeParameters(const MeteringParameters& params) {
@@ -107,13 +107,15 @@ bool initializeDefaultMeteringSchemes(MeteringSchemeCollection& schemes, std::ui
     }
     initializeCommonScheme(schemes.records[0],
                            1,
-                           "默认计量方案",
+                           kDefaultMeteringSchemeName,
                            defaultMeteringParameters(),
                            MeteringSchemeSource::Default,
                            nowSeconds);
+    copyText(schemes.records[0].meterLabel, kDefaultMeteringSchemeMeterLabel);
+    copyText(schemes.records[0].conditionLabel, "系统内置默认参数");
     std::snprintf(schemes.records[0].creationSummary,
                   sizeof(schemes.records[0].creationSummary),
-                  "系统默认计量方案。");
+                  "系统内置 YF-S201 默认计量方案：启动约 5 秒，启动阶段约 8P，启动水量按 225P/L 折算为 36ml，稳态 225P/L。");
     schemes.records[0].lastActivatedAt = nowSeconds;
     schemes.activeSchemeId = 1;
     schemes.nextSchemeId = 2;
@@ -278,8 +280,11 @@ bool canDisableMeteringScheme(const MeteringSchemeRecord& scheme,
     return scheme.valid && scheme.enabled && scheme.id != activeSchemeId && enabledSchemeCount > 1;
 }
 
-bool canPhysicallyDeleteMeteringScheme(const MeteringSchemeRecord& scheme, std::uint32_t activeSchemeId) {
-    return scheme.valid && scheme.id != activeSchemeId && scheme.useCount == 0 && !scheme.usageStatsDirty;
+bool canPhysicallyDeleteMeteringScheme(const MeteringSchemeRecord& scheme,
+                                       std::uint32_t activeSchemeId,
+                                       std::size_t validSchemeCount) {
+    return scheme.valid && validSchemeCount > 1 && scheme.id != activeSchemeId && scheme.useCount == 0 &&
+           !scheme.usageStatsDirty;
 }
 
 }  // namespace faucet

@@ -78,6 +78,16 @@ struct MeteringSchemeCandidate {
 };
 
 struct MeteringSchemeCollection {
+    MeteringSchemeCollection() : records(nullptr), capacity(0), activeSchemeId(0), nextSchemeId(0) {}
+    MeteringSchemeCollection(MeteringSchemeRecord* records_,
+                             std::size_t capacity_,
+                             std::uint32_t activeSchemeId_,
+                             std::uint32_t nextSchemeId_)
+        : records(records_),
+          capacity(capacity_),
+          activeSchemeId(activeSchemeId_),
+          nextSchemeId(nextSchemeId_) {}
+
     MeteringSchemeRecord* records = nullptr;
     std::size_t capacity = 0;
     std::uint32_t activeSchemeId = 0;

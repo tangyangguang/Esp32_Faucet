@@ -871,6 +871,32 @@ void test_record_calibration_api_saves_actual_without_segmented_generation() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "校准已保存。"));
 }
 
+void test_calibration_page_avoids_large_metering_scheme_stack_arrays() {
+    FILE* file = std::fopen("src/web/FaucetWeb.cpp", "rb");
+    TEST_ASSERT_NOT_NULL(file);
+    static char buffer[300000]{};
+    const std::size_t read = std::fread(buffer, 1, sizeof(buffer) - 1, file);
+    std::fclose(file);
+    TEST_ASSERT_GREATER_THAN_size_t(0, read);
+
+    const char* panel = std::strstr(buffer, "void sendCalibrationParameterPanels()");
+    TEST_ASSERT_NOT_NULL(panel);
+    const char* nextFunction = std::strstr(panel, "void sendCalibrationFormulaPanel()");
+    TEST_ASSERT_NOT_NULL(nextFunction);
+
+    const char* schemePointer = std::strstr(panel, "MeteringSchemeRecord* schemes");
+    const char* schemeAllocation = std::strstr(panel, "new (std::nothrow) MeteringSchemeRecord[10]");
+    const char* schemeRelease = std::strstr(panel, "delete[] schemes");
+    const char* stackArray = std::strstr(panel, "MeteringSchemeRecord schemes[10]");
+    TEST_ASSERT_NOT_NULL(schemePointer);
+    TEST_ASSERT_NOT_NULL(schemeAllocation);
+    TEST_ASSERT_NOT_NULL(schemeRelease);
+    TEST_ASSERT_TRUE(schemePointer < nextFunction);
+    TEST_ASSERT_TRUE(schemeAllocation < nextFunction);
+    TEST_ASSERT_TRUE(schemeRelease < nextFunction);
+    TEST_ASSERT_TRUE(stackArray == nullptr || stackArray > nextFunction);
+}
+
 void test_main_source_renders_live_display_frame_for_web() {
     FILE* file = std::fopen("src/main.cpp", "rb");
     TEST_ASSERT_NOT_NULL(file);
@@ -1006,6 +1032,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_web_page_source_links_cacheable_app_css);
     RUN_TEST(test_web_page_source_contains_expected_ui_improvements);
     RUN_TEST(test_record_calibration_api_saves_actual_without_segmented_generation);
+    RUN_TEST(test_calibration_page_avoids_large_metering_scheme_stack_arrays);
     RUN_TEST(test_main_source_renders_live_display_frame_for_web);
     RUN_TEST(test_main_source_wires_metering_scheme_and_snapshot_stores);
     RUN_TEST(test_app_config_source_uses_clear_business_labels_and_help);

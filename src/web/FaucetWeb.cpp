@@ -1210,9 +1210,9 @@ void sendPulseTraceCachePanel() {
 }
 
 void sendCalibrationParameterPanels() {
-    MeteringSchemeRecord schemes[10]{};
+    MeteringSchemeRecord* schemes = new (std::nothrow) MeteringSchemeRecord[10]{};
     const bool ready = ensureMeteringSchemesReady();
-    const std::size_t count = ready ? g_context.meteringSchemes->list(schemes, 10, true) : 0;
+    const std::size_t count = ready && schemes ? g_context.meteringSchemes->list(schemes, 10, true) : 0;
     const std::uint32_t activeId = ready ? g_context.meteringSchemes->activeSchemeId() : 0;
 
     Esp32BaseWeb::sendChunk("<section class='panel calibration-param-panel'><div class='panel-head'><h3>流量计计量方案</h3>"
@@ -1220,6 +1220,8 @@ void sendCalibrationParameterPanels() {
                             "<table class='calibration-slot-table metering-scheme-table'><tr><th>方案</th><th>参数</th><th>适用条件</th><th>记录</th><th>操作</th></tr>");
     if (!ready) {
         Esp32BaseWeb::sendChunk("<tr><td colspan='5'>计量方案存储不可用。</td></tr>");
+    } else if (!schemes) {
+        Esp32BaseWeb::sendChunk("<tr><td colspan='5'>内存不足，无法加载方案列表。</td></tr>");
     }
     for (std::size_t i = 0; i < count; ++i) {
         const MeteringSchemeRecord& scheme = schemes[i];
@@ -1304,6 +1306,7 @@ void sendCalibrationParameterPanels() {
         Esp32BaseWeb::sendChunk("<p class='muted'>页面最多显示最近 10 套可见方案；历史记录仍按方案 ID 和版本保存。</p>");
     }
     Esp32BaseWeb::sendChunk("</section>");
+    delete[] schemes;
 
     MeteringSchemeCandidate candidate{};
     const bool candidateReady = ready && g_context.meteringSchemes->loadCandidate(candidate) && candidate.ready;

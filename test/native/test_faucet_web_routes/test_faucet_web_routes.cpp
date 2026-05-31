@@ -403,6 +403,9 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NULL(std::strstr(buffer, "cum-line"));
     TEST_ASSERT_NULL(std::strstr(buffer, "legend-cum-paused"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "脉冲趋势"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "id='pulse-trend'"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "faucetLoadTraceChart"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "old.replaceWith(next);history.replaceState(null,'',a.href);"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "trace-frequency"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "trace-frequency-label'>聚合频率"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, ".trace-frequency a.page-current"));
@@ -435,10 +438,13 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "bucketsToShow[] = {1, 2, 3, 4, 5}"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "bucket == bucketSeconds ? \"btn-link page-current\" : \"btn-link\""));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "aria-current='%s'"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "onclick='return faucetLoadTraceChart(this)'"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "xLabelCount"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "detail-data"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "<section class='panel detail-data'><div class='panel-head'><h3>原始明细</h3>"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "显示原始明细"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "显示所有明细"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "显示原始明细"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "显示所有明细"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "导出所有明细"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "target='_blank'"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "raw=1"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "all=1"));
@@ -447,8 +453,11 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "rawTracePreviewSampleCount"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "rawTraceShowAll"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "beginResponse(200, \"text/plain; charset=utf-8\""));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "序号\\t距开始(us)\\t与上一边沿间隔(us)\\t有效累计\\n"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "%lu\\t%lu\\t%lu\\t%lu\\n"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "序号\\t距任务开始(us)\\t与上一边沿间隔(us)\\t是否有效\\t有效累计\\n"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "%lu\\t%lu\\t%lu\\t%s\\t%lu\\n"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, ".raw-edge-invalid"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "raw-edge-invalid"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "首个边沿"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "仅显示前 %lu 个原始边沿，共 %lu 行；完整明细请使用 all=1。\\n"));
     TEST_ASSERT_NULL(std::strstr(buffer, "仅显示 0秒 到 %lu秒"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "WaterPulseTraceState::PauseTimeout"));
@@ -463,7 +472,7 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NULL(std::strstr(buffer, "避免页面一次性生成大量表格"));
     TEST_ASSERT_NULL(std::strstr(buffer, "<details open class='panel detail-data'>"));
     TEST_ASSERT_NULL(std::strstr(buffer, "<summary>查看明细数据</summary>"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "<table class='raw-trace-table'><tr><th>序号</th><th>距开始</th><th>与上一边沿间隔</th><th>有效累计</th></tr>"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "<table class='raw-trace-table'><tr><th>序号</th><th>距任务开始</th><th>与上一边沿间隔</th><th>是否有效</th><th>有效累计</th></tr>"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "sendDurationUs(samples[i].elapsedUs)"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "sendDurationUs(intervalUs)"));
     TEST_ASSERT_NULL(std::strstr(buffer, "<tr><td>%lu秒</td><td>%u</td><td>%lu</td><td>%s</td></tr>"));
@@ -877,7 +886,7 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NOT_NULL(detailHandler);
     const char* sampleStatus = std::strstr(detailHandler, "<section class='panel sample-status-panel'><h3>样本状态</h3>");
     const char* detailOverview = std::strstr(detailHandler, "<section class='panel'><h3>明细概况</h3>");
-    const char* pulseTrend = std::strstr(detailHandler, "<section class='panel'><div class='panel-head'><h3>脉冲趋势</h3>");
+    const char* pulseTrend = std::strstr(detailHandler, "<section id='pulse-trend' class='panel'><div class='panel-head'><h3>脉冲趋势</h3>");
     TEST_ASSERT_NOT_NULL(sampleStatus);
     TEST_ASSERT_NOT_NULL(detailOverview);
     TEST_ASSERT_NOT_NULL(pulseTrend);

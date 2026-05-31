@@ -964,7 +964,10 @@ void test_calibration_page_reports_specific_errors_and_hides_stale_generated_res
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "最新记录不可确认容量"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "保存失败："));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "'HTTP 401':'认证已失效，请刷新页面重新登录。'"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "'HTTP 404':'保存接口路径不存在，请刷新页面后重试。'"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "credentials:'same-origin'"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "fetch('/faucet/calibration',{method:'POST'"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "fetch(f.action,{method:'POST'"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "校准已保存，但页面刷新失败，请手动刷新查看最新状态。"));
     TEST_ASSERT_NULL(std::strstr(buffer, "alert('保存失败，请稍后重试。')"));
 

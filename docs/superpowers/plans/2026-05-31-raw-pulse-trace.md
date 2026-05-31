@@ -4,7 +4,7 @@
 
 **Goal:** Replace second-bucket pulse traces with objective raw GPIO edge traces using `uint32_t elapsedUs[]`, add record detail pages, and derive effective pulse views from raw data.
 
-**Architecture:** `FlowPulseReader` continues to capture ISR edge timestamps. `AppController` records every raw edge into `WaterPulseTraceStore`, while `FlowMeter` independently applies `pulseMinIntervalUs` for real-time effective metering. `WaterPulseTraceStore` stores fixed-capacity raw edge arrays in RAM and LittleFS v3 slots, and Web renders user-facing record details separately from professional pulse detail diagnostics.
+**Architecture:** `FlowPulseReader` continues to capture ISR edge timestamps. `AppController` records every raw edge into `WaterPulseTraceStore`, while `FlowMeter` independently applies `pulseMinIntervalUs` for real-time effective metering. `WaterPulseTraceStore` stores fixed-capacity raw edge arrays in RAM and LittleFS v4 slots, and Web renders user-facing record details separately from professional pulse detail diagnostics.
 
 **Tech Stack:** PlatformIO C++17 native tests, ESP32 Arduino firmware, LittleFS via existing `WaterRecordFileBackend`, existing Esp32Base Web/AppConfig.
 
@@ -19,7 +19,7 @@
 - Modify `include/app/FlowMeter.h`, `src/app/FlowMeter.cpp`: use configured pulse interval and expose it where needed.
 - Replace `include/app/WaterPulseTraceStore.h`, `src/app/WaterPulseTraceStore.cpp` second-bucket trace model with raw-edge trace model.
 - Modify `include/app/AppController.h`, `src/app/AppController.cpp`: remove second sampler state; append raw edges from `onFlowPulse`; track pause-resume segments.
-- Modify `src/main.cpp`: allocate raw edge buffers, switch saved path to v3, set saved capacity to 12.
+- Modify `src/main.cpp`: allocate raw edge buffers, switch saved path to v4, set saved capacity to 12.
 - Modify `src/web/FaucetWeb.cpp`: add record detail page, update pulse detail page to derive effective/raw views, update save/delete/calibration flows.
 - Modify `src/web/FaucetWebJson.cpp` if config JSON exposes trace settings.
 - Update tests under `test/native/`.
@@ -222,7 +222,7 @@ Expected: trace store tests pass.
 
 ---
 
-## Task 3: Saved Trace v3 File Store
+## Task 3: Saved Trace v4 File Store
 
 **Files:**
 - Modify: `include/app/WaterPulseTraceStore.h`
@@ -230,7 +230,7 @@ Expected: trace store tests pass.
 - Modify: `src/main.cpp`
 - Test: `test/native/test_water_pulse_trace_store/test_water_pulse_trace_store.cpp`
 
-- [ ] **Step 1: Write failing v3 save/read tests**
+- [ ] **Step 1: Write failing v4 save/read tests**
 
 Add tests that save a raw trace with 3 raw edges, read it back, and verify:
 
@@ -255,16 +255,16 @@ pio test -e native -f native/test_water_pulse_trace_store
 
 Expected: failures because saved store still uses v2 sample slots.
 
-- [ ] **Step 3: Implement v3 fixed slots**
+- [ ] **Step 3: Implement v4 fixed slots**
 
 Use new magic/version and fixed slots:
 
 ```cpp
 constexpr std::uint32_t kSavedTraceFileMagic = 0x46575245UL; // FWRE
-constexpr std::uint16_t kSavedTraceFileVersion = 3;
+constexpr std::uint16_t kSavedTraceFileVersion = 4;
 ```
 
-Each slot has one index entry and `4096 * sizeof(WaterPulseTraceRawEdge)` bytes. File path in `main.cpp` becomes `/faucet_pulse_traces_v3.bin`. Saved max count becomes `kSavedPulseTraceMaxCount`.
+Each slot has one index entry and `4096 * sizeof(WaterPulseTraceRawEdge)` bytes. File path in `main.cpp` becomes `/faucet_pulse_traces_v4.bin`. Saved max count becomes `kSavedPulseTraceMaxCount`.
 
 - [ ] **Step 4: Verify saved trace tests**
 
@@ -457,7 +457,7 @@ Expected: selected tests pass.
 
 - [ ] **Step 1: Update docs**
 
-Reference `docs/09-raw-pulse-trace.md` from architecture and test plan. Record the v3 raw-edge trace change in change record.
+Reference `docs/09-raw-pulse-trace.md` from architecture and test plan. Record the v4 raw-edge trace change in change record.
 
 - [ ] **Step 2: Run full native tests**
 

@@ -10,7 +10,7 @@ namespace faucet {
 namespace {
 
 constexpr std::uint32_t kSavedTraceFileMagic = 0x46575046UL;  // FWPF
-constexpr std::uint16_t kSavedTraceFileVersion = 3;
+constexpr std::uint16_t kSavedTraceFileVersion = 4;
 
 struct SavedTraceFileHeader {
     std::uint32_t magic;
@@ -171,10 +171,19 @@ bool WaterPulseTraceStore::appendRawEdge(std::uint32_t traceId, std::uint32_t el
     return findById(traceId) != nullptr;
 }
 
-bool WaterPulseTraceStore::finishTrace(std::uint32_t traceId, const WaterRecord& record, WaterPulseTraceState finalState) {
+bool WaterPulseTraceStore::finishTrace(std::uint32_t traceId,
+                                       const WaterRecord& record,
+                                       WaterPulseTraceState finalState,
+                                       std::uint32_t endElapsedUs) {
     WaterPulseTrace* trace = findById(traceId);
     if (!trace) {
         return false;
+    }
+    if (endElapsedUs != kPulseTraceNoEndElapsedUs && trace->pauseWindowCount > 0) {
+        WaterPulseTracePauseWindow& last = trace->pauseWindows[trace->pauseWindowCount - 1];
+        if (last.endElapsedUs == 0) {
+            last.endElapsedUs = std::max(last.startElapsedUs, endElapsedUs);
+        }
     }
     trace->record = record;
     trace->totalPulses = effectivePulseCount(*trace, &samples_[trace->sampleStart], trace->sampleCount);
@@ -187,12 +196,37 @@ bool WaterPulseTraceStore::finishTrace(std::uint32_t traceId, const WaterRecord&
     return findById(traceId) != nullptr;
 }
 
-bool WaterPulseTraceStore::markResumedAfterPause(std::uint32_t traceId) {
+bool WaterPulseTraceStore::markPaused(std::uint32_t traceId, std::uint32_t elapsedUs) {
+    WaterPulseTrace* trace = findById(traceId);
+    if (!trace || trace->finished) {
+        return false;
+    }
+    if (trace->pauseWindowCount > 0) {
+        WaterPulseTracePauseWindow& last = trace->pauseWindows[trace->pauseWindowCount - 1];
+        if (last.endElapsedUs == 0) {
+            return true;
+        }
+    }
+    if (trace->pauseWindowCount >= kPulseTraceMaxPauseWindows) {
+        trace->pauseWindowOverflow = true;
+        return true;
+    }
+    trace->pauseWindows[trace->pauseWindowCount++] = WaterPulseTracePauseWindow{elapsedUs, 0};
+    return true;
+}
+
+bool WaterPulseTraceStore::markResumedAfterPause(std::uint32_t traceId, std::uint32_t elapsedUs) {
     WaterPulseTrace* trace = findById(traceId);
     if (!trace || trace->finished) {
         return false;
     }
     trace->resumedAfterPause = true;
+    if (elapsedUs != kPulseTraceNoEndElapsedUs && trace->pauseWindowCount > 0) {
+        WaterPulseTracePauseWindow& last = trace->pauseWindows[trace->pauseWindowCount - 1];
+        if (last.endElapsedUs == 0) {
+            last.endElapsedUs = std::max(last.startElapsedUs, elapsedUs);
+        }
+    }
     return true;
 }
 
@@ -415,6 +449,11 @@ bool WaterPulseTraceFileStore::save(const WaterPulseTrace& trace,
     entry.finalState = static_cast<std::uint8_t>(trace.finalState);
     entry.resumedAfterPause = trace.resumedAfterPause ? 1 : 0;
     entry.finished = trace.finished ? 1 : 0;
+    entry.pauseWindowOverflow = trace.pauseWindowOverflow ? 1 : 0;
+    entry.pauseWindowCount = trace.pauseWindowCount;
+    for (std::size_t i = 0; i < kPulseTraceMaxPauseWindows; ++i) {
+        entry.pauseWindows[i] = trace.pauseWindows[i];
+    }
     entry.entryChecksum = indexEntryChecksum(entry);
     if (!writeIndexEntry(slot, entry)) {
         if (status) {
@@ -817,6 +856,11 @@ bool WaterPulseTraceFileStore::populateTraceFromEntry(const IndexEntry& entry, W
     output.pulseMinIntervalUs = entry.pulseMinIntervalUs;
     output.finalState = static_cast<WaterPulseTraceState>(entry.finalState);
     output.resumedAfterPause = entry.resumedAfterPause != 0;
+    output.pauseWindowOverflow = entry.pauseWindowOverflow != 0;
+    output.pauseWindowCount = std::min<std::uint8_t>(entry.pauseWindowCount, kPulseTraceMaxPauseWindows);
+    for (std::size_t i = 0; i < output.pauseWindowCount; ++i) {
+        output.pauseWindows[i] = entry.pauseWindows[i];
+    }
     output.finished = entry.finished != 0;
     return true;
 }

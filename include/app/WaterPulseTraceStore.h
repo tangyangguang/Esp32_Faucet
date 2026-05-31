@@ -19,8 +19,16 @@ enum class WaterPulseTraceState : std::uint8_t {
     SafetyStopped = 6,
 };
 
+constexpr std::size_t kPulseTraceMaxPauseWindows = 8;
+constexpr std::uint32_t kPulseTraceNoEndElapsedUs = UINT32_MAX;
+
 struct WaterPulseTraceSample {
     std::uint32_t elapsedUs;
+};
+
+struct WaterPulseTracePauseWindow {
+    std::uint32_t startElapsedUs;
+    std::uint32_t endElapsedUs;
 };
 
 struct WaterPulseTrace {
@@ -36,6 +44,9 @@ struct WaterPulseTrace {
     bool finished;
     bool truncated;
     bool resumedAfterPause;
+    bool pauseWindowOverflow;
+    std::uint8_t pauseWindowCount;
+    WaterPulseTracePauseWindow pauseWindows[kPulseTraceMaxPauseWindows];
 };
 
 struct WaterPulseTraceStats {
@@ -121,8 +132,12 @@ public:
     void setRecentTraceLimit(std::size_t recentTraceLimit);
     std::uint32_t beginTrace(std::uint32_t startTime, std::uint32_t pulseMinIntervalUs);
     bool appendRawEdge(std::uint32_t traceId, std::uint32_t elapsedUs);
-    bool finishTrace(std::uint32_t traceId, const WaterRecord& record, WaterPulseTraceState finalState);
-    bool markResumedAfterPause(std::uint32_t traceId);
+    bool finishTrace(std::uint32_t traceId,
+                     const WaterRecord& record,
+                     WaterPulseTraceState finalState,
+                     std::uint32_t endElapsedUs = kPulseTraceNoEndElapsedUs);
+    bool markPaused(std::uint32_t traceId, std::uint32_t elapsedUs);
+    bool markResumedAfterPause(std::uint32_t traceId, std::uint32_t elapsedUs = kPulseTraceNoEndElapsedUs);
     bool setActualMl(std::uint32_t traceId, std::uint32_t actualMl);
     bool setActualMlByRecord(const WaterRecord& record, std::uint32_t actualMl);
 
@@ -192,7 +207,10 @@ private:
         std::uint8_t finalState;
         std::uint8_t resumedAfterPause;
         std::uint8_t finished;
-        std::uint8_t reserved;
+        std::uint8_t pauseWindowOverflow;
+        std::uint8_t pauseWindowCount;
+        std::uint8_t reserved[3];
+        WaterPulseTracePauseWindow pauseWindows[kPulseTraceMaxPauseWindows];
         std::uint32_t entryChecksum;
     };
 

@@ -1027,14 +1027,6 @@ std::uint32_t bucketRunningPulseDelta(const WaterPulseTraceSample* samples,
     return bucket.pulseDelta;
 }
 
-bool bucketOnlyHasRunningSamples(const WaterPulseTraceSample* samples,
-                                 std::size_t sampleCount,
-                                 const WaterPulseTraceBucket& bucket) {
-    (void)samples;
-    (void)sampleCount;
-    return bucket.state == WaterPulseTraceState::Running || bucket.state == WaterPulseTraceState::Completed;
-}
-
 void formatKb(std::size_t bytes, char* out, std::size_t len) {
     const std::uint32_t tenths = static_cast<std::uint32_t>((bytes * 10U + 512U) / 1024U);
     std::snprintf(out, len, "%lu.%luKB", static_cast<unsigned long>(tenths / 10U),
@@ -1899,7 +1891,7 @@ void sendAppCss() {
                             ".records-top-grid .records-diagnostic-panel{display:flex;flex-direction:column;min-width:0;margin:0;padding:10px 12px;border:0;border-left:1px solid #edf2f1;border-radius:0;box-shadow:none}.records-top-grid .records-diagnostic-panel:first-child{border-left:0}"
                             ".diagnostic-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px}.diagnostic-head h3{padding:0;margin:0;border:0;font-size:13px;font-weight:750;white-space:nowrap}.diagnostic-metric-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px 10px;margin:0}.diagnostic-metric-grid.three{grid-template-columns:repeat(2,minmax(0,1fr))}.diagnostic-metric{min-width:0}.diagnostic-metric span{display:block;margin-bottom:2px;color:var(--muted);font-size:11px;font-weight:600}.diagnostic-metric strong{display:block;color:var(--text);font-size:14px;line-height:1.2;font-weight:650;font-variant-numeric:tabular-nums;white-space:nowrap;overflow-wrap:normal}.metering-status-diagnostic .diagnostic-metric strong,.sample-coverage-diagnostic .diagnostic-metric strong{font-size:15px}.diagnostic-foot{display:flex;flex-wrap:wrap;gap:4px 10px;margin-top:auto;padding-top:7px;border-top:1px solid #f1f4f3;color:var(--muted);font-size:11px;line-height:1.35;font-variant-numeric:tabular-nums}.diagnostic-foot b{color:#52616b;font-weight:650;white-space:nowrap}.ram-badge{background:#eef6f8;color:#246270}.flash-badge{background:#f5f1e8;color:#73520f}.trace-badge{display:inline-flex;align-items:center;min-height:22px;padding:0 8px;border:1px solid #cfe4dc;border-radius:999px;background:var(--accent-soft);color:#17635b;font-size:12px;font-weight:700;line-height:1;white-space:nowrap;vertical-align:middle}.trace-source-link{text-decoration:none}.trace-source-link:hover,.trace-source-link:focus-visible{background:#10574e;border-color:#10574e;color:#fff}"
                             ".pulse-cell{font-variant-numeric:tabular-nums}.inline-note{display:inline-flex;align-items:center;min-height:20px;margin-left:6px;padding:0 7px;border-radius:999px;background:#eef3f2;color:var(--muted);font-size:12px;font-weight:500;white-space:nowrap}.inline-note.ok,.measured-note{background:#e8f4ee;color:#21634c}");
-    Esp32BaseWeb::sendChunk(".pulse-detail-chart{padding:10px 0 2px;overflow-x:auto}.pulse-detail-chart svg{display:block;width:100%;min-width:760px;height:auto}.pulse-detail-chart .axis{stroke:#d9e0df;stroke-width:1}.pulse-detail-chart .grid-line{stroke:#edf2f1;stroke-width:1}.pulse-line{fill:none;stroke:var(--accent);stroke-width:3;stroke-linejoin:round;stroke-linecap:round}.raw-line{fill:none;stroke:#8fb5bd;stroke-width:2;stroke-linejoin:round;stroke-linecap:round;opacity:.62}.pulse-line-paused,.raw-line-paused{stroke-dasharray:7 5;opacity:.45}.pulse-dot{fill:var(--surface);stroke:var(--accent);stroke-width:2}.raw-dot{fill:#eef7f7;stroke:#8fb5bd;stroke-width:1.4;opacity:.72}.stable-line{stroke:#a36b10;stroke-width:2;stroke-dasharray:7 5}.chart-label{font-size:12px;fill:var(--muted)}.chart-y-label{text-anchor:end}.chart-raw-y-label{text-anchor:start;fill:#8fb5bd}.chart-x-label{text-anchor:middle}.chart-legend{display:flex;align-items:center;gap:14px;flex-wrap:wrap;color:var(--muted);font-size:12px;margin:6px 0 0}.legend-mark{display:inline-block;width:18px;height:3px;border-radius:999px;margin-right:5px;vertical-align:middle}.legend-pulse{background:var(--accent)}.legend-raw{background:#8fb5bd;opacity:.62}.legend-paused{background:transparent;border-top:3px dashed var(--accent);height:0;border-radius:0}.legend-stable{background:#a36b10}.trace-frequency{margin-left:auto}.trace-frequency-label{color:var(--muted);font-size:12px;font-weight:650;margin-right:3px}.trace-frequency a.page-current{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:750}");
+    Esp32BaseWeb::sendChunk(".pulse-detail-chart{padding:10px 0 2px;overflow-x:auto}.pulse-detail-chart svg{display:block;width:100%;min-width:760px;height:auto}.pulse-detail-chart .axis{stroke:#d9e0df;stroke-width:1}.pulse-detail-chart .grid-line{stroke:#edf2f1;stroke-width:1}.pulse-line{fill:none;stroke:var(--accent);stroke-width:3;stroke-linejoin:round;stroke-linecap:round}.raw-line{fill:none;stroke:#8fb5bd;stroke-width:2;stroke-linejoin:round;stroke-linecap:round;opacity:.62}.pulse-dot{fill:var(--surface);stroke:var(--accent);stroke-width:2}.raw-dot{fill:#eef7f7;stroke:#8fb5bd;stroke-width:1.4;opacity:.72}.pause-window{fill:#f2e7cd;opacity:.42}.pause-boundary{stroke:#9c6a12;stroke-width:2;stroke-dasharray:7 5;opacity:.7}.stable-line{stroke:#a36b10;stroke-width:2;stroke-dasharray:7 5}.chart-label{font-size:12px;fill:var(--muted)}.chart-y-label{text-anchor:end}.chart-raw-y-label{text-anchor:start;fill:#8fb5bd}.chart-x-label{text-anchor:middle}.chart-legend{display:flex;align-items:center;gap:14px;flex-wrap:wrap;color:var(--muted);font-size:12px;margin:6px 0 0}.legend-mark{display:inline-block;width:18px;height:3px;border-radius:999px;margin-right:5px;vertical-align:middle}.legend-pulse{background:var(--accent)}.legend-raw{background:#8fb5bd;opacity:.62}.legend-paused{background:transparent;border-top:3px dashed #9c6a12;height:0;border-radius:0}.legend-stable{background:#a36b10}.trace-frequency{margin-left:auto}.trace-frequency-label{color:var(--muted);font-size:12px;font-weight:650;margin-right:3px}.trace-frequency a.page-current{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:750}");
     Esp32BaseWeb::sendChunk(".grid,.metric-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin:0 0 12px}"
                             ".metric-card{padding:12px 14px;min-height:54px}.metric-card.primary{border-color:#b8d7cf;background:#f7fbfa}.metric-card span{display:block;color:var(--muted);font-size:13px;font-weight:500;margin-bottom:4px}.metric-card strong{display:block;color:var(--text);font-size:18px;line-height:1.2;font-weight:500}"
                             ".machine-status{padding:14px 16px;margin:0 0 14px;border-color:#d8e1e6;background:#fbfcfd}"
@@ -3120,6 +3112,25 @@ void handleRecordDetailPage() {
     const std::size_t bucketCount =
         aggregateWaterPulseTrace(*trace, samples, trace->sampleCount, bucketSeconds, buckets, trace->sampleCount);
     const WaterPulseTraceAnalysis analysis = analyzeWaterPulseTrace(*trace, samples, trace->sampleCount);
+    std::uint32_t maxDelta = 1;
+    std::uint32_t maxRawDelta = 1;
+    for (std::size_t i = 0; i < bucketCount; ++i) {
+        maxDelta = std::max(maxDelta, buckets[i].pulseDelta);
+        maxRawDelta = std::max(maxRawDelta, buckets[i].rawEdgeDelta);
+    }
+    const std::uint32_t rawEdgeCount = static_cast<std::uint32_t>(trace->sampleCount);
+    const std::uint32_t effectivePulseCountValue = effectivePulseCount(*trace, samples, trace->sampleCount);
+    const std::uint32_t filteredEdgeCount =
+        rawEdgeCount >= effectivePulseCountValue ? rawEdgeCount - effectivePulseCountValue : 0;
+    const std::uint32_t effectiveRateTenths =
+        rawEdgeCount == 0 ? 0 : static_cast<std::uint32_t>((effectivePulseCountValue * 1000ULL + rawEdgeCount / 2U) / rawEdgeCount);
+    std::uint32_t pauseTotalUs = 0;
+    for (std::uint8_t i = 0; i < trace->pauseWindowCount; ++i) {
+        const WaterPulseTracePauseWindow& window = trace->pauseWindows[i];
+        if (window.endElapsedUs > window.startElapsedUs) {
+            pauseTotalUs += window.endElapsedUs - window.startElapsedUs;
+        }
+    }
 
     char startTime[40]{};
     formatWaterRecordTime(trace->record, startTime, sizeof(startTime));
@@ -3175,7 +3186,9 @@ void handleRecordDetailPage() {
                                     ? "<tr><th>来源</th><td>来自确认/校准容量记录。</td></tr>"
                                     : "<tr><th>来源</th><td>来自脉冲明细样本库。</td></tr>");
     }
-    if (trace->truncated) {
+    if (trace->resumedAfterPause) {
+        Esp32BaseWeb::sendChunk("<tr><th>可用性</th><td>暂停后恢复出水，属于多段出水，不参与启动段和分段校准拟合。</td></tr>");
+    } else if (trace->truncated) {
         Esp32BaseWeb::sendChunk("<tr><th>可用性</th><td>明细已截断，不入库，不参与生成校准参数。</td></tr>");
     } else if (traceActualMl > 0 && analysis.stable) {
         sendFmt("<tr><th>可用性</th><td>可用于拟合，稳态从第 %lu 秒开始。</td></tr>",
@@ -3197,11 +3210,29 @@ void handleRecordDetailPage() {
     sendTargetValue(trace->record);
     Esp32BaseWeb::sendChunk("</td></tr><tr><th>固件估算</th><td>");
     sendLiters(trace->record.volumeMl);
-    sendFmt("</td></tr><tr><th>总脉冲</th><td>%lu</td></tr>"
+    sendFmt("</td></tr><tr><th>有效脉冲</th><td>%lu</td></tr>"
+            "<tr><th>原始边沿</th><td>%lu</td></tr>"
+            "<tr><th>被过滤边沿</th><td>%lu</td></tr>"
+            "<tr><th>有效率</th><td>%lu.%lu%%</td></tr>"
+            "<tr><th>最高频率</th><td>有效 %lu 脉冲/%lus，原始 %lu 边沿/%lus</td></tr>"
+            "<tr><th>暂停次数</th><td>%u</td></tr>"
+            "<tr><th>暂停总时长</th><td>",
+            static_cast<unsigned long>(effectivePulseCountValue),
+            static_cast<unsigned long>(rawEdgeCount),
+            static_cast<unsigned long>(filteredEdgeCount),
+            static_cast<unsigned long>(effectiveRateTenths / 10U),
+            static_cast<unsigned long>(effectiveRateTenths % 10U),
+            static_cast<unsigned long>(maxDelta),
+            static_cast<unsigned long>(bucketSeconds),
+            static_cast<unsigned long>(maxRawDelta),
+            static_cast<unsigned long>(bucketSeconds),
+            static_cast<unsigned>(trace->pauseWindowCount));
+    sendDurationUs(pauseTotalUs);
+    sendFmt("</td></tr><tr><th>暂停后恢复</th><td>%s</td></tr>"
             "<tr><th>持续时间</th><td>%lu s</td></tr>"
             "<tr><th>样本数</th><td>%lu</td></tr>"
             "<tr><th>本条占用</th><td>%s</td></tr>",
-            static_cast<unsigned long>(trace->totalPulses),
+            trace->resumedAfterPause ? "是" : "否",
             static_cast<unsigned long>(trace->record.durationSec),
             static_cast<unsigned long>(trace->sampleCount),
             traceKb);
@@ -3230,16 +3261,6 @@ void handleRecordDetailPage() {
                 static_cast<unsigned long>(bucket),
                 static_cast<unsigned long>(bucket));
     }
-    std::uint32_t maxDelta = 1;
-    std::uint32_t maxRawDelta = 1;
-    for (std::size_t i = 0; i < bucketCount; ++i) {
-        if (!bucketOnlyHasRunningSamples(samples, trace->sampleCount, buckets[i])) {
-            continue;
-        }
-        const std::uint32_t chartDelta = bucketRunningPulseDelta(samples, trace->sampleCount, buckets[i]);
-        maxDelta = std::max(maxDelta, chartDelta);
-        maxRawDelta = std::max(maxRawDelta, buckets[i].rawEdgeDelta);
-    }
     const std::uint32_t left = 54;
     const std::uint32_t top = 28;
     const std::uint32_t baseY = 224;
@@ -3247,10 +3268,44 @@ void handleRecordDetailPage() {
     const std::uint32_t chartWidth = 900;
     const std::uint32_t maxEndSec =
         bucketCount == 0 ? 1 : std::max<std::uint32_t>(1, buckets[bucketCount - 1].startSec + buckets[bucketCount - 1].durationSec);
+    const std::uint64_t maxChartUs = static_cast<std::uint64_t>(maxEndSec) * 1000000ULL;
+    auto chartXForElapsedUs = [&](std::uint32_t elapsedUs) -> std::uint32_t {
+        const std::uint64_t clamped = std::min<std::uint64_t>(elapsedUs, maxChartUs);
+        return left + static_cast<std::uint32_t>((clamped * chartWidth) / std::max<std::uint64_t>(1, maxChartUs));
+    };
     Esp32BaseWeb::sendChunk("</div></div><div class='pulse-detail-chart'><svg viewBox='0 0 1000 300' role='img' aria-label='脉冲明细折线图'>"
                             "<line class='axis' x1='54' y1='224' x2='954' y2='224'></line>"
                             "<line class='axis' x1='54' y1='28' x2='54' y2='224'></line>"
                             "<line class='axis' x1='954' y1='28' x2='954' y2='224'></line>");
+    for (std::uint8_t i = 0; i < trace->pauseWindowCount; ++i) {
+        const WaterPulseTracePauseWindow& window = trace->pauseWindows[i];
+        const std::uint32_t endUs =
+            window.endElapsedUs > window.startElapsedUs ? window.endElapsedUs : static_cast<std::uint32_t>(std::min<std::uint64_t>(maxChartUs, UINT32_MAX));
+        const std::uint32_t x1 = chartXForElapsedUs(window.startElapsedUs);
+        std::uint32_t x2 = chartXForElapsedUs(endUs);
+        if (x2 <= x1) {
+            x2 = x1 + 1U;
+        }
+        sendFmt("<rect class='pause-window' x='%lu' y='%lu' width='%lu' height='%lu'><title>暂停区间 %lu.%03lu s - %lu.%03lu s</title></rect>"
+                "<line class='pause-boundary' x1='%lu' y1='%lu' x2='%lu' y2='%lu'></line>"
+                "<line class='pause-boundary' x1='%lu' y1='%lu' x2='%lu' y2='%lu'></line>",
+                static_cast<unsigned long>(x1),
+                static_cast<unsigned long>(top),
+                static_cast<unsigned long>(x2 - x1),
+                static_cast<unsigned long>(baseY - top),
+                static_cast<unsigned long>(window.startElapsedUs / 1000000UL),
+                static_cast<unsigned long>((window.startElapsedUs % 1000000UL) / 1000UL),
+                static_cast<unsigned long>(endUs / 1000000UL),
+                static_cast<unsigned long>((endUs % 1000000UL) / 1000UL),
+                static_cast<unsigned long>(x1),
+                static_cast<unsigned long>(top),
+                static_cast<unsigned long>(x1),
+                static_cast<unsigned long>(baseY),
+                static_cast<unsigned long>(x2),
+                static_cast<unsigned long>(top),
+                static_cast<unsigned long>(x2),
+                static_cast<unsigned long>(baseY));
+    }
     for (std::uint32_t i = 1; i <= 4; ++i) {
         const std::uint32_t y = baseY - (chartHeight * i) / 4;
         sendFmt("<line class='grid-line' x1='54' y1='%lu' x2='954' y2='%lu'></line>",
@@ -3285,22 +3340,20 @@ void handleRecordDetailPage() {
     std::uint32_t prevRawX = left;
     std::uint32_t prevRawY = baseY;
     for (std::size_t i = 0; i < bucketCount; ++i) {
-        const bool bucketRunning = bucketOnlyHasRunningSamples(samples, trace->sampleCount, buckets[i]);
-        const std::uint32_t chartDelta = bucketRunning ? buckets[i].rawEdgeDelta : 0;
+        const std::uint32_t chartDelta = buckets[i].rawEdgeDelta;
         const std::uint32_t startSec = buckets[i].startSec;
         const std::uint32_t endSec = buckets[i].startSec + buckets[i].durationSec;
         const std::uint32_t startX = left + (startSec * chartWidth) / maxEndSec;
         const std::uint32_t x = left + (endSec * chartWidth) / maxEndSec;
         const std::uint32_t y = baseY - (chartDelta * chartHeight) / maxRawDelta;
-        const std::uint32_t lineStartX = bucketRunning && prevRawValid ? prevRawX : startX;
-        const std::uint32_t lineStartY = bucketRunning && prevRawValid ? prevRawY : baseY;
-        sendFmt("<line class='%s' x1='%lu' y1='%lu' x2='%lu' y2='%lu'></line>",
-                bucketRunning ? "raw-line" : "raw-line raw-line-paused",
+        const std::uint32_t lineStartX = prevRawValid ? prevRawX : startX;
+        const std::uint32_t lineStartY = prevRawValid ? prevRawY : baseY;
+        sendFmt("<line class='raw-line' x1='%lu' y1='%lu' x2='%lu' y2='%lu'></line>",
                 static_cast<unsigned long>(lineStartX),
                 static_cast<unsigned long>(lineStartY),
                 static_cast<unsigned long>(x),
                 static_cast<unsigned long>(y));
-        prevRawValid = bucketRunning;
+        prevRawValid = true;
         prevRawX = x;
         prevRawY = y;
     }
@@ -3308,23 +3361,20 @@ void handleRecordDetailPage() {
     std::uint32_t prevPulseX = left;
     std::uint32_t prevPulseY = baseY;
     for (std::size_t i = 0; i < bucketCount; ++i) {
-        const bool bucketRunning = bucketOnlyHasRunningSamples(samples, trace->sampleCount, buckets[i]);
-        const std::uint32_t chartDelta =
-            bucketRunning ? bucketRunningPulseDelta(samples, trace->sampleCount, buckets[i]) : 0;
+        const std::uint32_t chartDelta = bucketRunningPulseDelta(samples, trace->sampleCount, buckets[i]);
         const std::uint32_t startSec = buckets[i].startSec;
         const std::uint32_t endSec = buckets[i].startSec + buckets[i].durationSec;
         const std::uint32_t startX = left + (startSec * chartWidth) / maxEndSec;
         const std::uint32_t x = left + (endSec * chartWidth) / maxEndSec;
         const std::uint32_t y = baseY - (chartDelta * chartHeight) / maxDelta;
-        const std::uint32_t lineStartX = bucketRunning && prevPulseValid ? prevPulseX : startX;
-        const std::uint32_t lineStartY = bucketRunning && prevPulseValid ? prevPulseY : baseY;
-        sendFmt("<line class='%s' x1='%lu' y1='%lu' x2='%lu' y2='%lu'></line>",
-                bucketRunning ? "pulse-line" : "pulse-line pulse-line-paused",
+        const std::uint32_t lineStartX = prevPulseValid ? prevPulseX : startX;
+        const std::uint32_t lineStartY = prevPulseValid ? prevPulseY : baseY;
+        sendFmt("<line class='pulse-line' x1='%lu' y1='%lu' x2='%lu' y2='%lu'></line>",
                 static_cast<unsigned long>(lineStartX),
                 static_cast<unsigned long>(lineStartY),
                 static_cast<unsigned long>(x),
                 static_cast<unsigned long>(y));
-        prevPulseValid = bucketRunning;
+        prevPulseValid = true;
         prevPulseX = x;
         prevPulseY = y;
     }
@@ -3342,10 +3392,8 @@ void handleRecordDetailPage() {
     std::uint32_t effectiveCumulative = 0;
     std::uint32_t rawCumulative = 0;
     for (std::size_t i = 0; i < bucketCount; ++i) {
-        const bool bucketRunning = bucketOnlyHasRunningSamples(samples, trace->sampleCount, buckets[i]);
-        const std::uint32_t chartDelta =
-            bucketRunning ? bucketRunningPulseDelta(samples, trace->sampleCount, buckets[i]) : 0;
-        const std::uint32_t rawDelta = bucketRunning ? buckets[i].rawEdgeDelta : 0;
+        const std::uint32_t chartDelta = bucketRunningPulseDelta(samples, trace->sampleCount, buckets[i]);
+        const std::uint32_t rawDelta = buckets[i].rawEdgeDelta;
         effectiveCumulative += chartDelta;
         rawCumulative += rawDelta;
         const std::uint32_t endSec = buckets[i].startSec + buckets[i].durationSec;
@@ -3358,8 +3406,7 @@ void handleRecordDetailPage() {
                 static_cast<unsigned long>(buckets[i].startSec),
                 static_cast<unsigned long>(rawDelta),
                 static_cast<unsigned long>(rawCumulative));
-        sendFmt("<circle class='%s' cx='%lu' cy='%lu' r='2.8'><title>第%lu秒: 有效脉冲 %lu / 有效累计 %lu / %s</title></circle>",
-                bucketRunning ? "pulse-dot" : "pulse-dot pulse-dot-paused",
+        sendFmt("<circle class='pulse-dot' cx='%lu' cy='%lu' r='2.8'><title>第%lu秒: 有效脉冲 %lu / 有效累计 %lu / %s</title></circle>",
                 static_cast<unsigned long>(x),
                 static_cast<unsigned long>(y),
                 static_cast<unsigned long>(buckets[i].startSec),
@@ -3370,7 +3417,7 @@ void handleRecordDetailPage() {
     Esp32BaseWeb::sendChunk("</svg></div><div class='chart-legend'>"
                             "<span><i class='legend-mark legend-pulse'></i>有效脉冲</span>"
                             "<span><i class='legend-mark legend-raw'></i>原始边沿</span>"
-                            "<span><i class='legend-mark legend-paused'></i>非运行状态</span>"
+                            "<span><i class='legend-mark legend-paused'></i>暂停区间</span>"
                             "<span><i class='legend-mark legend-stable'></i>稳态开始</span>"
                             "</div></section>");
     const char* rawSavedParam = savedSource ? "saved=1&" : "";

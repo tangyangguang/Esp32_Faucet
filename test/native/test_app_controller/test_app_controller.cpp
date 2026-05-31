@@ -310,6 +310,11 @@ void test_app_controller_pause_timeout_trace_is_not_marked_error_and_can_calibra
     TEST_ASSERT_NOT_NULL(lastSample);
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(WaterPulseTraceState::PauseTimeout),
                             static_cast<std::uint8_t>(trace->finalState));
+    TEST_ASSERT_EQUAL_UINT8(1, trace->pauseWindowCount);
+    TEST_ASSERT_GREATER_OR_EQUAL_UINT32(1500000, trace->pauseWindows[0].startElapsedUs);
+    TEST_ASSERT_LESS_OR_EQUAL_UINT32(1700000, trace->pauseWindows[0].startElapsedUs);
+    TEST_ASSERT_GREATER_OR_EQUAL_UINT32(11700000, trace->pauseWindows[0].endElapsedUs);
+    TEST_ASSERT_LESS_OR_EQUAL_UINT32(11900000, trace->pauseWindows[0].endElapsedUs);
 }
 
 void test_app_controller_applies_calibration_from_pause_timeout_record() {
@@ -404,7 +409,10 @@ void test_app_controller_pause_resume_then_completion_updates_persistence_once()
     statistics.reset({20260506, 202619, 202605});
     FilterStore filters(config.filters);
     MemoryRecordWriter records;
-    AppController app(config, statistics, filters, records);
+    WaterPulseTrace traces[2]{};
+    WaterPulseTraceSample samples[2000]{};
+    WaterPulseTraceStore pulseTraces(traces, 2, samples, 2000, 2);
+    AppController app(config, statistics, filters, records, &pulseTraces);
 
     app.resetInputs({false, false, false, false}, 0);
     pressAndReleaseOk(app, 100);
@@ -439,6 +447,15 @@ void test_app_controller_pause_resume_then_completion_updates_persistence_once()
     TEST_ASSERT_EQUAL_UINT32(1500, statistics.record().todayMl);
     TEST_ASSERT_EQUAL_UINT32(1500, filters.record(0).usedMl);
     TEST_ASSERT_TRUE(app.consumePersistenceDirty());
+
+    const WaterPulseTrace* trace = pulseTraces.traceAt(0);
+    TEST_ASSERT_NOT_NULL(trace);
+    TEST_ASSERT_TRUE(trace->resumedAfterPause);
+    TEST_ASSERT_EQUAL_UINT8(1, trace->pauseWindowCount);
+    TEST_ASSERT_GREATER_OR_EQUAL_UINT32(2200000, trace->pauseWindows[0].startElapsedUs);
+    TEST_ASSERT_LESS_OR_EQUAL_UINT32(2400000, trace->pauseWindows[0].startElapsedUs);
+    TEST_ASSERT_GREATER_OR_EQUAL_UINT32(19700000, trace->pauseWindows[0].endElapsedUs);
+    TEST_ASSERT_LESS_OR_EQUAL_UINT32(20000000, trace->pauseWindows[0].endElapsedUs);
 }
 
 void test_app_controller_stop_down_closes_valve_and_records_user_stop() {

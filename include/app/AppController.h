@@ -106,14 +106,18 @@ private:
                                                               std::uint32_t actualMl,
                                                               bool allowLocalCalibration);
     void syncFlow(std::uint32_t nowUs);
-    void finishPulseTrace(const WaterRecord& record, WaterPulseTraceState finalState, const FlowSnapshot& flow);
+    void finishPulseTrace(const WaterRecord& record,
+                          WaterPulseTraceState finalState,
+                          const FlowSnapshot& flow,
+                          std::uint32_t nowUs);
     void syncValve(std::uint32_t nowMs);
     void processResult(std::uint32_t startTime,
                        const PeriodKeys& periodKeys,
                        bool periodKeysValid,
                        bool startTimeSynced,
                        std::uint32_t bootId,
-                       const FlowSnapshot& flow);
+                       const FlowSnapshot& flow,
+                       std::uint32_t nowUs);
 
     SystemConfig config_;
     WaterController water_;

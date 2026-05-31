@@ -119,7 +119,7 @@ void AppController::tick(const AppTickInput& input) {
             resultStartSynced = true;
             resultBootId = 0;
         }
-        processResult(resultStartTime, input.periodKeys, input.periodKeysValid, resultStartSynced, resultBootId, flow);
+        processResult(resultStartTime, input.periodKeys, input.periodKeysValid, resultStartSynced, resultBootId, flow, input.nowUs);
         water_.clearResult();
     }
 
@@ -330,8 +330,13 @@ void AppController::handleButtonEvent(ButtonEvent event,
                 startSelectedPreset(nowMs, nowUs, nowSeconds, timeSynced, bootId);
             } else if (water.state == WaterState::Running || water.state == WaterState::Paused) {
                 if (water_.togglePause(nowMs)) {
-                    if (water.state == WaterState::Paused && pulseTraces_ && activeTraceId_ != 0) {
-                        pulseTraces_->markResumedAfterPause(activeTraceId_);
+                    if (pulseTraces_ && activeTraceId_ != 0) {
+                        const std::uint32_t elapsedUs = elapsedSince(nowUs, activeTraceStartUs_);
+                        if (water.state == WaterState::Running) {
+                            pulseTraces_->markPaused(activeTraceId_, elapsedUs);
+                        } else if (water.state == WaterState::Paused) {
+                            pulseTraces_->markResumedAfterPause(activeTraceId_, elapsedUs);
+                        }
                     }
                     pendingBeep_ = BeepPattern::Click;
                 }
@@ -483,12 +488,13 @@ void AppController::syncFlow(std::uint32_t nowUs) {
 
 void AppController::finishPulseTrace(const WaterRecord& record,
                                      WaterPulseTraceState finalState,
-                                     const FlowSnapshot& flow) {
+                                     const FlowSnapshot& flow,
+                                     std::uint32_t nowUs) {
     if (!pulseTraces_ || activeTraceId_ == 0) {
         return;
     }
     (void)flow;
-    pulseTraces_->finishTrace(activeTraceId_, record, finalState);
+    pulseTraces_->finishTrace(activeTraceId_, record, finalState, elapsedSince(nowUs, activeTraceStartUs_));
     activeTraceId_ = 0;
     activeTraceStartUs_ = 0;
 }
@@ -509,7 +515,8 @@ void AppController::processResult(std::uint32_t startTime,
                                   bool periodKeysValid,
                                   bool startTimeSynced,
                                   std::uint32_t bootId,
-                                  const FlowSnapshot& flow) {
+                                  const FlowSnapshot& flow,
+                                  std::uint32_t nowUs) {
     const WaterTaskResult result = water_.result();
     if (!result.valid) {
         return;
@@ -534,7 +541,7 @@ void AppController::processResult(std::uint32_t startTime,
     }
 
     const WaterPulseTraceState traceState = traceStateForResult(result.result);
-    finishPulseTrace(record, traceState, flow);
+    finishPulseTrace(record, traceState, flow, nowUs);
 
     lastResultRecord_ = record;
     lastResultRecordValid_ = record.pulseCount > 0 && waterResultAllowsCalibration(record.result);

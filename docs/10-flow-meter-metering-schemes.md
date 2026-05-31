@@ -87,6 +87,7 @@ P > Ns:
 - `lastActivatedAt`：最近启用时间。
 - `useCount`：累计成功出水记录使用次数。
 - `lastUsedAt`：最近一次用于出水记录的时间。
+- `usageStatsDirty`：使用次数统计是否可能不完整。
 - `sampleCount`：生成时使用的有效样本数量。
 - `sampleTraceIds`：生成时参与样本的设备明细 ID 摘要。
 - `minActualMl`：生成样本中的最小实测水量。
@@ -232,7 +233,10 @@ RAM 临时明细只用于查看，不直接参与生成。需要参与生成时�
 - 如果出水记录写入失败，不增加 `useCount`，避免方案状态和历史记录不一致。
 - `useCount` 是累计值，不因历史记录环形覆盖而减少。
 - `lastUsedAt` 在成功写入出水记录后同步更新。
-- 如果更新 `useCount` 或 `lastUsedAt` 失败，设备应记录告警；后续可以通过扫描出水记录重建使用次数。
+- 如果更新 `useCount` 或 `lastUsedAt` 失败，设备应记录告警，并把该方案的 `usageStatsDirty` 标记为 true。
+- 不通过扫描出水记录重建 `useCount`。出水记录是环形覆盖，扫描结果不能代表累计使用次数。
+- `usageStatsDirty` 为 true 时，页面显示“使用次数可能不完整”。
+- 删除判断必须保守：只要 `useCount > 0` 或 `usageStatsDirty = true`，都不允许物理删除，只允许停用。
 
 ## 页面结构
 

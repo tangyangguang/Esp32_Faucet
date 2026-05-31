@@ -44,7 +44,7 @@ constexpr std::size_t kPulseTraceMaxSamples =
     static_cast<std::size_t>(faucet::kMaxRecentPulseTraceCount) * faucet::kPulseTraceMaxRawEdgesPerTrace;
 constexpr const char* kWaterRecordPath = "/faucet_records_v1.bin";
 constexpr const char* kWaterRecordCalibrationPath = "/faucet_record_cal_v1.bin";
-constexpr const char* kSavedPulseTracePath = "/faucet_pulse_traces_v3.bin";
+constexpr const char* kSavedPulseTracePath = "/faucet_pulse_traces_v4.bin";
 
 class PersistentRecordWriter : public faucet::WaterRecordWriter, public faucet::WaterRecordReader {
 public:

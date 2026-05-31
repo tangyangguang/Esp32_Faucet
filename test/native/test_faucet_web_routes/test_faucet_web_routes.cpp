@@ -951,6 +951,57 @@ void test_calibration_page_avoids_large_metering_scheme_stack_arrays() {
     TEST_ASSERT_TRUE(stackArray == nullptr || stackArray > nextFunction);
 }
 
+void test_calibration_page_reports_specific_errors_and_hides_stale_generated_result() {
+    FILE* file = std::fopen("src/web/FaucetWeb.cpp", "rb");
+    TEST_ASSERT_NOT_NULL(file);
+    static char buffer[300000]{};
+    const std::size_t read = std::fread(buffer, 1, sizeof(buffer) - 1, file);
+    std::fclose(file);
+    TEST_ASSERT_GREATER_THAN_size_t(0, read);
+
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "faucetCalibrationErrorMessage"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "no_calibration_record"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "最新记录不可确认容量"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "保存失败："));
+    TEST_ASSERT_NULL(std::strstr(buffer, "alert('保存失败，请稍后重试。')"));
+
+    const char* panel = std::strstr(buffer, "void sendCalibrationGenerationPanel");
+    TEST_ASSERT_NOT_NULL(panel);
+    const char* nextFunction = std::strstr(panel, "void sendCalibrationPageScript");
+    TEST_ASSERT_NOT_NULL(nextFunction);
+    const char* requested = std::strstr(panel, "generationResultRequested()");
+    const char* candidateReady = std::strstr(panel, "const bool candidateReady");
+    TEST_ASSERT_NOT_NULL(requested);
+    TEST_ASSERT_NOT_NULL(candidateReady);
+    TEST_ASSERT_TRUE(requested < candidateReady);
+    TEST_ASSERT_TRUE(candidateReady < nextFunction);
+    TEST_ASSERT_NOT_NULL(std::strstr(panel, "class='generated-scheme-table'"));
+    TEST_ASSERT_NOT_NULL(std::strstr(panel, "生成方案后显示待保存结果"));
+}
+
+void test_metering_scheme_table_uses_compact_usage_count_layout() {
+    FILE* file = std::fopen("src/web/FaucetWeb.cpp", "rb");
+    TEST_ASSERT_NOT_NULL(file);
+    static char buffer[300000]{};
+    const std::size_t read = std::fread(buffer, 1, sizeof(buffer) - 1, file);
+    std::fclose(file);
+    TEST_ASSERT_GREATER_THAN_size_t(0, read);
+
+    const char* panel = std::strstr(buffer, "void sendCalibrationParameterPanels()");
+    TEST_ASSERT_NOT_NULL(panel);
+    const char* nextFunction = std::strstr(panel, "void sendMeteringSchemeEditPage");
+    TEST_ASSERT_NOT_NULL(nextFunction);
+
+    TEST_ASSERT_NOT_NULL(std::strstr(panel, "<th>使用次数</th>"));
+    TEST_ASSERT_NOT_NULL(std::strstr(panel, "<b>%lu</b><span>条</span>"));
+    const char* oldRecordHeader = std::strstr(panel, "<th>记录</th>");
+    const char* oldRecordCell = std::strstr(panel, "出水记录 <b>%lu</b> 条");
+    TEST_ASSERT_TRUE(oldRecordHeader == nullptr || oldRecordHeader > nextFunction);
+    TEST_ASSERT_TRUE(oldRecordCell == nullptr || oldRecordCell > nextFunction);
+    TEST_ASSERT_NULL(std::strstr(buffer, "min-width:1040px"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "min-width:520px"));
+}
+
 void test_main_source_renders_live_display_frame_for_web() {
     FILE* file = std::fopen("src/main.cpp", "rb");
     TEST_ASSERT_NOT_NULL(file);
@@ -1089,6 +1140,8 @@ int main(int argc, char** argv) {
     RUN_TEST(test_web_page_source_contains_expected_ui_improvements);
     RUN_TEST(test_record_calibration_api_saves_actual_without_segmented_generation);
     RUN_TEST(test_calibration_page_avoids_large_metering_scheme_stack_arrays);
+    RUN_TEST(test_calibration_page_reports_specific_errors_and_hides_stale_generated_result);
+    RUN_TEST(test_metering_scheme_table_uses_compact_usage_count_layout);
     RUN_TEST(test_main_source_renders_live_display_frame_for_web);
     RUN_TEST(test_main_source_wires_metering_scheme_and_snapshot_stores);
     RUN_TEST(test_app_config_source_uses_clear_business_labels_and_help);

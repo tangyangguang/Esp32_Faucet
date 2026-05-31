@@ -357,8 +357,12 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NULL(std::strstr(buffer, "metric-grid calibration-param-grid"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "calibration-param-layout"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "calibration-slot-table"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "calibration-slot-form"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, ".calibration-slot-form{display:grid;grid-template-columns"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "scheme-edit-form"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "scheme-edit-section"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "核心计量参数"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "当前启用方案：保存后会立即影响后续出水估算。"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, ".scheme-edit-grid{display:grid;grid-template-columns:repeat(12,1fr)"));
+    TEST_ASSERT_NULL(std::strstr(buffer, ".calibration-slot-form{display:grid;grid-template-columns"));
     TEST_ASSERT_NULL(std::strstr(buffer, "<h3>候选方案</h3>"));
     TEST_ASSERT_NULL(std::strstr(buffer, "暂无候选方案"));
     TEST_ASSERT_NULL(std::strstr(buffer, "手工新建方案"));
@@ -609,6 +613,10 @@ void test_web_page_source_contains_expected_ui_improvements() {
     const char* schemeEditSource = std::strstr(buffer, "void sendMeteringSchemeEditPage");
     TEST_ASSERT_NOT_NULL(schemeEditSource);
     TEST_ASSERT_NOT_NULL(std::strstr(schemeEditSource, "scheme ? scheme->params : defaultMeteringParameters()"));
+    TEST_ASSERT_NOT_NULL(std::strstr(schemeEditSource, "方案信息"));
+    TEST_ASSERT_NOT_NULL(std::strstr(schemeEditSource, "核心计量参数"));
+    TEST_ASSERT_NOT_NULL(std::strstr(schemeEditSource, "适用条件"));
+    TEST_ASSERT_NOT_NULL(std::strstr(schemeEditSource, "scheme-edit-actions"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "启用只切换当前计量参数"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "action='/faucet/calibration'"));
     TEST_ASSERT_NULL(std::strstr(buffer, "<span class='status-pill status-muted'>手动执行</span>"));

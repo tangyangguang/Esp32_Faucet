@@ -1284,13 +1284,19 @@ void sendMeteringSchemeEditPage(bool creating, const MeteringSchemeRecord* schem
     sendFmt("<h2>%s</h2><p><a class='btn-link' href='/faucet/calibration'>返回校准</a></p>", title);
     sendNoticeFromQuery();
     const MeteringParameters params = scheme ? scheme->params : defaultMeteringParameters();
-    Esp32BaseWeb::sendChunk("<section class='panel calibration-param-panel'><form class='calibration-slot-form scheme-edit-form' method='post' action='/faucet/calibration' onsubmit='return once(this)'>");
+    const bool editingActive = !creating && scheme && ensureMeteringSchemesReady() &&
+                               scheme->id == g_context.meteringSchemes->activeSchemeId();
+    Esp32BaseWeb::sendChunk("<section class='panel calibration-param-panel scheme-edit-panel'><form class='scheme-edit-form' method='post' action='/faucet/calibration' onsubmit='return once(this)'>");
     Esp32BaseWeb::sendChunk(creating ? "<input type='hidden' name='action' value='create_metering_scheme'>"
                                      : "<input type='hidden' name='action' value='edit_metering_scheme'>");
     if (!creating && scheme) {
         sendFmt("<input type='hidden' name='id' value='%lu'>", static_cast<unsigned long>(scheme->id));
     }
-    sendFmt("<label class='compact-field slot-name-field'><span>名称</span><input name='name' maxlength='%u' value='",
+    if (editingActive) {
+        Esp32BaseWeb::sendChunk("<p class='warn scheme-edit-warning'>当前启用方案：保存后会立即影响后续出水估算。</p>");
+    }
+    Esp32BaseWeb::sendChunk("<div class='scheme-edit-section'><h3>方案信息</h3><div class='scheme-edit-grid'>");
+    sendFmt("<label class='compact-field scheme-edit-field scheme-span-12'><span>名称</span><input name='name' maxlength='%u' value='",
             static_cast<unsigned>(kMeteringSchemeNameLength - 1));
     if (scheme && scheme->name[0]) {
         sendHtmlAttrEscapedBounded(scheme->name, sizeof(scheme->name));
@@ -1298,33 +1304,46 @@ void sendMeteringSchemeEditPage(bool creating, const MeteringSchemeRecord* schem
         Esp32BaseWeb::sendChunk("手工方案");
     }
     Esp32BaseWeb::sendChunk("'></label>");
-    sendFmt("<label class='compact-field'><span>启动脉冲数</span><input name='startupPulseCount' type='number' min='0' max='%lu' step='1' value='%lu'></label>",
+    if (!creating && scheme) {
+        sendFmt("<div class='scheme-edit-meta scheme-span-12'><span>#%lu</span><span>rev %lu</span><span>%s</span></div>",
+                static_cast<unsigned long>(scheme->id),
+                static_cast<unsigned long>(scheme->revision),
+                scheme->enabled ? "可用" : "已禁用");
+    }
+    Esp32BaseWeb::sendChunk("</div></div><div class='scheme-edit-section'><h3>核心计量参数</h3><div class='scheme-edit-grid'>");
+    sendFmt("<label class='compact-field scheme-edit-field scheme-span-4'><span>启动脉冲数</span><input name='startupPulseCount' type='number' min='0' max='%lu' step='1' value='%lu'><small class='hint'>单位 P，范围 0-%lu</small></label>",
             static_cast<unsigned long>(kMaxSegmentedStartupPulseCount),
-            static_cast<unsigned long>(params.startupPulseCount));
-    sendFmt("<label class='compact-field'><span>启动水量</span><input name='startupVolumeMl' type='number' min='0' max='%lu' step='1' value='%lu'></label>",
+            static_cast<unsigned long>(params.startupPulseCount),
+            static_cast<unsigned long>(kMaxSegmentedStartupPulseCount));
+    sendFmt("<label class='compact-field scheme-edit-field scheme-span-4'><span>启动水量</span><input name='startupVolumeMl' type='number' min='0' max='%lu' step='1' value='%lu'><small class='hint'>单位 ml，范围 0-%lu</small></label>",
             static_cast<unsigned long>(kMaxSegmentedStartupVolumeMl),
-            static_cast<unsigned long>(params.startupVolumeMl));
-    sendFmt("<label class='compact-field'><span>稳态P/L</span><input name='stablePulsePerLiter' type='number' min='%lu' max='%lu' step='1' value='%lu'></label>",
+            static_cast<unsigned long>(params.startupVolumeMl),
+            static_cast<unsigned long>(kMaxSegmentedStartupVolumeMl));
+    sendFmt("<label class='compact-field scheme-edit-field scheme-span-4'><span>稳态 P/L</span><input name='stablePulsePerLiter' type='number' min='%lu' max='%lu' step='1' value='%lu'><small class='hint'>单位 P/L，范围 %lu-%lu</small></label>",
             static_cast<unsigned long>(kMinSegmentedPulsePerLiter),
             static_cast<unsigned long>(kMaxSegmentedPulsePerLiter),
-            static_cast<unsigned long>(params.stablePulsePerLiter));
+            static_cast<unsigned long>(params.stablePulsePerLiter),
+            static_cast<unsigned long>(kMinSegmentedPulsePerLiter),
+            static_cast<unsigned long>(kMaxSegmentedPulsePerLiter));
+    Esp32BaseWeb::sendChunk("</div></div>");
     if (!creating && scheme) {
-        sendFmt("<label class='compact-field'><span>流量计</span><input name='meterLabel' maxlength='%u' value='",
+        Esp32BaseWeb::sendChunk("<div class='scheme-edit-section'><h3>适用条件</h3><div class='scheme-edit-grid'>");
+        sendFmt("<label class='compact-field scheme-edit-field scheme-span-4'><span>流量计</span><input name='meterLabel' maxlength='%u' value='",
                 static_cast<unsigned>(kMeteringSchemeMeterLabelLength - 1));
         sendHtmlAttrEscapedBounded(scheme->meterLabel, sizeof(scheme->meterLabel));
-        sendFmt("'></label><label class='compact-field'><span>安装位置</span><input name='installationLabel' maxlength='%u' value='",
+        sendFmt("'></label><label class='compact-field scheme-edit-field scheme-span-4'><span>安装位置</span><input name='installationLabel' maxlength='%u' value='",
                 static_cast<unsigned>(kMeteringSchemeInstallationLabelLength - 1));
         sendHtmlAttrEscapedBounded(scheme->installationLabel, sizeof(scheme->installationLabel));
-        sendFmt("'></label><label class='compact-field'><span>水压/环境</span><input name='conditionLabel' maxlength='%u' value='",
+        sendFmt("'></label><label class='compact-field scheme-edit-field scheme-span-4'><span>水压/环境</span><input name='conditionLabel' maxlength='%u' value='",
                 static_cast<unsigned>(kMeteringSchemeConditionLabelLength - 1));
         sendHtmlAttrEscapedBounded(scheme->conditionLabel, sizeof(scheme->conditionLabel));
-        sendFmt("'></label><label class='compact-field slot-name-field'><span>备注</span><input name='userNote' maxlength='%u' value='",
+        sendFmt("'></label><label class='compact-field scheme-edit-field scheme-span-12'><span>备注</span><input name='userNote' maxlength='%u' value='",
                 static_cast<unsigned>(kMeteringSchemeUserNoteLength - 1));
         sendHtmlAttrEscapedBounded(scheme->userNote, sizeof(scheme->userNote));
-        Esp32BaseWeb::sendChunk("'></label>");
+        Esp32BaseWeb::sendChunk("'></label></div></div>");
     }
-    Esp32BaseWeb::sendChunk(creating ? "<div class='form-actions'><input class='primary' type='submit' value='保存为新方案'>"
-                                     : "<div class='form-actions'><input class='primary' type='submit' value='保存修改'>");
+    Esp32BaseWeb::sendChunk(creating ? "<div class='form-actions scheme-edit-actions'><input class='primary' type='submit' value='保存为新方案'>"
+                                     : "<div class='form-actions scheme-edit-actions'><input class='primary' type='submit' value='保存修改'>");
     Esp32BaseWeb::sendChunk("<a class='btn-link' href='/faucet/calibration'>取消</a></div></form></section>");
     sendPageEnd();
 }
@@ -2101,13 +2120,13 @@ void sendAppCss() {
     Esp32BaseWeb::sendChunk(".form-grid{display:grid;grid-template-columns:repeat(12,1fr);gap:10px 12px;align-items:start}.span-2{grid-column:span 2}.span-3{grid-column:span 3}.span-4{grid-column:span 4}.span-5{grid-column:span 5}.span-6{grid-column:span 6}.span-8{grid-column:span 8}.span-12{grid-column:1/-1}"
                             ".field span,.check-title{display:block;font-size:12px;color:var(--muted);font-weight:650;margin-bottom:4px}.field input,.field select{margin-bottom:0}.check-line{display:inline-flex;align-items:center;gap:6px;min-height:32px;padding:0 8px;border:1px solid var(--line);border-radius:6px;background:#fff;color:var(--text);font-size:14px;white-space:nowrap}.check-line input{margin:0}");
     Esp32BaseWeb::sendChunk(".form-actions{display:flex;align-items:center;justify-content:flex-start;gap:6px;margin-top:10px;flex-wrap:wrap}.form-actions form{margin:0}.form-actions a,.btn-link,.page-link,.page-current,.row-actions a{display:inline-flex;align-items:center;justify-content:center;min-height:32px;padding:0 10px;border:1px solid var(--line);border-radius:6px;background:#f7f9fa;color:#355e66;font:inherit;font-size:13px;line-height:1.2;box-sizing:border-box;text-decoration:none;cursor:pointer}input.secondary{background:#f7f9fa;border:1px solid var(--line);color:#4c565d}input.secondary:hover,input.secondary:focus-visible{background:#10574e;border-color:#10574e;color:#fff}.btn-link:hover,.btn-link:focus-visible,.form-actions a:hover,.form-actions a:focus-visible,.page-link:hover,.page-link:focus-visible,.row-actions a:hover,.row-actions a:focus-visible{background:#10574e;border-color:#10574e;color:#fff;text-decoration:none}.row-actions{display:flex;gap:5px;align-items:center;flex-wrap:wrap}.latest-actions{gap:6px}.latest-record-panel{overflow-x:auto}.latest-record-table{min-width:900px}.latest-calibration-edit-row{display:none;background:#fbfcfb}.latest-calibration-edit-row.is-open{display:table-row}.latest-calibration-edit-row td{border-top:1px solid #dce8e5}.latest-calibration-form{display:grid;grid-template-columns:minmax(160px,220px) minmax(0,1fr);gap:8px 12px;align-items:end;max-width:720px;margin:0}.latest-volume-field{margin:0}.latest-volume-field input{width:140px;margin:0;text-align:right}.latest-calibration-form .hint{grid-column:2;margin:0}.latest-calibration-form .form-actions{grid-column:1/-1;margin-top:4px}.sample-window-form{display:flex;align-items:flex-end;gap:8px;flex-wrap:wrap;margin:8px 0 4px}.sample-window-field{margin:0}.sample-window-field input{width:96px;margin:0;text-align:right}.latest-status-pills,.sample-status-pills{display:flex;align-items:center;gap:5px;flex-wrap:wrap}.calibration-formula-panel code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;color:#36505b;background:#f3f6f5;border-radius:4px;padding:1px 4px}");
-    Esp32BaseWeb::sendChunk(".calibration-param-layout{display:grid;grid-template-columns:1fr;gap:12px;margin:0 0 12px}.calibration-param-layout .calibration-param-panel{margin:0}.calibration-param-panel{overflow-x:auto}.calibration-slot-table{table-layout:fixed;min-width:860px;margin:0;border:0;border-radius:0;box-shadow:none;background:transparent}.calibration-slot-table th:nth-child(1){width:160px}.calibration-slot-table th:nth-child(2){width:260px}.calibration-slot-table th:nth-child(3){width:auto}.calibration-slot-table th:nth-child(4){width:92px}.calibration-slot-table th:nth-child(5){width:230px}.calibration-slot-index{font-weight:700}.calibration-slot-index .status-pill{display:inline-flex;margin:4px 4px 0 0}.calibration-slot-name{font-weight:650;white-space:normal}.calibration-slot-values{min-width:0}.calibration-slot-values span{display:inline-flex;align-items:center;min-height:24px;margin:0 5px 4px 0;padding:0 7px;border:1px solid #dce6e3;border-radius:999px;background:#f8fbfa;font-variant-numeric:tabular-nums;white-space:nowrap}.calibration-slot-values b{margin-right:4px;color:var(--muted);font-size:11px}.calibration-slot-note{color:#536068;font-size:12px;line-height:1.35;overflow-wrap:anywhere}.scheme-use-count{font-variant-numeric:tabular-nums}.scheme-use-count b{font-size:18px;margin-right:3px}.scheme-use-count span{color:var(--muted)}.scheme-use-count .status-pill{display:flex;width:max-content;margin-top:5px}.calibration-slot-edit .row-actions{gap:5px}.generated-scheme-result{margin-top:10px}.generated-scheme-table{table-layout:fixed;margin:0;border:0;border-radius:0;box-shadow:none;background:transparent}.generated-scheme-table th,.generated-scheme-table td{white-space:nowrap}.generated-note{margin:8px 0 0;color:#536068;font-size:12px;line-height:1.45}.inline-form{display:flex;align-items:end;gap:6px;flex-wrap:wrap}.generated-name-field input{width:190px}.calibration-slot-form{display:grid;grid-template-columns:minmax(128px,1.3fr) repeat(3,98px) 82px;gap:5px;align-items:end;margin:0}.compact-field{display:block;margin:0}.compact-field span{display:block;margin:0 0 3px;color:var(--muted);font-size:11px;font-weight:650;line-height:1.1}.compact-field input{width:100%;height:30px;min-height:30px;margin:0;padding:0 7px;box-sizing:border-box;font:inherit}.calibration-slot-form input[type=number]{text-align:right}.calibration-slot-form input[type=submit]{height:30px;min-height:30px;margin:0;padding:0 8px;font-size:12px}");
+    Esp32BaseWeb::sendChunk(".calibration-param-layout{display:grid;grid-template-columns:1fr;gap:12px;margin:0 0 12px}.calibration-param-layout .calibration-param-panel{margin:0}.calibration-param-panel{overflow-x:auto}.calibration-slot-table{table-layout:fixed;min-width:860px;margin:0;border:0;border-radius:0;box-shadow:none;background:transparent}.calibration-slot-table th:nth-child(1){width:160px}.calibration-slot-table th:nth-child(2){width:260px}.calibration-slot-table th:nth-child(3){width:auto}.calibration-slot-table th:nth-child(4){width:92px}.calibration-slot-table th:nth-child(5){width:230px}.calibration-slot-index{font-weight:700}.calibration-slot-index .status-pill{display:inline-flex;margin:4px 4px 0 0}.calibration-slot-name{font-weight:650;white-space:normal}.calibration-slot-values{min-width:0}.calibration-slot-values span{display:inline-flex;align-items:center;min-height:24px;margin:0 5px 4px 0;padding:0 7px;border:1px solid #dce6e3;border-radius:999px;background:#f8fbfa;font-variant-numeric:tabular-nums;white-space:nowrap}.calibration-slot-values b{margin-right:4px;color:var(--muted);font-size:11px}.calibration-slot-note{color:#536068;font-size:12px;line-height:1.35;overflow-wrap:anywhere}.scheme-use-count{font-variant-numeric:tabular-nums}.scheme-use-count b{font-size:18px;margin-right:3px}.scheme-use-count span{color:var(--muted)}.scheme-use-count .status-pill{display:flex;width:max-content;margin-top:5px}.calibration-slot-edit .row-actions{gap:5px}.generated-scheme-result{margin-top:10px}.generated-scheme-table{table-layout:fixed;margin:0;border:0;border-radius:0;box-shadow:none;background:transparent}.generated-scheme-table th,.generated-scheme-table td{white-space:nowrap}.generated-note{margin:8px 0 0;color:#536068;font-size:12px;line-height:1.45}.inline-form{display:flex;align-items:end;gap:6px;flex-wrap:wrap}.generated-name-field input{width:190px}.scheme-edit-panel{overflow:visible}.scheme-edit-form{display:block;margin:0;max-width:940px}.scheme-edit-warning{display:block;margin:0 0 12px}.scheme-edit-section{padding:0 0 12px;margin:0 0 14px;border-bottom:1px solid #eef2f1}.scheme-edit-section:last-of-type{margin-bottom:8px}.scheme-edit-section h3{margin:0 0 10px;padding:0;border:0}.scheme-edit-grid{display:grid;grid-template-columns:repeat(12,1fr);gap:10px 12px;align-items:start}.scheme-span-4{grid-column:span 4}.scheme-span-12{grid-column:1/-1}.scheme-edit-meta{display:flex;gap:6px;flex-wrap:wrap;color:var(--muted);font-size:12px}.scheme-edit-meta span{display:inline-flex;align-items:center;min-height:22px;padding:0 8px;border-radius:999px;background:#f3f6f5}.compact-field{display:block;margin:0}.compact-field span{display:block;margin:0 0 4px;color:var(--muted);font-size:12px;font-weight:650;line-height:1.15}.compact-field input{width:100%;height:34px;min-height:34px;margin:0;padding:0 8px;box-sizing:border-box;font:inherit}.scheme-edit-field input[type=number]{text-align:right}.scheme-edit-actions{padding-top:2px}");
     Esp32BaseWeb::sendChunk("table{width:100%;border-collapse:separate;border-spacing:0;margin:0 0 12px;overflow:hidden;font-size:13px}td,th{padding:8px 10px;border-bottom:1px solid #edf1f0;text-align:left;vertical-align:middle}tr:last-child td{border-bottom:0}th{background:#f8faf9;color:var(--muted);font-weight:700}.filters-table th:first-child{width:22%}.filters-table th:last-child{width:150px}.kv th{width:26%}");
     Esp32BaseWeb::sendChunk(".pager{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin:0 0 10px}.pager-links{display:flex;align-items:center;gap:5px;flex-wrap:wrap}.page-current{background:var(--accent-soft);color:#17635b;border-color:#cfe4dc}.page-disabled{color:#9aa3aa;background:#f4f6f6;pointer-events:none}.page-size{display:flex;align-items:center;gap:6px;color:var(--muted);font-size:13px;line-height:32px}.page-size select{width:auto;min-width:80px}.page-size select,.page-size input{height:32px;min-height:32px;margin:0;padding:0 9px;box-sizing:border-box;font:inherit;line-height:32px}.page-size input[name=pageNo]{width:58px;text-align:center}");
     Esp32BaseWeb::sendChunk(".disabled-row{background:#f7f8f8;color:#8a949b}.disabled-row td{color:#8a949b}.disabled-row .status-pill{background:#eef0f0;color:#7b858d}.disabled-row a{color:#6f7a82}"
                             "@media(max-width:1040px){.records-top-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.records-top-grid .records-diagnostic-panel{border-left:1px solid #edf2f1;border-top:1px solid #edf2f1}.records-top-grid .records-diagnostic-panel:nth-child(odd){border-left:0}.records-top-grid .records-diagnostic-panel:nth-child(-n+2){border-top:0}}"
                             "@media(max-width:820px){.machine-main,.machine-main.compact,.today-layout{grid-template-columns:1fr}.machine-hero{min-height:0}.machine-hero strong{font-size:26px}.machine-hero-head{grid-template-columns:1fr;align-items:start;gap:5px}.machine-task-grid{grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}}"
-                            "@media(max-width:720px){body{padding:10px}.form-grid{grid-template-columns:1fr}.span-2,.span-3,.span-4,.span-5,.span-6,.span-8,.span-12{grid-column:1/-1}.usage-grid{grid-template-columns:1fr}.daily-chart svg{min-width:680px}}"
+                            "@media(max-width:720px){body{padding:10px}.form-grid,.scheme-edit-grid{grid-template-columns:1fr}.span-2,.span-3,.span-4,.span-5,.span-6,.span-8,.span-12,.scheme-span-4,.scheme-span-12{grid-column:1/-1}.usage-grid{grid-template-columns:1fr}.daily-chart svg{min-width:680px}}"
                             "@media(max-width:620px){.records-top-grid{grid-template-columns:1fr}.records-top-grid .records-diagnostic-panel{border-left:0;border-top:1px solid #edf2f1}.records-top-grid .records-diagnostic-panel:first-child{border-top:0}.latest-calibration-form{grid-template-columns:1fr}.latest-calibration-form .hint{grid-column:1}}"
                             "@media(max-width:520px){.grid,.metric-grid,.diagnostic-metric-grid,.diagnostic-metric-grid.three,.filter-cards,.machine-task-grid{grid-template-columns:1fr}.metric-card{min-height:0}.pager{align-items:flex-start}.page-size{width:100%}.kv th{width:34%}}");
 }

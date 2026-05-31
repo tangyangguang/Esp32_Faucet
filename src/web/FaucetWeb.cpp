@@ -32,7 +32,7 @@ namespace {
 
 constexpr std::uint32_t kChartDays = kUsageSummaryMaxDays;
 constexpr std::size_t kHomeTodayRecordLimit = 5;
-constexpr std::size_t kRawTracePreviewLastSecond = 30;
+constexpr std::size_t kRawTracePreviewEdgeCount = 30;
 constexpr std::uint16_t kSegmentedCalibrationRequiredSamples = 2;
 constexpr std::size_t kSegmentedCalibrationMaxSamples = kSavedPulseTraceMaxCountLimit;
 constexpr std::uint32_t kDefaultSamplePulseWindowSec = 10;
@@ -729,8 +729,14 @@ bool appendSegmentedSampleFromTrace(const WaterPulseTrace& trace,
 
 SegmentedSampleDiagnostics collectSegmentedSampleDiagnostics(bool includeRam) {
     SegmentedSampleDiagnostics diagnostics{};
-    SegmentedCalibrationSample samples[kSegmentedCalibrationMaxSamples]{};
-    WaterRecord seenRecords[kSegmentedCalibrationMaxSamples]{};
+    SegmentedCalibrationSample* samples =
+        new (std::nothrow) SegmentedCalibrationSample[kSegmentedCalibrationMaxSamples]{};
+    WaterRecord* seenRecords = new (std::nothrow) WaterRecord[kSegmentedCalibrationMaxSamples]{};
+    if (!samples || !seenRecords) {
+        delete[] samples;
+        delete[] seenRecords;
+        return diagnostics;
+    }
     std::size_t seenCount = 0;
     std::size_t sampleCount = 0;
 
@@ -763,6 +769,8 @@ SegmentedSampleDiagnostics collectSegmentedSampleDiagnostics(bool includeRam) {
 
     computeSegmentedCalibration(samples, sampleCount, diagnostics.result);
     diagnostics.validSampleCount = static_cast<std::uint16_t>(sampleCount);
+    delete[] samples;
+    delete[] seenRecords;
     return diagnostics;
 }
 
@@ -1033,7 +1041,7 @@ void sendDurationUs(std::uint32_t us) {
 }
 
 std::size_t rawTracePreviewSampleCount(const WaterPulseTrace& trace) {
-    const std::size_t previewLimit = kRawTracePreviewLastSecond;
+    const std::size_t previewLimit = kRawTracePreviewEdgeCount;
     return std::min(trace.sampleCount, previewLimit);
 }
 
@@ -1067,8 +1075,8 @@ void sendPulseTraceRawText(const WaterPulseTrace& trace,
                 static_cast<unsigned long>(effectiveCumulative));
     }
     if (!rawTraceShowAll && trace.sampleCount > sampleCount) {
-        sendFmt("仅显示 0秒 到 %lu秒，共 %lu 行；完整明细请使用 all=1。\n",
-                static_cast<unsigned long>(kRawTracePreviewLastSecond),
+        sendFmt("仅显示前 %lu 个原始边沿，共 %lu 行；完整明细请使用 all=1。\n",
+                static_cast<unsigned long>(kRawTracePreviewEdgeCount),
                 static_cast<unsigned long>(sampleCount));
     }
     Esp32BaseWeb::endResponse();
@@ -1625,11 +1633,11 @@ void sendCalibrationSamplesPanel(std::uint32_t samplePulseWindowSec) {
     }
     sendFmt("<table class='calibration-sample-table'><tr><th>时间</th><th>确认容量</th><th>脉冲</th><th>前 %u 秒脉冲</th><th>稳态</th><th>来源</th><th>状态</th></tr>",
             static_cast<unsigned>(samplePulseWindowSec));
-    WaterRecord listed[kSavedPulseTraceMaxCountLimit]{};
+    WaterRecord* listed = new (std::nothrow) WaterRecord[kSavedPulseTraceMaxCountLimit]{};
     std::size_t listedCount = 0;
     for (std::size_t i = 0; i < savedCount; ++i) {
         sendCalibrationSampleRow(savedTraces[i], true, samplePulseWindowSec);
-        if (listedCount < kSavedPulseTraceMaxCountLimit) {
+        if (listed && listedCount < kSavedPulseTraceMaxCountLimit) {
             listed[listedCount++] = savedTraces[i].record;
         }
     }
@@ -1637,13 +1645,15 @@ void sendCalibrationSamplesPanel(std::uint32_t samplePulseWindowSec) {
         for (std::size_t offset = 0; offset < ramCount; ++offset) {
             const std::size_t index = ramCount - 1 - offset;
             const WaterPulseTrace* trace = g_context.pulseTraces->traceAt(index);
-            if (!trace || !trace->finished || traceAlreadyListed(listed, listedCount, trace->record)) {
+            if (!trace || !trace->finished || (listed && traceAlreadyListed(listed, listedCount, trace->record)) ||
+                (!listed && savedCount > 0)) {
                 continue;
             }
             sendCalibrationSampleRow(*trace, false, samplePulseWindowSec);
         }
     }
     Esp32BaseWeb::sendChunk("</table></section>");
+    delete[] listed;
     delete[] savedTraces;
 }
 
@@ -3698,7 +3708,7 @@ void handleRecordDetailPage() {
     }
     sendFmt("</div></div><p class='hint'>默认展示前 %lu 个原始边沿；原始边沿共 %lu 个，当前展示 %lu 个。</p>"
             "<table class='raw-trace-table'><tr><th>序号</th><th>距开始</th><th>与上一边沿间隔</th><th>有效累计</th></tr>",
-            static_cast<unsigned long>(kRawTracePreviewLastSecond),
+            static_cast<unsigned long>(kRawTracePreviewEdgeCount),
             static_cast<unsigned long>(trace->sampleCount),
             static_cast<unsigned long>(rawPreviewCount));
     std::uint32_t rawPreviewEffective = 0;

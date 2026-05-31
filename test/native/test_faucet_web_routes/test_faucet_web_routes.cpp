@@ -442,13 +442,15 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "target='_blank'"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "raw=1"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "all=1"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "kRawTracePreviewLastSecond = 30"));
-    TEST_ASSERT_NULL(std::strstr(buffer, "kRawTracePreviewLastSecond = 60"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "kRawTracePreviewEdgeCount = 30"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "kRawTracePreviewLastSecond"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "rawTracePreviewSampleCount"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "rawTraceShowAll"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "beginResponse(200, \"text/plain; charset=utf-8\""));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "序号\\t距开始(us)\\t与上一边沿间隔(us)\\t有效累计\\n"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "%lu\\t%lu\\t%lu\\t%lu\\n"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "仅显示前 %lu 个原始边沿，共 %lu 行；完整明细请使用 all=1。\\n"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "仅显示 0秒 到 %lu秒"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "WaterPulseTraceState::PauseTimeout"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "waterResultAllowsCalibration(record.result)"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "默认展示前 %lu 个原始边沿"));
@@ -951,6 +953,31 @@ void test_calibration_page_avoids_large_metering_scheme_stack_arrays() {
     TEST_ASSERT_TRUE(schemeAllocation < nextFunction);
     TEST_ASSERT_TRUE(schemeRelease < nextFunction);
     TEST_ASSERT_TRUE(stackArray == nullptr || stackArray > nextFunction);
+
+    const char* diagnostics = std::strstr(buffer, "SegmentedSampleDiagnostics collectSegmentedSampleDiagnostics");
+    TEST_ASSERT_NOT_NULL(diagnostics);
+    const char* diagnosticsEnd = std::strstr(diagnostics, "bool latestCalibratableRecord");
+    TEST_ASSERT_NOT_NULL(diagnosticsEnd);
+    TEST_ASSERT_NOT_NULL(std::strstr(diagnostics, "SegmentedCalibrationSample* samples"));
+    TEST_ASSERT_NOT_NULL(std::strstr(diagnostics, "WaterRecord* seenRecords"));
+    TEST_ASSERT_NOT_NULL(std::strstr(diagnostics, "new (std::nothrow) SegmentedCalibrationSample[kSegmentedCalibrationMaxSamples]"));
+    TEST_ASSERT_NOT_NULL(std::strstr(diagnostics, "new (std::nothrow) WaterRecord[kSegmentedCalibrationMaxSamples]"));
+    TEST_ASSERT_NOT_NULL(std::strstr(diagnostics, "delete[] samples"));
+    TEST_ASSERT_NOT_NULL(std::strstr(diagnostics, "delete[] seenRecords"));
+    TEST_ASSERT_TRUE(std::strstr(diagnostics, "SegmentedCalibrationSample samples[kSegmentedCalibrationMaxSamples]") == nullptr ||
+                     std::strstr(diagnostics, "SegmentedCalibrationSample samples[kSegmentedCalibrationMaxSamples]") > diagnosticsEnd);
+    TEST_ASSERT_TRUE(std::strstr(diagnostics, "WaterRecord seenRecords[kSegmentedCalibrationMaxSamples]") == nullptr ||
+                     std::strstr(diagnostics, "WaterRecord seenRecords[kSegmentedCalibrationMaxSamples]") > diagnosticsEnd);
+
+    const char* samplesPanel = std::strstr(buffer, "void sendCalibrationSamplesPanel");
+    TEST_ASSERT_NOT_NULL(samplesPanel);
+    const char* samplesPanelEnd = std::strstr(samplesPanel, "void sendCalibrationGenerationPanel");
+    TEST_ASSERT_NOT_NULL(samplesPanelEnd);
+    TEST_ASSERT_NOT_NULL(std::strstr(samplesPanel, "WaterRecord* listed"));
+    TEST_ASSERT_NOT_NULL(std::strstr(samplesPanel, "new (std::nothrow) WaterRecord[kSavedPulseTraceMaxCountLimit]"));
+    TEST_ASSERT_NOT_NULL(std::strstr(samplesPanel, "delete[] listed"));
+    TEST_ASSERT_TRUE(std::strstr(samplesPanel, "WaterRecord listed[kSavedPulseTraceMaxCountLimit]") == nullptr ||
+                     std::strstr(samplesPanel, "WaterRecord listed[kSavedPulseTraceMaxCountLimit]") > samplesPanelEnd);
 }
 
 void test_calibration_page_reports_specific_errors_and_hides_stale_generated_result() {

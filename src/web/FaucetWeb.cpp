@@ -5787,6 +5787,12 @@ void handleTraceDeleteApi() {
     }
     const bool fromCalibration = calibrationContextRequested();
     const char* listPath = fromCalibration ? "/faucet/calibration" : "/faucet/records";
+    if (waterTaskActive()) {
+        char url[80]{};
+        std::snprintf(url, sizeof(url), "%s?error=busy", listPath);
+        Esp32BaseWeb::redirectSeeOther(url);
+        return;
+    }
     if (!ensureSavedPulseTracesReady()) {
         char url[80]{};
         std::snprintf(url, sizeof(url), "%s?error=save_failed", listPath);
@@ -5822,6 +5828,12 @@ void handleTraceSaveApi() {
     }
     const bool fromCalibration = calibrationContextRequested();
     const char* listPath = fromCalibration ? "/faucet/calibration" : "/faucet/records";
+    if (waterTaskActive()) {
+        char url[80]{};
+        std::snprintf(url, sizeof(url), "%s?error=busy", listPath);
+        Esp32BaseWeb::redirectSeeOther(url);
+        return;
+    }
     char text[32]{};
     std::uint32_t traceId = 0;
     if (!getParam("trace", text, sizeof(text)) || !parseU32(text, traceId)) {
@@ -5907,6 +5919,10 @@ void handleFiltersApi() {
 
 void handleFiltersResetApi() {
     if (!Esp32BaseWeb::checkPostAllowed("faucet_filter_reset") || !requireContext()) {
+        return;
+    }
+    if (waterTaskActive()) {
+        Esp32BaseWeb::redirectSeeOther("/faucet/filters?error=busy");
         return;
     }
     char text[24]{};

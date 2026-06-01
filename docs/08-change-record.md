@@ -39,14 +39,14 @@
 ## 2026-05-16 原型评审收口
 
 - P2-15：正式文档补充出水记录时间回溯不依赖 32 位 `uptimeMs`；未同步时间只保存启动内相对秒和 boot id，NTP 同步后通过 Esp32Base boot event 回写真实时间。
-- P2-18：26/27/28 原型评审结论并入正式文档，不再把独立评审稿作为实现依据；records 首版必须支持时间范围筛选，并在 `docs/03-software-architecture.md` 与 `docs/06-implementation-plan.md` 中作为正式范围维护。
+- P2-18：26/27/28 原型评审结论并入正式文档，不再把独立评审稿作为实现依据；记录时间范围筛选保留在 `/api/faucet/records`，Web records 页按最近记录分页维护。
 
 ## 2026-05-15 Records 重整与校准入口收敛
 
 - 统一产品概念为出水记录 `records`，业务页面从 `/faucet/logs` 改为 `/faucet/records`。
 - 业务 API 从 `/api/faucet/logs` 改为 `/api/faucet/records`，JSON 顶层数组字段从 `logs` 改为 `records`。
-- 删除独立校准页 `/faucet/calibration` 和旧校准 API `/api/faucet/calibration`。
-- 新增记录校准保存能力，当前统一通过 `POST /api/faucet/records` 携带 `action=calibrate` 和 `actualMl` 提交。
+- 保留业务校准页 `/faucet/calibration`，删除旧校准 API `/api/faucet/calibration`。
+- 新增记录校准保存能力，可通过校准页 `POST /faucet/calibration` 或记录 API `POST /api/faucet/records` 携带 `action=calibrate` 和 `actualMl` 提交。
 - 删除 4 个校准候选容量配置，配置保存后不再写入 `cal_ml`、`cal0_ml`、`cal1_ml`、`cal2_ml`、`cal3_ml`。
 - 删除旧校准采样控制器，校准公式统一为 `newPulsePerMl = pulseCount / actualMl`。
 - 出水记录 LittleFS 文件改为 `/faucet_records_v1.bin`，文件 header 使用 records 语义 magic/version。

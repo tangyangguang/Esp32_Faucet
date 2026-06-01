@@ -43,7 +43,7 @@
 - 本地暂停、继续、停止和本次目标调整必须能脱离 Web 完成。
 - Web 端不得存在任何出水控制入口或 API。
 - 断网不影响本地出水。
-- 出水确认、运行和暂停期间，Web 记录页、校准页和重记录查询必须返回轻量 busy，不得执行文件扫描、样本聚合或大 JSON 输出；Web 压测下 `maxBaseHandleUs` 和 `maxLoopIntervalUs` 必须支撑 `CANCEL <50ms`。
+- 出水确认、运行和暂停期间，Web 记录页、校准页、记录查询、脉冲明细保存/删除和滤芯重置必须返回轻量 busy，不得执行文件扫描、样本聚合、大 JSON 输出或文件写入；Web 压测下 `maxBaseHandleUs` 和 `maxLoopIntervalUs` 必须支撑 `CANCEL <50ms`。
 - Web API 路径不得出现 `/water/`、`/start`、`/stop` 这类远程出水控制语义。
 - 重启后默认不继续未完成出水任务。
 - 出水过程中所有异常优先关阀。
@@ -55,6 +55,7 @@
 
 - 长期运行测试做 72 小时连续运行。
 - Native 测试使用 PlatformIO native 环境，业务核心保持纯 C++ 可测，硬件访问通过桩替代。
+- Web 关键 handler 需要逐步补充行为级 native 测试，覆盖 method/auth/same-origin/busy/异常参数；源码字符串检查只作为路由和页面结构的补充保护。
 
 ## 旧文档迁移说明
 

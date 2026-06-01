@@ -96,6 +96,7 @@ pio device monitor -e esp32dev --port <端口> --baud 115200
 - `lcd=absent` 合理，因为当前未接 LCD1602。
 - `records=file` 优先，若 LittleFS 初始化异常则需要排查分区或文件系统。
 - 不应反复重启，不应出现 panic/backtrace。
+- LittleFS 使用 Arduino ESP32 默认 `spiffs` 分区 label 承载，这是当前 PlatformIO/Arduino 文件系统命名兼容约定；维护时以 `board_build.filesystem = littlefs` 为实际文件系统口径。
 
 ## 逐步接线验证顺序
 
@@ -125,8 +126,9 @@ pio device monitor -e esp32dev --port <端口> --baud 115200
 本次已验证：
 
 - `pio device list` 可识别 CH340 串口。
-- 2026-06-02 代码侧复测：`pio test -e native` 通过，255 个 native 用例全部成功。
+- 2026-06-02 代码侧复测：`pio test -e native` 通过，256 个 native 用例全部成功。
 - 2026-06-02 代码侧复测：`pio run -e esp32dev` 通过，主固件 RAM 约 26.3%，Flash 约 88.3%。
+- 固件体积预算：当前双 OTA app 分区为 `0x160000`，Flash 使用率已超过 85% 预警线；继续增加 Web 页面、诊断或日志前，优先评估静态 HTML/CSS 字符串体积、可静态化资源迁移到 LittleFS，或重新评估分区表。
 - `pio run -e esp32dev_smoke` 通过。
 - 主固件串口启动正常：进入 `setup()`，`rtc=absent`、`lcd=absent`、`records=file`，WiFi 已连接，Web 服务就绪，NTP 已同步。
 - Web 首页 `http://192.168.2.112/index` 返回 200。

@@ -1474,6 +1474,50 @@ void test_heavy_web_handlers_return_busy_while_water_task_active() {
     TEST_ASSERT_NOT_NULL(std::strstr(recordsApi, "sendBusyJson(\"records_api\")"));
 }
 
+const char* findWithin(const char* begin, const char* end, const char* needle) {
+    const char* found = std::strstr(begin, needle);
+    return found && found < end ? found : nullptr;
+}
+
+void test_web_write_handlers_return_busy_before_trace_or_filter_runtime_writes() {
+    FILE* file = std::fopen("src/web/FaucetWeb.cpp", "rb");
+    TEST_ASSERT_NOT_NULL(file);
+    static char buffer[340000]{};
+    const std::size_t read = std::fread(buffer, 1, sizeof(buffer) - 1, file);
+    std::fclose(file);
+    TEST_ASSERT_GREATER_THAN_size_t(0, read);
+
+    const char* traceDelete = std::strstr(buffer, "void handleTraceDeleteApi() {");
+    const char* traceSave = std::strstr(buffer, "void handleTraceSaveApi() {");
+    const char* filtersReset = std::strstr(buffer, "void handleFiltersResetApi() {");
+    TEST_ASSERT_NOT_NULL(traceDelete);
+    TEST_ASSERT_NOT_NULL(traceSave);
+    TEST_ASSERT_NOT_NULL(filtersReset);
+
+    const char* traceDeleteBusy = findWithin(traceDelete, traceSave, "waterTaskActive()");
+    const char* traceDeleteWrite = findWithin(traceDelete, traceSave, "g_context.savedPulseTraces->remove(traceId)");
+    TEST_ASSERT_NOT_NULL_MESSAGE(traceDeleteBusy, "trace delete must return busy while water task is active");
+    TEST_ASSERT_NOT_NULL(traceDeleteWrite);
+    TEST_ASSERT_TRUE_MESSAGE(traceDeleteBusy < traceDeleteWrite, "trace delete busy guard must run before device trace write");
+    TEST_ASSERT_NOT_NULL(findWithin(traceDelete, traceSave, "error=busy"));
+
+    const char* traceSaveBusy = findWithin(traceSave, filtersReset, "waterTaskActive()");
+    const char* traceSaveWrite = findWithin(traceSave, filtersReset, "saveRamTraceToDevice(traceId");
+    TEST_ASSERT_NOT_NULL_MESSAGE(traceSaveBusy, "trace save must return busy while water task is active");
+    TEST_ASSERT_NOT_NULL(traceSaveWrite);
+    TEST_ASSERT_TRUE_MESSAGE(traceSaveBusy < traceSaveWrite, "trace save busy guard must run before device trace write");
+    TEST_ASSERT_NOT_NULL(findWithin(traceSave, filtersReset, "error=busy"));
+
+    const char* filtersResetEnd = std::strstr(filtersReset, "Esp32BaseWeb::Handler handlerFor");
+    TEST_ASSERT_NOT_NULL(filtersResetEnd);
+    const char* filtersResetBusy = findWithin(filtersReset, filtersResetEnd, "waterTaskActive()");
+    const char* filtersResetWrite = findWithin(filtersReset, filtersResetEnd, "g_context.filters->updateFilter(index, record)");
+    TEST_ASSERT_NOT_NULL_MESSAGE(filtersResetBusy, "filter reset must return busy while water task is active");
+    TEST_ASSERT_NOT_NULL(filtersResetWrite);
+    TEST_ASSERT_TRUE_MESSAGE(filtersResetBusy < filtersResetWrite, "filter reset busy guard must run before runtime write");
+    TEST_ASSERT_NOT_NULL(findWithin(filtersReset, filtersResetEnd, "error=busy"));
+}
+
 void test_incomplete_factory_reset_path_is_not_kept_as_dead_code() {
     FILE* mainFile = std::fopen("src/main.cpp", "rb");
     TEST_ASSERT_NOT_NULL(mainFile);
@@ -1527,6 +1571,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_web_config_writes_reload_current_config_before_persisting);
     RUN_TEST(test_business_post_handlers_use_post_allowed_guard);
     RUN_TEST(test_heavy_web_handlers_return_busy_while_water_task_active);
+    RUN_TEST(test_web_write_handlers_return_busy_before_trace_or_filter_runtime_writes);
     RUN_TEST(test_incomplete_factory_reset_path_is_not_kept_as_dead_code);
     return UNITY_END();
 }

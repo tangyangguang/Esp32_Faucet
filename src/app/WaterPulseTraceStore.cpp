@@ -1049,16 +1049,55 @@ bool waterPulseTraceAnalysisEligible(const WaterPulseTrace& trace) {
     return !trace.resumedAfterPause && !trace.truncated && trace.sampleCount > 0;
 }
 
+SegmentedCalibrationOptions defaultSegmentedCalibrationOptions() {
+    return SegmentedCalibrationOptions{
+        kDefaultCalibrationAnalysisPulseMinIntervalUs,
+        kDefaultCalibrationStableWindowSec,
+        kDefaultCalibrationStableTolerancePercent,
+        kDefaultCalibrationMinVolumeSpanMl,
+        kDefaultCalibrationMaxErrorMl,
+        kDefaultCalibrationMaxRelativeErrorTenthPercent,
+    };
+}
+
+SegmentedCalibrationOptions segmentedCalibrationOptionsFromConfig(const SystemConfig& config) {
+    SystemConfig safe = config;
+    sanitizeConfig(safe);
+    return SegmentedCalibrationOptions{
+        safe.calibrationAnalysisPulseMinIntervalUs,
+        safe.calibrationStableWindowSec,
+        safe.calibrationStableTolerancePercent,
+        safe.calibrationMinVolumeSpanMl,
+        safe.calibrationMaxErrorMl,
+        safe.calibrationMaxRelativeErrorTenthPercent,
+    };
+}
+
 WaterPulseTraceAnalysis analyzeWaterPulseTrace(const WaterPulseTrace& trace,
                                                const WaterPulseTraceSample* samples,
                                                std::size_t sampleCount) {
+    return analyzeWaterPulseTrace(trace, samples, sampleCount, defaultSegmentedCalibrationOptions());
+}
+
+WaterPulseTraceAnalysis analyzeWaterPulseTrace(const WaterPulseTrace& trace,
+                                               const WaterPulseTraceSample* samples,
+                                               std::size_t sampleCount,
+                                               const SegmentedCalibrationOptions& options) {
     WaterPulseTraceAnalysis out{};
     if (!samples || sampleCount < 6 || !waterPulseTraceAnalysisEligible(trace)) {
         return out;
     }
+    const std::uint32_t pulseMinIntervalUs =
+        options.pulseMinIntervalUsOverride == 0 ? trace.pulseMinIntervalUs : options.pulseMinIntervalUsOverride;
+    const std::uint32_t stableWindowSec =
+        std::min<std::uint32_t>(std::max<std::uint32_t>(options.stableWindowSec, kMinCalibrationStableWindowSec),
+                                kMaxCalibrationStableWindowSec);
+    const std::uint32_t stableTolerancePercent = std::min<std::uint32_t>(
+        std::max<std::uint32_t>(options.stableTolerancePercent, kMinCalibrationStableTolerancePercent),
+        kMaxCalibrationStableTolerancePercent);
     const std::uint32_t durationSec =
         trace.record.durationSec > 0 ? trace.record.durationSec : (samples[sampleCount - 1].elapsedUs / 1000000UL + 1);
-    if (durationSec < 6) {
+    if (durationSec < 6 || stableWindowSec > durationSec) {
         return out;
     }
     std::uint16_t* perSecond = new (std::nothrow) std::uint16_t[durationSec]{};
@@ -1067,7 +1106,7 @@ WaterPulseTraceAnalysis analyzeWaterPulseTrace(const WaterPulseTrace& trace,
     }
     for (std::size_t i = 0; i < sampleCount; ++i) {
         const std::uint32_t sec = samples[i].elapsedUs / 1000000UL;
-        if (sec < durationSec && isEffectiveSample(samples, i, trace.pulseMinIntervalUs) && perSecond[sec] < UINT16_MAX) {
+        if (sec < durationSec && isEffectiveSample(samples, i, pulseMinIntervalUs) && perSecond[sec] < UINT16_MAX) {
             ++perSecond[sec];
         }
     }
@@ -1088,15 +1127,14 @@ WaterPulseTraceAnalysis analyzeWaterPulseTrace(const WaterPulseTrace& trace,
     if (stableFloor == 0) {
         return out;
     }
-    constexpr std::size_t kWindow = 4;
-    for (std::uint32_t i = 0; i + kWindow <= durationSec; ++i) {
+    for (std::uint32_t i = 0; i + stableWindowSec <= durationSec; ++i) {
         if (perSecond[i] < stableFloor) {
             continue;
         }
         std::uint32_t total = 0;
         std::uint32_t minValue = UINT32_MAX;
         std::uint32_t maxValue = 0;
-        for (std::size_t j = 0; j < kWindow; ++j) {
+        for (std::size_t j = 0; j < stableWindowSec; ++j) {
             const std::uint32_t value = perSecond[i + j];
             total += value;
             minValue = std::min(minValue, value);
@@ -1105,9 +1143,12 @@ WaterPulseTraceAnalysis analyzeWaterPulseTrace(const WaterPulseTrace& trace,
         if (minValue == 0) {
             continue;
         }
-        const float avg = static_cast<float>(total) / static_cast<float>(kWindow);
-        if (std::fabs(avg - stableRate) <= std::max(1.0f, stableRate * 0.25f) &&
-            static_cast<float>(maxValue - minValue) <= std::max(1.0f, stableRate * 0.4f)) {
+        const float avg = static_cast<float>(total) / static_cast<float>(stableWindowSec);
+        const float avgTolerance = stableRate * static_cast<float>(stableTolerancePercent) / 100.0f;
+        const float spreadTolerance =
+            stableRate * static_cast<float>(stableTolerancePercent) * 1.6f / 100.0f;
+        if (std::fabs(avg - stableRate) <= std::max(1.0f, avgTolerance) &&
+            static_cast<float>(maxValue - minValue) <= std::max(1.0f, spreadTolerance)) {
             out.stable = true;
             out.stableStartSec = static_cast<std::uint32_t>(i);
             for (std::uint32_t k = 0; k < i; ++k) {
@@ -1132,21 +1173,39 @@ WaterPulseTraceAnalysis analyzeWaterPulseTrace(const WaterPulseTrace& trace,
 bool computeSegmentedCalibration(const SegmentedCalibrationSample* samples,
                                  std::size_t sampleCount,
                                  SegmentedCalibrationResult& result) {
-    result = SegmentedCalibrationResult{};
-    if (!samples || sampleCount < 2) {
-        return false;
-    }
-    double sumX = 0.0;
-    double sumY = 0.0;
-    double sumXX = 0.0;
-    double sumXY = 0.0;
+    return computeSegmentedCalibration(samples, sampleCount, defaultSegmentedCalibrationOptions(), result);
+}
+
+namespace {
+
+struct FitResult {
+    bool valid = false;
+    std::uint16_t sampleCount = 0;
     std::uint64_t totalStartupDurationSec = 0;
     std::uint64_t totalStartupPulseCount = 0;
     std::uint32_t minActualMl = UINT32_MAX;
     std::uint32_t maxActualMl = 0;
-    std::uint16_t validCount = 0;
+    double mlPerStablePulse = 0.0;
+    double startupVolumeMl = 0.0;
+    std::uint32_t maxErrorMl = 0;
+    std::uint16_t maxRelativeErrorTenthPercent = 0;
+    std::size_t worstSample = 0;
+};
+
+bool sampleUsableForFit(const SegmentedCalibrationSample& sample) {
+    return sample.actualMl > 0 && sample.stablePulseCount > 0 && sample.totalPulses > 0;
+}
+
+FitResult fitSegmentedSamples(const SegmentedCalibrationSample* samples,
+                              std::size_t sampleCount,
+                              const bool* excluded) {
+    FitResult fit{};
+    double sumX = 0.0;
+    double sumY = 0.0;
+    double sumXX = 0.0;
+    double sumXY = 0.0;
     for (std::size_t i = 0; i < sampleCount; ++i) {
-        if (samples[i].actualMl == 0 || samples[i].stablePulseCount == 0 || samples[i].totalPulses == 0) {
+        if ((excluded && excluded[i]) || !sampleUsableForFit(samples[i])) {
             continue;
         }
         const double x = static_cast<double>(samples[i].stablePulseCount);
@@ -1155,50 +1214,141 @@ bool computeSegmentedCalibration(const SegmentedCalibrationSample* samples,
         sumY += y;
         sumXX += x * x;
         sumXY += x * y;
-        totalStartupDurationSec += samples[i].startupDurationSec;
-        totalStartupPulseCount += samples[i].startupPulseCount;
-        minActualMl = std::min(minActualMl, samples[i].actualMl);
-        maxActualMl = std::max(maxActualMl, samples[i].actualMl);
-        ++validCount;
+        fit.totalStartupDurationSec += samples[i].startupDurationSec;
+        fit.totalStartupPulseCount += samples[i].startupPulseCount;
+        fit.minActualMl = std::min(fit.minActualMl, samples[i].actualMl);
+        fit.maxActualMl = std::max(fit.maxActualMl, samples[i].actualMl);
+        ++fit.sampleCount;
     }
-    if (validCount < 2 || maxActualMl <= minActualMl + 500UL) {
-        return false;
+    if (fit.sampleCount < 2) {
+        return fit;
     }
-    const double n = static_cast<double>(validCount);
+    const double n = static_cast<double>(fit.sampleCount);
     const double denominator = n * sumXX - sumX * sumX;
     if (!(denominator > 0.0)) {
-        return false;
+        return fit;
     }
-    const double mlPerStablePulse = (n * sumXY - sumX * sumY) / denominator;
-    const double startupVolumeMl = (sumY - mlPerStablePulse * sumX) / n;
-    if (!(mlPerStablePulse > 0.0) || !(startupVolumeMl > 0.0)) {
-        return false;
+    fit.mlPerStablePulse = (n * sumXY - sumX * sumY) / denominator;
+    fit.startupVolumeMl = (sumY - fit.mlPerStablePulse * sumX) / n;
+    if (!(fit.mlPerStablePulse > 0.0) || !(fit.startupVolumeMl > 0.0)) {
+        return fit;
     }
-    std::uint32_t maxErrorMl = 0;
     for (std::size_t i = 0; i < sampleCount; ++i) {
-        if (samples[i].actualMl == 0 || samples[i].stablePulseCount == 0 || samples[i].totalPulses == 0) {
+        if ((excluded && excluded[i]) || !sampleUsableForFit(samples[i])) {
             continue;
         }
-        const double estimated =
-            startupVolumeMl + mlPerStablePulse * static_cast<double>(samples[i].stablePulseCount);
-        const double error = std::fabs(estimated - static_cast<double>(samples[i].actualMl));
-        maxErrorMl = std::max(maxErrorMl, roundU32(static_cast<float>(error)));
+        const double estimated = fit.startupVolumeMl + fit.mlPerStablePulse * samples[i].stablePulseCount;
+        const std::uint32_t errorMl = roundU32(static_cast<float>(std::fabs(estimated - samples[i].actualMl)));
+        const std::uint32_t relTenths =
+            samples[i].actualMl == 0
+                ? 0
+                : static_cast<std::uint32_t>((static_cast<std::uint64_t>(errorMl) * 1000ULL +
+                                              samples[i].actualMl / 2ULL) /
+                                             samples[i].actualMl);
+        if (errorMl > fit.maxErrorMl || (errorMl == fit.maxErrorMl && relTenths > fit.maxRelativeErrorTenthPercent)) {
+            fit.maxErrorMl = errorMl;
+            fit.maxRelativeErrorTenthPercent = relTenths > UINT16_MAX ? UINT16_MAX : static_cast<std::uint16_t>(relTenths);
+            fit.worstSample = i;
+        }
     }
+    fit.valid = true;
+    return fit;
+}
+
+void fillSegmentedResult(const FitResult& fit,
+                         std::uint16_t excludedCount,
+                         SegmentedCalibrationResult& result) {
     result.valid = true;
-    result.sampleCount = validCount;
+    result.rejectReason = SegmentedCalibrationRejectReason::None;
+    result.sampleCount = fit.sampleCount;
+    result.excludedSampleCount = excludedCount;
     result.startupDurationSec =
-        static_cast<std::uint32_t>((totalStartupDurationSec + validCount / 2U) / validCount);
+        static_cast<std::uint32_t>((fit.totalStartupDurationSec + fit.sampleCount / 2U) / fit.sampleCount);
     result.startupPulseCount =
-        static_cast<std::uint32_t>((totalStartupPulseCount + validCount / 2U) / validCount);
-    result.startupVolumeMl = roundU32(static_cast<float>(startupVolumeMl));
-    result.stablePulsePerLiter = roundU32(static_cast<float>(1000.0 / mlPerStablePulse));
-    result.minActualMl = minActualMl;
-    result.maxActualMl = maxActualMl;
-    result.maxErrorMl = maxErrorMl;
-    return true;
+        static_cast<std::uint32_t>((fit.totalStartupPulseCount + fit.sampleCount / 2U) / fit.sampleCount);
+    result.startupVolumeMl = roundU32(static_cast<float>(fit.startupVolumeMl));
+    result.stablePulsePerLiter = roundU32(static_cast<float>(1000.0 / fit.mlPerStablePulse));
+    result.minActualMl = fit.minActualMl;
+    result.maxActualMl = fit.maxActualMl;
+    result.maxErrorMl = fit.maxErrorMl;
+    result.maxRelativeErrorTenthPercent = fit.maxRelativeErrorTenthPercent;
+}
+
+}  // namespace
+
+bool computeSegmentedCalibration(const SegmentedCalibrationSample* samples,
+                                 std::size_t sampleCount,
+                                 const SegmentedCalibrationOptions& options,
+                                 SegmentedCalibrationResult& result) {
+    result = SegmentedCalibrationResult{};
+    if (!samples || sampleCount < 2) {
+        result.rejectReason = SegmentedCalibrationRejectReason::NotEnoughSamples;
+        return false;
+    }
+    SegmentedCalibrationOptions safe = options;
+    safe.minVolumeSpanMl =
+        std::min<std::uint32_t>(std::max<std::uint32_t>(safe.minVolumeSpanMl, kMinCalibrationMinVolumeSpanMl),
+                                kMaxCalibrationMinVolumeSpanMl);
+    safe.maxErrorMl = std::min<std::uint32_t>(std::max<std::uint32_t>(safe.maxErrorMl, kMinCalibrationMaxErrorMl),
+                                              kMaxCalibrationMaxErrorMl);
+    safe.maxRelativeErrorTenthPercent = std::min<std::uint16_t>(
+        std::max<std::uint16_t>(safe.maxRelativeErrorTenthPercent, kMinCalibrationMaxRelativeErrorTenthPercent),
+        kMaxCalibrationMaxRelativeErrorTenthPercent);
+
+    bool* excluded = new (std::nothrow) bool[sampleCount]{};
+    if (!excluded) {
+        result.rejectReason = SegmentedCalibrationRejectReason::InvalidFit;
+        return false;
+    }
+    FitResult fit = fitSegmentedSamples(samples, sampleCount, excluded);
+    if (fit.sampleCount < 2) {
+        result.rejectReason = SegmentedCalibrationRejectReason::NotEnoughSamples;
+        delete[] excluded;
+        return false;
+    }
+    if (!fit.valid) {
+        result.rejectReason = SegmentedCalibrationRejectReason::DegenerateFit;
+        result.sampleCount = fit.sampleCount;
+        result.minActualMl = fit.minActualMl == UINT32_MAX ? 0 : fit.minActualMl;
+        result.maxActualMl = fit.maxActualMl;
+        delete[] excluded;
+        return false;
+    }
+    std::uint16_t excludedCount = 0;
+    if (fit.sampleCount >= 3 &&
+        (fit.maxErrorMl > safe.maxErrorMl ||
+         fit.maxRelativeErrorTenthPercent > safe.maxRelativeErrorTenthPercent)) {
+        excluded[fit.worstSample] = true;
+        excludedCount = 1;
+        const FitResult retry = fitSegmentedSamples(samples, sampleCount, excluded);
+        if (retry.sampleCount >= 2 && retry.valid) {
+            fit = retry;
+        } else {
+            excluded[fit.worstSample] = false;
+            excludedCount = 0;
+        }
+    }
+    std::uint8_t qualityWarnings = kSegmentedCalibrationQualityNone;
+    if (fit.maxActualMl <= fit.minActualMl + safe.minVolumeSpanMl) {
+        qualityWarnings |= kSegmentedCalibrationQualityVolumeSpanSmall;
+    }
+    if (fit.maxErrorMl > safe.maxErrorMl ||
+        fit.maxRelativeErrorTenthPercent > safe.maxRelativeErrorTenthPercent) {
+        qualityWarnings |= kSegmentedCalibrationQualityErrorHigh;
+    }
+    fillSegmentedResult(fit, excludedCount, result);
+    result.qualityWarnings = qualityWarnings;
+    delete[] excluded;
+    return result.valid;
 }
 
 WaterPulseTraceAnalysis analyzeWaterPulseTrace(const WaterPulseTrace& trace, const WaterPulseTraceStore& store) {
+    return analyzeWaterPulseTrace(trace, store, defaultSegmentedCalibrationOptions());
+}
+
+WaterPulseTraceAnalysis analyzeWaterPulseTrace(const WaterPulseTrace& trace,
+                                               const WaterPulseTraceStore& store,
+                                               const SegmentedCalibrationOptions& options) {
     WaterPulseTraceSample* samples = new (std::nothrow) WaterPulseTraceSample[trace.sampleCount]{};
     if (!samples) {
         return WaterPulseTraceAnalysis{};
@@ -1207,7 +1357,7 @@ WaterPulseTraceAnalysis analyzeWaterPulseTrace(const WaterPulseTrace& trace, con
         const WaterPulseTraceSample* sample = store.sampleAt(trace, i);
         samples[i] = sample ? *sample : WaterPulseTraceSample{};
     }
-    const WaterPulseTraceAnalysis result = analyzeWaterPulseTrace(trace, samples, trace.sampleCount);
+    const WaterPulseTraceAnalysis result = analyzeWaterPulseTrace(trace, samples, trace.sampleCount, options);
     delete[] samples;
     return result;
 }

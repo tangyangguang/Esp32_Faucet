@@ -17,13 +17,14 @@ AppSnapshot makeSnapshot() {
         StatisticsRecord{1000, 2000, 3000, 4000, 20260506, 202619, 202605},
     };
     snapshot.flowDroppedPulses = 7;
+    snapshot.meteringParams = MeteringParameters{8, 36, 225};
     return snapshot;
 }
 
 }  // namespace
 
 void test_status_json_contains_no_remote_control_capability() {
-    char json[384]{};
+    char json[768]{};
 
     TEST_ASSERT_TRUE(writeStatusJson(makeSnapshot(), json, sizeof(json)));
 
@@ -36,18 +37,23 @@ void test_status_json_contains_no_remote_control_capability() {
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"mode\":\"volume\""));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"selectedPreset\":1"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"pulsePerLiter\":0"));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"metering\":{\"startupPulseCount\":8,\"startupVolumeMl\":36,\"stablePulsePerLiter\":225}"));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"targetEstimate\":{\"available\":true"));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"targetMl\":1500"));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"pulseCount\":338"));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"fullRunPulsePerLiter\":225"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"flowDroppedPulses\":7"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"valveDutyPercent\":100"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"valveFullPowerSec\":5"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"valveHoldDutyPercent\":70"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"screenOn\":false"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"waterControl\":false"));
-    TEST_ASSERT_NULL(std::strstr(json, "start"));
+    TEST_ASSERT_NULL(std::strstr(json, "startWater"));
     TEST_ASSERT_NULL(std::strstr(json, "stop"));
 }
 
 void test_status_json_can_report_screen_state() {
-    char json[384]{};
+    char json[768]{};
 
     TEST_ASSERT_TRUE(writeStatusJson(makeSnapshot(), true, json, sizeof(json)));
 
@@ -55,7 +61,7 @@ void test_status_json_can_report_screen_state() {
 }
 
 void test_status_json_uses_configured_valve_pwm_values() {
-    char json[384]{};
+    char json[768]{};
     SystemConfig config = makeDefaultConfig();
     config.valveFullPowerSec = 5;
     config.valveHoldDutyPercent = 45;
@@ -71,7 +77,7 @@ void test_status_json_uses_configured_valve_pwm_values() {
 }
 
 void test_status_json_can_include_config_migration_diagnostics() {
-    char json[512]{};
+    char json[1024]{};
     SystemConfig config = makeDefaultConfig();
     const ConfigRuntimeStatus status{"migrated_legacy", 0, 11, false, true};
 

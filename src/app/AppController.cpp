@@ -210,6 +210,7 @@ AppSnapshot AppController::snapshot() const {
     snapshot.calibrationStepMl = calibrationStepMl_;
     snapshot.calibrationReady = lastResultRecordValid_;
     snapshot.pulsePerLiter = activeMeteringScheme_.params.stablePulsePerLiter;
+    snapshot.meteringParams = activeMeteringScheme_.params;
     snapshot.flowDroppedPulses = flowDroppedPulses_;
     return snapshot;
 }

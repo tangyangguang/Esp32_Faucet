@@ -186,6 +186,32 @@ void test_unused_non_current_scheme_can_be_physically_deleted() {
     TEST_ASSERT_TRUE(canPhysicallyDeleteMeteringScheme(scheme, 1, 2));
 }
 
+void test_metering_estimate_uses_segmented_parameters_for_target_volume() {
+    const MeteringParameters params{8, 36, 225};
+
+    TEST_ASSERT_EQUAL_UINT32(4, estimatePulsesForVolumeMl(params, 18));
+    TEST_ASSERT_EQUAL_UINT32(8, estimatePulsesForVolumeMl(params, 36));
+    TEST_ASSERT_EQUAL_UINT32(338, estimatePulsesForVolumeMl(params, 1500));
+    TEST_ASSERT_EQUAL_UINT32(225, fullRunPulsePerLiter(338, 1500));
+
+    const MeteringTargetEstimate estimate = meteringEstimateForTarget(params, 1500);
+    TEST_ASSERT_TRUE(estimate.valid);
+    TEST_ASSERT_EQUAL_UINT32(1500, estimate.targetMl);
+    TEST_ASSERT_EQUAL_UINT32(338, estimate.pulseCount);
+    TEST_ASSERT_EQUAL_UINT32(225, estimate.fullRunPulsePerLiter);
+}
+
+void test_metering_estimate_handles_no_startup_segment() {
+    const MeteringParameters params{0, 0, 450};
+
+    TEST_ASSERT_EQUAL_UINT32(675, estimatePulsesForVolumeMl(params, 1500));
+
+    const MeteringTargetEstimate estimate = meteringEstimateForTarget(params, 1500);
+    TEST_ASSERT_TRUE(estimate.valid);
+    TEST_ASSERT_EQUAL_UINT32(675, estimate.pulseCount);
+    TEST_ASSERT_EQUAL_UINT32(450, estimate.fullRunPulsePerLiter);
+}
+
 int main(int argc, char** argv) {
     (void)argc;
     (void)argv;
@@ -199,5 +225,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_last_valid_scheme_cannot_be_deleted_even_if_not_active);
     RUN_TEST(test_used_or_dirty_scheme_cannot_be_physically_deleted);
     RUN_TEST(test_unused_non_current_scheme_can_be_physically_deleted);
+    RUN_TEST(test_metering_estimate_uses_segmented_parameters_for_target_volume);
+    RUN_TEST(test_metering_estimate_handles_no_startup_segment);
     return UNITY_END();
 }

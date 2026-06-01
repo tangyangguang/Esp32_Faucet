@@ -12,7 +12,7 @@ namespace {
 constexpr const char* kConfigNs = "faucet_cfg";
 constexpr const char* kStatNs = "faucet_stat";
 constexpr const char* kRunNs = "faucet_run";
-constexpr std::int32_t kConfigVersion = 13;
+constexpr std::int32_t kConfigVersion = 14;
 constexpr std::int32_t kRuntimeVersion = 1;
 
 std::int32_t toInt(std::uint32_t value) {
@@ -85,6 +85,12 @@ bool hasRecognizedLegacySystemConfig(ConfigBackend& backend) {
         "time_step",
         "pulse_min_us",
         "trace_count",
+        "cal_an_us",
+        "cal_win_s",
+        "cal_tol",
+        "cal_span",
+        "cal_err",
+        "cal_rel",
         "active_ms",
         "pulse_m",
         "seg_stable_p",
@@ -193,6 +199,18 @@ void loadCommonSystemConfig(ConfigBackend& backend, SystemConfig& config) {
         static_cast<std::uint32_t>(backend.getInt(kConfigNs, "pulse_min_us", toInt(config.pulseMinIntervalUs)));
     config.recentPulseTraceCount =
         static_cast<std::uint32_t>(backend.getInt(kConfigNs, "trace_count", toInt(config.recentPulseTraceCount)));
+    config.calibrationAnalysisPulseMinIntervalUs = static_cast<std::uint32_t>(
+        backend.getInt(kConfigNs, "cal_an_us", toInt(config.calibrationAnalysisPulseMinIntervalUs)));
+    config.calibrationStableWindowSec =
+        static_cast<std::uint32_t>(backend.getInt(kConfigNs, "cal_win_s", toInt(config.calibrationStableWindowSec)));
+    config.calibrationStableTolerancePercent =
+        static_cast<std::uint8_t>(backend.getInt(kConfigNs, "cal_tol", config.calibrationStableTolerancePercent));
+    config.calibrationMinVolumeSpanMl =
+        static_cast<std::uint32_t>(backend.getInt(kConfigNs, "cal_span", toInt(config.calibrationMinVolumeSpanMl)));
+    config.calibrationMaxErrorMl =
+        static_cast<std::uint32_t>(backend.getInt(kConfigNs, "cal_err", toInt(config.calibrationMaxErrorMl)));
+    config.calibrationMaxRelativeErrorTenthPercent = static_cast<std::uint16_t>(
+        backend.getInt(kConfigNs, "cal_rel", config.calibrationMaxRelativeErrorTenthPercent));
     config.valveFullPowerSec =
         static_cast<std::uint32_t>(backend.getInt(kConfigNs, "valve_s", toInt(config.valveFullPowerSec)));
     config.valveHoldDutyPercent = static_cast<std::uint8_t>(backend.getInt(kConfigNs, "hold_pct", config.valveHoldDutyPercent));
@@ -357,6 +375,12 @@ bool ConfigStore::saveSystemConfig(const SystemConfig& config) {
     ok = okAll(ok, backend_.setInt(kConfigNs, "time_step", toInt(safe.timeAdjustStepSec)));
     ok = okAll(ok, backend_.setInt(kConfigNs, "pulse_min_us", toInt(safe.pulseMinIntervalUs)));
     ok = okAll(ok, backend_.setInt(kConfigNs, "trace_count", toInt(safe.recentPulseTraceCount)));
+    ok = okAll(ok, backend_.setInt(kConfigNs, "cal_an_us", toInt(safe.calibrationAnalysisPulseMinIntervalUs)));
+    ok = okAll(ok, backend_.setInt(kConfigNs, "cal_win_s", toInt(safe.calibrationStableWindowSec)));
+    ok = okAll(ok, backend_.setInt(kConfigNs, "cal_tol", safe.calibrationStableTolerancePercent));
+    ok = okAll(ok, backend_.setInt(kConfigNs, "cal_span", toInt(safe.calibrationMinVolumeSpanMl)));
+    ok = okAll(ok, backend_.setInt(kConfigNs, "cal_err", toInt(safe.calibrationMaxErrorMl)));
+    ok = okAll(ok, backend_.setInt(kConfigNs, "cal_rel", safe.calibrationMaxRelativeErrorTenthPercent));
     ok = okAll(ok, backend_.setInt(kConfigNs, "valve_s", toInt(safe.valveFullPowerSec)));
     ok = okAll(ok, backend_.setInt(kConfigNs, "hold_pct", safe.valveHoldDutyPercent));
     ok = okAll(ok, backend_.setInt(kConfigNs, "disp_s", toInt(safe.displaySleepSec)));

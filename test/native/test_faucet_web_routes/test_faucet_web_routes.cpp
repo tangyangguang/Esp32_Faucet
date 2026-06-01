@@ -859,7 +859,9 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, ".machine-hero-head{display:grid;grid-template-columns:max-content minmax(0,1fr);align-items:center;gap:14px"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, ".machine-context{display:flex;flex-direction:column;gap:6px;min-width:0"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, ".machine-alert{margin:0;color:#8a6f3d;font-size:13px;font-weight:400"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, ".next-preset-control{display:grid;grid-template-columns:30px minmax(0,1fr) 30px"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, ".next-preset-control{display:block;min-width:0;max-width:430px"));
+    TEST_ASSERT_NULL(std::strstr(buffer, ".next-preset-control{display:grid;grid-template-columns:30px minmax(0,1fr) 30px"));
+    TEST_ASSERT_NULL(std::strstr(buffer, ".preset-step{"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, ".machine-progress-head{display:flex;align-items:center;justify-content:space-between;gap:10px;color:var(--muted);font-size:13px;font-weight:400"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, ".machine-task-card span{display:block;color:var(--muted);font-size:12px;font-weight:400"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, ".machine-task-card small{display:block;margin-top:4px;color:var(--muted);font-size:11px;line-height:1.2;font-weight:400"));

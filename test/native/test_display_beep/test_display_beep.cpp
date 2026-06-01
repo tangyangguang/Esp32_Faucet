@@ -15,6 +15,7 @@ AppSnapshot makeSnapshot(WaterState state, std::uint32_t targetMl, std::uint32_t
         WaterSnapshot{
             state,
             0,
+            0,
             state == WaterState::Running,
             volumeMl,
             0,

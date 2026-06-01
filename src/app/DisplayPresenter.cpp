@@ -171,12 +171,12 @@ DisplayFrame DisplayPresenter::render(const AppSnapshot& snapshot, std::uint32_t
                 formatLitersCompact(target, sizeof(target), snapshot.water.targetValue);
                 formatLiters(step, sizeof(step), snapshot.adjustmentStepMl);
                 char left[kDisplayLineLength]{};
-                std::snprintf(left, sizeof(left), "GO P%u %s", static_cast<unsigned>(snapshot.water.selectedPreset + 1), target);
+                std::snprintf(left, sizeof(left), "GO P%u %s", static_cast<unsigned>(snapshot.water.activePreset + 1), target);
                 composeTopLine(line1, left, snapshot.pulsePerLiter);
                 std::snprintf(line2, sizeof(line2), "STEP %s", step);
             } else {
                 char left[kDisplayLineLength]{};
-                std::snprintf(left, sizeof(left), "GO P%u %lus", static_cast<unsigned>(snapshot.water.selectedPreset + 1),
+                std::snprintf(left, sizeof(left), "GO P%u %lus", static_cast<unsigned>(snapshot.water.activePreset + 1),
                               static_cast<unsigned long>(snapshot.water.targetValue));
                 composeTopLine(line1, left, snapshot.pulsePerLiter);
                 std::snprintf(line2, sizeof(line2), "STEP %lus", static_cast<unsigned long>(snapshot.timeAdjustmentStepSec));

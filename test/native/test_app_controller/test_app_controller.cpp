@@ -352,6 +352,59 @@ void test_app_controller_completion_writes_record_statistics_and_filters() {
     TEST_ASSERT_FALSE(app.consumePersistenceDirty());
 }
 
+void test_app_controller_web_preset_switch_during_run_updates_next_preset_only() {
+    SystemConfig config = makeDefaultConfig();
+    StatisticsStore statistics;
+    statistics.reset({20260506, 202619, 202605});
+    FilterStore filters(config.filters);
+    MemoryRecordWriter records;
+    AppController app(config, statistics, filters, records);
+    applyTestMeteringScheme(app);
+
+    app.resetInputs({false, false, false, false}, 0);
+    pressAndReleaseOk(app, 100);
+    pressAndReleaseOk(app, 300);
+    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(WaterState::Running),
+                            static_cast<std::uint8_t>(app.snapshot().water.state));
+    TEST_ASSERT_EQUAL_size_t(0, app.snapshot().water.activePreset);
+
+    TEST_ASSERT_TRUE(app.selectNextPresetForWeb());
+
+    TEST_ASSERT_EQUAL_size_t(1, app.snapshot().water.selectedPreset);
+    TEST_ASSERT_EQUAL_size_t(0, app.snapshot().water.activePreset);
+    TEST_ASSERT_EQUAL_UINT32(1500, app.snapshot().water.targetValue);
+    for (std::uint32_t i = 0; i < 1500; ++i) {
+        app.onFlowPulse(1000000UL + i * 2000UL);
+    }
+    app.tick(input({false, false, false, false}, 5000, 5000000, 1714502400));
+
+    TEST_ASSERT_EQUAL_size_t(1, records.records.size());
+    TEST_ASSERT_EQUAL_UINT8(0, records.records[0].selectedPreset);
+    TEST_ASSERT_EQUAL_UINT32(1500, records.records[0].targetValue);
+    TEST_ASSERT_EQUAL_size_t(1, app.snapshot().water.selectedPreset);
+}
+
+void test_app_controller_local_plus_does_not_switch_preset_while_running() {
+    SystemConfig config = makeDefaultConfig();
+    StatisticsStore statistics;
+    statistics.reset({20260506, 202619, 202605});
+    FilterStore filters(config.filters);
+    MemoryRecordWriter records;
+    AppController app(config, statistics, filters, records);
+    applyTestMeteringScheme(app);
+
+    app.resetInputs({false, false, false, false}, 0);
+    pressAndReleaseOk(app, 100);
+    pressAndReleaseOk(app, 300);
+
+    pressAndReleasePlus(app, 500);
+
+    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(WaterState::Running),
+                            static_cast<std::uint8_t>(app.snapshot().water.state));
+    TEST_ASSERT_EQUAL_size_t(0, app.snapshot().water.selectedPreset);
+    TEST_ASSERT_EQUAL_size_t(0, app.snapshot().water.activePreset);
+}
+
 void test_app_controller_holds_ok_five_seconds_to_enter_local_calibration() {
     SystemConfig config = makeDefaultConfig();
     StatisticsStore statistics;
@@ -950,6 +1003,8 @@ int main(int argc, char** argv) {
     RUN_TEST(test_app_controller_snapshot_write_failure_marks_usage_stats_dirty);
     RUN_TEST(test_app_controller_starts_after_double_ok_and_opens_valve);
     RUN_TEST(test_app_controller_completion_writes_record_statistics_and_filters);
+    RUN_TEST(test_app_controller_web_preset_switch_during_run_updates_next_preset_only);
+    RUN_TEST(test_app_controller_local_plus_does_not_switch_preset_while_running);
     RUN_TEST(test_app_controller_offline_completion_marks_unknown_time_with_boot_id);
     RUN_TEST(test_app_controller_offline_start_sync_before_completion_writes_real_time);
     RUN_TEST(test_app_controller_pause_resume_then_completion_updates_persistence_once);

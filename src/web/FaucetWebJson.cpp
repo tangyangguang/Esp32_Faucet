@@ -90,6 +90,33 @@ const char* presetTypeName(PresetType type) {
     return type == PresetType::Time ? "time" : "volume";
 }
 
+WaterMode modeFromPreset(const PresetConfig& preset) {
+    return preset.type == PresetType::Time ? WaterMode::Time : WaterMode::Volume;
+}
+
+std::size_t enabledPresetCount(const SystemConfig& config) {
+    std::size_t count = 0;
+    for (std::size_t i = 0; i < kPresetCount; ++i) {
+        if (config.presets[i].enabled) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+std::size_t enabledPresetOrdinal(const SystemConfig& config, std::size_t index) {
+    if (index >= kPresetCount || !config.presets[index].enabled) {
+        return 0;
+    }
+    std::size_t ordinal = 0;
+    for (std::size_t i = 0; i <= index && i < kPresetCount; ++i) {
+        if (config.presets[i].enabled) {
+            ++ordinal;
+        }
+    }
+    return ordinal;
+}
+
 void appendEscaped(JsonWriter& writer, const char* text) {
     writer.append("\"");
     for (const char* p = text ? text : ""; *p; ++p) {
@@ -126,6 +153,59 @@ void appendEscaped(JsonWriter& writer, const char* text) {
     writer.append("\"");
 }
 
+void appendPresetSummary(JsonWriter& writer,
+                         const char* name,
+                         const SystemConfig& config,
+                         std::size_t index,
+                         const MeteringParameters& meteringParams,
+                         std::uint32_t estimatedDurationSec,
+                         std::uint32_t estimatedVolumeMl,
+                         std::uint32_t estimatedPulseCount,
+                         float stablePulsePerSec,
+                         const char* estimateReason) {
+    const bool available = index < kPresetCount && config.presets[index].enabled;
+    const std::size_t count = enabledPresetCount(config);
+    const std::size_t ordinal = enabledPresetOrdinal(config, index);
+    writer.append(",\"%s\":{\"available\":%s,\"index\":%u,\"enabledOrdinal\":%u,\"enabledCount\":%u",
+                  name,
+                  available ? "true" : "false",
+                  available ? static_cast<unsigned>(index) : 0U,
+                  static_cast<unsigned>(ordinal),
+                  static_cast<unsigned>(count));
+    if (!available) {
+        writer.append("}");
+        return;
+    }
+
+    const PresetConfig& preset = config.presets[index];
+    writer.append(",\"name\":");
+    appendEscaped(writer, preset.name);
+    writer.append(",\"mode\":\"%s\",\"targetValue\":%lu",
+                  waterModeName(modeFromPreset(preset)),
+                  static_cast<unsigned long>(preset.value));
+    const MeteringTargetEstimate volumeEstimate =
+        preset.type == PresetType::Volume ? meteringEstimateForTarget(meteringParams, preset.value)
+                                          : MeteringTargetEstimate{};
+    const bool timeEstimateValid =
+        preset.type == PresetType::Time && estimatedVolumeMl > 0 && estimatedPulseCount > 0 && stablePulsePerSec > 0.0f;
+    const bool estimateValid = preset.type == PresetType::Volume ? volumeEstimate.valid : timeEstimateValid;
+    const std::uint32_t targetMl = preset.type == PresetType::Volume ? volumeEstimate.targetMl : estimatedVolumeMl;
+    const std::uint32_t pulseCount =
+        preset.type == PresetType::Volume ? volumeEstimate.pulseCount : estimatedPulseCount;
+    const std::uint32_t estimateFullRunPulsePerLiter =
+        preset.type == PresetType::Volume ? volumeEstimate.fullRunPulsePerLiter : fullRunPulsePerLiter(pulseCount, targetMl);
+    writer.append(",\"targetEstimate\":{\"available\":%s,\"targetMl\":%lu,\"pulseCount\":%lu,"
+                  "\"fullRunPulsePerLiter\":%lu,\"estimatedDurationSec\":%lu,\"stablePulsePerSec\":%.2f,\"reason\":",
+                  estimateValid ? "true" : "false",
+                  static_cast<unsigned long>(targetMl),
+                  static_cast<unsigned long>(pulseCount),
+                  static_cast<unsigned long>(estimateFullRunPulsePerLiter),
+                  static_cast<unsigned long>(estimatedDurationSec),
+                  static_cast<double>(preset.type == PresetType::Time ? stablePulsePerSec : 0.0f));
+    appendEscaped(writer, estimateValid ? "" : (estimateReason ? estimateReason : ""));
+    writer.append("}}");
+}
+
 }  // namespace
 
 bool writeStatusJson(const AppSnapshot& snapshot, char* out, std::size_t len) {
@@ -152,18 +232,28 @@ bool writeStatusJson(const AppSnapshot& snapshot,
                      char* out,
                      std::size_t len) {
     JsonWriter writer(out, len);
-    const MeteringTargetEstimate targetEstimate =
+    const MeteringTargetEstimate volumeTargetEstimate =
         snapshot.water.mode == WaterMode::Volume
             ? meteringEstimateForTarget(snapshot.meteringParams, snapshot.water.targetValue)
             : MeteringTargetEstimate{};
+    const bool timeTargetEstimateValid =
+        snapshot.water.mode == WaterMode::Time && snapshot.targetEstimatedVolumeMl > 0 &&
+        snapshot.targetEstimatedPulseCount > 0 && snapshot.targetStablePulsePerSec > 0.0f;
+    const bool targetEstimateValid =
+        snapshot.water.mode == WaterMode::Volume ? volumeTargetEstimate.valid : timeTargetEstimateValid;
+    const std::uint32_t targetEstimateMl =
+        snapshot.water.mode == WaterMode::Volume ? volumeTargetEstimate.targetMl : snapshot.targetEstimatedVolumeMl;
+    const std::uint32_t targetEstimatePulses =
+        snapshot.water.mode == WaterMode::Volume ? volumeTargetEstimate.pulseCount : snapshot.targetEstimatedPulseCount;
+    const std::uint32_t targetEstimateFullRunPulsePerLiter =
+        snapshot.water.mode == WaterMode::Volume
+            ? volumeTargetEstimate.fullRunPulsePerLiter
+            : fullRunPulsePerLiter(targetEstimatePulses, targetEstimateMl);
     writer.append("{\"state\":\"%s\",\"valveOpen\":%s,\"volumeMl\":%lu,\"elapsedSec\":%lu,\"targetValue\":%lu,"
-                  "\"lastResult\":\"%s\",\"mode\":\"%s\",\"selectedPreset\":%u,\"pulsePerLiter\":%lu,"
+                  "\"lastResult\":\"%s\",\"mode\":\"%s\",\"selectedPreset\":%u,\"activePreset\":%u,\"pulsePerLiter\":%lu,"
                   "\"metering\":{\"startupPulseCount\":%lu,\"startupVolumeMl\":%lu,\"stablePulsePerLiter\":%lu},"
                   "\"targetEstimate\":{\"available\":%s,\"targetMl\":%lu,\"pulseCount\":%lu,"
-                  "\"fullRunPulsePerLiter\":%lu,\"estimatedDurationSec\":%lu},"
-                  "\"flowDroppedPulses\":%lu,"
-                  "\"valveDutyPercent\":%u,\"valveFullPowerSec\":%lu,\"valveHoldDutyPercent\":%u,"
-                  "\"screenOn\":%s,\"waterControl\":false",
+                  "\"fullRunPulsePerLiter\":%lu,\"estimatedDurationSec\":%lu,\"stablePulsePerSec\":%.2f,\"reason\":",
                   waterStateName(snapshot.water.state),
                   snapshot.water.valveOpen ? "true" : "false",
                   static_cast<unsigned long>(snapshot.water.volumeMl),
@@ -172,20 +262,47 @@ bool writeStatusJson(const AppSnapshot& snapshot,
                   waterResultName(snapshot.water.lastResult),
                   waterModeName(snapshot.water.mode),
                   static_cast<unsigned>(snapshot.water.selectedPreset),
+                  static_cast<unsigned>(snapshot.water.activePreset),
                   static_cast<unsigned long>(snapshot.pulsePerLiter),
                   static_cast<unsigned long>(snapshot.meteringParams.startupPulseCount),
                   static_cast<unsigned long>(snapshot.meteringParams.startupVolumeMl),
                   static_cast<unsigned long>(snapshot.meteringParams.stablePulsePerLiter),
-                  targetEstimate.valid ? "true" : "false",
-                  static_cast<unsigned long>(targetEstimate.targetMl),
-                  static_cast<unsigned long>(targetEstimate.pulseCount),
-                  static_cast<unsigned long>(targetEstimate.fullRunPulsePerLiter),
+                  targetEstimateValid ? "true" : "false",
+                  static_cast<unsigned long>(targetEstimateMl),
+                  static_cast<unsigned long>(targetEstimatePulses),
+                  static_cast<unsigned long>(targetEstimateFullRunPulsePerLiter),
                   static_cast<unsigned long>(snapshot.targetEstimatedDurationSec),
+                  static_cast<double>(snapshot.water.mode == WaterMode::Time ? snapshot.targetStablePulsePerSec : 0.0f));
+    appendEscaped(writer, targetEstimateValid ? "" : (snapshot.targetEstimateReason ? snapshot.targetEstimateReason : ""));
+    writer.append("},"
+                  "\"flowDroppedPulses\":%lu,"
+                  "\"valveDutyPercent\":%u,\"valveFullPowerSec\":%lu,\"valveHoldDutyPercent\":%u,"
+                  "\"screenOn\":%s,\"waterControl\":false",
                   static_cast<unsigned long>(snapshot.flowDroppedPulses),
                   static_cast<unsigned>(snapshot.valve.dutyPercent),
                   static_cast<unsigned long>(config.valveFullPowerSec),
                   static_cast<unsigned>(config.valveHoldDutyPercent),
                   screenOn ? "true" : "false");
+    appendPresetSummary(writer,
+                        "nextPreset",
+                        config,
+                        snapshot.water.selectedPreset,
+                        snapshot.meteringParams,
+                        snapshot.selectedPresetEstimatedDurationSec,
+                        snapshot.selectedPresetEstimatedVolumeMl,
+                        snapshot.selectedPresetEstimatedPulseCount,
+                        snapshot.selectedPresetStablePulsePerSec,
+                        snapshot.selectedPresetEstimateReason);
+    appendPresetSummary(writer,
+                        "activeTaskPreset",
+                        config,
+                        snapshot.water.activePreset,
+                        snapshot.meteringParams,
+                        snapshot.targetEstimatedDurationSec,
+                        snapshot.targetEstimatedVolumeMl,
+                        snapshot.targetEstimatedPulseCount,
+                        snapshot.targetStablePulsePerSec,
+                        snapshot.targetEstimateReason);
     if (configStatus) {
         writer.append(",\"config\":{\"status\":\"%s\",\"rawVersion\":%ld,\"currentVersion\":%ld,"
                       "\"readOnly\":%s,\"migrationWriteBack\":%s}",

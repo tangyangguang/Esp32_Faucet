@@ -243,6 +243,47 @@ void test_next_preset_skips_disabled_presets() {
     TEST_ASSERT_EQUAL_UINT(0, controller.snapshot().selectedPreset);
 }
 
+void test_next_preset_can_change_while_running_without_changing_active_task() {
+    SystemConfig config = makeDefaultConfig();
+    WaterController controller(config);
+
+    startSelected(controller, 1000);
+
+    TEST_ASSERT_EQUAL_UINT(0, controller.snapshot().activePreset);
+    TEST_ASSERT_TRUE(controller.selectNextPreset());
+    TEST_ASSERT_EQUAL_UINT(1, controller.snapshot().selectedPreset);
+    TEST_ASSERT_EQUAL_UINT(0, controller.snapshot().activePreset);
+    TEST_ASSERT_EQUAL_UINT32(1500, controller.snapshot().targetValue);
+
+    controller.addVolume(1500);
+    controller.tick(2500);
+
+    TEST_ASSERT_TRUE(controller.hasResult());
+    TEST_ASSERT_EQUAL_UINT8(0, controller.result().selectedPreset);
+    TEST_ASSERT_EQUAL_UINT32(1500, controller.result().targetValue);
+    TEST_ASSERT_EQUAL_UINT(1, controller.snapshot().selectedPreset);
+}
+
+void test_preset_switch_after_confirm_does_not_change_pending_task() {
+    SystemConfig config = makeDefaultConfig();
+    WaterController controller(config);
+
+    TEST_ASSERT_TRUE(controller.requestStart(1000));
+    TEST_ASSERT_EQUAL_UINT(0, controller.snapshot().activePreset);
+    TEST_ASSERT_TRUE(controller.selectNextPreset());
+    TEST_ASSERT_EQUAL_UINT(1, controller.snapshot().selectedPreset);
+    TEST_ASSERT_EQUAL_UINT(0, controller.snapshot().activePreset);
+    TEST_ASSERT_EQUAL_UINT32(1500, controller.snapshot().targetValue);
+    TEST_ASSERT_TRUE(controller.confirmStart(1200));
+    controller.addVolume(1500);
+    controller.tick(2500);
+
+    TEST_ASSERT_TRUE(controller.hasResult());
+    TEST_ASSERT_EQUAL_UINT8(0, controller.result().selectedPreset);
+    TEST_ASSERT_EQUAL_UINT32(1500, controller.result().targetValue);
+    TEST_ASSERT_EQUAL_UINT(1, controller.snapshot().selectedPreset);
+}
+
 int main(int argc, char** argv) {
     (void)argc;
     (void)argv;
@@ -262,5 +303,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_max_out_time_forces_safety_stop);
     RUN_TEST(test_high_flow_must_persist_before_error);
     RUN_TEST(test_next_preset_skips_disabled_presets);
+    RUN_TEST(test_next_preset_can_change_while_running_without_changing_active_task);
+    RUN_TEST(test_preset_switch_after_confirm_does_not_change_pending_task);
     return UNITY_END();
 }

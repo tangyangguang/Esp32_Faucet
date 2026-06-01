@@ -23,6 +23,7 @@ WaterController::WaterController(const SystemConfig& config)
     : config_(config),
       state_(WaterState::Idle),
       selectedPreset_(0),
+      activePreset_(0),
       valveOpen_(false),
       confirmStartMs_(0),
       runStartMs_(0),
@@ -41,6 +42,7 @@ WaterController::WaterController(const SystemConfig& config)
     for (std::size_t i = 0; i < kPresetCount; ++i) {
         if (enabledPreset(i)) {
             selectedPreset_ = i;
+            activePreset_ = i;
             break;
         }
     }
@@ -51,6 +53,7 @@ WaterSnapshot WaterController::snapshot() const {
     return WaterSnapshot{
         state_,
         selectedPreset_,
+        state_ == WaterState::Idle ? selectedPreset_ : activePreset_,
         valveOpen_,
         volumeMl_,
         lastElapsedSec_,
@@ -91,13 +94,11 @@ bool WaterController::applyConfig(const SystemConfig& config) {
             }
         }
     }
+    activePreset_ = selectedPreset_;
     return true;
 }
 
 bool WaterController::selectNextPreset() {
-    if (state_ != WaterState::Idle && state_ != WaterState::Error) {
-        return false;
-    }
     for (std::size_t step = 1; step <= kPresetCount; ++step) {
         const std::size_t index = (selectedPreset_ + step) % kPresetCount;
         if (enabledPreset(index)) {
@@ -109,9 +110,6 @@ bool WaterController::selectNextPreset() {
 }
 
 bool WaterController::selectPreviousPreset() {
-    if (state_ != WaterState::Idle && state_ != WaterState::Error) {
-        return false;
-    }
     for (std::size_t step = 1; step <= kPresetCount; ++step) {
         const std::size_t index = (selectedPreset_ + kPresetCount - step) % kPresetCount;
         if (enabledPreset(index)) {
@@ -123,7 +121,7 @@ bool WaterController::selectPreviousPreset() {
 }
 
 bool WaterController::selectPreset(std::size_t index) {
-    if ((state_ != WaterState::Idle && state_ != WaterState::Error) || !enabledPreset(index)) {
+    if (!enabledPreset(index)) {
         return false;
     }
     selectedPreset_ = index;
@@ -137,11 +135,12 @@ bool WaterController::requestStart(std::uint32_t nowMs) {
     if (!selectedPresetConfig()) {
         return false;
     }
+    activePreset_ = selectedPreset_;
     state_ = WaterState::Confirm;
     confirmStartMs_ = nowMs;
     valveOpen_ = false;
-    activeMode_ = modeFromPreset(*selectedPresetConfig());
-    targetValue_ = selectedPresetConfig()->value;
+    activeMode_ = modeFromPreset(*activePresetConfig());
+    targetValue_ = activePresetConfig()->value;
     volumeMl_ = 0;
     noFlowLastVolumeMl_ = 0;
     noFlowLastActivityMs_ = nowMs;
@@ -155,7 +154,7 @@ bool WaterController::requestStart(std::uint32_t nowMs) {
 }
 
 bool WaterController::confirmStart(std::uint32_t nowMs) {
-    if (state_ != WaterState::Confirm || !selectedPresetConfig()) {
+    if (state_ != WaterState::Confirm || !activePresetConfig()) {
         return false;
     }
     state_ = WaterState::Running;
@@ -270,15 +269,19 @@ const PresetConfig* WaterController::selectedPresetConfig() const {
     return enabledPreset(selectedPreset_) ? &config_.presets[selectedPreset_] : nullptr;
 }
 
+const PresetConfig* WaterController::activePresetConfig() const {
+    return enabledPreset(activePreset_) ? &config_.presets[activePreset_] : nullptr;
+}
+
 void WaterController::finish(std::uint32_t nowMs, WaterResult result, WaterState nextState) {
-    const PresetConfig* preset = selectedPresetConfig();
+    const PresetConfig* preset = activePresetConfig();
     lastResult_.valid = true;
     lastResult_.mode = state_ == WaterState::Idle ? (preset ? modeFromPreset(*preset) : WaterMode::Volume) : activeMode_;
     lastResult_.result = result;
     lastResult_.volumeMl = volumeMl_;
     lastResult_.targetValue = targetValue_;
     lastResult_.durationSec = static_cast<std::uint16_t>(std::min<std::uint32_t>(activeElapsedMs(nowMs) / 1000UL, 65535));
-    lastResult_.selectedPreset = selectedPreset_ < 255 ? static_cast<std::uint8_t>(selectedPreset_) : 255;
+    lastResult_.selectedPreset = activePreset_ < 255 ? static_cast<std::uint8_t>(activePreset_) : 255;
     lastError_ = result;
     lastElapsedSec_ = activeElapsedMs(nowMs) / 1000UL;
 

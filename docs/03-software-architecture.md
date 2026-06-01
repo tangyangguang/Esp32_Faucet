@@ -108,7 +108,7 @@
 - Web 采用业务优先首页模型：`/` 进入 `/index`，`/esp32base` 保留为系统工具入口；系统工具放在页面底部小字区域。
 - 配置写入、恢复出厂、重启等操作使用 POST，并需要 Basic Auth。
 - 记录、统计和参数页面/API 必须分页或小响应，避免大内存拼接。
-- Web 端不得注册启动出水、暂停出水、继续出水、停止出水 API 或按钮，也不得通过业务页面/API 修改运行态“下次预设”；预设切换只通过本地 `PLUS`/`MINUS` 按键完成。
+- Web 端不得注册启动出水、暂停出水、继续出水、停止出水 API 或按钮；首页允许切换“下次预设”，但只修改后续任务使用的 selected preset，不改变已确认或正在运行的 active preset、目标值或阀门状态。
 - Web records 页支持最近记录分页，不提供按时间范围筛选；按时间范围查询只保留在 `/api/faucet/records`。列表保持紧凑，显示目标、出水量、持续时间、模式、结束原因、脉冲/P-L、计量方案、校准状态和操作。过滤脉冲只在有值时作为脉冲单元格内的辅助诊断信息展示。有 RAM 明细的记录显示“明细”，已写入设备样本库的记录优先显示“已存明细”；不允许远程打开电磁阀。
 - Web 默认认证通过 Esp32Base `setDefaultAuth()` 设置为 `admin/admin`；用户可通过 `/esp32base/auth` 修改认证，已保存认证优先于应用默认值。
 - WebOTA 目标地址和凭据不写入仓库；本地复制 `platformio.example.ini` 为 `platformio.local.ini` 后填写 `custom_esp32base_webota_*`。
@@ -118,7 +118,7 @@
 
 | 页面 | 路径 | 功能 |
 | --- | --- | --- |
-| 首页 | `/index` | 状态、下次预设只读展示、基础统计、启用滤芯寿命概览 |
+| 首页 | `/index` | 状态、下次预设展示和切换、基础统计、启用滤芯寿命概览 |
 | 系统参数 | `/esp32base/app-config` | 安全阈值、流量保护、显示、蜂鸣器和电磁阀参数；由 Esp32Base App Config 提供 |
 | 预设 | `/faucet/presets` | 9 组预设的启用、名称、类型和值 |
 | 记录 | `/faucet/records` | 分页查看最近出水记录，显示校准状态、实测量和脉冲明细入口 |
@@ -136,7 +136,7 @@
 | GET | `/api/faucet/status` | 查询状态 |
 | GET | `/api/faucet/today` | 查询首页今日概览 HTML 片段 |
 | GET | `/api/faucet/presets` | 查询预设 |
-| POST | `/api/faucet/presets` | 保存预设配置；拒绝 `select_previous`、`select_next`、`select` 等运行态切换动作 |
+| POST | `/api/faucet/presets` | 保存预设配置；`select_previous`、`select_next`、`select` 只切换“下次预设”并返回最新状态，不启动或改变当前出水任务 |
 | GET | `/api/faucet/records` | 按时间范围筛选并分页查询出水记录；出水确认、运行和暂停期间返回 busy |
 | POST | `/api/faucet/records` | 通过 `action` 执行记录校准、脉冲明细保存/删除、分段样本生成和计量方案 create/edit/enable/disable/delete；危险 POST 必须通过同源校验；出水确认、运行和暂停期间返回 busy |
 | GET | `/api/faucet/stats` | 查询统计 |

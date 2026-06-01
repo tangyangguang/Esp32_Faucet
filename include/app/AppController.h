@@ -107,6 +107,9 @@ public:
     BeepPattern consumeBeepPattern();
     bool emergencyStop(std::uint32_t nowMs);
     void setFlowDroppedPulses(std::uint32_t droppedPulses);
+    bool selectNextPresetForWeb();
+    bool selectPreviousPresetForWeb();
+    bool selectPresetForWeb(std::size_t index);
     bool canApplyConfig() const;
     bool applyConfig(const SystemConfig& config);
     bool applyActiveMeteringScheme(const MeteringSchemeRecord& activeScheme);

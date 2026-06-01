@@ -266,6 +266,18 @@ void AppController::setFlowDroppedPulses(std::uint32_t droppedPulses) {
     flowDroppedPulses_ = droppedPulses;
 }
 
+bool AppController::selectNextPresetForWeb() {
+    return water_.selectNextPreset();
+}
+
+bool AppController::selectPreviousPresetForWeb() {
+    return water_.selectPreviousPreset();
+}
+
+bool AppController::selectPresetForWeb(std::size_t index) {
+    return water_.selectPreset(index);
+}
+
 bool AppController::canApplyConfig() const {
     return localMode_ != LocalUiMode::Result && water_.canApplyConfig();
 }

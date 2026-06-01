@@ -134,7 +134,7 @@ pio device monitor -e esp32dev --port <端口> --baud 115200
 - Web 首页 `http://192.168.2.112/index` 返回 200。
 - 未授权访问 `/index` 返回 401。
 - 状态 API 返回 `idle`、`valveOpen=false`、`waterControl=false`。
-- 远程出水控制路径 `/api/faucet/start` 返回 404，`/api/faucet/presets` 对 `action=select_previous/select_next/select` 返回错误且不会修改运行态下次预设。
+- 远程出水控制路径 `/api/faucet/start` 返回 404，`/api/faucet/presets` 对 `action=select_previous/select_next/select` 只切换“下次预设”并返回最新状态，不打开阀门、不启动出水、不改变当前出水任务。
 - `/api/faucet/status`、`/api/faucet/today`、`/api/faucet/stats`、`/api/faucet/presets`、`/api/faucet/filters`、`/api/faucet/records?page=0&pageSize=10` 均可访问。
 - 记录 API 返回 `storage=file`。
 - 校准页使用 `POST /faucet/calibration` 携带 `action=calibrate`、`traceSource`、`trace` 和 `actualMl`，基于样本列表中的 RAM 或已保存脉冲明细保存量杯实测容量。

@@ -282,9 +282,9 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NULL(std::strstr(buffer, "<span>全程平均 %luP/L</span><span>预计 %luP</span>"));
     TEST_ASSERT_NULL(std::strstr(buffer, "时间预设 · 不估算脉冲"));
     TEST_ASSERT_NULL(std::strstr(buffer, "暂无时长估算"));
-    TEST_ASSERT_NULL(std::strstr(buffer, "action=select_previous"));
-    TEST_ASSERT_NULL(std::strstr(buffer, "action=select_next"));
-    TEST_ASSERT_NULL(std::strstr(buffer, "faucetSelectPreset("));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "action=select_previous"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "action=select_next"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "faucetSelectPreset("));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "nextPresetControl"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "sendMachineStatusNoteOnlyItem(\"meteringParams\", \"计量参数\", meteringParams)"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "启动 %luP · %luml / 稳态 %luP/L"));
@@ -859,9 +859,8 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, ".machine-hero-head{display:grid;grid-template-columns:max-content minmax(0,1fr);align-items:center;gap:14px"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, ".machine-context{display:flex;flex-direction:column;gap:6px;min-width:0"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, ".machine-alert{margin:0;color:#8a6f3d;font-size:13px;font-weight:400"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, ".next-preset-control{display:block;min-width:0;max-width:430px"));
-    TEST_ASSERT_NULL(std::strstr(buffer, ".next-preset-control{display:grid;grid-template-columns:30px minmax(0,1fr) 30px"));
-    TEST_ASSERT_NULL(std::strstr(buffer, ".preset-step{"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, ".next-preset-control{display:grid;grid-template-columns:30px minmax(0,1fr) 30px"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, ".preset-step{"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, ".machine-progress-head{display:flex;align-items:center;justify-content:space-between;gap:10px;color:var(--muted);font-size:13px;font-weight:400"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, ".machine-task-card span{display:block;color:var(--muted);font-size:12px;font-weight:400"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, ".machine-task-card small{display:block;margin-top:4px;color:var(--muted);font-size:11px;line-height:1.2;font-weight:400"));
@@ -1438,6 +1437,32 @@ void test_web_config_writes_reload_current_config_before_persisting() {
     TEST_ASSERT_TRUE_MESSAGE(loadConfig < saveConfig, "Web saves must merge changes into loaded migrated config");
 }
 
+void test_presets_api_allows_next_preset_switch_actions() {
+    FILE* file = std::fopen("src/web/FaucetWeb.cpp", "rb");
+    TEST_ASSERT_NOT_NULL(file);
+    static char buffer[340000]{};
+    const std::size_t read = std::fread(buffer, 1, sizeof(buffer) - 1, file);
+    std::fclose(file);
+    TEST_ASSERT_GREATER_THAN_size_t(0, read);
+
+    const char* presetsApi = std::strstr(buffer, "void handlePresetsApi()");
+    TEST_ASSERT_NOT_NULL(presetsApi);
+    const char* browserForm = std::strstr(presetsApi, "const bool browserForm = Esp32BaseWeb::hasParam(\"return\")");
+    TEST_ASSERT_NOT_NULL(browserForm);
+    const char* previous = std::strstr(presetsApi, "selectPreviousPresetForWeb()");
+    const char* next = std::strstr(presetsApi, "selectNextPresetForWeb()");
+    const char* select = std::strstr(presetsApi, "selectPresetForWeb(index)");
+    const char* status = std::strstr(presetsApi, "sendCurrentStatusJson()");
+    TEST_ASSERT_NOT_NULL(previous);
+    TEST_ASSERT_NOT_NULL(next);
+    TEST_ASSERT_NOT_NULL(select);
+    TEST_ASSERT_NOT_NULL(status);
+    TEST_ASSERT_TRUE_MESSAGE(previous < browserForm, "preset switch actions must be handled before config form save");
+    TEST_ASSERT_TRUE_MESSAGE(next < browserForm, "preset switch actions must be handled before config form save");
+    TEST_ASSERT_TRUE_MESSAGE(select < browserForm, "preset switch actions must be handled before config form save");
+    TEST_ASSERT_TRUE_MESSAGE(status < browserForm, "preset switch actions must return updated status JSON");
+}
+
 void test_business_post_handlers_use_post_allowed_guard() {
     FILE* file = std::fopen("src/web/FaucetWeb.cpp", "rb");
     TEST_ASSERT_NOT_NULL(file);
@@ -1571,6 +1596,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_app_config_save_migrates_before_marking_current_version);
     RUN_TEST(test_app_config_submit_rejects_read_only_business_config_before_field_writes);
     RUN_TEST(test_web_config_writes_reload_current_config_before_persisting);
+    RUN_TEST(test_presets_api_allows_next_preset_switch_actions);
     RUN_TEST(test_business_post_handlers_use_post_allowed_guard);
     RUN_TEST(test_heavy_web_handlers_return_busy_while_water_task_active);
     RUN_TEST(test_web_write_handlers_return_busy_before_trace_or_filter_runtime_writes);

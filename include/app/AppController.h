@@ -60,6 +60,8 @@ struct AppSnapshot {
     std::uint32_t selectedPresetEstimatedPulseCount = 0;
     float selectedPresetStablePulsePerSec = 0.0f;
     const char* selectedPresetEstimateReason = nullptr;
+    std::uint32_t currentFlowMlPerMin = 0;
+    std::uint32_t recentAverageFlowMlPerMin = 0;
     std::uint32_t flowDroppedPulses = 0;
 };
 
@@ -162,6 +164,7 @@ private:
     std::uint32_t activeTraceId_;
     std::uint32_t activeTraceStartUs_;
     std::uint32_t lastFlowVolumeMl_;
+    std::uint32_t currentFlowMlPerMin_;
     std::uint32_t activeStartTimeSec_;
     bool activeStartTimeSynced_;
     std::uint32_t activeStartBootId_;

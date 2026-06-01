@@ -17,6 +17,8 @@ AppSnapshot makeSnapshot() {
         StatisticsRecord{1000, 2000, 3000, 4000, 20260506, 202619, 202605},
     };
     snapshot.flowDroppedPulses = 7;
+    snapshot.currentFlowMlPerMin = 1870;
+    snapshot.recentAverageFlowMlPerMin = 1810;
     snapshot.meteringParams = MeteringParameters{8, 36, 225};
     return snapshot;
 }
@@ -43,6 +45,8 @@ void test_status_json_contains_no_remote_control_capability() {
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"targetMl\":1500"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"pulseCount\":338"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"fullRunPulsePerLiter\":225"));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"currentFlowMlPerMin\":1870"));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"recentAverageFlowMlPerMin\":1810"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"flowDroppedPulses\":7"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"valveDutyPercent\":100"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"valveFullPowerSec\":5"));
@@ -135,12 +139,12 @@ void test_status_json_reports_missing_time_estimate_reason() {
     AppSnapshot snapshot = makeSnapshot();
     snapshot.water.mode = WaterMode::Time;
     snapshot.water.targetValue = 249;
-    snapshot.targetEstimateReason = "缺少稳态脉冲";
+    snapshot.targetEstimateReason = "缺少近期流速";
 
     TEST_ASSERT_TRUE(writeStatusJson(snapshot, true, json, sizeof(json)));
 
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"targetEstimate\":{\"available\":false"));
-    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"reason\":\"缺少稳态脉冲\""));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"reason\":\"缺少近期流速\""));
 }
 
 void test_status_json_reports_time_next_preset_estimate() {
@@ -283,6 +287,8 @@ void test_water_records_json_is_paged_and_read_only() {
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"pulseCount\":675"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"rejectedPulseCount\":1"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"stablePulsePerLiterAtRun\":450"));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"averageFlowMlPerMin\":3000"));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"averageFlowMlPerMin\":1800"));
     TEST_ASSERT_NULL(std::strstr(json, "\"pulsePerMlAtRun\""));
     TEST_ASSERT_NULL(std::strstr(json, "startWater"));
 }

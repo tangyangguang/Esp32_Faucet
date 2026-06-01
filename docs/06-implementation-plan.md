@@ -55,9 +55,9 @@ test/native/
    - 覆盖待机、确认、运行、暂停、错误、`CANCEL` 软件停止、安全兜底。
 
 3. 校准参数和算法
-   - 删除独立校准控制器，校准直接基于最新可校准出水记录。
+   - 删除独立校准控制器，校准基于样本列表和记录级实测水量，不再限制为最新可校准出水记录。
    - 删除 4 个校准候选容量配置。
-   - 校准基于最新本地出水记录的原始脉冲数；本地结果页长按 OK 进入，Web 记录页进入校准页输入量杯实际水量，不允许远程打开电磁阀。
+   - 本地结果页长按 OK 对本次结果输入量杯实际水量；Web 校准页基于 RAM 或已保存脉冲明细输入量杯实际水量，并由多条有效样本生成计量方案，不允许远程打开电磁阀。
 
 4. 存储与统计
    - `ConfigStore` 使用应用 namespace：`faucet_cfg`、`faucet_stat`、`faucet_run`。
@@ -74,11 +74,11 @@ test/native/
    - `RtcClock`：DS3231 自动检测，有则使用，无则降级。I2C 探测、读取和时间策略已接入，待上板验证。
 
 6. Web 页面和 API
-   - 注册 `/index` 首页，以及 `/faucet/presets`、`/faucet/records`、`/faucet/stats`、`/faucet/filters`、`/faucet/filters/edit`。
-   - 注册只读和配置 API：状态、预设、记录、统计、滤芯，以及 records 校准动作。
+   - 注册 `/index` 首页，以及 `/faucet/presets`、`/faucet/records`、`/faucet/calibration`、`/faucet/stats`、`/faucet/filters`、`/faucet/filters/edit`。
+   - 注册只读和配置 API：状态、预设、记录、统计、滤芯，以及记录校准、脉冲明细和计量方案管理动作。
    - records 页和 `/api/faucet/records` 首版必须支持时间范围筛选，再叠加分页和每页条数。
    - 禁止注册 `/api/faucet/water/*`、`/api/faucet/start`、`/api/faucet/stop` 或同义出水控制接口。
-   - Web 记录页允许基于最新记录进入校准页输入量杯实际水量，不允许打开电磁阀。
+   - Web 记录页只查看历史记录；Web 校准页从样本列表进入容量校准和计量方案生成，不允许打开电磁阀。
 
 7. 上板验证
    - 先验证 `CANCEL` 软件停止、电磁阀 PWM、流量计计数。

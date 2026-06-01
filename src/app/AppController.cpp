@@ -73,7 +73,6 @@ AppController::AppController(const SystemConfig& config,
       lastRecordWriteOk_(true),
       persistenceDirty_(false),
       configDirty_(false),
-      factoryResetRequested_(false),
       pendingBeep_(BeepPattern::None),
       flowDroppedPulses_(0),
       resultDisplayStartMs_(0),
@@ -125,7 +124,6 @@ AppController::AppController(const SystemConfig& config,
       lastRecordWriteOk_(true),
       persistenceDirty_(false),
       configDirty_(false),
-      factoryResetRequested_(false),
       pendingBeep_(BeepPattern::None),
       flowDroppedPulses_(0),
       resultDisplayStartMs_(0),
@@ -245,12 +243,6 @@ const SystemConfig& AppController::config() const {
 
 const MeteringSchemeRecord& AppController::activeMeteringScheme() const {
     return activeMeteringScheme_;
-}
-
-bool AppController::consumeFactoryResetRequest() {
-    const bool requested = factoryResetRequested_;
-    factoryResetRequested_ = false;
-    return requested;
 }
 
 BeepPattern AppController::consumeBeepPattern() {

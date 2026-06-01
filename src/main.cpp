@@ -728,19 +728,6 @@ void runApplicationTick() {
         }
     }
 
-    if (g_app->consumeFactoryResetRequest()) {
-        ESP32BASE_LOG_W("app", "factory reset requested from local buttons");
-        g_valveHardware.apply(faucet::ValveOutput{faucet::ValveState::Closed, false, 0});
-        g_configStore.resetSystemConfig();
-        faucet::PeriodKeys periodKeys{};
-        currentPeriodKeys(currentSeconds(), periodKeys);
-        g_configStore.resetStatistics(periodKeys);
-        g_configStore.resetFilterRuntime();
-        g_waterRecordFile.clear();
-        delay(200);
-        ESP.restart();
-    }
-
     g_beep.tick(nowMs);
     g_beepHardware.apply(g_beep.output());
 }

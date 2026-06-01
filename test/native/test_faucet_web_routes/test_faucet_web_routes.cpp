@@ -9,9 +9,9 @@ using namespace faucet;
 
 void test_routes_fit_esp32base_default_route_capacity() {
     TEST_ASSERT_TRUE(faucetWebRoutesFitEsp32Base());
-    TEST_ASSERT_TRUE(faucetWebRoutesFitEsp32Base(18));
-    TEST_ASSERT_LESS_OR_EQUAL_size_t(18, faucetWebRouteCount());
-    TEST_ASSERT_EQUAL_size_t(18, faucetWebRouteCount());
+    TEST_ASSERT_TRUE(faucetWebRoutesFitEsp32Base(21));
+    TEST_ASSERT_LESS_OR_EQUAL_size_t(21, faucetWebRouteCount());
+    TEST_ASSERT_EQUAL_size_t(21, faucetWebRouteCount());
 }
 
 void test_routes_do_not_register_remote_water_control_paths() {
@@ -53,26 +53,38 @@ void test_route_whitelist_rejects_unknown_and_dangerous_control_aliases() {
     TEST_ASSERT_FALSE(faucetWebRouteAllowed("api/faucet/status"));
 }
 
-void test_dual_method_routes_are_merged_to_any() {
+void test_business_api_routes_use_explicit_methods() {
     const FaucetWebRoute* routes = faucetWebRoutes();
-    bool foundPresets = false;
-    bool foundFilters = false;
-    bool foundRecords = false;
+    bool foundPresetsGet = false;
+    bool foundPresetsPost = false;
+    bool foundFiltersGet = false;
+    bool foundFiltersPost = false;
+    bool foundRecordsGet = false;
+    bool foundRecordsPost = false;
     for (std::size_t i = 0; i < faucetWebRouteCount(); ++i) {
         if (std::strcmp(routes[i].path, "/api/faucet/presets") == 0) {
-            foundPresets = routes[i].method == FaucetWebMethod::Any;
+            foundPresetsGet = foundPresetsGet || routes[i].method == FaucetWebMethod::Get;
+            foundPresetsPost = foundPresetsPost || routes[i].method == FaucetWebMethod::Post;
+            TEST_ASSERT_NOT_EQUAL(FaucetWebMethod::Any, routes[i].method);
         }
         if (std::strcmp(routes[i].path, "/api/faucet/filters") == 0) {
-            foundFilters = routes[i].method == FaucetWebMethod::Any;
+            foundFiltersGet = foundFiltersGet || routes[i].method == FaucetWebMethod::Get;
+            foundFiltersPost = foundFiltersPost || routes[i].method == FaucetWebMethod::Post;
+            TEST_ASSERT_NOT_EQUAL(FaucetWebMethod::Any, routes[i].method);
         }
         if (std::strcmp(routes[i].path, "/api/faucet/records") == 0) {
-            foundRecords = routes[i].method == FaucetWebMethod::Any;
+            foundRecordsGet = foundRecordsGet || routes[i].method == FaucetWebMethod::Get;
+            foundRecordsPost = foundRecordsPost || routes[i].method == FaucetWebMethod::Post;
+            TEST_ASSERT_NOT_EQUAL(FaucetWebMethod::Any, routes[i].method);
         }
     }
 
-    TEST_ASSERT_TRUE(foundPresets);
-    TEST_ASSERT_TRUE(foundFilters);
-    TEST_ASSERT_TRUE(foundRecords);
+    TEST_ASSERT_TRUE(foundPresetsGet);
+    TEST_ASSERT_TRUE(foundPresetsPost);
+    TEST_ASSERT_TRUE(foundFiltersGet);
+    TEST_ASSERT_TRUE(foundFiltersPost);
+    TEST_ASSERT_TRUE(foundRecordsGet);
+    TEST_ASSERT_TRUE(foundRecordsPost);
     TEST_ASSERT_FALSE(faucetWebRouteAllowed("/api/faucet/config"));
     TEST_ASSERT_FALSE(faucetWebRouteAllowed("/api/faucet/records/calibration"));
     TEST_ASSERT_FALSE(faucetWebRouteAllowed("/faucet/records/calibration"));
@@ -120,8 +132,8 @@ void test_filter_forms_use_registered_api_endpoints() {
     bool foundReset = false;
     for (std::size_t i = 0; i < faucetWebRouteCount(); ++i) {
         if (std::strcmp(routes[i].path, "/api/faucet/filters") == 0) {
-            foundFilters = routes[i].method == FaucetWebMethod::Any && routes[i].kind == FaucetWebRouteKind::Api &&
-                           routes[i].title == nullptr;
+            foundFilters = foundFilters || (routes[i].method == FaucetWebMethod::Post &&
+                                            routes[i].kind == FaucetWebRouteKind::Api && routes[i].title == nullptr);
         }
         if (std::strcmp(routes[i].path, "/api/faucet/filters/reset") == 0) {
             foundReset = routes[i].method == FaucetWebMethod::Post && routes[i].kind == FaucetWebRouteKind::Api &&
@@ -172,8 +184,8 @@ void test_records_page_and_calibration_api_are_available() {
                                      routes[i].title == nullptr;
         }
         if (std::strcmp(routes[i].path, "/api/faucet/records") == 0) {
-            foundApi = routes[i].method == FaucetWebMethod::Any && routes[i].kind == FaucetWebRouteKind::Api &&
-                       routes[i].title == nullptr;
+            foundApi = foundApi || (routes[i].method == FaucetWebMethod::Post &&
+                                    routes[i].kind == FaucetWebRouteKind::Api && routes[i].title == nullptr);
         }
     }
     TEST_ASSERT_TRUE(found);
@@ -1424,6 +1436,64 @@ void test_web_config_writes_reload_current_config_before_persisting() {
     TEST_ASSERT_TRUE_MESSAGE(loadConfig < saveConfig, "Web saves must merge changes into loaded migrated config");
 }
 
+void test_business_post_handlers_use_post_allowed_guard() {
+    FILE* file = std::fopen("src/web/FaucetWeb.cpp", "rb");
+    TEST_ASSERT_NOT_NULL(file);
+    static char buffer[340000]{};
+    const std::size_t read = std::fread(buffer, 1, sizeof(buffer) - 1, file);
+    std::fclose(file);
+    TEST_ASSERT_GREATER_THAN_size_t(0, read);
+
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "Esp32BaseWeb::checkPostAllowed(\"faucet_presets\")"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "Esp32BaseWeb::checkPostAllowed(\"faucet_records\")"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "Esp32BaseWeb::checkPostAllowed(\"faucet_calibration\")"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "Esp32BaseWeb::checkPostAllowed(\"faucet_filters\")"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "Esp32BaseWeb::checkPostAllowed(\"faucet_filter_reset\")"));
+}
+
+void test_heavy_web_handlers_return_busy_while_water_task_active() {
+    FILE* file = std::fopen("src/web/FaucetWeb.cpp", "rb");
+    TEST_ASSERT_NOT_NULL(file);
+    static char buffer[340000]{};
+    const std::size_t read = std::fread(buffer, 1, sizeof(buffer) - 1, file);
+    std::fclose(file);
+    TEST_ASSERT_GREATER_THAN_size_t(0, read);
+
+    const char* recordsPage = std::strstr(buffer, "void handleRecordsPage()");
+    const char* calibrationPage = std::strstr(buffer, "void handleCalibrationPage()");
+    const char* detailPage = std::strstr(buffer, "void handleRecordDetailPage()");
+    const char* recordsApi = std::strstr(buffer, "void handleRecordsApi()");
+    TEST_ASSERT_NOT_NULL(recordsPage);
+    TEST_ASSERT_NOT_NULL(calibrationPage);
+    TEST_ASSERT_NOT_NULL(detailPage);
+    TEST_ASSERT_NOT_NULL(recordsApi);
+
+    TEST_ASSERT_NOT_NULL(std::strstr(recordsPage, "sendBusyJson(\"records_page\")"));
+    TEST_ASSERT_NOT_NULL(std::strstr(calibrationPage, "sendBusyJson(\"calibration_page\")"));
+    TEST_ASSERT_NOT_NULL(std::strstr(detailPage, "sendBusyJson(\"record_detail\")"));
+    TEST_ASSERT_NOT_NULL(std::strstr(recordsApi, "sendBusyJson(\"records_api\")"));
+}
+
+void test_incomplete_factory_reset_path_is_not_kept_as_dead_code() {
+    FILE* mainFile = std::fopen("src/main.cpp", "rb");
+    TEST_ASSERT_NOT_NULL(mainFile);
+    static char mainBuffer[90000]{};
+    const std::size_t mainRead = std::fread(mainBuffer, 1, sizeof(mainBuffer) - 1, mainFile);
+    std::fclose(mainFile);
+    TEST_ASSERT_GREATER_THAN_size_t(0, mainRead);
+
+    FILE* appHeader = std::fopen("include/app/AppController.h", "rb");
+    TEST_ASSERT_NOT_NULL(appHeader);
+    static char headerBuffer[24000]{};
+    const std::size_t headerRead = std::fread(headerBuffer, 1, sizeof(headerBuffer) - 1, appHeader);
+    std::fclose(appHeader);
+    TEST_ASSERT_GREATER_THAN_size_t(0, headerRead);
+
+    TEST_ASSERT_NULL(std::strstr(mainBuffer, "consumeFactoryResetRequest"));
+    TEST_ASSERT_NULL(std::strstr(headerBuffer, "factoryResetRequested_"));
+    TEST_ASSERT_NULL(std::strstr(headerBuffer, "consumeFactoryResetRequest"));
+}
+
 int main(int argc, char** argv) {
     (void)argc;
     (void)argv;
@@ -1433,7 +1503,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_routes_do_not_register_remote_water_control_paths);
     RUN_TEST(test_navigation_pages_use_requested_order_and_labels);
     RUN_TEST(test_route_whitelist_rejects_unknown_and_dangerous_control_aliases);
-    RUN_TEST(test_dual_method_routes_are_merged_to_any);
+    RUN_TEST(test_business_api_routes_use_explicit_methods);
     RUN_TEST(test_filter_edit_route_is_hidden_from_navigation);
     RUN_TEST(test_app_css_route_is_hidden_from_navigation);
     RUN_TEST(test_filter_forms_use_registered_api_endpoints);
@@ -1455,5 +1525,8 @@ int main(int argc, char** argv) {
     RUN_TEST(test_app_config_save_migrates_before_marking_current_version);
     RUN_TEST(test_app_config_submit_rejects_read_only_business_config_before_field_writes);
     RUN_TEST(test_web_config_writes_reload_current_config_before_persisting);
+    RUN_TEST(test_business_post_handlers_use_post_allowed_guard);
+    RUN_TEST(test_heavy_web_handlers_return_busy_while_water_task_active);
+    RUN_TEST(test_incomplete_factory_reset_path_is_not_kept_as_dead_code);
     return UNITY_END();
 }

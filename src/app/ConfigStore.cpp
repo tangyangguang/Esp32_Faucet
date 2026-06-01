@@ -413,7 +413,9 @@ bool ConfigStore::saveSystemConfig(const SystemConfig& config) {
         filterKey(key, sizeof(key), i, "life_ml");
         ok = okAll(ok, backend_.setInt(kConfigNs, key, toInt(safe.filters[i].lifeMl)));
     }
-    ok = okAll(ok, backend_.setInt(kConfigNs, "ver", kConfigVersion));
+    if (ok) {
+        ok = backend_.setInt(kConfigNs, "ver", kConfigVersion);
+    }
 
     delete safeStorage;
     return ok;

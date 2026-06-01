@@ -104,7 +104,6 @@ public:
     bool lastRecordWriteOk() const;
     bool consumePersistenceDirty();
     bool consumeConfigDirty();
-    bool consumeFactoryResetRequest();
     BeepPattern consumeBeepPattern();
     bool emergencyStop(std::uint32_t nowMs);
     void setFlowDroppedPulses(std::uint32_t droppedPulses);
@@ -178,7 +177,6 @@ private:
     bool lastRecordWriteOk_;
     bool persistenceDirty_;
     bool configDirty_;
-    bool factoryResetRequested_;
     BeepPattern pendingBeep_;
     std::uint32_t flowDroppedPulses_;
     std::uint32_t resultDisplayStartMs_;

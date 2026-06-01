@@ -33,6 +33,7 @@
 
 - AppConfig 保存回调只重新加载 `ConfigStore` 当前完整配置并热应用；它不能直接标记业务配置版本。
 - Web 配置、预设和滤芯保存必须基于 `ConfigStore::loadSystemConfig()` 返回的完整当前配置；流量计计量方案由独立方案存储加载和保存。
+- `ConfigStore::saveSystemConfig()` 只有在所有字段写入成功后才提交 `faucet_cfg/ver`；任一字段失败都不得把部分配置标记为当前版本。
 - 保存失败时不更新运行时 `g_config`、`FilterStore` 或 `AppController`。
 - 出水、确认、暂停或结果页期间拒绝热更新配置。
 

@@ -125,8 +125,8 @@ pio device monitor -e esp32dev --port <端口> --baud 115200
 本次已验证：
 
 - `pio device list` 可识别 CH340 串口。
-- `pio test -e native` 通过，114 个 native 用例全部成功。
-- `pio run -e esp32dev` 通过，主固件 RAM 约 30.8%，Flash 约 72.2%。
+- 2026-06-02 代码侧复测：`pio test -e native` 通过，255 个 native 用例全部成功。
+- 2026-06-02 代码侧复测：`pio run -e esp32dev` 通过，主固件 RAM 约 26.3%，Flash 约 88.3%。
 - `pio run -e esp32dev_smoke` 通过。
 - 主固件串口启动正常：进入 `setup()`，`rtc=absent`、`lcd=absent`、`records=file`，WiFi 已连接，Web 服务就绪，NTP 已同步。
 - Web 首页 `http://192.168.2.112/index` 返回 200。

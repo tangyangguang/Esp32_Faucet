@@ -553,6 +553,12 @@ bool waterTaskActive() {
     return state == WaterState::Confirm || state == WaterState::Running || state == WaterState::Paused;
 }
 
+void sendBusyJson(const char* context) {
+    char json[80]{};
+    std::snprintf(json, sizeof(json), "{\"error\":\"busy\",\"context\":\"%s\"}", context ? context : "web");
+    Esp32BaseWeb::sendJson(409, json);
+}
+
 std::uint32_t savedTraceStatsKey(const WaterPulseTraceFileStats& stats) {
     std::uint32_t key = 2166136261UL;
     auto mix = [&key](std::uint32_t value) {
@@ -3654,6 +3660,10 @@ void handleRecordsPage() {
     if (!requireContext()) {
         return;
     }
+    if (waterTaskActive()) {
+        sendBusyJson("records_page");
+        return;
+    }
     char text[24]{};
     std::uint32_t page = 0;
     std::uint32_t requestedPageNo = 0;
@@ -3968,6 +3978,10 @@ void handleCalibrationPage() {
         handleCalibrationPost();
         return;
     }
+    if (waterTaskActive()) {
+        sendBusyJson("calibration_page");
+        return;
+    }
 
     const std::uint32_t samplePulseWindowSec = selectedSamplePulseWindowSec();
     char text[32]{};
@@ -4048,6 +4062,10 @@ void handleRecordDetailPage() {
             Esp32BaseWeb::sendChunk("<h2>脉冲明细</h2><p class='err'>上下文未就绪。</p>");
             sendPageEnd();
         }
+        return;
+    }
+    if (waterTaskActive()) {
+        sendBusyJson("record_detail");
         return;
     }
     if (!g_context.pulseTraces && !g_context.savedPulseTraces) {
@@ -4954,6 +4972,9 @@ void handleCalibrationPost() {
         Esp32BaseWeb::sendJson(405, "{\"error\":\"method_not_allowed\"}");
         return;
     }
+    if (!Esp32BaseWeb::checkPostAllowed("faucet_calibration")) {
+        return;
+    }
     char text[32]{};
     if (!getParam("action", text, sizeof(text))) {
         Esp32BaseWeb::redirectSeeOther("/faucet/calibration?error=invalid_value");
@@ -5087,10 +5108,10 @@ void handleTodayOverviewApi() {
 }
 
 void handlePresetsApi() {
-    if (!Esp32BaseWeb::checkAuth() || !requireContext()) {
-        return;
-    }
     if (Esp32BaseWeb::isMethod(Esp32BaseWeb::METHOD_POST)) {
+        if (!Esp32BaseWeb::checkPostAllowed("faucet_presets") || !requireContext()) {
+            return;
+        }
         char text[24]{};
         if (getParam("action", text, sizeof(text))) {
             Esp32BaseWeb::sendJson(400, "{\"error\":\"invalid_action\"}");
@@ -5160,16 +5181,19 @@ void handlePresetsApi() {
         }
         return;
     }
+    if (!Esp32BaseWeb::checkAuth() || !requireContext()) {
+        return;
+    }
     char json[1536]{};
     sendJsonBuffer(writePresetsJson(g_context.config->presets, json, sizeof(json)), json);
 }
 
 void handleRecordsApi() {
-    if (!Esp32BaseWeb::checkAuth() || !requireContext()) {
-        return;
-    }
     char text[32]{};
     if (Esp32BaseWeb::isMethod(Esp32BaseWeb::METHOD_POST)) {
+        if (!Esp32BaseWeb::checkPostAllowed("faucet_records") || !requireContext()) {
+            return;
+        }
         if (!getParam("action", text, sizeof(text))) {
             Esp32BaseWeb::sendJson(400, "{\"error\":\"missing_action\"}");
             return;
@@ -5221,8 +5245,15 @@ void handleRecordsApi() {
         Esp32BaseWeb::sendJson(400, "{\"error\":\"invalid_action\"}");
         return;
     }
+    if (!Esp32BaseWeb::checkAuth() || !requireContext()) {
+        return;
+    }
     if (!Esp32BaseWeb::isMethod(Esp32BaseWeb::METHOD_GET)) {
         Esp32BaseWeb::sendJson(405, "{\"error\":\"method_not_allowed\"}");
+        return;
+    }
+    if (waterTaskActive()) {
+        sendBusyJson("records_api");
         return;
     }
     std::uint32_t page = 0;
@@ -5822,10 +5853,10 @@ void handleTraceSaveApi() {
 }
 
 void handleFiltersApi() {
-    if (!Esp32BaseWeb::checkAuth() || !requireContext()) {
-        return;
-    }
     if (Esp32BaseWeb::isMethod(Esp32BaseWeb::METHOD_POST)) {
+        if (!Esp32BaseWeb::checkPostAllowed("faucet_filters") || !requireContext()) {
+            return;
+        }
         if (!g_context.app->canApplyConfig()) {
             Esp32BaseWeb::redirectSeeOther("/faucet/filters?error=busy");
             return;
@@ -5867,12 +5898,15 @@ void handleFiltersApi() {
         Esp32BaseWeb::redirectSeeOther(ok ? "/faucet/filters?saved=1" : "/faucet/filters?error=save_failed");
         return;
     }
+    if (!Esp32BaseWeb::checkAuth() || !requireContext()) {
+        return;
+    }
     char json[1536]{};
     sendJsonBuffer(writeFiltersJson(g_context.filters->records(), json, sizeof(json)), json);
 }
 
 void handleFiltersResetApi() {
-    if (!Esp32BaseWeb::checkAuth() || !requireContext()) {
+    if (!Esp32BaseWeb::checkPostAllowed("faucet_filter_reset") || !requireContext()) {
         return;
     }
     char text[24]{};

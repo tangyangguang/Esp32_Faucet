@@ -7,7 +7,8 @@
 - 使用同级目录 `../Esp32Base` 作为 ESP32 基础库。
 - 主固件已接入 Esp32Base FULL profile、四键业务核心、流量计、电磁阀 PWM、LCD1602、蜂鸣器、RTC、LittleFS 日志、统计、滤芯和 Web 查看/配置页面。
 - Web 不提供任何远程出水控制能力。
-- 裸板验证已通过：未接外设时 `rtc=absent`、`lcd=absent`、`log=file`，WiFi/Web/mDNS/NTP 正常。
+- 裸板验证已通过：未接外设时 `rtc=absent`、`lcd=absent`、`records=file`，WiFi/Web/mDNS/NTP 正常。
+- 2026-06-02 代码侧复测：`pio test -e native` 通过 255 个 native 用例；`pio run -e esp32dev` 通过，Flash 约 88.3%。
 
 ## 环境
 

@@ -137,12 +137,14 @@
 | GET | `/api/faucet/today` | 查询首页今日概览 HTML 片段 |
 | GET | `/api/faucet/presets` | 查询预设 |
 | POST | `/api/faucet/presets` | 保存预设配置；拒绝 `select_previous`、`select_next`、`select` 等运行态切换动作 |
-| GET | `/api/faucet/records` | 按时间范围筛选并分页查询出水记录 |
-| POST | `/api/faucet/records` | 通过 `action` 执行记录校准、脉冲明细保存/删除和分段样本保存 |
+| GET | `/api/faucet/records` | 按时间范围筛选并分页查询出水记录；出水确认、运行和暂停期间返回 busy |
+| POST | `/api/faucet/records` | 通过 `action` 执行记录校准、脉冲明细保存/删除、分段样本生成和计量方案 create/edit/enable/disable/delete；危险 POST 必须通过同源校验 |
 | GET | `/api/faucet/stats` | 查询统计 |
 | GET | `/api/faucet/filters` | 查询滤芯 |
 | POST | `/api/faucet/filters` | 保存指定滤芯的启用状态、名称、寿命和上次更换日期 |
 | POST | `/api/faucet/filters/reset` | 重置指定滤芯更换时间和累计流量 |
+
+业务 API 路由必须按 GET/POST 明确注册，非预期方法返回 405；不得把业务配置或危险 action 只挂在 `METHOD_ANY` 上。
 
 禁止注册 `/api/faucet/water/*`、`/api/faucet/start`、`/api/faucet/stop`、`/api/faucet/config`、`/faucet/config` 等旧式或远程出水控制接口。
 

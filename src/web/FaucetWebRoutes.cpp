@@ -19,10 +19,13 @@ constexpr FaucetWebRoute kRoutes[] = {
     {"/faucet/calibration/detail", FaucetWebMethod::Get, FaucetWebRouteKind::Api, nullptr},
     {"/api/faucet/status", FaucetWebMethod::Get, FaucetWebRouteKind::Api, nullptr},
     {"/api/faucet/today", FaucetWebMethod::Get, FaucetWebRouteKind::Api, nullptr},
-    {"/api/faucet/presets", FaucetWebMethod::Any, FaucetWebRouteKind::Api, nullptr},
-    {"/api/faucet/records", FaucetWebMethod::Any, FaucetWebRouteKind::Api, nullptr},
+    {"/api/faucet/presets", FaucetWebMethod::Get, FaucetWebRouteKind::Api, nullptr},
+    {"/api/faucet/presets", FaucetWebMethod::Post, FaucetWebRouteKind::Api, nullptr},
+    {"/api/faucet/records", FaucetWebMethod::Get, FaucetWebRouteKind::Api, nullptr},
+    {"/api/faucet/records", FaucetWebMethod::Post, FaucetWebRouteKind::Api, nullptr},
     {"/api/faucet/stats", FaucetWebMethod::Get, FaucetWebRouteKind::Api, nullptr},
-    {"/api/faucet/filters", FaucetWebMethod::Any, FaucetWebRouteKind::Api, nullptr},
+    {"/api/faucet/filters", FaucetWebMethod::Get, FaucetWebRouteKind::Api, nullptr},
+    {"/api/faucet/filters", FaucetWebMethod::Post, FaucetWebRouteKind::Api, nullptr},
     {"/api/faucet/filters/reset", FaucetWebMethod::Post, FaucetWebRouteKind::Api, nullptr},
 };
 

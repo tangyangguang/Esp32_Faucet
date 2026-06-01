@@ -13,9 +13,10 @@ namespace {
 class FakeConfigBackend : public ConfigBackend {
 public:
     bool failWrites = false;
+    std::string failKey;
 
     bool setInt(const char* ns, const char* key, std::int32_t value) override {
-        if (failWrites) {
+        if (writeFails(ns, key)) {
             return false;
         }
         ints[makeKey(ns, key)] = value;
@@ -28,7 +29,7 @@ public:
     }
 
     bool setBool(const char* ns, const char* key, bool value) override {
-        if (failWrites) {
+        if (writeFails(ns, key)) {
             return false;
         }
         bools[makeKey(ns, key)] = value;
@@ -41,7 +42,7 @@ public:
     }
 
     bool setStr(const char* ns, const char* key, const char* value) override {
-        if (failWrites) {
+        if (writeFails(ns, key)) {
             return false;
         }
         strings[makeKey(ns, key)] = value ? value : "";
@@ -68,6 +69,10 @@ public:
     }
 
 private:
+    bool writeFails(const char* ns, const char* key) const {
+        return failWrites || (!failKey.empty() && failKey == makeKey(ns, key));
+    }
+
     template <typename T>
     void erasePrefix(std::map<std::string, T>& values, const std::string& prefix) {
         for (auto it = values.begin(); it != values.end();) {
@@ -374,6 +379,18 @@ void test_config_save_reports_backend_failures() {
     TEST_ASSERT_FALSE(store.saveSystemConfig(makeDefaultConfig()));
 }
 
+void test_config_save_does_not_mark_current_version_after_partial_write_failure() {
+    FakeConfigBackend backend;
+    backend.failKey = "faucet_cfg/p0_name";
+    ConfigStore store(backend);
+
+    TEST_ASSERT_FALSE(store.saveSystemConfig(makeDefaultConfig()));
+
+    TEST_ASSERT_EQUAL_INT32(-1, backend.getInt("faucet_cfg", "ver", -1));
+    char name[kPresetNameLength]{};
+    TEST_ASSERT_FALSE(backend.getStr("faucet_cfg", "p0_name", name, sizeof(name), ""));
+}
+
 void test_statistics_runtime_round_trips_uint32_values() {
     FakeConfigBackend backend;
     ConfigStore store(backend);
@@ -494,6 +511,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_config_load_sanitizes_stored_values);
     RUN_TEST(test_config_reset_restores_defaults);
     RUN_TEST(test_config_save_reports_backend_failures);
+    RUN_TEST(test_config_save_does_not_mark_current_version_after_partial_write_failure);
     RUN_TEST(test_statistics_runtime_round_trips_uint32_values);
     RUN_TEST(test_statistics_runtime_rolls_loaded_periods);
     RUN_TEST(test_statistics_runtime_future_version_uses_defaults_without_erasing_storage);

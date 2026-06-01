@@ -3059,7 +3059,6 @@ void sendNextPresetControl(const AppSnapshot& snapshot) {
     const std::size_t count = enabledPresetCount(config);
     const std::size_t ordinal = enabledPresetOrdinal(config, snapshot.water.selectedPreset);
     Esp32BaseWeb::sendChunk("<div id='nextPresetControl' class='next-preset-control'>"
-                            "<button class='preset-step' type='button' aria-label='上一个预设' data-action='action=select_previous' onclick=\"faucetSelectPreset('select_previous')\">‹</button>"
                             "<div class='next-preset-copy'><span>下次预设</span><strong id='nextPresetLabel'>");
     if (available) {
         const PresetConfig& preset = config.presets[snapshot.water.selectedPreset];
@@ -3080,9 +3079,7 @@ void sendNextPresetControl(const AppSnapshot& snapshot) {
         Esp32BaseWeb::sendChunk("无可用预设");
         std::snprintf(estimate, sizeof(estimate), "请先在预设页启用至少一项");
     }
-    sendFmt("</strong><small id='nextPresetEstimate'%s>%s</small></div>"
-            "<button class='preset-step' type='button' aria-label='下一个预设' data-action='action=select_next' onclick=\"faucetSelectPreset('select_next')\">›</button>"
-            "</div>",
+    sendFmt("</strong><small id='nextPresetEstimate'%s>%s</small></div></div>",
             estimate[0] ? "" : " style='display:none'",
             estimate);
 }
@@ -3343,7 +3340,6 @@ void sendHomeAutoRefreshScript() {
                             "function faucetIsActiveState(s){return s==='running'||s==='paused'||s==='confirm';}"
                             "function scheduleFaucetHomeStatus(ms){clearTimeout(faucetHomeStatusTimer);faucetHomeStatusTimer=setTimeout(updateFaucetHomeStatus,ms);}"
                             "function scheduleFaucetTodayOverview(ms){clearTimeout(faucetTodayTimer);faucetTodayTimer=setTimeout(updateFaucetTodayOverview,ms);}"
-                            "function faucetSelectPreset(action){fetch('/api/faucet/presets',{method:'POST',cache:'no-store',credentials:'same-origin',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'action='+encodeURIComponent(action)}).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json();}).then(function(s){faucetApplyHomeStatus(s);}).catch(function(){scheduleFaucetHomeStatus(200);});return false;}"
                             "function updateFaucetHomeStatus(){if(document.hidden){scheduleFaucetHomeStatus(faucetIdlePollMs);return;}"
                             "fetch('/api/faucet/status',{cache:'no-store'}).then(function(r){return r.json();}).then(function(s){"
                             "faucetApplyHomeStatus(s);"
@@ -3479,6 +3475,12 @@ void handleFaucetPage() {
         return;
     }
     AppSnapshot snapshot = g_context.app->snapshot();
+    if (g_context.currentRuntimeDiagnostics) {
+        const FaucetRuntimeDiagnostics diagnostics = g_context.currentRuntimeDiagnostics();
+        snapshot.maxLoopIntervalUs = diagnostics.maxLoopIntervalUs;
+        snapshot.maxAppTickUs = diagnostics.maxAppTickUs;
+        snapshot.maxBaseHandleUs = diagnostics.maxBaseHandleUs;
+    }
     applyTargetDurationEstimate(snapshot);
     const FaucetDisplayStatus displayStatus =
         g_context.currentDisplayStatus
@@ -5091,26 +5093,7 @@ void handlePresetsApi() {
     if (Esp32BaseWeb::isMethod(Esp32BaseWeb::METHOD_POST)) {
         char text[24]{};
         if (getParam("action", text, sizeof(text))) {
-            bool ok = false;
-            if (std::strcmp(text, "select_previous") == 0) {
-                ok = g_context.app->selectPreviousPresetForWeb();
-            } else if (std::strcmp(text, "select_next") == 0) {
-                ok = g_context.app->selectNextPresetForWeb();
-            } else {
-                std::uint32_t index = 0;
-                if (std::strcmp(text, "select") == 0 && getParam("index", text, sizeof(text)) &&
-                    parseU32(text, index)) {
-                    ok = g_context.app->selectPresetForWeb(index);
-                } else {
-                    Esp32BaseWeb::sendJson(400, "{\"error\":\"invalid_action\"}");
-                    return;
-                }
-            }
-            if (!ok) {
-                Esp32BaseWeb::sendJson(409, "{\"error\":\"preset_unavailable\"}");
-                return;
-            }
-            sendCurrentStatusJson();
+            Esp32BaseWeb::sendJson(400, "{\"error\":\"invalid_action\"}");
             return;
         }
         const bool browserForm = Esp32BaseWeb::hasParam("return");

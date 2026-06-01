@@ -276,11 +276,15 @@ bool writeStatusJson(const AppSnapshot& snapshot,
     appendEscaped(writer, targetEstimateValid ? "" : (snapshot.targetEstimateReason ? snapshot.targetEstimateReason : ""));
     writer.append("},"
                   "\"currentFlowMlPerMin\":%lu,\"recentAverageFlowMlPerMin\":%lu,\"flowDroppedPulses\":%lu,"
+                  "\"maxLoopIntervalUs\":%lu,\"maxAppTickUs\":%lu,\"maxBaseHandleUs\":%lu,"
                   "\"valveDutyPercent\":%u,\"valveFullPowerSec\":%lu,\"valveHoldDutyPercent\":%u,"
                   "\"screenOn\":%s,\"waterControl\":false",
                   static_cast<unsigned long>(snapshot.currentFlowMlPerMin),
                   static_cast<unsigned long>(snapshot.recentAverageFlowMlPerMin),
                   static_cast<unsigned long>(snapshot.flowDroppedPulses),
+                  static_cast<unsigned long>(snapshot.maxLoopIntervalUs),
+                  static_cast<unsigned long>(snapshot.maxAppTickUs),
+                  static_cast<unsigned long>(snapshot.maxBaseHandleUs),
                   static_cast<unsigned>(snapshot.valve.dutyPercent),
                   static_cast<unsigned long>(config.valveFullPowerSec),
                   static_cast<unsigned>(config.valveHoldDutyPercent),

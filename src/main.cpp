@@ -27,6 +27,7 @@
 #include "drivers/RtcClock.h"
 #include "web/FaucetWeb.h"
 
+#include <algorithm>
 #include <new>
 #include <time.h>
 
@@ -251,6 +252,10 @@ std::uint32_t g_lastDisplayMs = 0;
 std::uint32_t g_lastDroppedPulsesLogged = 0;
 std::uint32_t g_lastDroppedPulsesLogMs = 0;
 bool g_bootRelativeTimesRewritten = false;
+std::uint32_t g_lastLoopStartUs = 0;
+std::uint32_t g_maxLoopIntervalUs = 0;
+std::uint32_t g_maxAppTickUs = 0;
+std::uint32_t g_maxBaseHandleUs = 0;
 
 void configureBase() {
     Esp32Base::setFirmwareInfo(kFirmwareName, kFirmwareVersion, __DATE__ " " __TIME__);
@@ -409,6 +414,10 @@ faucet::FaucetDisplayStatus currentDisplayStatus() {
     return faucet::FaucetDisplayStatus{logicalFrame, physicalFrame.on};
 }
 
+faucet::FaucetRuntimeDiagnostics currentRuntimeDiagnostics() {
+    return faucet::FaucetRuntimeDiagnostics{g_maxLoopIntervalUs, g_maxAppTickUs, g_maxBaseHandleUs};
+}
+
 void applyRuntimeSettings(const faucet::SystemConfig& config) {
     g_beep.setEnabled(config.beepEnabled);
     if (g_display) {
@@ -533,9 +542,11 @@ void initializeApplication() {
             g_records,
             g_recordMeteringSnapshots,
             g_meteringSchemes,
-            g_pulseTraces);
+            g_pulseTraces,
+            &g_recordCalibrations);
     } else {
-        g_app = new (std::nothrow) faucet::AppController(g_config, g_statistics, *g_filters, g_records, g_pulseTraces);
+        g_app = new (std::nothrow) faucet::AppController(
+            g_config, g_statistics, *g_filters, g_records, g_pulseTraces, &g_recordCalibrations);
     }
     if (!g_app) {
         ESP32BASE_LOG_E("app", "app controller allocation failed");
@@ -561,7 +572,8 @@ void initializeApplication() {
                                  currentSeconds,
                                  currentBootId,
                                  applyRuntimeSettings,
-                                 currentDisplayStatus});
+                                 currentDisplayStatus,
+                                 currentRuntimeDiagnostics});
     faucet::setFaucetAppConfigContext(
         faucet::FaucetAppConfigContext{&g_config, &g_configStore, g_app, applyRuntimeSettings});
 #if ESP32BASE_ENABLE_NTP
@@ -751,7 +763,18 @@ void setup() {
 }
 
 void loop() {
+    const std::uint32_t loopStartUs = micros();
+    if (g_lastLoopStartUs != 0) {
+        g_maxLoopIntervalUs = std::max(g_maxLoopIntervalUs, faucet::elapsedSince(loopStartUs, g_lastLoopStartUs));
+    }
+    g_lastLoopStartUs = loopStartUs;
+
+    const std::uint32_t appTickStartUs = micros();
     runApplicationTick();
+    g_maxAppTickUs = std::max(g_maxAppTickUs, faucet::elapsedSince(micros(), appTickStartUs));
+
+    const std::uint32_t baseHandleStartUs = micros();
     Esp32Base::handle();
+    g_maxBaseHandleUs = std::max(g_maxBaseHandleUs, faucet::elapsedSince(micros(), baseHandleStartUs));
     delay(1);
 }

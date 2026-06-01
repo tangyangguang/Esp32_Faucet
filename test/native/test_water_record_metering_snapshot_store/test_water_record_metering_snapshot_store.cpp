@@ -13,6 +13,9 @@ namespace {
 
 class MemoryFileBackend : public WaterRecordFileBackend {
 public:
+    std::size_t createSizedCalls = 0;
+    std::size_t removeCalls = 0;
+
     bool exists(const char* path) override {
         return files.find(path ? path : "") != files.end();
     }
@@ -23,6 +26,7 @@ public:
     }
 
     bool createSized(const char* path, std::size_t size) override {
+        ++createSizedCalls;
         files[path ? path : ""] = std::vector<std::uint8_t>(size, 0);
         return path != nullptr;
     }
@@ -67,6 +71,7 @@ public:
     }
 
     bool removeFile(const char* path) override {
+        ++removeCalls;
         files.erase(path ? path : "");
         return true;
     }
@@ -174,6 +179,43 @@ void test_file_store_overwrites_oldest_when_capacity_is_full() {
     TEST_ASSERT_EQUAL_size_t(2, store.count());
 }
 
+void test_file_snapshot_store_corrupt_header_preserves_existing_file() {
+    MemoryFileBackend backend;
+    const std::uint8_t bad[4] = {1, 2, 3, 4};
+    TEST_ASSERT_TRUE(backend.writeAt("/metering.bin", 0, bad, sizeof(bad)));
+    const std::size_t createCalls = backend.createSizedCalls;
+
+    WaterRecordMeteringSnapshotFileStore store(backend, "/metering.bin", 4);
+    TEST_ASSERT_FALSE(store.begin());
+    TEST_ASSERT_FALSE(store.ready());
+    TEST_ASSERT_EQUAL_size_t(createCalls, backend.createSizedCalls);
+    TEST_ASSERT_EQUAL_size_t(0, backend.removeCalls);
+    TEST_ASSERT_EQUAL_INT64(4, backend.fileSize("/metering.bin"));
+}
+
+void test_file_snapshot_store_capacity_mismatch_preserves_existing_file() {
+    MemoryFileBackend backend;
+    const WaterRecord record = makeRecord(100, 1500, 333);
+    {
+        WaterRecordMeteringSnapshotFileStore store(backend, "/metering.bin", 4);
+        TEST_ASSERT_TRUE(store.begin());
+        TEST_ASSERT_TRUE(store.upsert(makeSnapshot(record, 2)));
+    }
+    const std::int64_t originalSize = backend.fileSize("/metering.bin");
+    const std::size_t createCalls = backend.createSizedCalls;
+
+    WaterRecordMeteringSnapshotFileStore mismatched(backend, "/metering.bin", 3);
+    TEST_ASSERT_FALSE(mismatched.begin());
+    TEST_ASSERT_FALSE(mismatched.ready());
+    TEST_ASSERT_EQUAL_size_t(createCalls, backend.createSizedCalls);
+    TEST_ASSERT_EQUAL_size_t(0, backend.removeCalls);
+    TEST_ASSERT_EQUAL_INT64(originalSize, backend.fileSize("/metering.bin"));
+
+    WaterRecordMeteringSnapshotFileStore original(backend, "/metering.bin", 4);
+    TEST_ASSERT_TRUE(original.begin());
+    TEST_ASSERT_EQUAL_size_t(1, original.count());
+}
+
 int main(int argc, char** argv) {
     (void)argc;
     (void)argv;
@@ -182,5 +224,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_file_snapshot_store_reloads_after_restart);
     RUN_TEST(test_find_any_matches_record_pages);
     RUN_TEST(test_file_store_overwrites_oldest_when_capacity_is_full);
+    RUN_TEST(test_file_snapshot_store_corrupt_header_preserves_existing_file);
+    RUN_TEST(test_file_snapshot_store_capacity_mismatch_preserves_existing_file);
     return UNITY_END();
 }

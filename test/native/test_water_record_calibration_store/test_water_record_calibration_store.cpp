@@ -278,6 +278,43 @@ void test_record_calibration_file_store_matches_page_records_with_single_scan() 
     TEST_ASSERT_LESS_OR_EQUAL_size_t(2, backend.readCalls);
 }
 
+void test_record_calibration_file_store_corrupt_header_preserves_existing_file() {
+    MemoryFileBackend backend;
+    const std::uint8_t bad[4] = {1, 2, 3, 4};
+    TEST_ASSERT_TRUE(backend.writeAt("/cal.bin", 0, bad, sizeof(bad)));
+    const std::size_t createCalls = backend.createSizedCalls;
+
+    WaterRecordCalibrationFileStore store(backend, "/cal.bin", 4);
+    TEST_ASSERT_FALSE(store.begin());
+    TEST_ASSERT_FALSE(store.ready());
+    TEST_ASSERT_EQUAL_size_t(createCalls, backend.createSizedCalls);
+    TEST_ASSERT_EQUAL_size_t(0, backend.removeCalls);
+    TEST_ASSERT_EQUAL_INT64(4, backend.fileSize("/cal.bin"));
+}
+
+void test_record_calibration_file_store_capacity_mismatch_preserves_existing_file() {
+    MemoryFileBackend backend;
+    const WaterRecord record = makeRecord(832000100UL, 5840, 7000, 1291);
+    {
+        WaterRecordCalibrationFileStore store(backend, "/cal.bin", 4);
+        TEST_ASSERT_TRUE(store.begin());
+        TEST_ASSERT_TRUE(store.upsert(makeCalibration(record, 7000)));
+    }
+    const std::int64_t originalSize = backend.fileSize("/cal.bin");
+    const std::size_t createCalls = backend.createSizedCalls;
+
+    WaterRecordCalibrationFileStore mismatched(backend, "/cal.bin", 3);
+    TEST_ASSERT_FALSE(mismatched.begin());
+    TEST_ASSERT_FALSE(mismatched.ready());
+    TEST_ASSERT_EQUAL_size_t(createCalls, backend.createSizedCalls);
+    TEST_ASSERT_EQUAL_size_t(0, backend.removeCalls);
+    TEST_ASSERT_EQUAL_INT64(originalSize, backend.fileSize("/cal.bin"));
+
+    WaterRecordCalibrationFileStore original(backend, "/cal.bin", 4);
+    TEST_ASSERT_TRUE(original.begin());
+    TEST_ASSERT_EQUAL_size_t(1, original.count());
+}
+
 int main(int argc, char** argv) {
     (void)argc;
     (void)argv;
@@ -290,5 +327,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_record_calibration_file_store_overwrites_matching_record);
     RUN_TEST(test_record_calibration_file_store_appends_first_entry_without_write_at_extend);
     RUN_TEST(test_record_calibration_file_store_matches_page_records_with_single_scan);
+    RUN_TEST(test_record_calibration_file_store_corrupt_header_preserves_existing_file);
+    RUN_TEST(test_record_calibration_file_store_capacity_mismatch_preserves_existing_file);
     return UNITY_END();
 }

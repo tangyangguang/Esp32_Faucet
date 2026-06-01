@@ -16,6 +16,8 @@ class MemoryFileBackend : public WaterRecordFileBackend {
 public:
     bool failWrite = false;
     int failWriteAtCount = 0;
+    std::size_t createSizedCalls = 0;
+    std::size_t removeCalls = 0;
 
     bool exists(const char* path) override {
         return files.find(path ? path : "") != files.end();
@@ -27,6 +29,7 @@ public:
     }
 
     bool createSized(const char* path, std::size_t size) override {
+        ++createSizedCalls;
         if (failWrite || !path) {
             return false;
         }
@@ -78,8 +81,17 @@ public:
     }
 
     bool removeFile(const char* path) override {
+        ++removeCalls;
         files.erase(path ? path : "");
         return true;
+    }
+
+    void overwriteByte(const char* path, std::size_t offset, std::uint8_t value) {
+        std::vector<std::uint8_t>& file = files[path ? path : ""];
+        if (offset >= file.size()) {
+            file.resize(offset + 1, 0);
+        }
+        file[offset] = value;
     }
 
 private:
@@ -424,6 +436,22 @@ void test_legacy_migration_avoids_large_metering_scheme_stack_arrays() {
     TEST_ASSERT_TRUE(migratedStackArray == nullptr || migratedStackArray > nextFunction);
 }
 
+void test_begin_preserves_corrupt_scheme_file_without_reinitializing() {
+    MemoryFileBackend backend;
+    {
+        MeteringSchemeStore store(backend, "/schemes.bin");
+        TEST_ASSERT_TRUE(store.begin());
+    }
+    const std::size_t createCalls = backend.createSizedCalls;
+    backend.overwriteByte("/schemes.bin", 0, 0x00);
+
+    MeteringSchemeStore loaded(backend, "/schemes.bin");
+    TEST_ASSERT_FALSE(loaded.begin());
+    TEST_ASSERT_FALSE(loaded.ready());
+    TEST_ASSERT_EQUAL_size_t(createCalls, backend.createSizedCalls);
+    TEST_ASSERT_EQUAL_size_t(0, backend.removeCalls);
+}
+
 int main(int argc, char** argv) {
     (void)argc;
     (void)argv;
@@ -438,5 +466,6 @@ int main(int argc, char** argv) {
     RUN_TEST(test_increment_usage_marks_dirty_when_record_update_fails);
     RUN_TEST(test_migrates_legacy_config_slots_and_candidate_once);
     RUN_TEST(test_legacy_migration_avoids_large_metering_scheme_stack_arrays);
+    RUN_TEST(test_begin_preserves_corrupt_scheme_file_without_reinitializing);
     return UNITY_END();
 }

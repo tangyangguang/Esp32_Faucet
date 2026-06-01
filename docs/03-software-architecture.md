@@ -105,10 +105,10 @@
 
 - 业务 API 前缀为 `/api/faucet/...`。
 - Web 页面通过 Esp32Base 注册，内置 OTA/WiFi/基础状态入口不重复实现。
-- Web 采用业务优先首页模型：`/` 进入 `/faucet`，`/esp32base` 保留为系统工具入口；系统工具放在页面底部小字区域。
+- Web 采用业务优先首页模型：`/` 进入 `/index`，`/esp32base` 保留为系统工具入口；系统工具放在页面底部小字区域。
 - 配置写入、恢复出厂、重启等操作使用 POST，并需要 Basic Auth。
-- 记录、统计、配置接口必须分页或小响应，避免大内存拼接。
-- Web 端不得注册启动出水、暂停出水、继续出水、停止出水 API 或按钮。
+- 记录、统计和参数页面/API 必须分页或小响应，避免大内存拼接。
+- Web 端不得注册启动出水、暂停出水、继续出水、停止出水 API 或按钮，也不得通过业务页面/API 修改运行态“下次预设”；预设切换只通过本地 `PLUS`/`MINUS` 按键完成。
 - Web records 页支持时间范围筛选和分页；列表保持紧凑，显示目标、出水量、持续时间、模式、结束原因、脉冲/P-L、计量方案、校准状态和操作。过滤脉冲只在有值时作为脉冲单元格内的辅助诊断信息展示。有 RAM 明细的记录显示“明细”，已写入设备样本库的记录优先显示“已存明细”；不允许远程打开电磁阀。
 - Web 默认认证通过 Esp32Base `setDefaultAuth()` 设置为 `admin/admin`；用户可通过 `/esp32base/auth` 修改认证，已保存认证优先于应用默认值。
 - WebOTA 目标地址和凭据不写入仓库；本地复制 `platformio.example.ini` 为 `platformio.local.ini` 后填写 `custom_esp32base_webota_*`。
@@ -118,10 +118,13 @@
 
 | 页面 | 路径 | 功能 |
 | --- | --- | --- |
-| 首页 | `/faucet` | 状态、当前预设、基础统计、启用滤芯寿命概览 |
-| 配置 | `/faucet/config` | 安全阈值、显示、蜂鸣器、电磁阀参数 |
+| 首页 | `/index` | 状态、下次预设只读展示、基础统计、启用滤芯寿命概览 |
+| 系统参数 | `/esp32base/app-config` | 安全阈值、流量保护、显示、蜂鸣器、电磁阀和计量参数；由 Esp32Base App Config 提供 |
 | 预设 | `/faucet/presets` | 9 组预设的启用、名称、类型和值 |
 | 记录 | `/faucet/records` | 按时间范围筛选并分页查看出水记录，显示校准状态、实测量和脉冲明细入口 |
+| 记录详情 | `/faucet/records/detail` | 单条记录详情、RAM 或已保存脉冲明细；隐藏路由，不进入导航 |
+| 校准 | `/faucet/calibration` | 样本校准、分段计量方案生成、手工方案管理和显式启用 |
+| 校准详情 | `/faucet/calibration/detail` | 校准样本详情、RAM 或已保存脉冲明细；隐藏路由，不进入导航 |
 | 统计 | `/faucet/stats` | 今日、本周、本月、总累计 |
 | 滤芯 | `/faucet/filters` | 最多 6 个滤芯的已用天数、已用流量、寿命范围、状态、设置入口和重置 |
 | 滤芯设置 | `/faucet/filters/edit?index=N` | 单个滤芯的启用状态、名称、建议更换周期、最长使用周期、寿命流量和上次更换日期配置；隐藏路由，不进入导航 |
@@ -131,10 +134,9 @@
 | 方法 | 路径 | 功能 |
 | --- | --- | --- |
 | GET | `/api/faucet/status` | 查询状态 |
-| GET | `/api/faucet/config` | 查询配置 |
-| POST | `/api/faucet/config` | 保存配置 |
+| GET | `/api/faucet/today` | 查询首页今日概览 HTML 片段 |
 | GET | `/api/faucet/presets` | 查询预设 |
-| POST | `/api/faucet/presets` | 保存预设 |
+| POST | `/api/faucet/presets` | 保存预设配置；拒绝 `select_previous`、`select_next`、`select` 等运行态切换动作 |
 | GET | `/api/faucet/records` | 按时间范围筛选并分页查询出水记录 |
 | POST | `/api/faucet/records` | 通过 `action` 执行记录校准、脉冲明细保存/删除和分段样本保存 |
 | GET | `/api/faucet/stats` | 查询统计 |
@@ -142,7 +144,7 @@
 | POST | `/api/faucet/filters` | 保存指定滤芯的启用状态、名称、寿命和上次更换日期 |
 | POST | `/api/faucet/filters/reset` | 重置指定滤芯更换时间和累计流量 |
 
-禁止注册 `/api/faucet/water/*`、`/api/faucet/start`、`/api/faucet/stop` 等任何远程出水控制接口。
+禁止注册 `/api/faucet/water/*`、`/api/faucet/start`、`/api/faucet/stop`、`/api/faucet/config`、`/faucet/config` 等旧式或远程出水控制接口。
 
 ## 数据模型草案
 

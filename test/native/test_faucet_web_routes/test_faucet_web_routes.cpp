@@ -270,8 +270,9 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NULL(std::strstr(buffer, "<span>全程平均 %luP/L</span><span>预计 %luP</span>"));
     TEST_ASSERT_NULL(std::strstr(buffer, "时间预设 · 不估算脉冲"));
     TEST_ASSERT_NULL(std::strstr(buffer, "暂无时长估算"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "action=select_previous"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "action=select_next"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "action=select_previous"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "action=select_next"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "faucetSelectPreset("));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "nextPresetControl"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "sendMachineStatusNoteOnlyItem(\"meteringParams\", \"计量参数\", meteringParams)"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "启动 %luP · %luml / 稳态 %luP/L"));
@@ -1389,6 +1390,23 @@ void test_app_config_save_migrates_before_marking_current_version() {
     TEST_ASSERT_NULL_MESSAGE(markVersion, "AppConfig must not mark business config version directly");
 }
 
+void test_app_config_submit_rejects_read_only_business_config_before_field_writes() {
+    FILE* file = std::fopen("src/app/FaucetAppConfig.cpp", "rb");
+    TEST_ASSERT_NOT_NULL(file);
+    static char buffer[24000]{};
+    const std::size_t read = std::fread(buffer, 1, sizeof(buffer) - 1, file);
+    std::fclose(file);
+    TEST_ASSERT_GREATER_THAN_size_t(0, read);
+
+    const char* validateHandler = std::strstr(buffer, "bool validateAppConfigPage");
+    TEST_ASSERT_NOT_NULL(validateHandler);
+    const char* changeHandler = std::strstr(validateHandler, "void onAppConfigChange");
+    TEST_ASSERT_NOT_NULL(changeHandler);
+    const char* readOnlyCheck = std::strstr(validateHandler, "g_context.configStore->systemConfigReadOnly()");
+    TEST_ASSERT_NOT_NULL_MESSAGE(readOnlyCheck, "AppConfig submit validation must reject read-only business config");
+    TEST_ASSERT_TRUE_MESSAGE(readOnlyCheck < changeHandler, "Read-only gate must run in pre-save page validation");
+}
+
 void test_web_config_writes_reload_current_config_before_persisting() {
     FILE* file = std::fopen("src/web/FaucetWeb.cpp", "rb");
     TEST_ASSERT_NOT_NULL(file);
@@ -1435,6 +1453,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_main_source_wires_metering_scheme_and_snapshot_stores);
     RUN_TEST(test_app_config_source_uses_clear_business_labels_and_help);
     RUN_TEST(test_app_config_save_migrates_before_marking_current_version);
+    RUN_TEST(test_app_config_submit_rejects_read_only_business_config_before_field_writes);
     RUN_TEST(test_web_config_writes_reload_current_config_before_persisting);
     return UNITY_END();
 }

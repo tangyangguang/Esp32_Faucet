@@ -57,6 +57,10 @@ bool submittedInt(const char* key, std::int32_t& out) {
 }
 
 bool validateAppConfigPage(char* error, std::size_t errorLen) {
+    if (g_context.configStore && g_context.configStore->systemConfigReadOnly()) {
+        copyError(error, errorLen, "业务配置来自未来版本或处于只读保护状态，拒绝保存。");
+        return false;
+    }
     if (g_context.app && !g_context.app->canApplyConfig()) {
         copyError(error, errorLen, "设备正在出水或显示结果，请回到待机后再保存配置。");
         return false;

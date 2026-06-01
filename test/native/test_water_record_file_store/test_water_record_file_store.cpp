@@ -18,6 +18,8 @@ public:
     bool failAppend = false;
     bool failWriteAt = false;
     bool failRead = false;
+    std::size_t createSizedCalls = 0;
+    std::size_t removeCalls = 0;
     std::size_t readCalls = 0;
 
     bool exists(const char* path) override {
@@ -30,6 +32,7 @@ public:
     }
 
     bool createSized(const char* path, std::size_t size) override {
+        ++createSizedCalls;
         if (failWrite || !path) {
             return false;
         }
@@ -78,6 +81,7 @@ public:
     }
 
     bool removeFile(const char* path) override {
+        ++removeCalls;
         files.erase(path ? path : "");
         return true;
     }
@@ -188,7 +192,7 @@ void test_file_record_persists_header_and_records_across_instances() {
     TEST_ASSERT_EQUAL_UINT32(100, page[1].startTime);
 }
 
-void test_file_record_reinitializes_capacity_mismatch() {
+void test_file_record_capacity_mismatch_preserves_existing_file() {
     MemoryFileBackend backend;
     {
         WaterRecordFileStore store(backend, "/water.bin", 5);
@@ -196,21 +200,36 @@ void test_file_record_reinitializes_capacity_mismatch() {
         TEST_ASSERT_TRUE(store.append(makeRecord(100, 1000)));
     }
 
+    const std::int64_t originalSize = backend.fileSize("/water.bin");
+    const std::size_t createCalls = backend.createSizedCalls;
     WaterRecordFileStore loaded(backend, "/water.bin", 4);
-    TEST_ASSERT_TRUE(loaded.begin());
+    TEST_ASSERT_FALSE(loaded.begin());
+    TEST_ASSERT_FALSE(loaded.ready());
     TEST_ASSERT_EQUAL_size_t(0, loaded.count());
     TEST_ASSERT_EQUAL_size_t(4, loaded.capacity());
+    TEST_ASSERT_EQUAL_size_t(createCalls, backend.createSizedCalls);
+    TEST_ASSERT_EQUAL_size_t(0, backend.removeCalls);
+    TEST_ASSERT_EQUAL_INT64(originalSize, backend.fileSize("/water.bin"));
+
+    WaterRecordFileStore original(backend, "/water.bin", 5);
+    TEST_ASSERT_TRUE(original.begin());
+    TEST_ASSERT_EQUAL_size_t(1, original.count());
 }
 
-void test_file_record_reinitializes_corrupt_header() {
+void test_file_record_corrupt_header_preserves_existing_file() {
     MemoryFileBackend backend;
     const std::uint8_t bad[4] = {1, 2, 3, 4};
     TEST_ASSERT_TRUE(backend.writeAt("/water.bin", 0, bad, sizeof(bad)));
+    const std::size_t createCalls = backend.createSizedCalls;
 
     WaterRecordFileStore store(backend, "/water.bin", 3);
-    TEST_ASSERT_TRUE(store.begin());
+    TEST_ASSERT_FALSE(store.begin());
+    TEST_ASSERT_FALSE(store.ready());
     TEST_ASSERT_EQUAL_size_t(0, store.count());
     TEST_ASSERT_EQUAL_size_t(3, store.capacity());
+    TEST_ASSERT_EQUAL_size_t(createCalls, backend.createSizedCalls);
+    TEST_ASSERT_EQUAL_size_t(0, backend.removeCalls);
+    TEST_ASSERT_EQUAL_INT64(4, backend.fileSize("/water.bin"));
 }
 
 void test_file_record_clear_keeps_file_ready() {
@@ -333,8 +352,8 @@ int main(int argc, char** argv) {
     RUN_TEST(test_file_record_rolls_after_capacity);
     RUN_TEST(test_file_record_reads_page_in_contiguous_spans);
     RUN_TEST(test_file_record_persists_header_and_records_across_instances);
-    RUN_TEST(test_file_record_reinitializes_capacity_mismatch);
-    RUN_TEST(test_file_record_reinitializes_corrupt_header);
+    RUN_TEST(test_file_record_capacity_mismatch_preserves_existing_file);
+    RUN_TEST(test_file_record_corrupt_header_preserves_existing_file);
     RUN_TEST(test_file_record_clear_keeps_file_ready);
     RUN_TEST(test_file_record_reports_zero_after_external_remove_and_recovers_on_append);
     RUN_TEST(test_file_record_grows_records_on_demand);

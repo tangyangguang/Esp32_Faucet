@@ -58,8 +58,7 @@ bool WaterRecordFileStore::begin() {
     }
 
     if (!loadHeader()) {
-        backend_.removeFile(path_);
-        return initializeNewFile();
+        return false;
     }
 
     ready_ = true;

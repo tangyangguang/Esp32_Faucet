@@ -305,7 +305,6 @@ bool WaterController::checkSafety(std::uint32_t nowMs, std::uint32_t currentFlow
         return true;
     }
 
-    const PresetConfig* preset = selectedPresetConfig();
     if (activeMode_ == WaterMode::Volume && targetValue_ > 0) {
         const std::uint64_t overflowLimit =
             (static_cast<std::uint64_t>(targetValue_) * (100UL + config_.overflowPercent)) / 100UL;

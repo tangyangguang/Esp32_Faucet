@@ -213,7 +213,7 @@ bool WaterRecordCalibrationFileStore::begin() {
         return initializeNewFile();
     }
     if (!loadHeader()) {
-        return initializeNewFile();
+        return false;
     }
     ready_ = true;
     return true;

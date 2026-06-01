@@ -30,6 +30,14 @@ struct FaucetDisplayStatus {
 
 using FaucetCurrentDisplayStatus = FaucetDisplayStatus (*)();
 
+struct FaucetRuntimeDiagnostics {
+    std::uint32_t maxLoopIntervalUs;
+    std::uint32_t maxAppTickUs;
+    std::uint32_t maxBaseHandleUs;
+};
+
+using FaucetCurrentRuntimeDiagnostics = FaucetRuntimeDiagnostics (*)();
+
 struct FaucetWebContext {
     SystemConfig* config;
     ConfigStore* configStore;
@@ -47,6 +55,7 @@ struct FaucetWebContext {
     FaucetBootId bootId;
     FaucetApplySettings applySettings;
     FaucetCurrentDisplayStatus currentDisplayStatus;
+    FaucetCurrentRuntimeDiagnostics currentRuntimeDiagnostics;
 };
 
 void setFaucetWebContext(const FaucetWebContext& context);

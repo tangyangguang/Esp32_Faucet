@@ -82,18 +82,17 @@ bool MeteringSchemeStore::begin() {
         return initializeNewFile();
     }
     if (!loadHeader()) {
-        backend_.removeFile(path_);
-        return initializeNewFile();
+        return false;
     }
     ready_ = true;
     if (!upgradeLegacyDefaultSchemeIfNeeded()) {
-        backend_.removeFile(path_);
-        return initializeNewFile();
+        ready_ = false;
+        return false;
     }
     MeteringSchemeRecord active{};
     if (!activeScheme(active) || !active.enabled) {
-        backend_.removeFile(path_);
-        return initializeNewFile();
+        ready_ = false;
+        return false;
     }
     return true;
 }

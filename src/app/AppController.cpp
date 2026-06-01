@@ -45,7 +45,8 @@ AppController::AppController(const SystemConfig& config,
                              StatisticsStore& statistics,
                              FilterStore& filters,
                              WaterRecordWriter& records,
-                             WaterPulseTraceStore* pulseTraces)
+                             WaterPulseTraceStore* pulseTraces,
+                             WaterRecordCalibrationWriter* recordCalibrations)
     : config_(config),
       activeMeteringScheme_(schemeFromLegacyConfig(config)),
       water_(config_),
@@ -56,6 +57,7 @@ AppController::AppController(const SystemConfig& config,
       statistics_(statistics),
       filters_(filters),
       records_(records),
+      recordCalibrations_(recordCalibrations),
       meteringSnapshots_(nullptr),
       meteringSchemes_(nullptr),
       pulseTraces_(pulseTraces),
@@ -95,7 +97,8 @@ AppController::AppController(const SystemConfig& config,
                              WaterRecordWriter& records,
                              WaterRecordMeteringSnapshotWriter& meteringSnapshots,
                              MeteringSchemeStore& meteringSchemes,
-                             WaterPulseTraceStore* pulseTraces)
+                             WaterPulseTraceStore* pulseTraces,
+                             WaterRecordCalibrationWriter* recordCalibrations)
     : config_(config),
       activeMeteringScheme_(activeScheme),
       water_(config_),
@@ -106,6 +109,7 @@ AppController::AppController(const SystemConfig& config,
       statistics_(statistics),
       filters_(filters),
       records_(records),
+      recordCalibrations_(recordCalibrations),
       meteringSnapshots_(&meteringSnapshots),
       meteringSchemes_(&meteringSchemes),
       pulseTraces_(pulseTraces),
@@ -270,18 +274,6 @@ void AppController::setFlowDroppedPulses(std::uint32_t droppedPulses) {
     flowDroppedPulses_ = droppedPulses;
 }
 
-bool AppController::selectNextPresetForWeb() {
-    return water_.selectNextPreset();
-}
-
-bool AppController::selectPreviousPresetForWeb() {
-    return water_.selectPreviousPreset();
-}
-
-bool AppController::selectPresetForWeb(std::size_t index) {
-    return water_.selectPreset(index);
-}
-
 bool AppController::canApplyConfig() const {
     return localMode_ != LocalUiMode::Result && water_.canApplyConfig();
 }
@@ -314,12 +306,13 @@ bool AppController::applyActiveMeteringScheme(const MeteringSchemeRecord& active
 }
 
 CalibrationApplyResult AppController::applyCalibrationFromRecord(const WaterRecord& record, std::uint32_t actualMl) {
-    return applyCalibrationFromRecordInternal(record, actualMl, false);
+    return applyCalibrationFromRecordInternal(record, actualMl, false, 0);
 }
 
 CalibrationApplyResult AppController::applyCalibrationFromRecordInternal(const WaterRecord& record,
                                                                          std::uint32_t actualMl,
-                                                                         bool allowLocalCalibration) {
+                                                                         bool allowLocalCalibration,
+                                                                         std::uint32_t calibratedAt) {
     if (water_.snapshot().state != WaterState::Idle ||
         (localMode_ == LocalUiMode::Calibration && !allowLocalCalibration)) {
         return CalibrationApplyResult::NotAvailable;
@@ -329,6 +322,24 @@ CalibrationApplyResult AppController::applyCalibrationFromRecordInternal(const W
     }
     if (record.pulseCount == 0 || !waterResultAllowsCalibration(record.result)) {
         return CalibrationApplyResult::InvalidRecord;
+    }
+    if (!recordCalibrations_) {
+        return CalibrationApplyResult::NotAvailable;
+    }
+    WaterRecordCalibration calibration = makeWaterRecordCalibration(record);
+    calibration.actualMl = actualMl;
+    calibration.calibratedAt = calibratedAt;
+    const float stablePulsePerMl = static_cast<float>(activeMeteringScheme_.params.stablePulsePerLiter) / 1000.0f;
+    calibration.oldPulsePerMl = stablePulsePerMl;
+    calibration.newPulsePerMl = stablePulsePerMl;
+    calibration.oldStartupCompensationMl = activeMeteringScheme_.params.startupVolumeMl;
+    calibration.newStartupCompensationMl = activeMeteringScheme_.params.startupVolumeMl;
+    calibration.kind = WaterRecordCalibrationKind::PulsePerMl;
+    if (!recordCalibrations_->upsert(calibration)) {
+        return CalibrationApplyResult::NotAvailable;
+    }
+    if (pulseTraces_) {
+        pulseTraces_->setActualMlByRecord(record, actualMl);
     }
     pendingBeep_ = BeepPattern::Done;
     localMode_ = LocalUiMode::Result;
@@ -353,7 +364,7 @@ void AppController::handleButtonEvent(ButtonEvent event,
                 if (calibrationIgnoreOkUntilReleased_) {
                     break;
                 }
-                saveLocalCalibration();
+                saveLocalCalibration(nowSeconds);
                 break;
             case ButtonEventType::OkLong:
                 if (calibrationIgnoreOkUntilReleased_) {
@@ -562,12 +573,13 @@ bool AppController::adjustCalibrationActual(std::int32_t deltaMl) {
     return true;
 }
 
-CalibrationApplyResult AppController::saveLocalCalibration() {
+CalibrationApplyResult AppController::saveLocalCalibration(std::uint32_t nowSeconds) {
     if (!lastResultRecordValid_) {
         pendingBeep_ = BeepPattern::Error;
         return CalibrationApplyResult::NotAvailable;
     }
-    const CalibrationApplyResult result = applyCalibrationFromRecordInternal(lastResultRecord_, calibrationActualMl_, true);
+    const CalibrationApplyResult result =
+        applyCalibrationFromRecordInternal(lastResultRecord_, calibrationActualMl_, true, nowSeconds);
     if (result != CalibrationApplyResult::Saved) {
         pendingBeep_ = BeepPattern::Error;
     }

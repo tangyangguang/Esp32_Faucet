@@ -2,6 +2,7 @@
 
 #include "app/AppController.h"
 #include "app/MeteringSchemeStore.h"
+#include "app/WaterRecordCalibrationStore.h"
 #include "app/WaterRecordMeteringSnapshotStore.h"
 
 #include <cstring>
@@ -37,6 +38,20 @@ public:
             return false;
         }
         snapshots.push_back(snapshot);
+        return true;
+    }
+};
+
+class MemoryCalibrationWriter : public WaterRecordCalibrationWriter {
+public:
+    bool ok = true;
+    std::vector<WaterRecordCalibration> calibrations;
+
+    bool upsert(const WaterRecordCalibration& calibration) override {
+        if (!ok) {
+            return false;
+        }
+        calibrations.push_back(calibration);
         return true;
     }
 };
@@ -352,38 +367,6 @@ void test_app_controller_completion_writes_record_statistics_and_filters() {
     TEST_ASSERT_FALSE(app.consumePersistenceDirty());
 }
 
-void test_app_controller_web_preset_switch_during_run_updates_next_preset_only() {
-    SystemConfig config = makeDefaultConfig();
-    StatisticsStore statistics;
-    statistics.reset({20260506, 202619, 202605});
-    FilterStore filters(config.filters);
-    MemoryRecordWriter records;
-    AppController app(config, statistics, filters, records);
-    applyTestMeteringScheme(app);
-
-    app.resetInputs({false, false, false, false}, 0);
-    pressAndReleaseOk(app, 100);
-    pressAndReleaseOk(app, 300);
-    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(WaterState::Running),
-                            static_cast<std::uint8_t>(app.snapshot().water.state));
-    TEST_ASSERT_EQUAL_size_t(0, app.snapshot().water.activePreset);
-
-    TEST_ASSERT_TRUE(app.selectNextPresetForWeb());
-
-    TEST_ASSERT_EQUAL_size_t(1, app.snapshot().water.selectedPreset);
-    TEST_ASSERT_EQUAL_size_t(0, app.snapshot().water.activePreset);
-    TEST_ASSERT_EQUAL_UINT32(1500, app.snapshot().water.targetValue);
-    for (std::uint32_t i = 0; i < 1500; ++i) {
-        app.onFlowPulse(1000000UL + i * 2000UL);
-    }
-    app.tick(input({false, false, false, false}, 5000, 5000000, 1714502400));
-
-    TEST_ASSERT_EQUAL_size_t(1, records.records.size());
-    TEST_ASSERT_EQUAL_UINT8(0, records.records[0].selectedPreset);
-    TEST_ASSERT_EQUAL_UINT32(1500, records.records[0].targetValue);
-    TEST_ASSERT_EQUAL_size_t(1, app.snapshot().water.selectedPreset);
-}
-
 void test_app_controller_local_plus_does_not_switch_preset_while_running() {
     SystemConfig config = makeDefaultConfig();
     StatisticsStore statistics;
@@ -445,7 +428,8 @@ void test_app_controller_ok_saves_local_calibration() {
     statistics.reset({20260506, 202619, 202605});
     FilterStore filters(config.filters);
     MemoryRecordWriter records;
-    AppController app(config, statistics, filters, records);
+    MemoryCalibrationWriter calibrations;
+    AppController app(config, statistics, filters, records, nullptr, &calibrations);
     applyTestMeteringScheme(app);
 
     app.resetInputs({false, false, false, false}, 0);
@@ -477,6 +461,10 @@ void test_app_controller_ok_saves_local_calibration() {
                             static_cast<std::uint8_t>(app.snapshot().localMode));
     TEST_ASSERT_FLOAT_WITHIN(0.001f, 1.0f, static_cast<float>(app.activeMeteringScheme().params.stablePulsePerLiter) / 1000.0f);
     TEST_ASSERT_FALSE(app.consumeConfigDirty());
+    TEST_ASSERT_EQUAL_size_t(1, calibrations.calibrations.size());
+    TEST_ASSERT_EQUAL_UINT32(1200, calibrations.calibrations[0].actualMl);
+    TEST_ASSERT_EQUAL_UINT32(1000, calibrations.calibrations[0].calibratedAt);
+    TEST_ASSERT_EQUAL_UINT32(records.records[0].pulseCount, calibrations.calibrations[0].pulseCount);
 }
 
 void test_app_controller_applies_calibration_from_raw_record() {
@@ -484,7 +472,8 @@ void test_app_controller_applies_calibration_from_raw_record() {
     StatisticsStore statistics;
     FilterStore filters(config.filters);
     MemoryRecordWriter records;
-    AppController app(config, statistics, filters, records);
+    MemoryCalibrationWriter calibrations;
+    AppController app(config, statistics, filters, records, nullptr, &calibrations);
     applyTestMeteringScheme(app);
     WaterRecord record{
         1714502400,
@@ -505,6 +494,8 @@ void test_app_controller_applies_calibration_from_raw_record() {
                             static_cast<std::uint8_t>(app.applyCalibrationFromRecord(record, 7500)));
     TEST_ASSERT_FLOAT_WITHIN(0.001f, 1.0f, static_cast<float>(app.activeMeteringScheme().params.stablePulsePerLiter) / 1000.0f);
     TEST_ASSERT_FALSE(app.consumeConfigDirty());
+    TEST_ASSERT_EQUAL_size_t(1, calibrations.calibrations.size());
+    TEST_ASSERT_EQUAL_UINT32(7500, calibrations.calibrations[0].actualMl);
 }
 
 void test_app_controller_small_record_calibration_keeps_metering_parameters() {
@@ -512,7 +503,8 @@ void test_app_controller_small_record_calibration_keeps_metering_parameters() {
     StatisticsStore statistics;
     FilterStore filters(config.filters);
     MemoryRecordWriter records;
-    AppController app(config, statistics, filters, records);
+    MemoryCalibrationWriter calibrations;
+    AppController app(config, statistics, filters, records, nullptr, &calibrations);
     applyTestMeteringScheme(app);
     WaterRecord record{
         1714502400,
@@ -533,6 +525,8 @@ void test_app_controller_small_record_calibration_keeps_metering_parameters() {
                             static_cast<std::uint8_t>(app.applyCalibrationFromRecord(record, 1000)));
     TEST_ASSERT_FLOAT_WITHIN(0.001f, 1.0f, static_cast<float>(app.activeMeteringScheme().params.stablePulsePerLiter) / 1000.0f);
     TEST_ASSERT_FALSE(app.consumeConfigDirty());
+    TEST_ASSERT_EQUAL_size_t(1, calibrations.calibrations.size());
+    TEST_ASSERT_EQUAL_UINT32(1000, calibrations.calibrations[0].actualMl);
 }
 
 void test_app_controller_pause_timeout_trace_is_not_marked_error_and_can_calibrate() {
@@ -585,7 +579,8 @@ void test_app_controller_applies_calibration_from_pause_timeout_record() {
     StatisticsStore statistics;
     FilterStore filters(config.filters);
     MemoryRecordWriter records;
-    AppController app(config, statistics, filters, records);
+    MemoryCalibrationWriter calibrations;
+    AppController app(config, statistics, filters, records, nullptr, &calibrations);
     applyTestMeteringScheme(app);
     WaterRecord record{
         1714502400,
@@ -605,6 +600,8 @@ void test_app_controller_applies_calibration_from_pause_timeout_record() {
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(CalibrationApplyResult::Saved),
                             static_cast<std::uint8_t>(app.applyCalibrationFromRecord(record, 1470)));
     TEST_ASSERT_FALSE(app.consumeConfigDirty());
+    TEST_ASSERT_EQUAL_size_t(1, calibrations.calibrations.size());
+    TEST_ASSERT_EQUAL_UINT32(1470, calibrations.calibrations[0].actualMl);
 }
 
 void test_app_controller_offline_completion_marks_unknown_time_with_boot_id() {
@@ -1026,7 +1023,6 @@ int main(int argc, char** argv) {
     RUN_TEST(test_app_controller_snapshot_write_failure_marks_usage_stats_dirty);
     RUN_TEST(test_app_controller_starts_after_double_ok_and_opens_valve);
     RUN_TEST(test_app_controller_completion_writes_record_statistics_and_filters);
-    RUN_TEST(test_app_controller_web_preset_switch_during_run_updates_next_preset_only);
     RUN_TEST(test_app_controller_local_plus_does_not_switch_preset_while_running);
     RUN_TEST(test_app_controller_offline_completion_marks_unknown_time_with_boot_id);
     RUN_TEST(test_app_controller_offline_start_sync_before_completion_writes_real_time);

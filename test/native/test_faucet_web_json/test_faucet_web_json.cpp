@@ -17,6 +17,9 @@ AppSnapshot makeSnapshot() {
         StatisticsRecord{1000, 2000, 3000, 4000, 20260506, 202619, 202605},
     };
     snapshot.flowDroppedPulses = 7;
+    snapshot.maxLoopIntervalUs = 82300;
+    snapshot.maxAppTickUs = 1400;
+    snapshot.maxBaseHandleUs = 76800;
     snapshot.currentFlowMlPerMin = 1870;
     snapshot.recentAverageFlowMlPerMin = 1810;
     snapshot.meteringParams = MeteringParameters{8, 36, 225};
@@ -48,6 +51,9 @@ void test_status_json_contains_no_remote_control_capability() {
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"currentFlowMlPerMin\":1870"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"recentAverageFlowMlPerMin\":1810"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"flowDroppedPulses\":7"));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"maxLoopIntervalUs\":82300"));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"maxAppTickUs\":1400"));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"maxBaseHandleUs\":76800"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"valveDutyPercent\":100"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"valveFullPowerSec\":5"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"valveHoldDutyPercent\":70"));

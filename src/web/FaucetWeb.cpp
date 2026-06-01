@@ -1,4 +1,8 @@
-#ifndef NATIVE_BUILD
+#ifndef ESP32BASE_WEB_NATIVE_TEST
+#define ESP32BASE_WEB_NATIVE_TEST 0
+#endif
+
+#if !defined(NATIVE_BUILD) || ESP32BASE_WEB_NATIVE_TEST
 
 #include "web/FaucetWeb.h"
 
@@ -16,7 +20,11 @@
 #include "web/FaucetWebPolicy.h"
 #include "web/FaucetWebRoutes.h"
 
+#if ESP32BASE_WEB_NATIVE_TEST
+#include "web/Esp32BaseWeb.h"
+#else
 #include <Esp32Base.h>
+#endif
 #include <algorithm>
 #include <cstdarg>
 #include <cmath>

@@ -188,6 +188,19 @@ void registerRoutes() {
     TEST_ASSERT_TRUE(registerFaucetWeb());
 }
 
+void beginPresetPost(const char* action) {
+    Esp32BaseWeb::nativeTestBeginRequest(Esp32BaseWeb::METHOD_POST, "/api/faucet/presets");
+    Esp32BaseWeb::nativeTestSetAuthenticated(true);
+    Esp32BaseWeb::nativeTestSetSameOrigin(true);
+    if (action) {
+        Esp32BaseWeb::nativeTestSetParam("action", action);
+    }
+}
+
+void dispatchPresetPost() {
+    TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch("/api/faucet/presets", Esp32BaseWeb::METHOD_POST));
+}
+
 }  // namespace
 
 void test_filter_reset_handler_rejects_missing_auth_before_context_work() {
@@ -279,6 +292,91 @@ void test_records_handler_redirects_trace_delete_busy_to_calibration_context() {
     TEST_ASSERT_EQUAL_STRING("/faucet/calibration?error=busy", Esp32BaseWeb::nativeTestResponseHeader("Location"));
 }
 
+void test_presets_handler_rejects_missing_auth_before_context_work() {
+    registerRoutes();
+    Esp32BaseWeb::nativeTestBeginRequest(Esp32BaseWeb::METHOD_POST, "/api/faucet/presets");
+    Esp32BaseWeb::nativeTestSetAuthenticated(false);
+    Esp32BaseWeb::nativeTestSetSameOrigin(true);
+    Esp32BaseWeb::nativeTestSetParam("action", "select_next");
+
+    dispatchPresetPost();
+
+    TEST_ASSERT_EQUAL(401, Esp32BaseWeb::nativeTestResponse().code);
+}
+
+void test_presets_handler_rejects_cross_origin_post() {
+    registerRoutes();
+    Esp32BaseWeb::nativeTestBeginRequest(Esp32BaseWeb::METHOD_POST, "/api/faucet/presets");
+    Esp32BaseWeb::nativeTestSetAuthenticated(true);
+    Esp32BaseWeb::nativeTestSetSameOrigin(false);
+    Esp32BaseWeb::nativeTestSetParam("action", "select_next");
+
+    dispatchPresetPost();
+
+    TEST_ASSERT_EQUAL(403, Esp32BaseWeb::nativeTestResponse().code);
+    TEST_ASSERT_EQUAL_STRING("Forbidden", Esp32BaseWeb::nativeTestResponse().body.c_str());
+}
+
+void test_presets_handler_rejects_invalid_action() {
+    WebFixture fixture;
+    registerRoutes();
+    beginPresetPost("not_a_preset_action");
+
+    dispatchPresetPost();
+
+    TEST_ASSERT_EQUAL(400, Esp32BaseWeb::nativeTestResponse().code);
+    TEST_ASSERT_EQUAL_STRING("{\"error\":\"invalid_action\"}", Esp32BaseWeb::nativeTestResponse().body.c_str());
+}
+
+void test_presets_handler_select_next_and_previous_return_status_json() {
+    WebFixture fixture;
+    registerRoutes();
+    beginPresetPost("select_next");
+
+    dispatchPresetPost();
+
+    TEST_ASSERT_EQUAL(200, Esp32BaseWeb::nativeTestResponse().code);
+    TEST_ASSERT_NOT_NULL(std::strstr(Esp32BaseWeb::nativeTestResponse().body.c_str(), "\"selectedPreset\":1"));
+    TEST_ASSERT_EQUAL_size_t(1, fixture.app.snapshot().water.selectedPreset);
+
+    beginPresetPost("select_previous");
+    dispatchPresetPost();
+
+    TEST_ASSERT_EQUAL(200, Esp32BaseWeb::nativeTestResponse().code);
+    TEST_ASSERT_NOT_NULL(std::strstr(Esp32BaseWeb::nativeTestResponse().body.c_str(), "\"selectedPreset\":0"));
+    TEST_ASSERT_EQUAL_size_t(0, fixture.app.snapshot().water.selectedPreset);
+}
+
+void test_presets_handler_selects_requested_enabled_preset() {
+    WebFixture fixture;
+    registerRoutes();
+    beginPresetPost("select");
+    Esp32BaseWeb::nativeTestSetParam("index", "1");
+
+    dispatchPresetPost();
+
+    TEST_ASSERT_EQUAL(200, Esp32BaseWeb::nativeTestResponse().code);
+    TEST_ASSERT_NOT_NULL(std::strstr(Esp32BaseWeb::nativeTestResponse().body.c_str(), "\"selectedPreset\":1"));
+    TEST_ASSERT_EQUAL_size_t(1, fixture.app.snapshot().water.selectedPreset);
+}
+
+void test_presets_handler_running_select_next_only_changes_next_preset() {
+    WebFixture fixture;
+    setRunning(fixture.app);
+    registerRoutes();
+    beginPresetPost("select_next");
+
+    dispatchPresetPost();
+
+    TEST_ASSERT_EQUAL(200, Esp32BaseWeb::nativeTestResponse().code);
+    TEST_ASSERT_NOT_NULL(std::strstr(Esp32BaseWeb::nativeTestResponse().body.c_str(), "\"state\":\"running\""));
+    TEST_ASSERT_NOT_NULL(std::strstr(Esp32BaseWeb::nativeTestResponse().body.c_str(), "\"selectedPreset\":1"));
+    TEST_ASSERT_NOT_NULL(std::strstr(Esp32BaseWeb::nativeTestResponse().body.c_str(), "\"activePreset\":0"));
+    TEST_ASSERT_EQUAL_size_t(1, fixture.app.snapshot().water.selectedPreset);
+    TEST_ASSERT_EQUAL_size_t(0, fixture.app.snapshot().water.activePreset);
+    TEST_ASSERT_EQUAL_UINT32(1500, fixture.app.snapshot().water.targetValue);
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_filter_reset_handler_rejects_missing_auth_before_context_work);
@@ -287,5 +385,11 @@ int main(int, char**) {
     RUN_TEST(test_filter_reset_handler_redirects_busy_before_runtime_write);
     RUN_TEST(test_records_handler_redirects_trace_save_busy_before_trace_store_work);
     RUN_TEST(test_records_handler_redirects_trace_delete_busy_to_calibration_context);
+    RUN_TEST(test_presets_handler_rejects_missing_auth_before_context_work);
+    RUN_TEST(test_presets_handler_rejects_cross_origin_post);
+    RUN_TEST(test_presets_handler_rejects_invalid_action);
+    RUN_TEST(test_presets_handler_select_next_and_previous_return_status_json);
+    RUN_TEST(test_presets_handler_selects_requested_enabled_preset);
+    RUN_TEST(test_presets_handler_running_select_next_only_changes_next_preset);
     return UNITY_END();
 }

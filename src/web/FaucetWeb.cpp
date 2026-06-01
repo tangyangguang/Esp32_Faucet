@@ -13,6 +13,7 @@
 #include "app/WaterPulseTraceStore.h"
 #include "web/FaucetWebJson.h"
 #include "web/FaucetWebParsing.h"
+#include "web/FaucetWebPolicy.h"
 #include "web/FaucetWebRoutes.h"
 
 #include <Esp32Base.h>
@@ -5787,10 +5788,12 @@ void handleTraceDeleteApi() {
     }
     const bool fromCalibration = calibrationContextRequested();
     const char* listPath = fromCalibration ? "/faucet/calibration" : "/faucet/records";
-    if (waterTaskActive()) {
-        char url[80]{};
-        std::snprintf(url, sizeof(url), "%s?error=busy", listPath);
-        Esp32BaseWeb::redirectSeeOther(url);
+    char busyUrl[80]{};
+    if (faucetWebWriteBusyRedirect(waterTaskActive(),
+                                   fromCalibration ? FaucetWebWriteTarget::Calibration : FaucetWebWriteTarget::Records,
+                                   busyUrl,
+                                   sizeof(busyUrl))) {
+        Esp32BaseWeb::redirectSeeOther(busyUrl);
         return;
     }
     if (!ensureSavedPulseTracesReady()) {
@@ -5828,10 +5831,12 @@ void handleTraceSaveApi() {
     }
     const bool fromCalibration = calibrationContextRequested();
     const char* listPath = fromCalibration ? "/faucet/calibration" : "/faucet/records";
-    if (waterTaskActive()) {
-        char url[80]{};
-        std::snprintf(url, sizeof(url), "%s?error=busy", listPath);
-        Esp32BaseWeb::redirectSeeOther(url);
+    char busyUrl[80]{};
+    if (faucetWebWriteBusyRedirect(waterTaskActive(),
+                                   fromCalibration ? FaucetWebWriteTarget::Calibration : FaucetWebWriteTarget::Records,
+                                   busyUrl,
+                                   sizeof(busyUrl))) {
+        Esp32BaseWeb::redirectSeeOther(busyUrl);
         return;
     }
     char text[32]{};
@@ -5921,8 +5926,9 @@ void handleFiltersResetApi() {
     if (!Esp32BaseWeb::checkPostAllowed("faucet_filter_reset") || !requireContext()) {
         return;
     }
-    if (waterTaskActive()) {
-        Esp32BaseWeb::redirectSeeOther("/faucet/filters?error=busy");
+    char busyUrl[80]{};
+    if (faucetWebWriteBusyRedirect(waterTaskActive(), FaucetWebWriteTarget::Filters, busyUrl, sizeof(busyUrl))) {
+        Esp32BaseWeb::redirectSeeOther(busyUrl);
         return;
     }
     char text[24]{};

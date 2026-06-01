@@ -7,7 +7,7 @@
 - `esp32dev_smoke` 裸板自检固件已验证核心板、串口、Flash 和 Arduino 启动链路正常。
 - 已定位并修复分区表 `ota_0=0x20000` 与 PlatformIO 默认上传偏移 `0x10000` 不一致的问题。
 - 工程已通过 `board_upload.offset_address = 0x20000` 让串口上传位置与双 OTA 分区表一致。
-- 主固件已在裸板上启动成功：`rtc=absent`、`lcd=absent`、`records=file`，WiFi/Web/mDNS/NTP 正常，18 秒串口观察未出现 watchdog 或反复重启。
+- 主固件已在裸板上启动成功：`rtc=absent`、`lcd=absent`、`records=file`，WiFi/Web/NTP 正常，设备端 mDNS 服务已启动，18 秒串口观察未出现 watchdog 或反复重启。
 
 ## 裸板验证目标
 
@@ -126,7 +126,7 @@ pio device monitor -e esp32dev --port <端口> --baud 115200
 本次已验证：
 
 - `pio device list` 可识别 CH340 串口。
-- 2026-06-02 代码侧复测：`pio test -e native` 通过，256 个 native 用例全部成功。
+- 2026-06-02 代码侧复测：`pio test -e native` 通过，259 个 native 用例全部成功。
 - 2026-06-02 代码侧复测：`pio run -e esp32dev` 通过，主固件 RAM 约 26.3%，Flash 约 88.3%。
 - 固件体积预算：当前双 OTA app 分区为 `0x160000`，Flash 使用率已超过 85% 预警线；继续增加 Web 页面、诊断或日志前，优先评估静态 HTML/CSS 字符串体积、可静态化资源迁移到 LittleFS，或重新评估分区表。
 - `pio run -e esp32dev_smoke` 通过。
@@ -142,4 +142,4 @@ pio device monitor -e esp32dev --port <端口> --baud 115200
 观察到但不影响本次裸板验证：
 
 - 启动早期仍有 ESP-IDF core dump 分区提示，随后应用正常启动。
-- 本机访问 `water-65e4.local` 解析超时，IP 访问正常；后续可在网络环境或 mDNS 客户端侧继续确认。
+- 本机访问 `water-65e4.local` 解析超时，IP 访问正常；当前只能确认设备端 mDNS 服务启动，macOS 客户端解析链路仍未闭环，后续需在网络环境或 mDNS 客户端侧继续确认。

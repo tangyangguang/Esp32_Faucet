@@ -1496,28 +1496,28 @@ void test_web_write_handlers_return_busy_before_trace_or_filter_runtime_writes()
     TEST_ASSERT_NOT_NULL(traceSave);
     TEST_ASSERT_NOT_NULL(filtersReset);
 
-    const char* traceDeleteBusy = findWithin(traceDelete, traceSave, "waterTaskActive()");
+    const char* traceDeleteBusy = findWithin(traceDelete, traceSave, "faucetWebWriteBusyRedirect(waterTaskActive()");
     const char* traceDeleteWrite = findWithin(traceDelete, traceSave, "g_context.savedPulseTraces->remove(traceId)");
     TEST_ASSERT_NOT_NULL_MESSAGE(traceDeleteBusy, "trace delete must return busy while water task is active");
     TEST_ASSERT_NOT_NULL(traceDeleteWrite);
     TEST_ASSERT_TRUE_MESSAGE(traceDeleteBusy < traceDeleteWrite, "trace delete busy guard must run before device trace write");
-    TEST_ASSERT_NOT_NULL(findWithin(traceDelete, traceSave, "error=busy"));
+    TEST_ASSERT_NOT_NULL(findWithin(traceDelete, traceSave, "FaucetWebWriteTarget::Calibration : FaucetWebWriteTarget::Records"));
 
-    const char* traceSaveBusy = findWithin(traceSave, filtersReset, "waterTaskActive()");
+    const char* traceSaveBusy = findWithin(traceSave, filtersReset, "faucetWebWriteBusyRedirect(waterTaskActive()");
     const char* traceSaveWrite = findWithin(traceSave, filtersReset, "saveRamTraceToDevice(traceId");
     TEST_ASSERT_NOT_NULL_MESSAGE(traceSaveBusy, "trace save must return busy while water task is active");
     TEST_ASSERT_NOT_NULL(traceSaveWrite);
     TEST_ASSERT_TRUE_MESSAGE(traceSaveBusy < traceSaveWrite, "trace save busy guard must run before device trace write");
-    TEST_ASSERT_NOT_NULL(findWithin(traceSave, filtersReset, "error=busy"));
+    TEST_ASSERT_NOT_NULL(findWithin(traceSave, filtersReset, "FaucetWebWriteTarget::Calibration : FaucetWebWriteTarget::Records"));
 
     const char* filtersResetEnd = std::strstr(filtersReset, "Esp32BaseWeb::Handler handlerFor");
     TEST_ASSERT_NOT_NULL(filtersResetEnd);
-    const char* filtersResetBusy = findWithin(filtersReset, filtersResetEnd, "waterTaskActive()");
+    const char* filtersResetBusy = findWithin(filtersReset, filtersResetEnd, "faucetWebWriteBusyRedirect(waterTaskActive()");
     const char* filtersResetWrite = findWithin(filtersReset, filtersResetEnd, "g_context.filters->updateFilter(index, record)");
     TEST_ASSERT_NOT_NULL_MESSAGE(filtersResetBusy, "filter reset must return busy while water task is active");
     TEST_ASSERT_NOT_NULL(filtersResetWrite);
     TEST_ASSERT_TRUE_MESSAGE(filtersResetBusy < filtersResetWrite, "filter reset busy guard must run before runtime write");
-    TEST_ASSERT_NOT_NULL(findWithin(filtersReset, filtersResetEnd, "error=busy"));
+    TEST_ASSERT_NOT_NULL(findWithin(filtersReset, filtersResetEnd, "FaucetWebWriteTarget::Filters"));
 }
 
 void test_incomplete_factory_reset_path_is_not_kept_as_dead_code() {

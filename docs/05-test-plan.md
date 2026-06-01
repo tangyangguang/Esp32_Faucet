@@ -55,7 +55,8 @@
 
 - 长期运行测试做 72 小时连续运行。
 - Native 测试使用 PlatformIO native 环境，业务核心保持纯 C++ 可测，硬件访问通过桩替代。
-- Web 关键 handler 需要逐步补充行为级 native 测试，覆盖 method/auth/same-origin/busy/异常参数；源码字符串检查只作为路由和页面结构的补充保护。
+- Web 写操作 busy 策略已有平台无关 native 行为测试，覆盖记录/校准脉冲明细写入和滤芯重置在出水任务活跃时的重定向决策；源码字符串检查只作为 handler 委托顺序、路由和页面结构的补充保护。
+- 完整 Web handler 请求上下文测试仍需 Esp32Base 提供 native fake request/response harness 后补齐，覆盖 method/auth/same-origin/异常参数和真实响应状态码。
 
 ## 旧文档迁移说明
 

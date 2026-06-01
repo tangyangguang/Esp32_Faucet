@@ -86,7 +86,7 @@ pio run -e esp32dev -t uploadfs --upload-port <端口>
 pio device monitor -e esp32dev --port <端口> --baud 115200
 ```
 
-当前构建使用 `ESP32BASE_DEFAULT_HOSTNAME="water-faucet"`、`ESP32BASE_ENABLE_APP_CONFIG=1`、`ESP32BASE_APP_CONFIG_MAX_GROUPS=5`、`ESP32BASE_APP_CONFIG_MAX_FIELDS=32`、`ESP32BASE_LOG_LEVEL=ESP32BASE_LOG_DEBUG`，文件日志使用 `ESP32BASE_EB_FILELOG_DEFAULT_MODE=ESP32BASE_FILELOG_MODE_INFO`，并在启动后显式应用 `Esp32BaseFileLog::setMode(INFO)`，避免旧 NVS 配置覆盖。系统级参数配置入口迁移到 Esp32Base 内置 `/esp32base/app-config`，字段直接绑定现有 `faucet_cfg` namespace/key；预设和滤芯配置仍只能在本项目业务页面中修改。实际运行 hostname 可由 Esp32Base 内置 `/esp32base/tools` 写入 `eb_sys.hostname`，重启后生效。Web 默认认证通过 Esp32Base `setDefaultAuth()` 提供，用户可在 `/esp32base/auth` 修改。注意：Esp32Base INFO 日志会输出 WiFi 和 Web Auth 明文凭据，串口日志和 `/esp32base/logs` 文件日志需要按敏感信息管理。
+当前构建使用 `ESP32BASE_DEFAULT_HOSTNAME="water-faucet"`、`ESP32BASE_ENABLE_APP_CONFIG=1`、`ESP32BASE_APP_CONFIG_MAX_GROUPS=5`、`ESP32BASE_APP_CONFIG_MAX_FIELDS=32`、`ESP32BASE_LOG_LEVEL=ESP32BASE_LOG_DEBUG`，文件日志默认使用 `ESP32BASE_EB_FILELOG_DEFAULT_MODE=ESP32BASE_FILELOG_MODE_WARN`。系统级参数配置入口迁移到 Esp32Base 内置 `/esp32base/app-config`，字段直接绑定现有 `faucet_cfg` namespace/key；预设和滤芯配置仍只能在本项目业务页面中修改。实际运行 hostname 可由 Esp32Base 内置 `/esp32base/tools` 写入 `eb_sys.hostname`，重启后生效。Web 默认认证通过 Esp32Base `setDefaultAuth()` 提供，用户可在 `/esp32base/auth` 修改。注意：已有设备若 NVS 中已保存 FileLog 模式，会继续使用用户持久化配置；需要统一切回 WARN 时应通过 System Logs 页面修改或清除对应配置，不能在固件启动时静默覆盖。
 
 期望日志：
 

@@ -275,14 +275,6 @@ void configureBase() {
 #endif
 }
 
-void applyFileLogPolicy() {
-#if ESP32BASE_ENABLE_FILELOG
-    if (!Esp32BaseFileLog::setMode(Esp32BaseFileLog::INFO)) {
-        ESP32BASE_LOG_W("app", "file log INFO policy apply failed");
-    }
-#endif
-}
-
 void feedStartupWatchdog() {
 #if ESP32BASE_ENABLE_WATCHDOG
     Esp32BaseWatchdog::feed();
@@ -743,7 +735,6 @@ void setup() {
     if (!Esp32Base::begin()) {
         ESP32BASE_LOG_E("app", "Esp32Base begin failed: %s", Esp32Base::lastError());
     }
-    applyFileLogPolicy();
     Serial.println("[faucet] setup: base begin done");
     initializeApplication();
     Serial.println("[faucet] setup: app initialized");

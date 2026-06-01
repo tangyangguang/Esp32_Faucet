@@ -28,6 +28,7 @@ struct WaterTaskResult {
 struct WaterSnapshot {
     WaterState state;
     std::size_t selectedPreset;
+    std::size_t activePreset;
     bool valveOpen;
     std::uint32_t volumeMl;
     std::uint32_t elapsedSec;
@@ -61,6 +62,7 @@ public:
 
 private:
     const PresetConfig* selectedPresetConfig() const;
+    const PresetConfig* activePresetConfig() const;
     void finish(std::uint32_t nowMs, WaterResult result, WaterState nextState);
     std::uint32_t activeElapsedMs(std::uint32_t nowMs) const;
     bool checkSafety(std::uint32_t nowMs, std::uint32_t currentFlowMlPerMin);
@@ -70,6 +72,7 @@ private:
     SystemConfig config_;
     WaterState state_;
     std::size_t selectedPreset_;
+    std::size_t activePreset_;
     bool valveOpen_;
     std::uint32_t confirmStartMs_;
     std::uint32_t runStartMs_;

@@ -51,6 +51,15 @@ struct AppSnapshot {
     std::uint32_t pulsePerLiter = 0;
     MeteringParameters meteringParams{};
     std::uint32_t targetEstimatedDurationSec = 0;
+    std::uint32_t selectedPresetEstimatedDurationSec = 0;
+    std::uint32_t targetEstimatedVolumeMl = 0;
+    std::uint32_t targetEstimatedPulseCount = 0;
+    float targetStablePulsePerSec = 0.0f;
+    const char* targetEstimateReason = nullptr;
+    std::uint32_t selectedPresetEstimatedVolumeMl = 0;
+    std::uint32_t selectedPresetEstimatedPulseCount = 0;
+    float selectedPresetStablePulsePerSec = 0.0f;
+    const char* selectedPresetEstimateReason = nullptr;
     std::uint32_t flowDroppedPulses = 0;
 };
 
@@ -91,6 +100,9 @@ public:
     BeepPattern consumeBeepPattern();
     bool emergencyStop(std::uint32_t nowMs);
     void setFlowDroppedPulses(std::uint32_t droppedPulses);
+    bool selectNextPresetForWeb();
+    bool selectPreviousPresetForWeb();
+    bool selectPresetForWeb(std::size_t index);
     bool canApplyConfig() const;
     bool applyConfig(const SystemConfig& config);
     bool applyActiveMeteringScheme(const MeteringSchemeRecord& activeScheme);

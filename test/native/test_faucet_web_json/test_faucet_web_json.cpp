@@ -12,7 +12,7 @@ namespace {
 
 AppSnapshot makeSnapshot() {
     AppSnapshot snapshot{
-        WaterSnapshot{WaterState::Running, 1, true, 250, 42, WaterResult::Completed, WaterMode::Volume, 1500},
+        WaterSnapshot{WaterState::Running, 1, 0, true, 250, 42, WaterResult::Completed, WaterMode::Volume, 1500},
         ValveOutput{ValveState::OpeningFullPower, true, 100},
         StatisticsRecord{1000, 2000, 3000, 4000, 20260506, 202619, 202605},
     };
@@ -24,7 +24,7 @@ AppSnapshot makeSnapshot() {
 }  // namespace
 
 void test_status_json_contains_no_remote_control_capability() {
-    char json[768]{};
+    char json[1536]{};
 
     TEST_ASSERT_TRUE(writeStatusJson(makeSnapshot(), json, sizeof(json)));
 
@@ -36,6 +36,7 @@ void test_status_json_contains_no_remote_control_capability() {
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"lastResult\":\"completed\""));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"mode\":\"volume\""));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"selectedPreset\":1"));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"activePreset\":0"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"pulsePerLiter\":0"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"metering\":{\"startupPulseCount\":8,\"startupVolumeMl\":36,\"stablePulsePerLiter\":225}"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"targetEstimate\":{\"available\":true"));
@@ -53,7 +54,7 @@ void test_status_json_contains_no_remote_control_capability() {
 }
 
 void test_status_json_can_report_screen_state() {
-    char json[768]{};
+    char json[1536]{};
 
     TEST_ASSERT_TRUE(writeStatusJson(makeSnapshot(), true, json, sizeof(json)));
 
@@ -61,7 +62,7 @@ void test_status_json_can_report_screen_state() {
 }
 
 void test_status_json_uses_configured_valve_pwm_values() {
-    char json[768]{};
+    char json[1536]{};
     SystemConfig config = makeDefaultConfig();
     config.valveFullPowerSec = 5;
     config.valveHoldDutyPercent = 45;
@@ -77,7 +78,7 @@ void test_status_json_uses_configured_valve_pwm_values() {
 }
 
 void test_status_json_can_include_config_migration_diagnostics() {
-    char json[1024]{};
+    char json[1536]{};
     SystemConfig config = makeDefaultConfig();
     const ConfigRuntimeStatus status{"migrated_legacy", 0, 11, false, true};
 
@@ -90,6 +91,77 @@ void test_status_json_can_include_config_migration_diagnostics() {
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"readOnly\":false"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"migrationWriteBack\":true"));
     TEST_ASSERT_NULL(std::strstr(json, "password"));
+}
+
+void test_status_json_contains_next_preset_summary() {
+    char json[1536]{};
+    SystemConfig config = makeDefaultConfig();
+    AppSnapshot snapshot = makeSnapshot();
+    snapshot.water.selectedPreset = 1;
+    snapshot.water.activePreset = 0;
+
+    TEST_ASSERT_TRUE(writeStatusJson(snapshot, true, config, json, sizeof(json)));
+
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"nextPreset\""));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"index\":1"));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"enabledOrdinal\":2"));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"enabledCount\":2"));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"name\":\"7.5L\""));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"targetValue\":7500"));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"targetEstimate\":{\"available\":true"));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"pulseCount\":1688"));
+}
+
+void test_status_json_reports_time_target_estimate_from_stable_pulses() {
+    char json[2048]{};
+    AppSnapshot snapshot = makeSnapshot();
+    snapshot.water.mode = WaterMode::Time;
+    snapshot.water.targetValue = 249;
+    snapshot.targetEstimatedVolumeMl = 1804;
+    snapshot.targetEstimatedPulseCount = 406;
+    snapshot.targetStablePulsePerSec = 1.63f;
+
+    TEST_ASSERT_TRUE(writeStatusJson(snapshot, true, json, sizeof(json)));
+
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"targetEstimate\":{\"available\":true"));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"targetMl\":1804"));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"pulseCount\":406"));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"stablePulsePerSec\":1.63"));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"reason\":\"\""));
+}
+
+void test_status_json_reports_missing_time_estimate_reason() {
+    char json[2048]{};
+    AppSnapshot snapshot = makeSnapshot();
+    snapshot.water.mode = WaterMode::Time;
+    snapshot.water.targetValue = 249;
+    snapshot.targetEstimateReason = "缺少稳态脉冲";
+
+    TEST_ASSERT_TRUE(writeStatusJson(snapshot, true, json, sizeof(json)));
+
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"targetEstimate\":{\"available\":false"));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"reason\":\"缺少稳态脉冲\""));
+}
+
+void test_status_json_reports_time_next_preset_estimate() {
+    char json[2048]{};
+    SystemConfig config = makeDefaultConfig();
+    config.presets[1].type = PresetType::Time;
+    config.presets[1].value = 249;
+    AppSnapshot snapshot = makeSnapshot();
+    snapshot.water.selectedPreset = 1;
+    snapshot.selectedPresetEstimatedVolumeMl = 1804;
+    snapshot.selectedPresetEstimatedPulseCount = 406;
+    snapshot.selectedPresetStablePulsePerSec = 1.63f;
+
+    TEST_ASSERT_TRUE(writeStatusJson(snapshot, true, config, json, sizeof(json)));
+
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"nextPreset\""));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"mode\":\"time\""));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"targetEstimate\":{\"available\":true"));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"targetMl\":1804"));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"pulseCount\":406"));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"stablePulsePerSec\":1.63"));
 }
 
 void test_stats_json_contains_all_periods() {
@@ -229,6 +301,10 @@ int main(int argc, char** argv) {
     RUN_TEST(test_status_json_can_report_screen_state);
     RUN_TEST(test_status_json_uses_configured_valve_pwm_values);
     RUN_TEST(test_status_json_can_include_config_migration_diagnostics);
+    RUN_TEST(test_status_json_contains_next_preset_summary);
+    RUN_TEST(test_status_json_reports_time_target_estimate_from_stable_pulses);
+    RUN_TEST(test_status_json_reports_missing_time_estimate_reason);
+    RUN_TEST(test_status_json_reports_time_next_preset_estimate);
     RUN_TEST(test_stats_json_contains_all_periods);
     RUN_TEST(test_usage_summary_json_contains_aggregated_series);
     RUN_TEST(test_config_json_contains_safety_and_display_settings);

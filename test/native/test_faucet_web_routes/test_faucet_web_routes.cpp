@@ -186,7 +186,7 @@ void test_records_page_and_calibration_api_are_available() {
 void test_web_page_source_has_no_remote_water_control_forms() {
     FILE* file = std::fopen("src/web/FaucetWeb.cpp", "rb");
     TEST_ASSERT_NOT_NULL(file);
-    static char buffer[300000]{};
+    static char buffer[340000]{};
     const std::size_t read = std::fread(buffer, 1, sizeof(buffer) - 1, file);
     std::fclose(file);
     TEST_ASSERT_GREATER_THAN_size_t(0, read);
@@ -204,7 +204,7 @@ void test_web_page_source_has_no_remote_water_control_forms() {
 void test_web_page_source_links_cacheable_app_css() {
     FILE* file = std::fopen("src/web/FaucetWeb.cpp", "rb");
     TEST_ASSERT_NOT_NULL(file);
-    static char buffer[300000]{};
+    static char buffer[340000]{};
     const std::size_t read = std::fread(buffer, 1, sizeof(buffer) - 1, file);
     std::fclose(file);
     TEST_ASSERT_GREATER_THAN_size_t(0, read);
@@ -235,7 +235,7 @@ void test_web_page_source_links_cacheable_app_css() {
 void test_web_page_source_contains_expected_ui_improvements() {
     FILE* file = std::fopen("src/web/FaucetWeb.cpp", "rb");
     TEST_ASSERT_NOT_NULL(file);
-    static char buffer[300000]{};
+    static char buffer[340000]{};
     const std::size_t read = std::fread(buffer, 1, sizeof(buffer) - 1, file);
     std::fclose(file);
     TEST_ASSERT_GREATER_THAN_size_t(0, read);
@@ -258,13 +258,27 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NULL(std::strstr(buffer, "href='/faucet/records/calibration'"));
     TEST_ASSERT_NULL(std::strstr(buffer, "/api/faucet/calibration"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "实际出水量"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "下次预设"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "预计 %luP/L · %luP"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "预计 %s · %luP · 稳态 %.2fP/s"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "缺少稳态脉冲"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "<span>全程平均 %luP/L</span><span>预计 %luP</span>"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "时间预设 · 不估算脉冲"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "暂无时长估算"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "action=select_previous"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "action=select_next"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "nextPresetControl"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "sendMachineStatusNoteOnlyItem(\"meteringParams\", \"计量参数\", meteringParams)"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "启动 %luP · %luml / 稳态 %luP/L"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "body{max-width:1120px"));
     TEST_ASSERT_NULL(std::strstr(buffer, "body{max-width:1280px"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "<th>时间</th><th>模式</th><th>目标</th><th>出水</th>"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "<th>用时</th><th>全程平均 P/L</th><th>计量方案</th><th>结果</th><th>操作</th>"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "<th>用时</th><th>脉冲</th><th>结果</th><th>操作</th>"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "<th>全程平均 P/L</th><th>计量方案</th>"));
     TEST_ASSERT_NULL(std::strstr(buffer, "<th>脉冲/升</th>"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "formatWaterRecordListTime(records[i], startTime"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "总 %luP · 按估算出水"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "pulse-total"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "总%luP"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "stablePulsePerLiter"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "std::uint32_t requestedPageSize = kDefaultRecordPageSize"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "std::uint32_t requestedPageNo = 0"));
@@ -289,7 +303,7 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "计量方案"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "启动脉冲数"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "findRecordMeteringSnapshot"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "g_context.recordMeteringSnapshots->findAny"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "g_context.recordMeteringSnapshots->findAny"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "样本覆盖"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "生成计量参数"));
     TEST_ASSERT_NULL(std::strstr(buffer, "<h3>计量方案生成</h3>"));
@@ -513,7 +527,7 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "实测 "));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "实测 %luP/L"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "measuredPulsePerLiter"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, " / 滤%luP"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "滤%luP"));
     TEST_ASSERT_NULL(std::strstr(buffer, "<th>诊断</th>"));
     TEST_ASSERT_NULL(std::strstr(buffer, "脉冲 %lu / 过滤 %lu / 系数 %.3f"));
     TEST_ASSERT_NULL(std::strstr(buffer, "量杯实际水量"));
@@ -793,12 +807,12 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, ".machine-status-item{display:inline-flex;align-items:center"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "background:#f7f9fb;color:#66737c"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, ".machine-hero-head{display:grid;grid-template-columns:max-content minmax(0,1fr);align-items:center;gap:14px"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, ".machine-context{display:flex;flex-direction:column;gap:3px;min-width:0"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, ".machine-context{display:flex;flex-direction:column;gap:6px;min-width:0"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, ".machine-alert{margin:0;color:#8a6f3d;font-size:13px;font-weight:400"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, ".machine-preset-line{margin:0;color:var(--muted);font-size:13px;font-weight:400"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, ".next-preset-control{display:grid;grid-template-columns:30px minmax(0,1fr) 30px"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, ".machine-progress-head{display:flex;align-items:center;justify-content:space-between;gap:10px;color:var(--muted);font-size:13px;font-weight:400"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, ".machine-task-card span{display:block;color:var(--muted);font-size:12px;font-weight:400"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, ".machine-task-card small{display:block;margin-top:4px;color:var(--muted);font-size:12px;line-height:1.2;font-weight:400"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, ".machine-task-card small{display:block;margin-top:4px;color:var(--muted);font-size:11px;line-height:1.2;font-weight:400"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, ".machine-status-item{display:inline-flex;align-items:center;gap:5px;min-height:28px;padding:0 9px;border:1px solid #dce4ea;border-radius:999px;background:#f7f9fb;color:#66737c;font-size:12px;font-weight:400"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, ".machine-status-note{color:#7a858e;font-size:11px;font-weight:400"));
     TEST_ASSERT_NULL(std::strstr(buffer, "align-items:baseline;gap:5px;min-height:28px"));
@@ -807,7 +821,7 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "machine-hero-head"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "machine-context"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "machine-alert"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "machine-preset-line"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "next-preset-control"));
     TEST_ASSERT_NULL(std::strstr(buffer, "machine-indicator"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "设备可用，等待按键启动"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "id='machineStatusNote'"));
@@ -924,12 +938,12 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NULL(std::strstr(buffer, "<h2>状态</h2><div class='metric-grid'>"));
     TEST_ASSERT_NULL(std::strstr(buffer, "<h2>出水详情</h2><div class='metric-grid'>"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "\"meteringParams\", \"计量参数\", meteringParams"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "全程平均 '+s.targetEstimate.fullRunPulsePerLiter+'P/L"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "预计 '+s.targetEstimate.pulseCount+'P"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "'预计 '+e.fullRunPulsePerLiter+'P/L · '+e.pulseCount+'P"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "'预计 '+faucetLiters(e.targetMl)+' · '+e.pulseCount+'P · 稳态 '"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "阀门"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "设备不在待机状态，请回到待机后再保存配置。"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "<th>目标值</th>"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "<th>全程平均 P/L</th>"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "<th>脉冲</th><th>结果</th><th>操作</th>"));
     TEST_ASSERT_NULL(std::strstr(buffer, "<th>脉冲</th><th>轨迹</th>"));
     TEST_ASSERT_NULL(std::strstr(buffer, "<th>校准</th>"));
     TEST_ASSERT_NULL(std::strstr(buffer, "<th>诊断</th>"));
@@ -952,7 +966,7 @@ void test_web_page_source_contains_expected_ui_improvements() {
 void test_record_calibration_api_saves_actual_without_segmented_generation() {
     FILE* file = std::fopen("src/web/FaucetWeb.cpp", "rb");
     TEST_ASSERT_NOT_NULL(file);
-    static char buffer[300000]{};
+    static char buffer[340000]{};
     const std::size_t read = std::fread(buffer, 1, sizeof(buffer) - 1, file);
     std::fclose(file);
     TEST_ASSERT_GREATER_THAN_size_t(0, read);
@@ -996,7 +1010,7 @@ void test_record_calibration_api_saves_actual_without_segmented_generation() {
 void test_calibration_page_avoids_large_metering_scheme_stack_arrays() {
     FILE* file = std::fopen("src/web/FaucetWeb.cpp", "rb");
     TEST_ASSERT_NOT_NULL(file);
-    static char buffer[300000]{};
+    static char buffer[340000]{};
     const std::size_t read = std::fread(buffer, 1, sizeof(buffer) - 1, file);
     std::fclose(file);
     TEST_ASSERT_GREATER_THAN_size_t(0, read);
@@ -1047,7 +1061,7 @@ void test_calibration_page_avoids_large_metering_scheme_stack_arrays() {
 void test_calibration_page_reports_specific_errors_and_hides_stale_generated_result() {
     FILE* file = std::fopen("src/web/FaucetWeb.cpp", "rb");
     TEST_ASSERT_NOT_NULL(file);
-    static char buffer[300000]{};
+    static char buffer[340000]{};
     const std::size_t read = std::fread(buffer, 1, sizeof(buffer) - 1, file);
     std::fclose(file);
     TEST_ASSERT_GREATER_THAN_size_t(0, read);
@@ -1088,7 +1102,7 @@ void test_calibration_page_reports_specific_errors_and_hides_stale_generated_res
 void test_pulse_trace_and_calibration_pages_keep_saved_and_ram_sources_consistent() {
     FILE* file = std::fopen("src/web/FaucetWeb.cpp", "rb");
     TEST_ASSERT_NOT_NULL(file);
-    static char buffer[300000]{};
+    static char buffer[340000]{};
     const std::size_t read = std::fread(buffer, 1, sizeof(buffer) - 1, file);
     std::fclose(file);
     TEST_ASSERT_GREATER_THAN_size_t(0, read);
@@ -1158,7 +1172,7 @@ void test_pulse_trace_and_calibration_pages_keep_saved_and_ram_sources_consisten
 void test_calibration_sample_row_does_not_send_long_form_markup_through_sendfmt() {
     FILE* file = std::fopen("src/web/FaucetWeb.cpp", "rb");
     TEST_ASSERT_NOT_NULL(file);
-    static char buffer[300000]{};
+    static char buffer[340000]{};
     const std::size_t read = std::fread(buffer, 1, sizeof(buffer) - 1, file);
     std::fclose(file);
     TEST_ASSERT_GREATER_THAN_size_t(0, read);
@@ -1186,7 +1200,7 @@ void test_calibration_sample_row_does_not_send_long_form_markup_through_sendfmt(
 void test_sendfmt_uses_dynamic_fallback_for_long_markup() {
     FILE* file = std::fopen("src/web/FaucetWeb.cpp", "rb");
     TEST_ASSERT_NOT_NULL(file);
-    static char buffer[300000]{};
+    static char buffer[340000]{};
     const std::size_t read = std::fread(buffer, 1, sizeof(buffer) - 1, file);
     std::fclose(file);
     TEST_ASSERT_GREATER_THAN_size_t(0, read);
@@ -1211,7 +1225,7 @@ void test_sendfmt_uses_dynamic_fallback_for_long_markup() {
 void test_metering_scheme_table_uses_compact_usage_count_layout() {
     FILE* file = std::fopen("src/web/FaucetWeb.cpp", "rb");
     TEST_ASSERT_NOT_NULL(file);
-    static char buffer[300000]{};
+    static char buffer[340000]{};
     const std::size_t read = std::fread(buffer, 1, sizeof(buffer) - 1, file);
     std::fclose(file);
     TEST_ASSERT_GREATER_THAN_size_t(0, read);
@@ -1337,7 +1351,7 @@ void test_app_config_save_migrates_before_marking_current_version() {
 void test_web_config_writes_reload_current_config_before_persisting() {
     FILE* file = std::fopen("src/web/FaucetWeb.cpp", "rb");
     TEST_ASSERT_NOT_NULL(file);
-    static char buffer[260000]{};
+    static char buffer[340000]{};
     const std::size_t read = std::fread(buffer, 1, sizeof(buffer) - 1, file);
     std::fclose(file);
     TEST_ASSERT_GREATER_THAN_size_t(0, read);

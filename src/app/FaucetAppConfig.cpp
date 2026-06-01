@@ -33,6 +33,12 @@ const char kKeyVolumeStep[] = "vol_step";
 const char kKeyTimeStep[] = "time_step";
 const char kKeyPulseMinIntervalUs[] = "pulse_min_us";
 const char kKeyRecentPulseTraceCount[] = "trace_count";
+const char kKeyCalibrationAnalysisPulseMinIntervalUs[] = "cal_an_us";
+const char kKeyCalibrationStableWindowSec[] = "cal_win_s";
+const char kKeyCalibrationStableTolerancePercent[] = "cal_tol";
+const char kKeyCalibrationMinVolumeSpanMl[] = "cal_span";
+const char kKeyCalibrationMaxErrorMl[] = "cal_err";
+const char kKeyCalibrationMaxRelativeErrorTenthPercent[] = "cal_rel";
 const char kKeyValveFullPower[] = "valve_s";
 const char kKeyValveHoldDuty[] = "hold_pct";
 const char kKeyDisplaySleep[] = "disp_s";
@@ -149,6 +155,12 @@ bool addCoreFields() {
     ok = Esp32BaseAppConfig::addBool({kGroupLocal, kConfigNs, kKeyBeep, "蜂鸣器提示音", true, "控制按键、完成和异常提示音。立即生效。", false, nullptr}) && ok;
 
     ok = Esp32BaseAppConfig::addInt({kGroupMetering, kConfigNs, kKeyRecentPulseTraceCount, "RAM 最近脉冲明细条数", static_cast<std::int32_t>(kDefaultRecentPulseTraceCount), static_cast<std::int32_t>(kMinRecentPulseTraceCount), static_cast<std::int32_t>(kMaxRecentPulseTraceCount), 1, "条", "仅保存在 RAM 中，重启会丢失；用于查看最近出水明细。", false, nullptr}) && ok;
+    ok = Esp32BaseAppConfig::addInt({kGroupMetering, kConfigNs, kKeyCalibrationAnalysisPulseMinIntervalUs, "生成分析脉冲间隔", static_cast<std::int32_t>(kDefaultCalibrationAnalysisPulseMinIntervalUs), 0, static_cast<std::int32_t>(kMaxPulseMinIntervalUs), 100, "us", "0 表示使用样本记录时保存的有效脉冲间隔；非 0 时按该间隔重新分析样本。", false, nullptr}) && ok;
+    ok = Esp32BaseAppConfig::addInt({kGroupMetering, kConfigNs, kKeyCalibrationStableWindowSec, "生成稳态窗口", static_cast<std::int32_t>(kDefaultCalibrationStableWindowSec), static_cast<std::int32_t>(kMinCalibrationStableWindowSec), static_cast<std::int32_t>(kMaxCalibrationStableWindowSec), 1, "s", "识别稳定流量时要求连续满足条件的秒数。", false, nullptr}) && ok;
+    ok = Esp32BaseAppConfig::addInt({kGroupMetering, kConfigNs, kKeyCalibrationStableTolerancePercent, "生成稳态容差", kDefaultCalibrationStableTolerancePercent, kMinCalibrationStableTolerancePercent, kMaxCalibrationStableTolerancePercent, 1, "%", "稳态窗口相对后半段稳定流量的允许偏差。", false, nullptr}) && ok;
+    ok = Esp32BaseAppConfig::addInt({kGroupMetering, kConfigNs, kKeyCalibrationMinVolumeSpanMl, "生成最小容量跨度", static_cast<std::int32_t>(kDefaultCalibrationMinVolumeSpanMl), static_cast<std::int32_t>(kMinCalibrationMinVolumeSpanMl), static_cast<std::int32_t>(kMaxCalibrationMinVolumeSpanMl), 100, "ml", "参与生成的最大和最小实测容量至少需要拉开该距离。", false, nullptr}) && ok;
+    ok = Esp32BaseAppConfig::addInt({kGroupMetering, kConfigNs, kKeyCalibrationMaxErrorMl, "生成最大拟合误差", static_cast<std::int32_t>(kDefaultCalibrationMaxErrorMl), static_cast<std::int32_t>(kMinCalibrationMaxErrorMl), static_cast<std::int32_t>(kMaxCalibrationMaxErrorMl), 10, "ml", "超过该绝对误差时作为样本质量提醒，仍允许生成结果。", false, nullptr}) && ok;
+    ok = Esp32BaseAppConfig::addInt({kGroupMetering, kConfigNs, kKeyCalibrationMaxRelativeErrorTenthPercent, "生成最大相对误差", kDefaultCalibrationMaxRelativeErrorTenthPercent, kMinCalibrationMaxRelativeErrorTenthPercent, kMaxCalibrationMaxRelativeErrorTenthPercent, 1, "0.1%", "单位为 0.1%；50 表示 5.0%。超过该相对误差时作为样本质量提醒，仍允许生成结果。", false, nullptr}) && ok;
 
     return ok;
 }

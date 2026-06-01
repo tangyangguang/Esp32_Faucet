@@ -69,6 +69,28 @@ struct WaterPulseTraceAnalysis {
     std::uint8_t confidence;
 };
 
+struct SegmentedCalibrationOptions {
+    std::uint32_t pulseMinIntervalUsOverride;
+    std::uint32_t stableWindowSec;
+    std::uint8_t stableTolerancePercent;
+    std::uint32_t minVolumeSpanMl;
+    std::uint32_t maxErrorMl;
+    std::uint16_t maxRelativeErrorTenthPercent;
+};
+
+enum class SegmentedCalibrationRejectReason : std::uint8_t {
+    None = 0,
+    NotEnoughSamples = 1,
+    VolumeSpanTooSmall = 2,
+    DegenerateFit = 3,
+    InvalidFit = 4,
+    ErrorTooHigh = 5,
+};
+
+constexpr std::uint8_t kSegmentedCalibrationQualityNone = 0;
+constexpr std::uint8_t kSegmentedCalibrationQualityVolumeSpanSmall = 1U << 0U;
+constexpr std::uint8_t kSegmentedCalibrationQualityErrorHigh = 1U << 1U;
+
 struct WaterPulseTraceBucket {
     std::uint32_t startSec;
     std::uint32_t durationSec;
@@ -89,7 +111,10 @@ struct SegmentedCalibrationSample {
 
 struct SegmentedCalibrationResult {
     bool valid;
+    SegmentedCalibrationRejectReason rejectReason;
+    std::uint8_t qualityWarnings;
     std::uint16_t sampleCount;
+    std::uint16_t excludedSampleCount;
     std::uint32_t startupDurationSec;
     std::uint32_t startupPulseCount;
     std::uint32_t startupVolumeMl;
@@ -97,6 +122,7 @@ struct SegmentedCalibrationResult {
     std::uint32_t minActualMl;
     std::uint32_t maxActualMl;
     std::uint32_t maxErrorMl;
+    std::uint16_t maxRelativeErrorTenthPercent;
 };
 
 constexpr std::size_t kSavedPulseTraceMaxCountLimit = 64;
@@ -258,7 +284,14 @@ std::size_t aggregateWaterPulseTrace(const WaterPulseTrace& trace,
 WaterPulseTraceAnalysis analyzeWaterPulseTrace(const WaterPulseTrace& trace,
                                                const WaterPulseTraceSample* samples,
                                                std::size_t sampleCount);
+WaterPulseTraceAnalysis analyzeWaterPulseTrace(const WaterPulseTrace& trace,
+                                               const WaterPulseTraceSample* samples,
+                                               std::size_t sampleCount,
+                                               const SegmentedCalibrationOptions& options);
 WaterPulseTraceAnalysis analyzeWaterPulseTrace(const WaterPulseTrace& trace, const WaterPulseTraceStore& store);
+WaterPulseTraceAnalysis analyzeWaterPulseTrace(const WaterPulseTrace& trace,
+                                               const WaterPulseTraceStore& store,
+                                               const SegmentedCalibrationOptions& options);
 std::uint32_t effectivePulseCount(const WaterPulseTrace& trace,
                                   const WaterPulseTraceSample* samples,
                                   std::size_t sampleCount);
@@ -273,5 +306,12 @@ std::size_t aggregateWaterPulseTrace(const WaterPulseTrace& trace,
 bool computeSegmentedCalibration(const SegmentedCalibrationSample* samples,
                                  std::size_t sampleCount,
                                  SegmentedCalibrationResult& result);
+bool computeSegmentedCalibration(const SegmentedCalibrationSample* samples,
+                                 std::size_t sampleCount,
+                                 const SegmentedCalibrationOptions& options,
+                                 SegmentedCalibrationResult& result);
+
+SegmentedCalibrationOptions defaultSegmentedCalibrationOptions();
+SegmentedCalibrationOptions segmentedCalibrationOptionsFromConfig(const SystemConfig& config);
 
 }  // namespace faucet

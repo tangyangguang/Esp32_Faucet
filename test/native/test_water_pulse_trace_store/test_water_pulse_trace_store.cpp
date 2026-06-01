@@ -385,7 +385,7 @@ void test_segmented_calibration_uses_two_valid_samples() {
 }
 
 void test_segmented_calibration_fits_all_valid_samples() {
-    SegmentedCalibrationSample samples[3]{};
+    SegmentedCalibrationSample samples[4]{};
     samples[0].actualMl = 1500;
     samples[0].totalPulses = 250;
     samples[0].startupPulseCount = 40;
@@ -411,6 +411,124 @@ void test_segmented_calibration_fits_all_valid_samples() {
     TEST_ASSERT_UINT32_WITHIN(3, 222, result.stablePulsePerLiter);
     TEST_ASSERT_UINT32_WITHIN(10, 513, result.startupVolumeMl);
     TEST_ASSERT_GREATER_THAN_UINT32(0, result.maxErrorMl);
+}
+
+void test_segmented_calibration_rejects_error_above_configured_limits() {
+    SegmentedCalibrationSample samples[4]{};
+    samples[0].actualMl = 1500;
+    samples[0].totalPulses = 250;
+    samples[0].startupPulseCount = 40;
+    samples[0].stablePulseCount = 210;
+    samples[0].startupDurationSec = 5;
+    samples[1].actualMl = 3000;
+    samples[1].totalPulses = 600;
+    samples[1].startupPulseCount = 40;
+    samples[1].stablePulseCount = 560;
+    samples[1].startupDurationSec = 5;
+    samples[2].actualMl = 7600;
+    samples[2].totalPulses = 1580;
+    samples[2].startupPulseCount = 40;
+    samples[2].stablePulseCount = 1540;
+    samples[2].startupDurationSec = 5;
+    samples[3].actualMl = 5200;
+    samples[3].totalPulses = 940;
+    samples[3].startupPulseCount = 40;
+    samples[3].stablePulseCount = 900;
+    samples[3].startupDurationSec = 5;
+    SegmentedCalibrationOptions options = defaultSegmentedCalibrationOptions();
+    options.maxErrorMl = 20;
+    options.maxRelativeErrorTenthPercent = 5;
+
+    SegmentedCalibrationResult result{};
+    TEST_ASSERT_TRUE(computeSegmentedCalibration(samples, 4, options, result));
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(SegmentedCalibrationRejectReason::None),
+                            static_cast<unsigned>(result.rejectReason));
+    TEST_ASSERT_TRUE((result.qualityWarnings & kSegmentedCalibrationQualityErrorHigh) != 0);
+    TEST_ASSERT_GREATER_THAN_UINT32(options.maxErrorMl, result.maxErrorMl);
+}
+
+void test_segmented_calibration_warns_when_volume_span_is_small() {
+    SegmentedCalibrationSample samples[2]{};
+    samples[0].actualMl = 1000;
+    samples[0].totalPulses = 240;
+    samples[0].startupPulseCount = 20;
+    samples[0].stablePulseCount = 220;
+    samples[0].startupDurationSec = 4;
+    samples[1].actualMl = 1200;
+    samples[1].totalPulses = 290;
+    samples[1].startupPulseCount = 22;
+    samples[1].stablePulseCount = 270;
+    samples[1].startupDurationSec = 5;
+    SegmentedCalibrationOptions options = defaultSegmentedCalibrationOptions();
+    options.minVolumeSpanMl = 500;
+
+    SegmentedCalibrationResult result{};
+    TEST_ASSERT_TRUE(computeSegmentedCalibration(samples, 2, options, result));
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(SegmentedCalibrationRejectReason::None),
+                            static_cast<unsigned>(result.rejectReason));
+    TEST_ASSERT_TRUE((result.qualityWarnings & kSegmentedCalibrationQualityVolumeSpanSmall) != 0);
+    TEST_ASSERT_EQUAL_UINT32(1000, result.minActualMl);
+    TEST_ASSERT_EQUAL_UINT32(1200, result.maxActualMl);
+}
+
+void test_segmented_calibration_still_requires_two_samples() {
+    SegmentedCalibrationSample samples[1]{};
+    samples[0].actualMl = 1000;
+    samples[0].totalPulses = 240;
+    samples[0].startupPulseCount = 20;
+    samples[0].stablePulseCount = 220;
+    samples[0].startupDurationSec = 4;
+
+    SegmentedCalibrationResult result{};
+    TEST_ASSERT_FALSE(computeSegmentedCalibration(samples, 1, result));
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(SegmentedCalibrationRejectReason::NotEnoughSamples),
+                            static_cast<unsigned>(result.rejectReason));
+}
+
+void test_segmented_calibration_removes_single_outlier_before_final_fit() {
+    SegmentedCalibrationSample samples[3]{};
+    samples[0].actualMl = 1500;
+    samples[0].totalPulses = 250;
+    samples[0].startupPulseCount = 40;
+    samples[0].stablePulseCount = 210;
+    samples[0].startupDurationSec = 5;
+    samples[1].actualMl = 4200;
+    samples[1].totalPulses = 600;
+    samples[1].startupPulseCount = 40;
+    samples[1].stablePulseCount = 560;
+    samples[1].startupDurationSec = 5;
+    samples[2].actualMl = 7500;
+    samples[2].totalPulses = 1580;
+    samples[2].startupPulseCount = 40;
+    samples[2].stablePulseCount = 1540;
+    samples[2].startupDurationSec = 5;
+
+    SegmentedCalibrationResult result{};
+    TEST_ASSERT_TRUE(computeSegmentedCalibration(samples, 3, result));
+
+    TEST_ASSERT_EQUAL_UINT16(2, result.sampleCount);
+    TEST_ASSERT_EQUAL_UINT16(1, result.excludedSampleCount);
+    TEST_ASSERT_EQUAL_UINT32(222, result.stablePulsePerLiter);
+    TEST_ASSERT_EQUAL_UINT32(553, result.startupVolumeMl);
+}
+
+void test_trace_analysis_options_change_stable_window() {
+    WaterPulseTrace traces[2]{};
+    WaterPulseTraceSample samples[120]{};
+    WaterPulseTraceStore store(traces, 2, samples, 120, 2);
+    const std::uint32_t id = store.beginTrace(1000, kDefaultPulseMinIntervalUs);
+    fillTrace(store, id, {1, 2, 2, 3, 9, 9, 10, 9, 10, 9, 10, 9});
+    TEST_ASSERT_TRUE(store.finishTrace(id, makeRecord(1000, 83, 5000), WaterPulseTraceState::Completed));
+    const WaterPulseTrace* trace = store.findById(id);
+    TEST_ASSERT_NOT_NULL(trace);
+
+    SegmentedCalibrationOptions strict = defaultSegmentedCalibrationOptions();
+    strict.stableWindowSec = 8;
+    TEST_ASSERT_FALSE(analyzeWaterPulseTrace(*trace, store, strict).stable);
+
+    SegmentedCalibrationOptions relaxed = defaultSegmentedCalibrationOptions();
+    relaxed.stableWindowSec = 3;
+    TEST_ASSERT_TRUE(analyzeWaterPulseTrace(*trace, store, relaxed).stable);
 }
 
 void test_trace_store_updates_actual_ml_by_record() {
@@ -904,6 +1022,11 @@ int main(int argc, char** argv) {
     RUN_TEST(test_trace_bucket_aggregation_accepts_four_second_bucket);
     RUN_TEST(test_segmented_calibration_uses_two_valid_samples);
     RUN_TEST(test_segmented_calibration_fits_all_valid_samples);
+    RUN_TEST(test_segmented_calibration_rejects_error_above_configured_limits);
+    RUN_TEST(test_segmented_calibration_warns_when_volume_span_is_small);
+    RUN_TEST(test_segmented_calibration_still_requires_two_samples);
+    RUN_TEST(test_segmented_calibration_removes_single_outlier_before_final_fit);
+    RUN_TEST(test_trace_analysis_options_change_stable_window);
     RUN_TEST(test_trace_store_updates_actual_ml_by_record);
     RUN_TEST(test_saved_trace_file_store_updates_actual_ml_by_record_and_lists_samples);
     RUN_TEST(test_saved_trace_file_store_rejects_truncated_trace);

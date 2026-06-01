@@ -4,8 +4,6 @@
 
 #include <Esp32Base.h>
 
-#include <algorithm>
-#include <cstring>
 #include <limits>
 
 namespace faucet {
@@ -22,26 +20,7 @@ bool Esp32BaseWaterRecordBackend::createSized(const char* path, std::size_t size
     if (!path || size > static_cast<std::size_t>(std::numeric_limits<std::uint32_t>::max())) {
         return false;
     }
-    if (!Esp32BaseFs::writeBytes(path, nullptr, 0)) {
-        return false;
-    }
-
-    std::uint8_t zeros[256]{};
-    std::size_t remaining = size;
-    std::size_t writtenSinceYield = 0;
-    while (remaining > 0) {
-        const std::size_t chunk = std::min<std::size_t>(remaining, sizeof(zeros));
-        if (!Esp32BaseFs::appendBytes(path, zeros, chunk)) {
-            return false;
-        }
-        remaining -= chunk;
-        writtenSinceYield += chunk;
-        if (writtenSinceYield >= 4096) {
-            writtenSinceYield = 0;
-            yield();
-        }
-    }
-    return Esp32BaseFs::fileSize(path) == static_cast<std::int64_t>(size);
+    return Esp32BaseFs::createFixedFile(path, static_cast<std::uint32_t>(size), 0);
 }
 
 bool Esp32BaseWaterRecordBackend::appendBytes(const char* path, const std::uint8_t* data, std::size_t len) {

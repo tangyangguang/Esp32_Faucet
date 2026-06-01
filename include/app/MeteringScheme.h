@@ -113,8 +113,18 @@ struct MeteringSchemeEdit {
     MeteringParameters params{};
 };
 
+struct MeteringTargetEstimate {
+    bool valid = false;
+    std::uint32_t targetMl = 0;
+    std::uint32_t pulseCount = 0;
+    std::uint32_t fullRunPulsePerLiter = 0;
+};
+
 MeteringParameters defaultMeteringParameters();
 bool validMeteringSchemeParameters(const MeteringParameters& params);
+std::uint32_t estimatePulsesForVolumeMl(const MeteringParameters& params, std::uint32_t targetMl);
+std::uint32_t fullRunPulsePerLiter(std::uint32_t pulseCount, std::uint32_t volumeMl);
+MeteringTargetEstimate meteringEstimateForTarget(const MeteringParameters& params, std::uint32_t targetMl);
 
 bool initializeDefaultMeteringSchemes(MeteringSchemeCollection& schemes, std::uint32_t nowSeconds);
 void initializeManualMeteringScheme(MeteringSchemeRecord& scheme,

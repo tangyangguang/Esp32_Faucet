@@ -49,6 +49,8 @@ struct AppSnapshot {
     std::uint32_t calibrationStepMl = 100;
     bool calibrationReady = false;
     std::uint32_t pulsePerLiter = 0;
+    MeteringParameters meteringParams{};
+    std::uint32_t targetEstimatedDurationSec = 0;
     std::uint32_t flowDroppedPulses = 0;
 };
 

@@ -98,6 +98,42 @@ bool validMeteringSchemeParameters(const MeteringParameters& params) {
            (params.startupPulseCount > 0 && params.startupVolumeMl > 0);
 }
 
+std::uint32_t estimatePulsesForVolumeMl(const MeteringParameters& params, std::uint32_t targetMl) {
+    if (!validMeteringSchemeParameters(params) || targetMl == 0 || params.stablePulsePerLiter == 0) {
+        return 0;
+    }
+    if (params.startupPulseCount > 0 && params.startupVolumeMl > 0 && targetMl <= params.startupVolumeMl) {
+        const std::uint64_t pulses =
+            (static_cast<std::uint64_t>(targetMl) * params.startupPulseCount + params.startupVolumeMl - 1ULL) /
+            params.startupVolumeMl;
+        return pulses > UINT32_MAX ? UINT32_MAX : static_cast<std::uint32_t>(pulses);
+    }
+    const std::uint32_t stableTargetMl =
+        targetMl > params.startupVolumeMl ? targetMl - params.startupVolumeMl : 0;
+    const std::uint64_t stablePulses =
+        (static_cast<std::uint64_t>(stableTargetMl) * params.stablePulsePerLiter + 999ULL) / 1000ULL;
+    const std::uint64_t totalPulses = static_cast<std::uint64_t>(params.startupPulseCount) + stablePulses;
+    return totalPulses > UINT32_MAX ? UINT32_MAX : static_cast<std::uint32_t>(totalPulses);
+}
+
+std::uint32_t fullRunPulsePerLiter(std::uint32_t pulseCount, std::uint32_t volumeMl) {
+    if (pulseCount == 0 || volumeMl == 0) {
+        return 0;
+    }
+    const std::uint64_t value =
+        (static_cast<std::uint64_t>(pulseCount) * 1000ULL + volumeMl / 2ULL) / volumeMl;
+    return value > UINT32_MAX ? UINT32_MAX : static_cast<std::uint32_t>(value);
+}
+
+MeteringTargetEstimate meteringEstimateForTarget(const MeteringParameters& params, std::uint32_t targetMl) {
+    MeteringTargetEstimate estimate{};
+    estimate.targetMl = targetMl;
+    estimate.pulseCount = estimatePulsesForVolumeMl(params, targetMl);
+    estimate.fullRunPulsePerLiter = fullRunPulsePerLiter(estimate.pulseCount, targetMl);
+    estimate.valid = estimate.pulseCount > 0 && estimate.fullRunPulsePerLiter > 0;
+    return estimate;
+}
+
 bool initializeDefaultMeteringSchemes(MeteringSchemeCollection& schemes, std::uint32_t nowSeconds) {
     if (!schemes.records || schemes.capacity == 0) {
         return false;

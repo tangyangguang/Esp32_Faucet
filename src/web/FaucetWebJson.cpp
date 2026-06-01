@@ -152,8 +152,16 @@ bool writeStatusJson(const AppSnapshot& snapshot,
                      char* out,
                      std::size_t len) {
     JsonWriter writer(out, len);
+    const MeteringTargetEstimate targetEstimate =
+        snapshot.water.mode == WaterMode::Volume
+            ? meteringEstimateForTarget(snapshot.meteringParams, snapshot.water.targetValue)
+            : MeteringTargetEstimate{};
     writer.append("{\"state\":\"%s\",\"valveOpen\":%s,\"volumeMl\":%lu,\"elapsedSec\":%lu,\"targetValue\":%lu,"
-                  "\"lastResult\":\"%s\",\"mode\":\"%s\",\"selectedPreset\":%u,\"pulsePerLiter\":%lu,\"flowDroppedPulses\":%lu,"
+                  "\"lastResult\":\"%s\",\"mode\":\"%s\",\"selectedPreset\":%u,\"pulsePerLiter\":%lu,"
+                  "\"metering\":{\"startupPulseCount\":%lu,\"startupVolumeMl\":%lu,\"stablePulsePerLiter\":%lu},"
+                  "\"targetEstimate\":{\"available\":%s,\"targetMl\":%lu,\"pulseCount\":%lu,"
+                  "\"fullRunPulsePerLiter\":%lu,\"estimatedDurationSec\":%lu},"
+                  "\"flowDroppedPulses\":%lu,"
                   "\"valveDutyPercent\":%u,\"valveFullPowerSec\":%lu,\"valveHoldDutyPercent\":%u,"
                   "\"screenOn\":%s,\"waterControl\":false",
                   waterStateName(snapshot.water.state),
@@ -165,6 +173,14 @@ bool writeStatusJson(const AppSnapshot& snapshot,
                   waterModeName(snapshot.water.mode),
                   static_cast<unsigned>(snapshot.water.selectedPreset),
                   static_cast<unsigned long>(snapshot.pulsePerLiter),
+                  static_cast<unsigned long>(snapshot.meteringParams.startupPulseCount),
+                  static_cast<unsigned long>(snapshot.meteringParams.startupVolumeMl),
+                  static_cast<unsigned long>(snapshot.meteringParams.stablePulsePerLiter),
+                  targetEstimate.valid ? "true" : "false",
+                  static_cast<unsigned long>(targetEstimate.targetMl),
+                  static_cast<unsigned long>(targetEstimate.pulseCount),
+                  static_cast<unsigned long>(targetEstimate.fullRunPulsePerLiter),
+                  static_cast<unsigned long>(snapshot.targetEstimatedDurationSec),
                   static_cast<unsigned long>(snapshot.flowDroppedPulses),
                   static_cast<unsigned>(snapshot.valve.dutyPercent),
                   static_cast<unsigned long>(config.valveFullPowerSec),

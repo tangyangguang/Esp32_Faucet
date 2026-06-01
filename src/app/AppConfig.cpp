@@ -52,6 +52,12 @@ SystemConfig makeDefaultConfig() {
     config.timeAdjustStepSec = kDefaultTimeAdjustStepSec;
     config.pulseMinIntervalUs = kDefaultPulseMinIntervalUs;
     config.recentPulseTraceCount = kDefaultRecentPulseTraceCount;
+    config.calibrationAnalysisPulseMinIntervalUs = kDefaultCalibrationAnalysisPulseMinIntervalUs;
+    config.calibrationStableWindowSec = kDefaultCalibrationStableWindowSec;
+    config.calibrationStableTolerancePercent = kDefaultCalibrationStableTolerancePercent;
+    config.calibrationMinVolumeSpanMl = kDefaultCalibrationMinVolumeSpanMl;
+    config.calibrationMaxErrorMl = kDefaultCalibrationMaxErrorMl;
+    config.calibrationMaxRelativeErrorTenthPercent = kDefaultCalibrationMaxRelativeErrorTenthPercent;
     config.valveFullPowerSec = kDefaultValveFullPowerSec;
     config.valveHoldDutyPercent = kDefaultValveHoldDutyPercent;
     config.displaySleepSec = kDefaultDisplaySleepSec;
@@ -91,6 +97,24 @@ void sanitizeConfig(SystemConfig& config) {
         clampValue<std::uint32_t>(config.pulseMinIntervalUs, kMinPulseMinIntervalUs, kMaxPulseMinIntervalUs);
     config.recentPulseTraceCount =
         clampValue<std::uint32_t>(config.recentPulseTraceCount, kMinRecentPulseTraceCount, kMaxRecentPulseTraceCount);
+    if (config.calibrationAnalysisPulseMinIntervalUs != 0) {
+        config.calibrationAnalysisPulseMinIntervalUs = clampValue<std::uint32_t>(
+            config.calibrationAnalysisPulseMinIntervalUs, kMinPulseMinIntervalUs, kMaxPulseMinIntervalUs);
+    }
+    config.calibrationStableWindowSec = clampValue<std::uint32_t>(
+        config.calibrationStableWindowSec, kMinCalibrationStableWindowSec, kMaxCalibrationStableWindowSec);
+    config.calibrationStableTolerancePercent = clampValue<std::uint8_t>(
+        config.calibrationStableTolerancePercent,
+        kMinCalibrationStableTolerancePercent,
+        kMaxCalibrationStableTolerancePercent);
+    config.calibrationMinVolumeSpanMl = clampValue<std::uint32_t>(
+        config.calibrationMinVolumeSpanMl, kMinCalibrationMinVolumeSpanMl, kMaxCalibrationMinVolumeSpanMl);
+    config.calibrationMaxErrorMl = clampValue<std::uint32_t>(
+        config.calibrationMaxErrorMl, kMinCalibrationMaxErrorMl, kMaxCalibrationMaxErrorMl);
+    config.calibrationMaxRelativeErrorTenthPercent = clampValue<std::uint16_t>(
+        config.calibrationMaxRelativeErrorTenthPercent,
+        kMinCalibrationMaxRelativeErrorTenthPercent,
+        kMaxCalibrationMaxRelativeErrorTenthPercent);
 
     config.valveFullPowerSec = clampValue<std::uint32_t>(config.valveFullPowerSec, 1, 10);
     config.valveHoldDutyPercent = clampValue<std::uint8_t>(

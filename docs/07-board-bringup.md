@@ -135,7 +135,7 @@ pio device monitor -e esp32dev --port <端口> --baud 115200
 - 远程出水控制路径 `/api/faucet/start` 返回 404。
 - `/api/faucet/stats`、`/api/faucet/presets`、`/api/faucet/filters`、`/api/faucet/records?page=0&pageSize=10` 均可访问。
 - 记录 API 返回 `storage=file`。
-- records 校准 API 使用 `POST /api/faucet/records` 携带 `action=calibrate`，基于最新可校准记录保存。
+- 校准页使用 `POST /faucet/calibration` 携带 `action=calibrate`、`traceSource`、`trace` 和 `actualMl`，基于样本列表中的 RAM 或已保存脉冲明细保存量杯实测容量。
 
 观察到但不影响本次裸板验证：
 

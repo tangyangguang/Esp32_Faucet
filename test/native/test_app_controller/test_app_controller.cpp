@@ -992,6 +992,29 @@ void test_app_controller_result_display_exits_after_configured_timeout() {
                             static_cast<std::uint8_t>(app.snapshot().localMode));
 }
 
+void test_app_controller_snapshot_reports_current_flow_rate() {
+    SystemConfig config = makeDefaultConfig();
+    StatisticsStore statistics;
+    statistics.reset({20260506, 202619, 202605});
+    FilterStore filters(config.filters);
+    MemoryRecordWriter records;
+    AppController app(config, statistics, filters, records);
+    applyTestMeteringScheme(app, 1000);
+
+    app.resetInputs({false, false, false, false}, 0);
+    pressAndReleaseOk(app, 100);
+    pressAndReleaseOk(app, 300);
+    app.onFlowPulse(1000000UL);
+    app.onFlowPulse(2000000UL);
+    app.tick(input({false, false, false, false}, 2100, 2100000UL, 1714502400));
+
+    TEST_ASSERT_EQUAL_UINT32(60, app.snapshot().currentFlowMlPerMin);
+
+    app.tick(input({false, false, false, false}, 5000, 5000000UL, 1714502403));
+
+    TEST_ASSERT_EQUAL_UINT32(0, app.snapshot().currentFlowMlPerMin);
+}
+
 int main(int argc, char** argv) {
     (void)argc;
     (void)argv;
@@ -1024,5 +1047,6 @@ int main(int argc, char** argv) {
     RUN_TEST(test_app_controller_pause_timeout_trace_is_not_marked_error_and_can_calibrate);
     RUN_TEST(test_app_controller_applies_calibration_from_pause_timeout_record);
     RUN_TEST(test_app_controller_result_display_exits_after_configured_timeout);
+    RUN_TEST(test_app_controller_snapshot_reports_current_flow_rate);
     return UNITY_END();
 }

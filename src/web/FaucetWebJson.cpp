@@ -275,9 +275,11 @@ bool writeStatusJson(const AppSnapshot& snapshot,
                   static_cast<double>(snapshot.water.mode == WaterMode::Time ? snapshot.targetStablePulsePerSec : 0.0f));
     appendEscaped(writer, targetEstimateValid ? "" : (snapshot.targetEstimateReason ? snapshot.targetEstimateReason : ""));
     writer.append("},"
-                  "\"flowDroppedPulses\":%lu,"
+                  "\"currentFlowMlPerMin\":%lu,\"recentAverageFlowMlPerMin\":%lu,\"flowDroppedPulses\":%lu,"
                   "\"valveDutyPercent\":%u,\"valveFullPowerSec\":%lu,\"valveHoldDutyPercent\":%u,"
                   "\"screenOn\":%s,\"waterControl\":false",
+                  static_cast<unsigned long>(snapshot.currentFlowMlPerMin),
+                  static_cast<unsigned long>(snapshot.recentAverageFlowMlPerMin),
                   static_cast<unsigned long>(snapshot.flowDroppedPulses),
                   static_cast<unsigned>(snapshot.valve.dutyPercent),
                   static_cast<unsigned long>(config.valveFullPowerSec),
@@ -479,9 +481,16 @@ bool writeWaterRecordsJson(const WaterRecord* records,
             record.pulsePerMlAtRun <= 0.0f
                 ? 0
                 : static_cast<std::uint32_t>(record.pulsePerMlAtRun * 1000.0f + 0.5f);
+        const std::uint32_t averageFlowMlPerMin =
+            record.durationSec == 0
+                ? 0
+                : static_cast<std::uint32_t>(
+                      (static_cast<std::uint64_t>(record.volumeMl) * 60ULL + record.durationSec / 2ULL) /
+                      record.durationSec);
         writer.append("%s{\"startTime\":%lu,\"volumeMl\":%lu,\"durationSec\":%u,"
                       "\"mode\":\"%s\",\"result\":\"%s\",\"targetValue\":%lu,\"selectedPreset\":%u,"
-                      "\"pulseCount\":%lu,\"rejectedPulseCount\":%lu,\"stablePulsePerLiterAtRun\":%lu}",
+                      "\"pulseCount\":%lu,\"rejectedPulseCount\":%lu,\"stablePulsePerLiterAtRun\":%lu,"
+                      "\"averageFlowMlPerMin\":%lu}",
                       i == 0 ? "" : ",",
                       static_cast<unsigned long>(record.startTime),
                       static_cast<unsigned long>(record.volumeMl),
@@ -492,7 +501,8 @@ bool writeWaterRecordsJson(const WaterRecord* records,
                       static_cast<unsigned>(record.selectedPreset),
                       static_cast<unsigned long>(record.pulseCount),
                       static_cast<unsigned long>(record.rejectedPulseCount),
-                      static_cast<unsigned long>(stablePulsePerLiterAtRun));
+                      static_cast<unsigned long>(stablePulsePerLiterAtRun),
+                      static_cast<unsigned long>(averageFlowMlPerMin));
     }
     writer.append("]}");
     return writer.ok();

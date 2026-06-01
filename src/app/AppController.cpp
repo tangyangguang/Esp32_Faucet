@@ -62,6 +62,7 @@ AppController::AppController(const SystemConfig& config,
       activeTraceId_(0),
       activeTraceStartUs_(0),
       lastFlowVolumeMl_(0),
+      currentFlowMlPerMin_(0),
       activeStartTimeSec_(0),
       activeStartTimeSynced_(false),
       activeStartBootId_(0),
@@ -111,6 +112,7 @@ AppController::AppController(const SystemConfig& config,
       activeTraceId_(0),
       activeTraceStartUs_(0),
       lastFlowVolumeMl_(0),
+      currentFlowMlPerMin_(0),
       activeStartTimeSec_(0),
       activeStartTimeSynced_(false),
       activeStartBootId_(0),
@@ -165,6 +167,7 @@ void AppController::tick(const AppTickInput& input) {
 
     syncFlow(input.nowUs);
     const FlowSnapshot flow = flow_.snapshot(input.nowUs);
+    currentFlowMlPerMin_ = flow.currentFlowMlPerMin;
     water_.tick(input.nowMs, flow.currentFlowMlPerMin);
     syncValve(input.nowMs);
 
@@ -211,6 +214,7 @@ AppSnapshot AppController::snapshot() const {
     snapshot.calibrationReady = lastResultRecordValid_;
     snapshot.pulsePerLiter = activeMeteringScheme_.params.stablePulsePerLiter;
     snapshot.meteringParams = activeMeteringScheme_.params;
+    snapshot.currentFlowMlPerMin = currentFlowMlPerMin_;
     snapshot.flowDroppedPulses = flowDroppedPulses_;
     return snapshot;
 }
@@ -482,6 +486,7 @@ void AppController::startSelectedPreset(std::uint32_t nowMs,
         activeStartBootId_ = timeSynced ? 0 : bootId;
         flow_.reset();
         lastFlowVolumeMl_ = 0;
+        currentFlowMlPerMin_ = 0;
         if (pulseTraces_) {
             pulseTraces_->setRecentTraceLimit(config_.recentPulseTraceCount);
             activeTraceId_ = pulseTraces_->beginTrace(nowSeconds, config_.pulseMinIntervalUs);

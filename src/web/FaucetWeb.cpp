@@ -2827,10 +2827,16 @@ void sendUsagePatterns(const WaterUsageSummary& summary, const SystemConfig& con
         if (summary.presetCounts[i].count == 0) {
             continue;
         }
-        char label[40]{};
-        char name[kPresetNameLength]{};
-        std::strncpy(name, config.presets[i].name, sizeof(name) - 1);
-        std::snprintf(label, sizeof(label), "%u %s", static_cast<unsigned>(i + 1), name);
+        const PresetConfig& preset = config.presets[i];
+        char target[24]{};
+        if (preset.type == PresetType::Time) {
+            formatSecondsValue(preset.value, target, sizeof(target));
+        } else {
+            formatLiters(preset.value, target, sizeof(target));
+        }
+        const char* type = preset.type == PresetType::Time ? "时间" : "容量";
+        char label[56]{};
+        std::snprintf(label, sizeof(label), "P%u · %s · %s", static_cast<unsigned>(i + 1), type, target);
         sendCountVolumeDistributionRow(label, summary.presetCounts[i].count, summary.presetCounts[i].volumeMl, summary.last30DaysCount);
     }
     if (summary.last30DaysMl == 0) {

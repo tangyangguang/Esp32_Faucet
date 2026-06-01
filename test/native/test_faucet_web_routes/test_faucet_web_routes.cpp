@@ -808,6 +808,8 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "sendCountVolumeDistributionRow"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "roundedPercent(count, totalCount)"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "<strong>%lu 次</strong><small>占 %lu%% · 合计 %s</small>"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "P%u · %s · %s"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "preset.type == PresetType::Time ? \"时间\" : \"容量\""));
     TEST_ASSERT_NULL(std::strstr(buffer, "sendVolumeDistributionRow"));
     TEST_ASSERT_NULL(std::strstr(buffer, "roundedPercent(volumeMl, totalMl)"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "按容量段分布"));

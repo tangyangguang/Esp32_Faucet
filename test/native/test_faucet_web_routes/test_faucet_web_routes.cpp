@@ -198,7 +198,7 @@ void test_records_page_and_calibration_api_are_available() {
 void test_web_page_source_has_no_remote_water_control_forms() {
     FILE* file = std::fopen("src/web/FaucetWeb.cpp", "rb");
     TEST_ASSERT_NOT_NULL(file);
-    static char buffer[340000]{};
+    static char buffer[420000]{};
     const std::size_t read = std::fread(buffer, 1, sizeof(buffer) - 1, file);
     std::fclose(file);
     TEST_ASSERT_GREATER_THAN_size_t(0, read);
@@ -216,7 +216,7 @@ void test_web_page_source_has_no_remote_water_control_forms() {
 void test_web_page_source_links_cacheable_app_css() {
     FILE* file = std::fopen("src/web/FaucetWeb.cpp", "rb");
     TEST_ASSERT_NOT_NULL(file);
-    static char buffer[340000]{};
+    static char buffer[420000]{};
     const std::size_t read = std::fread(buffer, 1, sizeof(buffer) - 1, file);
     std::fclose(file);
     TEST_ASSERT_GREATER_THAN_size_t(0, read);
@@ -247,7 +247,7 @@ void test_web_page_source_links_cacheable_app_css() {
 void test_web_page_source_contains_expected_ui_improvements() {
     FILE* file = std::fopen("src/web/FaucetWeb.cpp", "rb");
     TEST_ASSERT_NOT_NULL(file);
-    static char buffer[340000]{};
+    static char buffer[420000]{};
     const std::size_t read = std::fread(buffer, 1, sizeof(buffer) - 1, file);
     std::fclose(file);
     TEST_ASSERT_GREATER_THAN_size_t(0, read);
@@ -631,7 +631,7 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_LESS_THAN(sizeof(samplesPanel), samplesLen + 1);
     std::memcpy(samplesPanel, samplesPanelSource, samplesLen);
     TEST_ASSERT_NOT_NULL(std::strstr(samplesPanel,
-                                     "<table class='calibration-sample-table'><tr><th>时间</th><th>目标</th><th>估算出水</th><th>实测容量</th><th>脉冲</th><th>前 %u 秒脉冲</th><th>稳态</th><th>来源</th><th>状态</th><th>操作</th></tr>"));
+                                     "<table class='calibration-sample-table'><tr><th>时间</th><th>时长</th><th>目标</th><th>估算出水</th><th>实测容量</th><th>脉冲</th><th>前 %u 秒脉冲</th><th>稳态</th><th>来源</th><th>状态</th><th>操作</th></tr>"));
     TEST_ASSERT_NOT_NULL(std::strstr(samplesPanel, "sampleSeconds"));
     TEST_ASSERT_NOT_NULL(std::strstr(samplesPanel, "min='1' max='60' step='1' value='%u'"));
     TEST_ASSERT_NOT_NULL(std::strstr(sampleRowSource, "name='traceSource' value='"));
@@ -675,17 +675,22 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, ".generated-result-actions{align-items:flex-end}"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "sample-coverage-compact"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "generated-scheme-layout"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "generated-estimator"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "试算目标水量"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "sample-trial-modal"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "faucetOpenSampleTrial"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "data-sample-trial='1'"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "generated-estimator"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "试算目标水量"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, ">测算</button>"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "metering-trial-modal"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "faucetOpenMeteringTrial"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "data-metering-trial='1'"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "容量目标模式"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "时间目标模式"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "预计出水量"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "预计出水时长"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "预计脉冲总数"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "data-startup-pulses"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "data-startup-duration-ms"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "data-stable-flow-ml-min"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "faucetEstimateDurationForMl"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "faucetEstimateVolumeForDuration"));
     TEST_ASSERT_NULL(std::strstr(buffer, "时长按当前有效样本平均流速估算"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "calibration-generation-settings"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "generated-residual-table"));
@@ -693,7 +698,7 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "重新生成"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "启用此方案"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "createdScheme"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "faucetEstimateGeneratedScheme"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "faucetEstimateGeneratedScheme"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "faucetSubmitGenerationAction"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "name='ajax' value='1'"));
     const char* calibrationPost = std::strstr(buffer, "void handleCalibrationPost()");
@@ -769,6 +774,15 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_LESS_THAN(sizeof(schemeList), schemeListLen + 1);
     std::memcpy(schemeList, schemeListSource, schemeListLen);
     TEST_ASSERT_NULL(std::strstr(schemeList, "calibration-slot-form"));
+    TEST_ASSERT_NOT_NULL(std::strstr(schemeList, "<th>容量估算参数</th><th>时间估算参数</th>"));
+    TEST_ASSERT_NOT_NULL(std::strstr(schemeList, "sendSchemeDetailButton(scheme, activeId)"));
+    TEST_ASSERT_NOT_NULL(std::strstr(schemeList, "sendMeteringTrialButton"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "scheme-detail-modal"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "faucetOpenSchemeDetail"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "data-scheme-detail='1'"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "样本 traceId"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "最近启用"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "最近使用"));
     TEST_ASSERT_NULL(std::strstr(schemeList, "手工新建方案"));
     TEST_ASSERT_NULL(std::strstr(schemeList, "<h3>候选方案</h3>"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "待校准容量"));
@@ -1032,7 +1046,7 @@ void test_web_page_source_contains_expected_ui_improvements() {
 void test_record_calibration_api_saves_actual_without_segmented_generation() {
     FILE* file = std::fopen("src/web/FaucetWeb.cpp", "rb");
     TEST_ASSERT_NOT_NULL(file);
-    static char buffer[340000]{};
+    static char buffer[420000]{};
     const std::size_t read = std::fread(buffer, 1, sizeof(buffer) - 1, file);
     std::fclose(file);
     TEST_ASSERT_GREATER_THAN_size_t(0, read);
@@ -1076,7 +1090,7 @@ void test_record_calibration_api_saves_actual_without_segmented_generation() {
 void test_calibration_page_avoids_large_metering_scheme_stack_arrays() {
     FILE* file = std::fopen("src/web/FaucetWeb.cpp", "rb");
     TEST_ASSERT_NOT_NULL(file);
-    static char buffer[340000]{};
+    static char buffer[420000]{};
     const std::size_t read = std::fread(buffer, 1, sizeof(buffer) - 1, file);
     std::fclose(file);
     TEST_ASSERT_GREATER_THAN_size_t(0, read);
@@ -1127,7 +1141,7 @@ void test_calibration_page_avoids_large_metering_scheme_stack_arrays() {
 void test_calibration_page_reports_specific_errors_and_hides_stale_generated_result() {
     FILE* file = std::fopen("src/web/FaucetWeb.cpp", "rb");
     TEST_ASSERT_NOT_NULL(file);
-    static char buffer[340000]{};
+    static char buffer[420000]{};
     const std::size_t read = std::fread(buffer, 1, sizeof(buffer) - 1, file);
     std::fclose(file);
     TEST_ASSERT_GREATER_THAN_size_t(0, read);
@@ -1168,7 +1182,7 @@ void test_calibration_page_reports_specific_errors_and_hides_stale_generated_res
 void test_pulse_trace_and_calibration_pages_keep_saved_and_ram_sources_consistent() {
     FILE* file = std::fopen("src/web/FaucetWeb.cpp", "rb");
     TEST_ASSERT_NOT_NULL(file);
-    static char buffer[340000]{};
+    static char buffer[420000]{};
     const std::size_t read = std::fread(buffer, 1, sizeof(buffer) - 1, file);
     std::fclose(file);
     TEST_ASSERT_GREATER_THAN_size_t(0, read);
@@ -1238,7 +1252,7 @@ void test_pulse_trace_and_calibration_pages_keep_saved_and_ram_sources_consisten
 void test_calibration_sample_row_does_not_send_long_form_markup_through_sendfmt() {
     FILE* file = std::fopen("src/web/FaucetWeb.cpp", "rb");
     TEST_ASSERT_NOT_NULL(file);
-    static char buffer[340000]{};
+    static char buffer[420000]{};
     const std::size_t read = std::fread(buffer, 1, sizeof(buffer) - 1, file);
     std::fclose(file);
     TEST_ASSERT_GREATER_THAN_size_t(0, read);
@@ -1266,7 +1280,7 @@ void test_calibration_sample_row_does_not_send_long_form_markup_through_sendfmt(
 void test_sendfmt_uses_dynamic_fallback_for_long_markup() {
     FILE* file = std::fopen("src/web/FaucetWeb.cpp", "rb");
     TEST_ASSERT_NOT_NULL(file);
-    static char buffer[340000]{};
+    static char buffer[420000]{};
     const std::size_t read = std::fread(buffer, 1, sizeof(buffer) - 1, file);
     std::fclose(file);
     TEST_ASSERT_GREATER_THAN_size_t(0, read);
@@ -1291,7 +1305,7 @@ void test_sendfmt_uses_dynamic_fallback_for_long_markup() {
 void test_metering_scheme_table_uses_compact_usage_count_layout() {
     FILE* file = std::fopen("src/web/FaucetWeb.cpp", "rb");
     TEST_ASSERT_NOT_NULL(file);
-    static char buffer[340000]{};
+    static char buffer[420000]{};
     const std::size_t read = std::fread(buffer, 1, sizeof(buffer) - 1, file);
     std::fclose(file);
     TEST_ASSERT_GREATER_THAN_size_t(0, read);
@@ -1434,7 +1448,7 @@ void test_app_config_submit_rejects_read_only_business_config_before_field_write
 void test_web_config_writes_reload_current_config_before_persisting() {
     FILE* file = std::fopen("src/web/FaucetWeb.cpp", "rb");
     TEST_ASSERT_NOT_NULL(file);
-    static char buffer[340000]{};
+    static char buffer[420000]{};
     const std::size_t read = std::fread(buffer, 1, sizeof(buffer) - 1, file);
     std::fclose(file);
     TEST_ASSERT_GREATER_THAN_size_t(0, read);
@@ -1451,7 +1465,7 @@ void test_web_config_writes_reload_current_config_before_persisting() {
 void test_presets_api_allows_next_preset_switch_actions() {
     FILE* file = std::fopen("src/web/FaucetWeb.cpp", "rb");
     TEST_ASSERT_NOT_NULL(file);
-    static char buffer[340000]{};
+    static char buffer[420000]{};
     const std::size_t read = std::fread(buffer, 1, sizeof(buffer) - 1, file);
     std::fclose(file);
     TEST_ASSERT_GREATER_THAN_size_t(0, read);
@@ -1477,7 +1491,7 @@ void test_presets_api_allows_next_preset_switch_actions() {
 void test_business_post_handlers_use_post_allowed_guard() {
     FILE* file = std::fopen("src/web/FaucetWeb.cpp", "rb");
     TEST_ASSERT_NOT_NULL(file);
-    static char buffer[340000]{};
+    static char buffer[420000]{};
     const std::size_t read = std::fread(buffer, 1, sizeof(buffer) - 1, file);
     std::fclose(file);
     TEST_ASSERT_GREATER_THAN_size_t(0, read);
@@ -1492,7 +1506,7 @@ void test_business_post_handlers_use_post_allowed_guard() {
 void test_heavy_web_handlers_return_busy_while_water_task_active() {
     FILE* file = std::fopen("src/web/FaucetWeb.cpp", "rb");
     TEST_ASSERT_NOT_NULL(file);
-    static char buffer[340000]{};
+    static char buffer[420000]{};
     const std::size_t read = std::fread(buffer, 1, sizeof(buffer) - 1, file);
     std::fclose(file);
     TEST_ASSERT_GREATER_THAN_size_t(0, read);
@@ -1520,7 +1534,7 @@ const char* findWithin(const char* begin, const char* end, const char* needle) {
 void test_web_write_handlers_return_busy_before_trace_or_filter_runtime_writes() {
     FILE* file = std::fopen("src/web/FaucetWeb.cpp", "rb");
     TEST_ASSERT_NOT_NULL(file);
-    static char buffer[340000]{};
+    static char buffer[420000]{};
     const std::size_t read = std::fread(buffer, 1, sizeof(buffer) - 1, file);
     std::fclose(file);
     TEST_ASSERT_GREATER_THAN_size_t(0, read);

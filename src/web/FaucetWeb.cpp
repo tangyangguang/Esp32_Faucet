@@ -111,6 +111,8 @@ void handleTraceSaveApi();
 void handleTraceDeleteApi();
 void formatWaterRecordTime(const WaterRecord& record, char* out, std::size_t len);
 void formatWaterRecordListTime(const WaterRecord& record, char* out, std::size_t len);
+void formatRecordTime(std::uint32_t seconds, char* out, std::size_t len);
+void formatFlowLitersPerMin(std::uint32_t flowMlPerMin, char* out, std::size_t len);
 void sendNoticeFromQuery();
 void sendPageEnd();
 
@@ -1489,6 +1491,209 @@ void sendPulseTraceCachePanel() {
     Esp32BaseWeb::sendChunk("</section>");
 }
 
+void sendMeteringTrialButton(const char* label,
+                             const MeteringParameters& params,
+                             std::uint32_t defaultMl,
+                             std::uint32_t defaultSec,
+                             const char* className = "btn-link") {
+    sendFmt("<button class='%s' type='button' data-metering-trial='1' data-trial-label='",
+            className ? className : "btn-link");
+    sendHtmlAttrEscaped(label ? label : "计量方案");
+    sendFmt("' data-startup-pulses='%lu' data-startup-volume='%lu' data-stable-ppl='%lu' "
+            "data-startup-duration-ms='%lu' data-stable-flow-ml-min='%lu' data-default-ml='%lu' "
+            "data-default-sec='%lu' onclick='faucetOpenMeteringTrial(this)'>测算</button>",
+            static_cast<unsigned long>(params.startupPulseCount),
+            static_cast<unsigned long>(params.startupVolumeMl),
+            static_cast<unsigned long>(params.stablePulsePerLiter),
+            static_cast<unsigned long>(params.startupDurationMs),
+            static_cast<unsigned long>(params.stableFlowMlPerMin),
+            static_cast<unsigned long>(defaultMl > 0 ? defaultMl : 1000UL),
+            static_cast<unsigned long>(defaultSec > 0 ? defaultSec : 10UL));
+}
+
+void formatSchemeTraceIds(const MeteringSchemeRecord& scheme, char* out, std::size_t len) {
+    if (!out || len == 0) {
+        return;
+    }
+    out[0] = '\0';
+    const std::size_t count =
+        std::min<std::size_t>(scheme.sampleCount, static_cast<std::size_t>(kMeteringSchemeTraceIdCapacity));
+    if (count == 0) {
+        std::snprintf(out, len, "-");
+        return;
+    }
+    std::size_t used = 0;
+    for (std::size_t i = 0; i < count && used + 1 < len; ++i) {
+        const int written = std::snprintf(out + used,
+                                          len - used,
+                                          "%s%lu",
+                                          i == 0 ? "" : ", ",
+                                          static_cast<unsigned long>(scheme.sampleTraceIds[i]));
+        if (written <= 0) {
+            return;
+        }
+        const std::size_t consumed = static_cast<std::size_t>(written);
+        if (consumed >= len - used) {
+            out[len - 1] = '\0';
+            return;
+        }
+        used += consumed;
+    }
+}
+
+void formatSchemeTimestamp(std::uint32_t seconds, char* out, std::size_t len) {
+    if (!out || len == 0) {
+        return;
+    }
+    if (seconds == 0) {
+        std::snprintf(out, len, "-");
+        return;
+    }
+    if (seconds >= kMinRealDateSeconds) {
+        formatRecordTime(seconds, out, len);
+        return;
+    }
+    std::snprintf(out, len, "开机+%lu s", static_cast<unsigned long>(seconds));
+}
+
+void sendSchemeDetailAttr(const char* name, const char* value) {
+    sendFmt(" data-detail-%s='", name);
+    sendHtmlAttrEscaped(value ? value : "-");
+    Esp32BaseWeb::sendChunk("'");
+}
+
+void sendSchemeDetailButton(const MeteringSchemeRecord& scheme, std::uint32_t activeId) {
+    char startupVolume[24]{};
+    char stableFlow[24]{};
+    char minActual[24]{};
+    char maxActual[24]{};
+    char maxError[24]{};
+    char actualRange[56]{};
+    char traceIds[160]{};
+    char startupStats[96]{};
+    char createdAt[40]{};
+    char updatedAt[40]{};
+    char lastActivatedAt[40]{};
+    char lastUsedAt[40]{};
+    char status[64]{};
+    formatLiters(scheme.params.startupVolumeMl, startupVolume, sizeof(startupVolume));
+    formatFlowLitersPerMin(scheme.params.stableFlowMlPerMin, stableFlow, sizeof(stableFlow));
+    formatLiters(scheme.minActualMl, minActual, sizeof(minActual));
+    formatLiters(scheme.maxActualMl, maxActual, sizeof(maxActual));
+    formatLiters(scheme.maxErrorMl, maxError, sizeof(maxError));
+    if (scheme.minActualMl > 0 || scheme.maxActualMl > 0) {
+        std::snprintf(actualRange, sizeof(actualRange), "%s - %s", minActual, maxActual);
+    } else {
+        std::snprintf(actualRange, sizeof(actualRange), "-");
+    }
+    formatSchemeTraceIds(scheme, traceIds, sizeof(traceIds));
+    std::snprintf(startupStats,
+                  sizeof(startupStats),
+                  "min %lus / max %lus / median %lus / avg %lus",
+                  static_cast<unsigned long>(scheme.startupDurationMinSec),
+                  static_cast<unsigned long>(scheme.startupDurationMaxSec),
+                  static_cast<unsigned long>(scheme.startupDurationMedianSec),
+                  static_cast<unsigned long>(scheme.startupDurationAvgSec));
+    formatSchemeTimestamp(scheme.createdAt, createdAt, sizeof(createdAt));
+    formatSchemeTimestamp(scheme.updatedAt, updatedAt, sizeof(updatedAt));
+    formatSchemeTimestamp(scheme.lastActivatedAt, lastActivatedAt, sizeof(lastActivatedAt));
+    formatSchemeTimestamp(scheme.lastUsedAt, lastUsedAt, sizeof(lastUsedAt));
+    std::snprintf(status,
+                  sizeof(status),
+                  "%s%s%s",
+                  scheme.id == activeId ? "当前启用" : (scheme.enabled ? "可用" : "已禁用"),
+                  scheme.usageStatsDirty ? " / 统计待核对" : "",
+                  scheme.valid ? "" : " / 无效");
+
+    Esp32BaseWeb::sendChunk("<button class='btn-link' type='button' data-scheme-detail='1'");
+    sendFmt(" data-detail-id='%lu' data-detail-revision='%lu' data-detail-startup-pulses='%luP' "
+            "data-detail-stable-ppl='%luP/L' data-detail-startup-duration='%lums' "
+            "data-detail-sample-count='%u 条' data-detail-use-count='%lu 条'",
+            static_cast<unsigned long>(scheme.id),
+            static_cast<unsigned long>(scheme.revision),
+            static_cast<unsigned long>(scheme.params.startupPulseCount),
+            static_cast<unsigned long>(scheme.params.stablePulsePerLiter),
+            static_cast<unsigned long>(scheme.params.startupDurationMs),
+            static_cast<unsigned>(scheme.sampleCount),
+            static_cast<unsigned long>(scheme.useCount));
+    sendSchemeDetailAttr("name", scheme.name);
+    sendSchemeDetailAttr("status", status);
+    sendSchemeDetailAttr("source", meteringSchemeSourceName(scheme.sourceType));
+    sendSchemeDetailAttr("created-at", createdAt);
+    sendSchemeDetailAttr("updated-at", updatedAt);
+    sendSchemeDetailAttr("creation-summary", scheme.creationSummary);
+    sendSchemeDetailAttr("modified-summary", scheme.lastModifiedSummary[0] ? scheme.lastModifiedSummary : "-");
+    sendSchemeDetailAttr("meter-label", scheme.meterLabel[0] ? scheme.meterLabel : "-");
+    sendSchemeDetailAttr("installation-label", scheme.installationLabel[0] ? scheme.installationLabel : "-");
+    sendSchemeDetailAttr("condition-label", scheme.conditionLabel[0] ? scheme.conditionLabel : "-");
+    sendSchemeDetailAttr("user-note", scheme.userNote[0] ? scheme.userNote : "-");
+    sendSchemeDetailAttr("startup-volume", startupVolume);
+    sendSchemeDetailAttr("stable-flow", stableFlow);
+    sendSchemeDetailAttr("sample-trace-ids", traceIds);
+    sendSchemeDetailAttr("actual-range", actualRange);
+    sendFmt(" data-detail-max-error='");
+    sendHtmlAttrEscaped(maxError);
+    sendFmt(" / %.1f%%'", static_cast<double>(scheme.maxErrorPercent));
+    sendSchemeDetailAttr("startup-stats", startupStats);
+    sendSchemeDetailAttr("last-activated-at", lastActivatedAt);
+    sendSchemeDetailAttr("last-used-at", lastUsedAt);
+    Esp32BaseWeb::sendChunk(" onclick='faucetOpenSchemeDetail(this)'>详情</button>");
+}
+
+void sendSchemeDetailModal() {
+    Esp32BaseWeb::sendChunk("<div id='scheme-detail-modal' class='scheme-detail-modal' aria-hidden='true'>"
+                            "<div class='scheme-detail-card'><div class='panel-head'><h3>方案详情</h3>"
+                            "<button class='btn-link' type='button' onclick='faucetCloseSchemeDetail()'>关闭</button></div>"
+                            "<table class='kv scheme-detail-kv'>"
+                            "<tr><th>ID</th><td data-scheme-detail-field='id'>-</td></tr>"
+                            "<tr><th>名称</th><td data-scheme-detail-field='name'>-</td></tr>"
+                            "<tr><th>状态</th><td data-scheme-detail-field='status'>-</td></tr>"
+                            "<tr><th>revision</th><td data-scheme-detail-field='revision'>-</td></tr>"
+                            "<tr><th>来源</th><td data-scheme-detail-field='source'>-</td></tr>"
+                            "<tr><th>创建时间</th><td data-scheme-detail-field='createdAt'>-</td></tr>"
+                            "<tr><th>修改时间</th><td data-scheme-detail-field='updatedAt'>-</td></tr>"
+                            "<tr><th>创建摘要</th><td data-scheme-detail-field='creationSummary'>-</td></tr>"
+                            "<tr><th>最近修改</th><td data-scheme-detail-field='modifiedSummary'>-</td></tr>"
+                            "<tr><th>流量计</th><td data-scheme-detail-field='meterLabel'>-</td></tr>"
+                            "<tr><th>安装位置</th><td data-scheme-detail-field='installationLabel'>-</td></tr>"
+                            "<tr><th>水压/环境</th><td data-scheme-detail-field='conditionLabel'>-</td></tr>"
+                            "<tr><th>备注</th><td data-scheme-detail-field='userNote'>-</td></tr>"
+                            "<tr><th>容量估算参数</th><td><span data-scheme-detail-field='startupPulses'>-</span> / <span data-scheme-detail-field='startupVolume'>-</span> / <span data-scheme-detail-field='stablePpl'>-</span></td></tr>"
+                            "<tr><th>时间估算参数</th><td><span data-scheme-detail-field='startupDuration'>-</span> / <span data-scheme-detail-field='stableFlow'>-</span></td></tr>"
+                            "<tr><th>样本数量</th><td data-scheme-detail-field='sampleCount'>-</td></tr>"
+                            "<tr><th>样本 traceId</th><td data-scheme-detail-field='sampleTraceIds'>-</td></tr>"
+                            "<tr><th>容量范围</th><td data-scheme-detail-field='actualRange'>-</td></tr>"
+                            "<tr><th>最大误差</th><td data-scheme-detail-field='maxError'>-</td></tr>"
+                            "<tr><th>启动阶段统计</th><td data-scheme-detail-field='startupStats'>-</td></tr>"
+                            "<tr><th>使用次数</th><td data-scheme-detail-field='useCount'>-</td></tr>"
+                            "<tr><th>最近启用</th><td data-scheme-detail-field='lastActivatedAt'>-</td></tr>"
+                            "<tr><th>最近使用</th><td data-scheme-detail-field='lastUsedAt'>-</td></tr>"
+                            "</table></div></div>");
+}
+
+void sendMeteringTrialModal() {
+    Esp32BaseWeb::sendChunk("<div id='metering-trial-modal' class='metering-trial-modal' aria-hidden='true'>"
+                            "<div class='metering-trial-card'><div class='panel-head'><h3>测算</h3>"
+                            "<button class='btn-link' type='button' onclick='faucetCloseMeteringTrial()'>关闭</button></div>"
+                            "<form class='metering-trial-form' oninput='faucetEstimateMeteringTrial(this)' onchange='faucetEstimateMeteringTrial(this)' onsubmit='return false'>"
+                            "<p class='generated-note' data-trial-label>-</p>"
+                            "<div class='trial-mode-tabs'>"
+                            "<label><input type='radio' name='trialMode' value='volume' checked>容量目标模式</label>"
+                            "<label><input type='radio' name='trialMode' value='time'>时间目标模式</label>"
+                            "</div>"
+                            "<label class='compact-field' data-volume-target-field><span>目标水量</span><span class='estimator-input-row'>"
+                            "<input name='targetMl' type='number' min='1' max='");
+    sendFmt("%lu", static_cast<unsigned long>(kMaxVolumePresetMl));
+    Esp32BaseWeb::sendChunk("' step='1' value='1000'><span class='unit-label'>ml</span></span></label>"
+                            "<label class='compact-field' data-time-target-field><span>出水时长</span><span class='estimator-input-row'>"
+                            "<input name='targetSec' type='number' min='1' max='1800' step='1' value='10'><span class='unit-label'>秒</span></span></label>"
+                            "<div class='estimate-results'><div><span>预计出水量</span><strong data-estimated-volume>-</strong></div>"
+                            "<div><span>预计出水时长</span><strong data-estimated-duration>-</strong></div>"
+                            "<div><span>预计脉冲总数</span><strong data-estimated-pulses>-</strong></div></div>"
+                            "<p class='generated-note'>测算只按当前按钮提供的计量参数计算，不会远程启动出水。</p>"
+                            "</form></div></div>");
+}
+
 void sendCalibrationParameterPanels() {
     MeteringSchemeRecord* schemes = new (std::nothrow) MeteringSchemeRecord[10]{};
     const bool ready = ensureMeteringSchemesReady();
@@ -1502,16 +1707,18 @@ void sendCalibrationParameterPanels() {
 
     Esp32BaseWeb::sendChunk("<section class='panel calibration-param-panel'><div class='panel-head'><h3>流量计计量方案</h3>"
                             "<a class='btn-link' href='/faucet/calibration?scheme=new'>新建方案</a></div>"
-                            "<table class='calibration-slot-table metering-scheme-table'><tr><th>方案</th><th>参数</th><th>适用条件</th><th>使用次数</th><th>操作</th></tr>");
+                            "<table class='calibration-slot-table metering-scheme-table'><tr><th>方案</th><th>容量估算参数</th><th>时间估算参数</th><th>适用条件</th><th>使用次数</th><th>操作</th></tr>");
     if (!ready) {
-        Esp32BaseWeb::sendChunk("<tr><td colspan='5'>计量方案存储不可用。</td></tr>");
+        Esp32BaseWeb::sendChunk("<tr><td colspan='6'>计量方案存储不可用。</td></tr>");
     } else if (!schemes) {
-        Esp32BaseWeb::sendChunk("<tr><td colspan='5'>内存不足，无法加载方案列表。</td></tr>");
+        Esp32BaseWeb::sendChunk("<tr><td colspan='6'>内存不足，无法加载方案列表。</td></tr>");
     }
     for (std::size_t i = 0; i < count; ++i) {
         const MeteringSchemeRecord& scheme = schemes[i];
         char startupVolume[24]{};
+        char stableFlow[24]{};
         formatLiters(scheme.params.startupVolumeMl, startupVolume, sizeof(startupVolume));
+        formatFlowLitersPerMin(scheme.params.stableFlowMlPerMin, stableFlow, sizeof(stableFlow));
         sendFmt("<tr%s><td class='calibration-slot-index'><b>#%lu</b> ",
                 scheme.id == createdSchemeId ? " class='scheme-created-row'" : "",
                 static_cast<unsigned long>(scheme.id));
@@ -1529,12 +1736,15 @@ void sendCalibrationParameterPanels() {
         sendFmt("</div><small>rev %lu · %s</small></td>",
                 static_cast<unsigned long>(scheme.revision),
                 meteringSchemeSourceName(scheme.sourceType));
-        sendFmt("<td class='calibration-slot-values'><span><b>启动脉冲</b>%luP</span><span><b>启动水量</b>%s</span><span><b>稳态</b>%luP/L</span><span><b>启动时长</b>%lums</span><span><b>预计流速</b>%luml/min</span></td>",
+        sendFmt("<td class='calibration-slot-values'><table class='scheme-param-table'><tr><th>启动脉冲</th><td>%luP</td></tr>"
+                "<tr><th>启动水量</th><td>%s</td></tr><tr><th>稳态 P/L</th><td>%luP/L</td></tr></table></td>"
+                "<td class='calibration-slot-values'><table class='scheme-param-table'><tr><th>启动时长</th><td>%lums</td></tr>"
+                "<tr><th>预计稳态流速</th><td>%s</td></tr></table></td>",
                 static_cast<unsigned long>(scheme.params.startupPulseCount),
                 startupVolume,
                 static_cast<unsigned long>(scheme.params.stablePulsePerLiter),
                 static_cast<unsigned long>(scheme.params.startupDurationMs),
-                static_cast<unsigned long>(scheme.params.stableFlowMlPerMin));
+                stableFlow);
         Esp32BaseWeb::sendChunk("<td class='calibration-slot-note'>");
         if (scheme.meterLabel[0]) {
             Esp32BaseWeb::sendChunk("流量计：");
@@ -1553,6 +1763,8 @@ void sendCalibrationParameterPanels() {
         sendFmt("<td class='scheme-use-count'><b>%lu</b><span>条</span>%s</td><td class='calibration-slot-edit'><div class='row-actions'>",
                 static_cast<unsigned long>(scheme.useCount),
                 scheme.usageStatsDirty ? "<span class='status-pill status-warn'>统计待核对</span>" : "");
+        sendSchemeDetailButton(scheme, activeId);
+        sendMeteringTrialButton(scheme.name[0] ? scheme.name : "计量方案", scheme.params, 1000, 10);
         sendFmt("<a class='btn-link' href='/faucet/calibration?scheme=%lu'>编辑</a>",
                 static_cast<unsigned long>(scheme.id));
         if (scheme.id != activeId && scheme.enabled) {
@@ -1574,6 +1786,7 @@ void sendCalibrationParameterPanels() {
     if (ready && count == 10) {
         Esp32BaseWeb::sendChunk("<p class='muted'>页面最多显示最近 10 套可见方案；历史记录仍按方案 ID 和版本保存。</p>");
     }
+    sendSchemeDetailModal();
     Esp32BaseWeb::sendChunk("</section>");
     delete[] schemes;
 }
@@ -1671,10 +1884,12 @@ void sendCalibrationFormulaPanel() {
                             "</table></section>"
                             "<section class='panel calibration-formula-panel'><h3>出水估算：计量方案如何使用</h3>"
                             "<table class='kv'>"
-                            "<tr><th>核心字段</th><td>运行时只使用启动脉冲数 Ns、启动水量 Vs、稳态P/L Ps。</td></tr>"
+                            "<tr><th>容量估算字段</th><td>容量目标和脉冲折算使用启动脉冲数 Ns、启动水量 Vs、稳态P/L Ps。</td></tr>"
                             "<tr><th>P = 0</th><td><code>估算出水量 = 0</code>。</td></tr>"
                             "<tr><th>0 &lt; P &lt;= Ns</th><td><code>估算出水量 = round(P × Vs / Ns)</code>。</td></tr>"
                             "<tr><th>P &gt; Ns</th><td><code>估算出水量 = Vs + round((P - Ns) × 1000 / Ps)</code>。</td></tr>"
+                            "<tr><th>时间估算字段</th><td>时间目标模式使用启动时长和预计稳态流速测算出水量；得到预计出水量后，再用容量估算参数折算预计脉冲数。</td></tr>"
+                            "<tr><th>测算入口</th><td>样本、生成结果和每套计量方案的“测算”只在浏览器本地核对容量目标或时间目标，不会远程启动出水。</td></tr>"
                             "<tr><th>启用方案</th><td>启用只切换当前计量参数；历史出水记录保留当时使用的方案 ID、版本和参数快照。</td></tr>"
                             "</table></section>");
 }
@@ -1874,7 +2089,9 @@ bool ensureCalibratedTraceSaved(bool savedSource,
 
 void sendCalibrationSampleRow(const WaterPulseTrace& trace, bool savedSource, std::uint32_t samplePulseWindowSec) {
     char startTime[40]{};
+    char duration[24]{};
     formatWaterRecordListTime(trace.record, startTime, sizeof(startTime));
+    formatSecondsValue(trace.record.durationSec, duration, sizeof(duration));
     const CalibrationSampleState state = inspectCalibrationSample(trace, savedSource);
     WaterRecordCalibration calibration{};
     const bool calibrated = findRecordCalibration(trace.record, calibration);
@@ -1890,6 +2107,8 @@ void sendCalibrationSampleRow(const WaterPulseTrace& trace, bool savedSource, st
                   static_cast<unsigned long>(trace.traceId));
     Esp32BaseWeb::sendChunk("<tr><td>");
     Esp32BaseWeb::sendChunk(startTime);
+    Esp32BaseWeb::sendChunk("</td><td>");
+    Esp32BaseWeb::sendChunk(duration);
     Esp32BaseWeb::sendChunk("</td><td>");
     sendTargetValue(trace.record);
     Esp32BaseWeb::sendChunk("</td><td>");
@@ -1930,14 +2149,10 @@ void sendCalibrationSampleRow(const WaterPulseTrace& trace, bool savedSource, st
     const std::uint32_t trialDefaultTargetMl =
         trace.record.mode == WaterMode::Volume && trace.record.targetValue > 0 ? trace.record.targetValue : trialVolumeMl;
     if (trialParamsReady) {
-        sendFmt("<button class='btn-link' type='button' data-sample-trial='1' data-sample-label='%s' data-startup-pulses='%lu' data-startup-volume='%lu' data-stable-ppl='%lu' data-startup-duration-ms='%lu' data-stable-flow-ml-min='%lu' data-target-ml='%lu' onclick='faucetOpenSampleTrial(this)'>试算目标水量</button>",
-                savedSource ? "已保存样本" : "RAM 样本",
-                static_cast<unsigned long>(trialParams.startupPulseCount),
-                static_cast<unsigned long>(trialParams.startupVolumeMl),
-                static_cast<unsigned long>(trialParams.stablePulsePerLiter),
-                static_cast<unsigned long>(trialParams.startupDurationMs),
-                static_cast<unsigned long>(trialParams.stableFlowMlPerMin),
-                static_cast<unsigned long>(trialDefaultTargetMl));
+        sendMeteringTrialButton(savedSource ? "已保存样本" : "RAM 样本",
+                                trialParams,
+                                trialDefaultTargetMl,
+                                trace.record.durationSec);
     }
     if (!trace.truncated && waterRecordCanCalibrate(trace.record)) {
         sendFmt("<button class='btn-link' type='button' onclick=\"faucetShowSampleCalibration('%s')\">%s</button>",
@@ -1948,7 +2163,7 @@ void sendCalibrationSampleRow(const WaterPulseTrace& trace, bool savedSource, st
     }
     Esp32BaseWeb::sendChunk("</div></td></tr><tr id='");
     Esp32BaseWeb::sendChunk(rowId);
-    Esp32BaseWeb::sendChunk("' class='sample-calibration-edit-row'><td colspan='10'>"
+    Esp32BaseWeb::sendChunk("' class='sample-calibration-edit-row'><td colspan='11'>"
                             "<form class='sample-calibration-form' method='post' action='/faucet/calibration' onsubmit='return faucetSubmitSampleCalibration(this)'>"
                             "<input type='hidden' name='action' value='calibrate'>"
                             "<input type='hidden' name='ajax' value='1'>"
@@ -2024,7 +2239,7 @@ void sendCalibrationSamplesPanel(std::uint32_t samplePulseWindowSec) {
         Esp32BaseWeb::sendChunk("<p class='hint'>还没有脉冲明细样本。</p></section>");
         return;
     }
-    sendFmt("<table class='calibration-sample-table'><tr><th>时间</th><th>目标</th><th>估算出水</th><th>实测容量</th><th>脉冲</th><th>前 %u 秒脉冲</th><th>稳态</th><th>来源</th><th>状态</th><th>操作</th></tr>",
+    sendFmt("<table class='calibration-sample-table'><tr><th>时间</th><th>时长</th><th>目标</th><th>估算出水</th><th>实测容量</th><th>脉冲</th><th>前 %u 秒脉冲</th><th>稳态</th><th>来源</th><th>状态</th><th>操作</th></tr>",
             static_cast<unsigned>(samplePulseWindowSec));
     WaterRecord* listed = new (std::nothrow) WaterRecord[kSavedPulseTraceMaxCountLimit]{};
     std::size_t listedCount = 0;
@@ -2045,20 +2260,7 @@ void sendCalibrationSamplesPanel(std::uint32_t samplePulseWindowSec) {
             sendCalibrationSampleRow(*trace, false, samplePulseWindowSec);
         }
     }
-    Esp32BaseWeb::sendChunk("</table>"
-                            "<div id='sample-trial-modal' class='sample-trial-modal' aria-hidden='true'>"
-                            "<div class='sample-trial-card'><div class='panel-head'><h3>试算目标水量</h3>"
-                            "<button class='btn-link' type='button' onclick='faucetCloseSampleTrial()'>关闭</button></div>"
-                            "<form class='generated-estimator sample-trial-form' oninput='faucetEstimateSampleTrial(this)' onsubmit='return false'>"
-                            "<p class='generated-note' data-sample-trial-label>-</p>"
-                            "<label class='compact-field'><span>目标水量</span><span class='estimator-input-row'>"
-                            "<input name='targetMl' type='number' min='1' max='");
-    sendFmt("%lu", static_cast<unsigned long>(kMaxVolumePresetMl));
-    Esp32BaseWeb::sendChunk("' step='1' value='1000'><span class='unit-label'>ml</span></span></label>"
-                            "<div class='estimate-results'><div><span>预计出水时长</span><strong data-estimated-duration>-</strong></div>"
-                            "<div><span>预计脉冲总数</span><strong data-estimated-pulses>-</strong></div></div>"
-                            "<p class='generated-note'>按该样本对应的计量参数试算；仅用于核对，不会控制设备出水。</p>"
-                            "</form></div></div></section>");
+    Esp32BaseWeb::sendChunk("</table></section>");
     delete[] listed;
     delete[] savedTraces;
 }
@@ -2250,10 +2452,12 @@ void sendCalibrationGenerationPanel() {
         char generatedMaxActual[20]{};
         char generatedRange[48]{};
         char generatedError[20]{};
+        char generatedStableFlow[24]{};
         formatLiters(candidate.params.startupVolumeMl, generatedStartupVolume, sizeof(generatedStartupVolume));
         formatLiters(candidate.minActualMl, generatedMinActual, sizeof(generatedMinActual));
         formatLiters(candidate.maxActualMl, generatedMaxActual, sizeof(generatedMaxActual));
         formatLiters(candidate.maxErrorMl, generatedError, sizeof(generatedError));
+        formatFlowLitersPerMin(candidate.params.stableFlowMlPerMin, generatedStableFlow, sizeof(generatedStableFlow));
         std::snprintf(generatedRange, sizeof(generatedRange), "%s - %s", generatedMinActual, generatedMaxActual);
         const std::uint32_t estimatorDefaultMl =
             candidate.maxActualMl > 0 ? candidate.maxActualMl : std::max<std::uint32_t>(1000, candidate.params.startupVolumeMl);
@@ -2267,13 +2471,13 @@ void sendCalibrationGenerationPanel() {
                                 "<span class='status-pill status-warn'>已生成，待保存</span></div>"
                                 "<div class='generated-scheme-layout'><div class='generated-result-main'>"
                                 "<table class='generated-scheme-table'><tr><th>启动脉冲数</th><th>启动水量</th><th>稳态P/L</th><th>启动时长</th><th>预计稳态流速</th><th>样本</th><th>容量范围</th><th>最大误差</th></tr>");
-        sendFmt("<tr><td>%luP</td><td>%s</td><td>%luP/L</td><td>%lums</td><td>%luml/min</td><td>%u 条</td><td>%s</td><td>%s / %.1f%%</td></tr></table>"
+        sendFmt("<tr><td>%luP</td><td>%s</td><td>%luP/L</td><td>%lums</td><td>%s</td><td>%u 条</td><td>%s</td><td>%s / %.1f%%</td></tr></table>"
                 "<p class='generated-note'>",
                 static_cast<unsigned long>(candidate.params.startupPulseCount),
                 generatedStartupVolume,
                 static_cast<unsigned long>(candidate.params.stablePulsePerLiter),
                 static_cast<unsigned long>(candidate.params.startupDurationMs),
-                static_cast<unsigned long>(candidate.params.stableFlowMlPerMin),
+                generatedStableFlow,
                 static_cast<unsigned>(candidate.sampleCount),
                 generatedRange,
                 generatedError,
@@ -2290,15 +2494,9 @@ void sendCalibrationGenerationPanel() {
                                 "<input type='hidden' name='action' value='discard_generated_scheme'>"
                                 "<input type='hidden' name='ajax' value='1'>"
                                 "<input class='secondary' type='submit' value='放弃生成结果'></form></div></div>"
-                                "<form class='generated-estimator' oninput='faucetEstimateGeneratedScheme(this)' onsubmit='return false'>"
-                                "<label class='compact-field'><span>试算目标水量</span><span class='estimator-input-row'><input name='targetMl' type='number' min='1' max='");
-        sendFmt("%lu' step='1' value='%lu'><span class='unit-label'>ml</span></span></label>",
-                static_cast<unsigned long>(kMaxVolumePresetMl),
-                static_cast<unsigned long>(estimatorDefaultMl));
-        Esp32BaseWeb::sendChunk("<div class='estimate-results'><div><span>预计出水时长</span><strong data-estimated-duration>-</strong></div>"
-                                "<div><span>预计脉冲总数</span><strong data-estimated-pulses>-</strong></div></div>"
-                                "<p class='generated-note'>脉冲按容量估算计量参数计算；时长按时间估算计量参数计算，仅用于核对。</p>"
-                                "</form></div></section>");
+                                "<div class='generated-measure-panel'><p class='generated-note'>使用生成结果参数进行容量或时间目标测算，仅用于核对。</p>");
+        sendMeteringTrialButton("生成结果", candidate.params, estimatorDefaultMl, 10);
+        Esp32BaseWeb::sendChunk("</div></div></section>");
     }
     Esp32BaseWeb::sendChunk("<div class='form-actions'>"
                             "<form method='post' action='/faucet/calibration' onsubmit='return faucetSubmitGenerationAction(this)'>"
@@ -2316,18 +2514,20 @@ void sendCalibrationPageScript() {
                             "function faucetReadCalibrationError(r){return r.text().then(function(t){try{return (JSON.parse(t)||{}).error||('HTTP '+r.status);}catch(e){return 'HTTP '+r.status;}});}"
                             "function faucetResetSampleCalibrationForm(f){f.dataset.busy='';var b=f.querySelector('[type=submit]');if(b)b.disabled=false;}"
                             "function faucetFormatEstimateSeconds(s){if(!isFinite(s)||s<=0)return '-';s=Math.max(1,Math.round(s));var m=Math.floor(s/60),r=s%60;return m>0?(m+'分'+r+'秒'):(r+'秒');}"
+                            "function faucetFormatTrialLiters(ml){ml=Math.max(0,Math.round(Number(ml)||0));var l=Math.floor(ml/1000),r=String(ml%1000).padStart(3,'0');return l+'.'+r+' L';}"
                             "function faucetEstimatePulsesForMl(ml,ns,vs,ps){if(!(ml>0&&ps>0))return 0;if(ns>0&&vs>0&&ml<=vs)return Math.ceil(ml*ns/vs);return ns+Math.ceil(Math.max(0,ml-vs)*ps/1000);}"
                             "function faucetEstimateDurationForMl(ml,vs,ts,flow){if(!(ml>0&&flow>0))return 0;if(!(ts>0&&vs>0))return ml*60/flow;if(ml<=vs)return ml*ts/1000/vs;return ts/1000+(ml-vs)*60/flow;}"
-                            "function faucetEstimateGeneratedScheme(form){var box=form.closest('.generated-scheme-result');if(!box)return;var ml=Number((form.querySelector('[name=targetMl]')||{}).value)||0,ns=Number(box.dataset.startupPulses)||0,vs=Number(box.dataset.startupVolume)||0,ps=Number(box.dataset.stablePpl)||0,ts=Number(box.dataset.startupDurationMs)||0,flow=Number(box.dataset.stableFlowMlMin)||0,p=faucetEstimatePulsesForMl(ml,ns,vs,ps),duration=faucetEstimateDurationForMl(ml,vs,ts,flow);var d=form.querySelector('[data-estimated-duration]'),pc=form.querySelector('[data-estimated-pulses]');if(d)d.textContent=faucetFormatEstimateSeconds(duration);if(pc)pc.textContent=p>0?(p+'P'):'-';}"
-                            "function faucetEstimateSampleTrial(form){var ml=Number((form.querySelector('[name=targetMl]')||{}).value)||0,ns=Number(form.dataset.startupPulses)||0,vs=Number(form.dataset.startupVolume)||0,ps=Number(form.dataset.stablePpl)||0,ts=Number(form.dataset.startupDurationMs)||0,flow=Number(form.dataset.stableFlowMlMin)||0,p=faucetEstimatePulsesForMl(ml,ns,vs,ps),duration=faucetEstimateDurationForMl(ml,vs,ts,flow);var d=form.querySelector('[data-estimated-duration]'),pc=form.querySelector('[data-estimated-pulses]');if(d)d.textContent=faucetFormatEstimateSeconds(duration);if(pc)pc.textContent=p>0?(p+'P'):'-';}"
-                            "function faucetOpenSampleTrial(btn){var modal=document.getElementById('sample-trial-modal');if(!modal)return;var form=modal.querySelector('.sample-trial-form');if(!form)return;form.dataset.startupPulses=btn.dataset.startupPulses||'0';form.dataset.startupVolume=btn.dataset.startupVolume||'0';form.dataset.stablePpl=btn.dataset.stablePpl||'0';form.dataset.startupDurationMs=btn.dataset.startupDurationMs||'0';form.dataset.stableFlowMlMin=btn.dataset.stableFlowMlMin||'0';var input=form.querySelector('[name=targetMl]');if(input)input.value=btn.dataset.targetMl||'1000';var label=form.querySelector('[data-sample-trial-label]');if(label)label.textContent=(btn.dataset.sampleLabel||'样本')+'：容量参数 '+form.dataset.startupPulses+'P / '+form.dataset.startupVolume+'ml / '+form.dataset.stablePpl+'P/L，时间参数 '+form.dataset.startupDurationMs+'ms / '+form.dataset.stableFlowMlMin+'ml/min';modal.classList.add('is-open');modal.setAttribute('aria-hidden','false');faucetEstimateSampleTrial(form);}"
-                            "function faucetCloseSampleTrial(){var modal=document.getElementById('sample-trial-modal');if(modal){modal.classList.remove('is-open');modal.setAttribute('aria-hidden','true');}}"
-                            "function faucetInitGeneratedEstimators(){var forms=document.querySelectorAll('.generated-estimator');for(var i=0;i<forms.length;i++)faucetEstimateGeneratedScheme(forms[i]);}"
-                            "function faucetReplaceCalibrationSection(id,url){return fetch(url,{cache:'no-store',credentials:'same-origin'}).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.text();}).then(function(html){var old=document.getElementById(id);if(!old)return;var box=document.createElement('div');box.innerHTML=html;var next=box.querySelector('#'+id);if(next){old.replaceWith(next);faucetInitGeneratedEstimators();}});}"
+                            "function faucetEstimateVolumeForDuration(sec,vs,ts,flow){if(!(sec>0&&flow>0))return 0;var ms=sec*1000;if(ts>0&&vs>0&&ms<=ts)return Math.round(ms*vs/ts);var stableMs=(ts>0&&vs>0)?Math.max(0,ms-ts):ms;var startup=(ts>0&&vs>0)?vs:0;return Math.max(0,Math.round(startup+stableMs*flow/60000));}"
+                            "function faucetEstimateMeteringTrial(form){var mode=((form.querySelector('[name=trialMode]:checked')||{}).value)||'volume',ns=Number(form.dataset.startupPulses)||0,vs=Number(form.dataset.startupVolume)||0,ps=Number(form.dataset.stablePpl)||0,ts=Number(form.dataset.startupDurationMs)||0,flow=Number(form.dataset.stableFlowMlMin)||0,ml=Number((form.querySelector('[name=targetMl]')||{}).value)||0,sec=Number((form.querySelector('[name=targetSec]')||{}).value)||0,p=0,duration=0,volume=0;if(mode==='time'){volume=faucetEstimateVolumeForDuration(sec,vs,ts,flow);duration=sec;p=faucetEstimatePulsesForMl(volume,ns,vs,ps);}else{volume=ml;duration=faucetEstimateDurationForMl(ml,vs,ts,flow);p=faucetEstimatePulsesForMl(ml,ns,vs,ps);}var vf=form.querySelector('[data-volume-target-field]'),tf=form.querySelector('[data-time-target-field]');if(vf)vf.style.display=mode==='time'?'none':'block';if(tf)tf.style.display=mode==='time'?'block':'none';var v=form.querySelector('[data-estimated-volume]'),d=form.querySelector('[data-estimated-duration]'),pc=form.querySelector('[data-estimated-pulses]');if(v)v.textContent=volume>0?faucetFormatTrialLiters(volume):'-';if(d)d.textContent=duration>0?faucetFormatEstimateSeconds(duration):'-';if(pc)pc.textContent=p>0?(p+'P'):'-';}"
+                            "function faucetOpenMeteringTrial(btn){var modal=document.getElementById('metering-trial-modal');if(!modal)return;var form=modal.querySelector('.metering-trial-form');if(!form)return;form.dataset.startupPulses=btn.dataset.startupPulses||'0';form.dataset.startupVolume=btn.dataset.startupVolume||'0';form.dataset.stablePpl=btn.dataset.stablePpl||'0';form.dataset.startupDurationMs=btn.dataset.startupDurationMs||'0';form.dataset.stableFlowMlMin=btn.dataset.stableFlowMlMin||'0';var ml=form.querySelector('[name=targetMl]'),sec=form.querySelector('[name=targetSec]'),mode=form.querySelector('[name=trialMode][value=volume]');if(ml)ml.value=btn.dataset.defaultMl||'1000';if(sec)sec.value=btn.dataset.defaultSec||'10';if(mode)mode.checked=true;var label=form.querySelector('[data-trial-label]');if(label)label.textContent=(btn.dataset.trialLabel||'计量方案')+'：容量参数 '+form.dataset.startupPulses+'P / '+form.dataset.startupVolume+'ml / '+form.dataset.stablePpl+'P/L，时间参数 '+form.dataset.startupDurationMs+'ms / '+form.dataset.stableFlowMlMin+'ml/min';modal.classList.add('is-open');modal.setAttribute('aria-hidden','false');faucetEstimateMeteringTrial(form);}"
+                            "function faucetCloseMeteringTrial(){var modal=document.getElementById('metering-trial-modal');if(modal){modal.classList.remove('is-open');modal.setAttribute('aria-hidden','true');}}"
+                            "function faucetSetSchemeDetail(modal,key,value){var e=modal.querySelector('[data-scheme-detail-field='+key+']');if(e)e.textContent=value||'-';}"
+                            "function faucetOpenSchemeDetail(btn){var modal=document.getElementById('scheme-detail-modal');if(!modal)return;var d=btn.dataset;faucetSetSchemeDetail(modal,'id',d.detailId);faucetSetSchemeDetail(modal,'name',d.detailName);faucetSetSchemeDetail(modal,'status',d.detailStatus);faucetSetSchemeDetail(modal,'revision',d.detailRevision);faucetSetSchemeDetail(modal,'source',d.detailSource);faucetSetSchemeDetail(modal,'createdAt',d.detailCreatedAt);faucetSetSchemeDetail(modal,'updatedAt',d.detailUpdatedAt);faucetSetSchemeDetail(modal,'creationSummary',d.detailCreationSummary);faucetSetSchemeDetail(modal,'modifiedSummary',d.detailModifiedSummary);faucetSetSchemeDetail(modal,'meterLabel',d.detailMeterLabel);faucetSetSchemeDetail(modal,'installationLabel',d.detailInstallationLabel);faucetSetSchemeDetail(modal,'conditionLabel',d.detailConditionLabel);faucetSetSchemeDetail(modal,'userNote',d.detailUserNote);faucetSetSchemeDetail(modal,'startupPulses',d.detailStartupPulses);faucetSetSchemeDetail(modal,'startupVolume',d.detailStartupVolume);faucetSetSchemeDetail(modal,'stablePpl',d.detailStablePpl);faucetSetSchemeDetail(modal,'startupDuration',d.detailStartupDuration);faucetSetSchemeDetail(modal,'stableFlow',d.detailStableFlow);faucetSetSchemeDetail(modal,'sampleCount',d.detailSampleCount);faucetSetSchemeDetail(modal,'sampleTraceIds',d.detailSampleTraceIds);faucetSetSchemeDetail(modal,'actualRange',d.detailActualRange);faucetSetSchemeDetail(modal,'maxError',d.detailMaxError);faucetSetSchemeDetail(modal,'startupStats',d.detailStartupStats);faucetSetSchemeDetail(modal,'useCount',d.detailUseCount);faucetSetSchemeDetail(modal,'lastActivatedAt',d.detailLastActivatedAt);faucetSetSchemeDetail(modal,'lastUsedAt',d.detailLastUsedAt);modal.classList.add('is-open');modal.setAttribute('aria-hidden','false');}"
+                            "function faucetCloseSchemeDetail(){var modal=document.getElementById('scheme-detail-modal');if(modal){modal.classList.remove('is-open');modal.setAttribute('aria-hidden','true');}}"
+                            "function faucetReplaceCalibrationSection(id,url){return fetch(url,{cache:'no-store',credentials:'same-origin'}).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.text();}).then(function(html){var old=document.getElementById(id);if(!old)return;var box=document.createElement('div');box.innerHTML=html;var next=box.querySelector('#'+id);if(next)old.replaceWith(next);});}"
                             "function faucetRefreshCalibrationPanels(){return Promise.all([faucetReplaceCalibrationSection('scheme-generation','/faucet/calibration?partial=generation'),faucetReplaceCalibrationSection('calibration-samples','/faucet/calibration?partial=samples')]);}"
                             "function faucetSubmitSampleCalibration(f){if(typeof once==='function'&&!once(f))return false;fetch('/faucet/calibration',{method:'POST',body:new FormData(f),cache:'no-store',credentials:'same-origin'}).then(function(r){if(!r.ok)return faucetReadCalibrationError(r).then(function(code){throw new Error(code);});return r.json();}).then(function(){return faucetRefreshCalibrationPanels().catch(function(){faucetResetSampleCalibrationForm(f);alert('校准已保存，但页面刷新失败，请手动刷新查看最新状态。');});}).catch(function(e){faucetResetSampleCalibrationForm(f);alert('保存失败：'+faucetCalibrationErrorMessage(e.message));});return false;}"
                             "function faucetSubmitGenerationAction(f){if(typeof once==='function'&&!once(f))return false;var fd=new FormData(f),action=String(fd.get('action')||'');fetch('/faucet/calibration',{method:'POST',body:fd,cache:'no-store',credentials:'same-origin'}).then(function(r){if(!r.ok)return faucetReadCalibrationError(r).then(function(code){throw new Error(code);});return r.json();}).then(function(){var url='/faucet/calibration?partial=generation'+(action==='generate_segmented'?'&generated=1':'');return faucetReplaceCalibrationSection('scheme-generation',url).catch(function(){alert('生成操作已完成，但页面刷新失败，请手动刷新查看最新状态。');});}).catch(function(e){f.dataset.busy='';var b=f.querySelector('[type=submit]');if(b)b.disabled=false;alert('操作失败：'+faucetCalibrationErrorMessage(e.message));});return false;}"
-                            "if(document.readyState==='loading'){document.addEventListener('DOMContentLoaded',faucetInitGeneratedEstimators);}else{faucetInitGeneratedEstimators();}"
                             "</script>");
 }
 
@@ -2664,7 +2864,7 @@ void sendAppCss() {
     Esp32BaseWeb::sendChunk(".form-grid{display:grid;grid-template-columns:repeat(12,1fr);gap:10px 12px;align-items:start}.span-2{grid-column:span 2}.span-3{grid-column:span 3}.span-4{grid-column:span 4}.span-5{grid-column:span 5}.span-6{grid-column:span 6}.span-8{grid-column:span 8}.span-12{grid-column:1/-1}"
                             ".field span,.check-title{display:block;font-size:12px;color:var(--muted);font-weight:650;margin-bottom:4px}.field input,.field select{margin-bottom:0}.check-line{display:inline-flex;align-items:center;gap:6px;min-height:32px;padding:0 8px;border:1px solid var(--line);border-radius:6px;background:#fff;color:var(--text);font-size:14px;white-space:nowrap}.check-line input{margin:0}");
     Esp32BaseWeb::sendChunk(".form-actions{display:flex;align-items:center;justify-content:flex-start;gap:6px;margin-top:10px;flex-wrap:wrap}.form-actions form{margin:0}.form-actions a,.btn-link,.page-link,.page-current,.row-actions a{display:inline-flex;align-items:center;justify-content:center;min-height:32px;padding:0 10px;border:1px solid var(--line);border-radius:6px;background:#f7f9fa;color:#355e66;font:inherit;font-size:13px;line-height:1.2;box-sizing:border-box;text-decoration:none;cursor:pointer}input.secondary{background:#f7f9fa;border:1px solid var(--line);color:#4c565d}input.secondary:hover,input.secondary:focus-visible{background:#10574e;border-color:#10574e;color:#fff}.btn-link:hover,.btn-link:focus-visible,.form-actions a:hover,.form-actions a:focus-visible,.page-link:hover,.page-link:focus-visible,.row-actions a:hover,.row-actions a:focus-visible{background:#10574e;border-color:#10574e;color:#fff;text-decoration:none}.row-actions{display:flex;gap:5px;align-items:center;flex-wrap:wrap}.sample-actions{gap:6px}.sample-calibration-edit-row{display:none;background:#fbfcfb}.sample-calibration-edit-row.is-open{display:table-row}.sample-calibration-edit-row td{border-top:1px solid #dce8e5}.sample-calibration-form{display:grid;grid-template-columns:minmax(0,1fr) minmax(250px,320px);gap:12px 20px;align-items:start;max-width:900px;margin:0}.sample-calibration-info{display:grid;gap:4px;color:var(--muted);font-size:12px;line-height:1.4}.sample-calibration-info strong{color:var(--text);font-size:13px}.sample-calibration-inputs{min-width:0}.sample-volume-field{margin:0}.sample-volume-field .sample-volume-control{display:flex;align-items:stretch;width:100%;max-width:236px;margin:0;white-space:nowrap}.sample-volume-control input{flex:1 1 auto;min-width:0;width:auto;margin:0;text-align:right;border-top-right-radius:0;border-bottom-right-radius:0}.sample-volume-control .unit-label{display:inline-flex;align-items:center;justify-content:center;min-width:42px;margin:0;padding:0 9px;border:1px solid var(--line);border-left:0;border-radius:0 6px 6px 0;background:#f7f9fa;color:var(--muted);font-size:12px;font-weight:650;box-sizing:border-box}.sample-calibration-inputs .form-actions{margin-top:8px}.sample-window-form{display:flex;align-items:flex-end;gap:8px;flex-wrap:wrap;margin:8px 0 4px}.sample-window-field{margin:0}.sample-window-field input{width:96px;margin:0;text-align:right}.sample-status-pills{display:flex;align-items:center;gap:5px;flex-wrap:wrap}.calibration-formula-panel code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;color:#36505b;background:#f3f6f5;border-radius:4px;padding:1px 4px}");
-    Esp32BaseWeb::sendChunk(".calibration-param-layout{display:grid;grid-template-columns:1fr;gap:12px;margin:0 0 12px}.calibration-param-layout .calibration-param-panel{margin:0}.calibration-param-panel{overflow-x:auto}.calibration-slot-table{table-layout:fixed;min-width:860px;margin:0;border:0;border-radius:0;box-shadow:none;background:transparent}.calibration-slot-table th:nth-child(1){width:160px}.calibration-slot-table th:nth-child(2){width:260px}.calibration-slot-table th:nth-child(3){width:auto}.calibration-slot-table th:nth-child(4){width:92px}.calibration-slot-table th:nth-child(5){width:230px}.calibration-slot-index{font-weight:700}.calibration-slot-index .status-pill{display:inline-flex;margin:4px 4px 0 0}.calibration-slot-name{font-weight:650;white-space:normal}.calibration-slot-values{min-width:0}.calibration-slot-values span{display:inline-flex;align-items:center;min-height:24px;margin:0 5px 4px 0;padding:0 7px;border:1px solid #dce6e3;border-radius:999px;background:#f8fbfa;font-variant-numeric:tabular-nums;white-space:nowrap}.calibration-slot-values b{margin-right:4px;color:var(--muted);font-size:11px}.calibration-slot-note{color:#536068;font-size:12px;line-height:1.35;overflow-wrap:anywhere}.scheme-use-count{font-variant-numeric:tabular-nums}.scheme-use-count b{font-size:18px;margin-right:3px}.scheme-use-count span{color:var(--muted)}.scheme-use-count .status-pill{display:flex;width:max-content;margin-top:5px}.calibration-slot-edit .row-actions{gap:5px}.calibration-generation-settings{display:flex;gap:5px 10px;flex-wrap:wrap;margin:6px 0 8px;color:var(--muted);font-size:12px}.calibration-generation-settings span{display:inline-flex;align-items:center;min-height:24px;padding:0 8px;border:1px solid #e2ebe8;border-radius:999px;background:#fbfdfc}.calibration-generation-settings b{margin-left:4px;color:#46545c}.sample-coverage-compact{margin:8px 0 10px;padding:8px 10px;border:1px solid #eef3f1;border-radius:6px;background:#fbfdfc}.sample-coverage-compact .diagnostic-head{margin-bottom:6px}.coverage-metric-row{display:grid;grid-template-columns:repeat(4,minmax(120px,1fr));gap:6px 10px}.coverage-metric-row .diagnostic-metric{padding:0}.coverage-metric-row .diagnostic-metric span{font-size:11px}.coverage-metric-row .diagnostic-metric strong{font-size:15px}.coverage-foot{display:flex;align-items:center;gap:4px 12px;flex-wrap:wrap;margin-top:6px;padding-top:6px;border-top:1px solid #eef3f1;color:var(--muted);font-size:11px;font-variant-numeric:tabular-nums}.coverage-foot b{color:#52616b;font-weight:650}.generated-scheme-result{margin-top:10px}.generated-scheme-layout{display:grid;grid-template-columns:minmax(0,1fr) minmax(230px,280px);gap:12px;align-items:start}.generated-result-main{min-width:0}.generated-scheme-table,.generated-residual-table{table-layout:fixed;margin:0 0 8px;border:0;border-radius:0;box-shadow:none;background:transparent}.generated-scheme-table th,.generated-scheme-table td,.generated-residual-table th,.generated-residual-table td{white-space:nowrap}.generated-note{margin:8px 0 0;color:#536068;font-size:12px;line-height:1.45}.generated-result-actions{align-items:flex-end}.generated-estimator{display:grid;gap:8px;min-width:0;margin:0;padding:10px;border:1px solid #dce8e5;border-radius:6px;background:#fbfdfc}.sample-trial-modal{display:none;position:fixed;inset:0;z-index:20;align-items:center;justify-content:center;padding:16px;background:rgba(15,31,35,.28)}.sample-trial-modal.is-open{display:flex}.sample-trial-card{width:min(420px,100%);padding:12px;border:1px solid #dce8e5;border-radius:8px;background:#fff;box-shadow:0 8px 26px rgba(15,31,35,.18)}.sample-trial-card .panel-head{margin-bottom:8px}.estimator-input-row{display:flex!important;align-items:stretch;width:100%;margin:0!important}.estimator-input-row input{flex:1 1 auto;min-width:0;margin:0;text-align:right;border-top-right-radius:0;border-bottom-right-radius:0}.unit-label{display:inline-flex!important;align-items:center;justify-content:center;min-width:42px;margin:0!important;padding:0 9px;border:1px solid var(--line);border-left:0;border-radius:0 6px 6px 0;background:#f7f9fa;color:var(--muted);font-size:12px;font-weight:650;box-sizing:border-box}.estimate-results{display:grid;grid-template-columns:1fr;gap:6px}.estimate-results div{display:flex;align-items:baseline;justify-content:space-between;gap:8px;min-height:28px;padding:5px 8px;border:1px solid #edf2f1;border-radius:6px;background:#fff}.estimate-results span{color:var(--muted);font-size:12px;font-weight:650}.estimate-results strong{font-size:16px;font-weight:750;font-variant-numeric:tabular-nums;white-space:nowrap}.inline-form{display:flex;align-items:end;gap:6px;flex-wrap:wrap}.generated-name-field input{width:190px}.scheme-edit-panel{overflow:visible}.scheme-edit-form{display:block;margin:0;max-width:940px}.scheme-edit-warning{display:block;margin:0 0 12px}.scheme-edit-section{padding:0 0 12px;margin:0 0 14px;border-bottom:1px solid #eef2f1}.scheme-edit-section:last-of-type{margin-bottom:8px}.scheme-edit-section h3{margin:0 0 10px;padding:0;border:0}.scheme-edit-grid{display:grid;grid-template-columns:repeat(12,1fr);gap:10px 12px;align-items:start}.scheme-span-4{grid-column:span 4}.scheme-span-12{grid-column:1/-1}.scheme-edit-meta{display:flex;gap:6px;flex-wrap:wrap;color:var(--muted);font-size:12px}.scheme-edit-meta span{display:inline-flex;align-items:center;min-height:22px;padding:0 8px;border-radius:999px;background:#f3f6f5}.compact-field{display:block;margin:0}.compact-field span{display:block;margin:0 0 4px;color:var(--muted);font-size:12px;font-weight:650;line-height:1.15}.compact-field input{width:100%;height:34px;min-height:34px;margin:0;padding:0 8px;box-sizing:border-box;font:inherit}.scheme-edit-field input[type=number]{text-align:right}.scheme-edit-actions{padding-top:2px}");
+    Esp32BaseWeb::sendChunk(".calibration-param-layout{display:grid;grid-template-columns:1fr;gap:12px;margin:0 0 12px}.calibration-param-layout .calibration-param-panel{margin:0}.calibration-param-panel{overflow-x:auto}.calibration-slot-table{table-layout:fixed;min-width:980px;margin:0;border:0;border-radius:0;box-shadow:none;background:transparent}.calibration-slot-table th:nth-child(1){width:160px}.calibration-slot-table th:nth-child(2){width:170px}.calibration-slot-table th:nth-child(3){width:170px}.calibration-slot-table th:nth-child(4){width:auto}.calibration-slot-table th:nth-child(5){width:92px}.calibration-slot-table th:nth-child(6){width:280px}.calibration-slot-index{font-weight:700}.calibration-slot-index .status-pill{display:inline-flex;margin:4px 4px 0 0}.calibration-slot-name{font-weight:650;white-space:normal}.calibration-slot-values{min-width:0}.scheme-param-table{width:100%;margin:0;border:0;border-radius:0;box-shadow:none;background:transparent;font-size:12px}.scheme-param-table th,.scheme-param-table td{padding:3px 0;border:0;background:transparent;white-space:nowrap}.scheme-param-table th{width:72px;color:var(--muted);font-weight:650}.scheme-param-table td{font-variant-numeric:tabular-nums}.calibration-slot-note{color:#536068;font-size:12px;line-height:1.35;overflow-wrap:anywhere}.scheme-use-count{font-variant-numeric:tabular-nums}.scheme-use-count b{font-size:18px;margin-right:3px}.scheme-use-count span{color:var(--muted)}.scheme-use-count .status-pill{display:flex;width:max-content;margin-top:5px}.calibration-slot-edit .row-actions{gap:5px}.calibration-generation-settings{display:flex;gap:5px 10px;flex-wrap:wrap;margin:6px 0 8px;color:var(--muted);font-size:12px}.calibration-generation-settings span{display:inline-flex;align-items:center;min-height:24px;padding:0 8px;border:1px solid #e2ebe8;border-radius:999px;background:#fbfdfc}.calibration-generation-settings b{margin-left:4px;color:#46545c}.sample-coverage-compact{margin:8px 0 10px;padding:8px 10px;border:1px solid #eef3f1;border-radius:6px;background:#fbfdfc}.sample-coverage-compact .diagnostic-head{margin-bottom:6px}.coverage-metric-row{display:grid;grid-template-columns:repeat(4,minmax(120px,1fr));gap:6px 10px}.coverage-metric-row .diagnostic-metric{padding:0}.coverage-metric-row .diagnostic-metric span{font-size:11px}.coverage-metric-row .diagnostic-metric strong{font-size:15px}.coverage-foot{display:flex;align-items:center;gap:4px 12px;flex-wrap:wrap;margin-top:6px;padding-top:6px;border-top:1px solid #eef3f1;color:var(--muted);font-size:11px;font-variant-numeric:tabular-nums}.coverage-foot b{color:#52616b;font-weight:650}.generated-scheme-result{margin-top:10px}.generated-scheme-layout{display:grid;grid-template-columns:minmax(0,1fr) minmax(230px,280px);gap:12px;align-items:start}.generated-result-main{min-width:0}.generated-scheme-table,.generated-residual-table{table-layout:fixed;margin:0 0 8px;border:0;border-radius:0;box-shadow:none;background:transparent}.generated-scheme-table th,.generated-scheme-table td,.generated-residual-table th,.generated-residual-table td{white-space:nowrap}.generated-note{margin:8px 0 0;color:#536068;font-size:12px;line-height:1.45}.generated-result-actions{align-items:flex-end}.generated-measure-panel,.metering-trial-form{display:grid;gap:8px;min-width:0;margin:0;padding:10px;border:1px solid #dce8e5;border-radius:6px;background:#fbfdfc}.metering-trial-modal,.scheme-detail-modal{display:none;position:fixed;inset:0;z-index:20;align-items:center;justify-content:center;padding:16px;background:rgba(15,31,35,.28)}.metering-trial-modal.is-open,.scheme-detail-modal.is-open{display:flex}.metering-trial-card,.scheme-detail-card{width:min(520px,100%);max-height:calc(100vh - 32px);overflow:auto;padding:12px;border:1px solid #dce8e5;border-radius:8px;background:#fff;box-shadow:0 8px 26px rgba(15,31,35,.18)}.scheme-detail-card{width:min(760px,100%)}.metering-trial-card .panel-head,.scheme-detail-card .panel-head{margin-bottom:8px}.trial-mode-tabs{display:flex;gap:6px;flex-wrap:wrap}.trial-mode-tabs label{display:inline-flex;align-items:center;gap:5px;min-height:28px;padding:0 8px;border:1px solid var(--line);border-radius:999px;background:#fff;color:#52616b;font-size:12px;font-weight:650}.estimator-input-row{display:flex!important;align-items:stretch;width:100%;margin:0!important}.estimator-input-row input{flex:1 1 auto;min-width:0;margin:0;text-align:right;border-top-right-radius:0;border-bottom-right-radius:0}.unit-label{display:inline-flex!important;align-items:center;justify-content:center;min-width:42px;margin:0!important;padding:0 9px;border:1px solid var(--line);border-left:0;border-radius:0 6px 6px 0;background:#f7f9fa;color:var(--muted);font-size:12px;font-weight:650;box-sizing:border-box}.estimate-results{display:grid;grid-template-columns:1fr;gap:6px}.estimate-results div{display:flex;align-items:baseline;justify-content:space-between;gap:8px;min-height:28px;padding:5px 8px;border:1px solid #edf2f1;border-radius:6px;background:#fff}.estimate-results span{color:var(--muted);font-size:12px;font-weight:650}.estimate-results strong{font-size:16px;font-weight:750;font-variant-numeric:tabular-nums;white-space:nowrap}.scheme-detail-kv{margin:0;border:0;border-radius:0;box-shadow:none}.scheme-detail-kv td{overflow-wrap:anywhere}.inline-form{display:flex;align-items:end;gap:6px;flex-wrap:wrap}.generated-name-field input{width:190px}.scheme-edit-panel{overflow:visible}.scheme-edit-form{display:block;margin:0;max-width:940px}.scheme-edit-warning{display:block;margin:0 0 12px}.scheme-edit-section{padding:0 0 12px;margin:0 0 14px;border-bottom:1px solid #eef2f1}.scheme-edit-section:last-of-type{margin-bottom:8px}.scheme-edit-section h3{margin:0 0 10px;padding:0;border:0}.scheme-edit-grid{display:grid;grid-template-columns:repeat(12,1fr);gap:10px 12px;align-items:start}.scheme-span-4{grid-column:span 4}.scheme-span-12{grid-column:1/-1}.scheme-edit-meta{display:flex;gap:6px;flex-wrap:wrap;color:var(--muted);font-size:12px}.scheme-edit-meta span{display:inline-flex;align-items:center;min-height:22px;padding:0 8px;border-radius:999px;background:#f3f6f5}.compact-field{display:block;margin:0}.compact-field span{display:block;margin:0 0 4px;color:var(--muted);font-size:12px;font-weight:650;line-height:1.15}.compact-field input{width:100%;height:34px;min-height:34px;margin:0;padding:0 8px;box-sizing:border-box;font:inherit}.scheme-edit-field input[type=number]{text-align:right}.scheme-edit-actions{padding-top:2px}");
     Esp32BaseWeb::sendChunk("table{width:100%;border-collapse:separate;border-spacing:0;margin:0 0 12px;overflow:hidden;font-size:13px}td,th{padding:8px 10px;border-bottom:1px solid #edf1f0;text-align:left;vertical-align:middle}tr:last-child td{border-bottom:0}th{background:#f8faf9;color:var(--muted);font-weight:700}.filters-table th:first-child{width:22%}.filters-table th:last-child{width:150px}.kv th{width:26%}");
     Esp32BaseWeb::sendChunk(".pager{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin:0 0 10px}.pager-links{display:flex;align-items:center;gap:5px;flex-wrap:wrap}.page-current{background:var(--accent-soft);color:#17635b;border-color:#cfe4dc}.page-disabled{color:#9aa3aa;background:#f4f6f6;pointer-events:none}.page-size{display:flex;align-items:center;gap:6px;color:var(--muted);font-size:13px;line-height:32px}.page-size select{width:auto;min-width:80px}.page-size select,.page-size input{height:32px;min-height:32px;margin:0;padding:0 9px;box-sizing:border-box;font:inherit;line-height:32px}.page-size input[name=pageNo]{width:58px;text-align:center}");
     Esp32BaseWeb::sendChunk(".scheme-created-row{background:#fffdf4}.disabled-row{background:#f7f8f8;color:#8a949b}.disabled-row td{color:#8a949b}.disabled-row .status-pill{background:#eef0f0;color:#7b858d}.disabled-row a{color:#6f7a82}"
@@ -3055,16 +3255,15 @@ void formatFlowLitersPerMin(std::uint32_t flowMlPerMin, char* out, std::size_t l
     if (!out || len == 0) {
         return;
     }
-    const std::uint32_t centiLitersPerMin = (flowMlPerMin + 5U) / 10U;
-    if (centiLitersPerMin == 0) {
+    if (flowMlPerMin == 0) {
         std::snprintf(out, len, "-");
         return;
     }
     std::snprintf(out,
                   len,
-                  "%lu.%02lu L/min",
-                  static_cast<unsigned long>(centiLitersPerMin / 100U),
-                  static_cast<unsigned long>(centiLitersPerMin % 100U));
+                  "%lu.%03lu L/min",
+                  static_cast<unsigned long>(flowMlPerMin / 1000U),
+                  static_cast<unsigned long>(flowMlPerMin % 1000U));
 }
 
 void formatFlowNumber(std::uint32_t flowMlPerMin, char* out, std::size_t len) {
@@ -4071,6 +4270,7 @@ void handleCalibrationPage() {
     sendCalibrationParameterPanels();
     Esp32BaseWeb::sendChunk("</div>");
     sendCalibrationFormulaPanel();
+    sendMeteringTrialModal();
     sendCalibrationPageScript();
     sendPageEnd();
 }

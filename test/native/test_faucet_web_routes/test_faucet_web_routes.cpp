@@ -988,7 +988,8 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NULL(std::strstr(buffer, "local-display-card"));
     TEST_ASSERT_NULL(std::strstr(buffer, "当前状态"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "faucetToggle('machineStatusNote',s.state==='running')"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "\"screenStatus\", \"屏幕\", screenOn"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "machine-screen-footer"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "id='screenStatus'>%s</span>"));
     TEST_ASSERT_NULL(std::strstr(buffer, "local-display-meta"));
     TEST_ASSERT_NULL(std::strstr(buffer, ".local-display-card{grid-column:1/-1;max-width:320px}"));
     TEST_ASSERT_NULL(std::strstr(buffer, "仅设备按键操作"));

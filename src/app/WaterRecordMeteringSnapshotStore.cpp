@@ -1,6 +1,7 @@
 #include "app/WaterRecordMeteringSnapshotStore.h"
 
 #include <algorithm>
+#include <cstdio>
 #include <cstring>
 #include <new>
 
@@ -10,6 +11,7 @@ namespace {
 constexpr std::uint32_t kSnapshotMagic = 0x46574D53UL;  // FWMS
 constexpr std::uint16_t kSnapshotVersion = 2;
 constexpr std::uint16_t kLegacySnapshotVersion = 1;
+constexpr std::size_t kMigrationCopyChunkSize = 256;
 
 struct LegacyMeteringParametersV1 {
     std::uint32_t startupPulseCount;
@@ -57,6 +59,62 @@ SnapshotHeader makeHeader(std::size_t capacity, std::size_t count, std::size_t o
         static_cast<std::uint32_t>(oldestIndex),
         0,
     };
+}
+
+bool tempPathFor(const char* path, char* out, std::size_t len) {
+    if (!path || !out || len == 0) {
+        return false;
+    }
+    const int written = std::snprintf(out, len, "%s.tmp", path);
+    return written > 0 && static_cast<std::size_t>(written) < len;
+}
+
+std::size_t requiredV2Size(const SnapshotHeader& header) {
+    return sizeof(SnapshotHeader) + static_cast<std::size_t>(header.count) * sizeof(WaterRecordMeteringSnapshot);
+}
+
+bool validV2HeaderForFile(const SnapshotHeader& header, std::size_t expectedCapacity, std::int64_t fileSize) {
+    return header.magic == kSnapshotMagic &&
+           header.version == kSnapshotVersion &&
+           header.recordSize == sizeof(WaterRecordMeteringSnapshot) &&
+           header.capacity == expectedCapacity &&
+           header.count <= header.capacity &&
+           header.oldestIndex < header.capacity &&
+           fileSize >= static_cast<std::int64_t>(requiredV2Size(header));
+}
+
+bool copyFileBytes(WaterRecordFileBackend& backend, const char* from, const char* to, std::size_t size) {
+    if (!from || !to || !backend.createSized(to, size)) {
+        return false;
+    }
+    std::uint8_t buffer[kMigrationCopyChunkSize]{};
+    for (std::size_t offset = 0; offset < size; offset += sizeof(buffer)) {
+        const std::size_t chunk = std::min<std::size_t>(sizeof(buffer), size - offset);
+        if (!backend.readAt(from, offset, buffer, chunk) || !backend.writeAt(to, offset, buffer, chunk)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool writeV2SnapshotFile(WaterRecordFileBackend& backend,
+                         const char* path,
+                         const SnapshotHeader& header,
+                         const WaterRecordMeteringSnapshot* migrated) {
+    if (!path || (header.count > 0 && !migrated) || !backend.createSized(path, sizeof(SnapshotHeader))) {
+        return false;
+    }
+    if (!backend.writeAt(path, 0, reinterpret_cast<const std::uint8_t*>(&header), sizeof(header))) {
+        return false;
+    }
+    for (std::size_t i = 0; i < header.count; ++i) {
+        if (!backend.appendBytes(path,
+                                 reinterpret_cast<const std::uint8_t*>(&migrated[i]),
+                                 sizeof(WaterRecordMeteringSnapshot))) {
+            return false;
+        }
+    }
+    return true;
 }
 
 WaterRecord recordFromSnapshot(const WaterRecordMeteringSnapshot& snapshot) {
@@ -420,51 +478,76 @@ bool WaterRecordMeteringSnapshotFileStore::migrateV1File() {
     capacity_ = header.capacity;
     count_ = header.count;
     oldestIndex_ = header.oldestIndex;
-    ready_ = backend_.createSized(path_, sizeof(SnapshotHeader)) && saveHeader();
-    if (!ready_) {
+    char tempPath[96]{};
+    if (!tempPathFor(path_, tempPath, sizeof(tempPath))) {
         delete[] migrated;
         return false;
     }
-    for (std::size_t i = 0; i < count_; ++i) {
-        if (!appendEntry(i, migrated[i])) {
-            delete[] migrated;
-            ready_ = false;
-            return false;
-        }
+    const SnapshotHeader migratedHeader = makeHeader(capacity_, count_, oldestIndex_);
+    if (!writeV2SnapshotFile(backend_, tempPath, migratedHeader, migrated)) {
+        delete[] migrated;
+        return false;
     }
+    if (!copyFileBytes(backend_, tempPath, path_, requiredV2Size(migratedHeader))) {
+        delete[] migrated;
+        return false;
+    }
+    backend_.removeFile(tempPath);
+    ready_ = true;
     delete[] migrated;
     return true;
 }
 
 bool WaterRecordMeteringSnapshotFileStore::loadHeader() {
+    char tempPath[96]{};
+    const bool hasTempPath = tempPathFor(path_, tempPath, sizeof(tempPath));
+    auto recoverFromTemp = [&]() -> bool {
+        if (!hasTempPath || !backend_.exists(tempPath)) {
+            return false;
+        }
+        SnapshotHeader tempHeader{};
+        const std::int64_t tempSize = backend_.fileSize(tempPath);
+        if (tempSize >= static_cast<std::int64_t>(sizeof(tempHeader)) &&
+            backend_.readAt(tempPath, 0, reinterpret_cast<std::uint8_t*>(&tempHeader), sizeof(tempHeader)) &&
+            validV2HeaderForFile(tempHeader, capacity_, tempSize) &&
+            copyFileBytes(backend_, tempPath, path_, requiredV2Size(tempHeader))) {
+            backend_.removeFile(tempPath);
+            capacity_ = tempHeader.capacity;
+            count_ = tempHeader.count;
+            oldestIndex_ = tempHeader.oldestIndex;
+            return true;
+        }
+        return false;
+    };
     const std::int64_t fileSize = backend_.fileSize(path_);
     if (fileSize < static_cast<std::int64_t>(sizeof(SnapshotHeader))) {
-        return false;
+        return recoverFromTemp();
     }
     SnapshotHeader header{};
     if (!backend_.readAt(path_, 0, reinterpret_cast<std::uint8_t*>(&header), sizeof(header))) {
-        return false;
+        return recoverFromTemp();
     }
     if (header.magic != kSnapshotMagic || header.capacity == 0 ||
         header.capacity != capacity_ || header.count > header.capacity ||
         header.oldestIndex >= header.capacity) {
-        return false;
+        return recoverFromTemp();
+    }
+    if (validV2HeaderForFile(header, capacity_, fileSize)) {
+        if (hasTempPath && backend_.exists(tempPath)) {
+            backend_.removeFile(tempPath);
+        }
+        capacity_ = header.capacity;
+        count_ = header.count;
+        oldestIndex_ = header.oldestIndex;
+        return true;
     }
     if (header.version == kLegacySnapshotVersion && header.recordSize == sizeof(WaterRecordMeteringSnapshotV1)) {
+        if (recoverFromTemp()) {
+            return true;
+        }
         return migrateV1File();
     }
-    if (header.version != kSnapshotVersion || header.recordSize != sizeof(WaterRecordMeteringSnapshot)) {
-        return false;
-    }
-    const std::size_t requiredSize =
-        sizeof(SnapshotHeader) + static_cast<std::size_t>(header.count) * sizeof(WaterRecordMeteringSnapshot);
-    if (fileSize < static_cast<std::int64_t>(requiredSize)) {
-        return false;
-    }
-    capacity_ = header.capacity;
-    count_ = header.count;
-    oldestIndex_ = header.oldestIndex;
-    return true;
+    return recoverFromTemp();
 }
 
 bool WaterRecordMeteringSnapshotFileStore::saveHeader() const {

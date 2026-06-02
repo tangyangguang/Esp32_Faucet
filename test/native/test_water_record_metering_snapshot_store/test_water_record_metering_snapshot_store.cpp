@@ -23,6 +23,22 @@ struct SnapshotHeaderV1 {
     std::uint32_t reserved;
 };
 
+SnapshotHeaderV1 snapshotHeader(std::uint16_t version,
+                                std::uint16_t recordSize,
+                                std::uint32_t capacity,
+                                std::uint32_t count,
+                                std::uint32_t oldestIndex) {
+    return SnapshotHeaderV1{
+        kTestSnapshotMagic,
+        version,
+        recordSize,
+        capacity,
+        count,
+        oldestIndex,
+        0,
+    };
+}
+
 struct LegacyMeteringParametersV1 {
     std::uint32_t startupPulseCount;
     std::uint32_t startupVolumeMl;
@@ -51,6 +67,8 @@ class MemoryFileBackend : public WaterRecordFileBackend {
 public:
     std::size_t createSizedCalls = 0;
     std::size_t removeCalls = 0;
+    std::string failWritePath;
+    std::string failWriteAtPath;
 
     bool exists(const char* path) override {
         return files.find(path ? path : "") != files.end();
@@ -63,12 +81,15 @@ public:
 
     bool createSized(const char* path, std::size_t size) override {
         ++createSizedCalls;
+        if (shouldFailAnyWrite(path)) {
+            return false;
+        }
         files[path ? path : ""] = std::vector<std::uint8_t>(size, 0);
         return path != nullptr;
     }
 
     bool appendBytes(const char* path, const std::uint8_t* data, std::size_t len) override {
-        if (!path || (!data && len > 0)) {
+        if (!path || shouldFailAnyWrite(path) || (!data && len > 0)) {
             return false;
         }
         std::vector<std::uint8_t>& file = files[path];
@@ -93,7 +114,7 @@ public:
     }
 
     bool writeAt(const char* path, std::size_t offset, const std::uint8_t* data, std::size_t len) override {
-        if (!path || (!data && len > 0)) {
+        if (!path || shouldFailAnyWrite(path) || shouldFailWriteAt(path) || (!data && len > 0)) {
             return false;
         }
         std::vector<std::uint8_t>& file = files[path];
@@ -113,6 +134,14 @@ public:
     }
 
 private:
+    bool shouldFailAnyWrite(const char* path) const {
+        return path && !failWritePath.empty() && failWritePath == path;
+    }
+
+    bool shouldFailWriteAt(const char* path) const {
+        return path && !failWriteAtPath.empty() && failWriteAtPath == path;
+    }
+
     std::map<std::string, std::vector<std::uint8_t>> files;
 };
 
@@ -229,6 +258,61 @@ void test_file_snapshot_store_migrates_v1_records_to_time_estimate_params() {
     TEST_ASSERT_EQUAL_UINT32(480, found.params.stableFlowMlPerMin);
 }
 
+void test_file_snapshot_store_recovers_v1_migration_from_completed_temp_file() {
+    MemoryFileBackend backend;
+    const WaterRecord record = makeRecord(100, 1500, 333);
+    const SnapshotHeaderV1 header{
+        kTestSnapshotMagic,
+        1,
+        static_cast<std::uint16_t>(sizeof(WaterRecordMeteringSnapshotV1)),
+        4,
+        1,
+        0,
+        0,
+    };
+    const WaterRecordMeteringSnapshotV1 legacy = makeLegacySnapshot(record, 2);
+    TEST_ASSERT_TRUE(backend.writeAt("/metering.bin", 0, reinterpret_cast<const std::uint8_t*>(&header), sizeof(header)));
+    TEST_ASSERT_TRUE(backend.writeAt("/metering.bin", sizeof(header), reinterpret_cast<const std::uint8_t*>(&legacy), sizeof(legacy)));
+
+    backend.failWriteAtPath = "/metering.bin";
+    {
+        WaterRecordMeteringSnapshotFileStore interrupted(backend, "/metering.bin", 4);
+        TEST_ASSERT_FALSE(interrupted.begin());
+    }
+    backend.failWriteAtPath.clear();
+
+    WaterRecordMeteringSnapshotFileStore recovered(backend, "/metering.bin", 4);
+    TEST_ASSERT_TRUE(recovered.begin());
+    WaterRecordMeteringSnapshot found{};
+    TEST_ASSERT_TRUE(recovered.find(record, found));
+    TEST_ASSERT_EQUAL_UINT32(5000, found.params.startupDurationMs);
+    TEST_ASSERT_EQUAL_UINT32(480, found.params.stableFlowMlPerMin);
+}
+
+void test_file_snapshot_store_ignores_stale_migration_temp_when_current_file_is_valid() {
+    MemoryFileBackend backend;
+    const WaterRecord record = makeRecord(100, 1500, 333);
+    {
+        WaterRecordMeteringSnapshotFileStore store(backend, "/metering.bin", 4);
+        TEST_ASSERT_TRUE(store.begin());
+        TEST_ASSERT_TRUE(store.upsert(makeSnapshot(record, 2)));
+    }
+
+    const SnapshotHeaderV1 header = snapshotHeader(2, sizeof(WaterRecordMeteringSnapshot), 4, 1, 0);
+    const WaterRecordMeteringSnapshot stale = makeSnapshot(record, 9);
+    TEST_ASSERT_TRUE(backend.createSized("/metering.bin.tmp", sizeof(header)));
+    TEST_ASSERT_TRUE(backend.writeAt("/metering.bin.tmp", 0, reinterpret_cast<const std::uint8_t*>(&header), sizeof(header)));
+    TEST_ASSERT_TRUE(backend.appendBytes("/metering.bin.tmp",
+                                         reinterpret_cast<const std::uint8_t*>(&stale),
+                                         sizeof(stale)));
+
+    WaterRecordMeteringSnapshotFileStore loaded(backend, "/metering.bin", 4);
+    TEST_ASSERT_TRUE(loaded.begin());
+    WaterRecordMeteringSnapshot found{};
+    TEST_ASSERT_TRUE(loaded.find(record, found));
+    TEST_ASSERT_EQUAL_UINT32(2, found.meteringSchemeId);
+}
+
 void test_find_any_matches_record_pages() {
     MemoryFileBackend backend;
     WaterRecordMeteringSnapshotFileStore store(backend, "/metering.bin", 8);
@@ -313,6 +397,8 @@ int main(int argc, char** argv) {
     RUN_TEST(test_ram_snapshot_store_upserts_by_water_record_identity);
     RUN_TEST(test_file_snapshot_store_reloads_after_restart);
     RUN_TEST(test_file_snapshot_store_migrates_v1_records_to_time_estimate_params);
+    RUN_TEST(test_file_snapshot_store_recovers_v1_migration_from_completed_temp_file);
+    RUN_TEST(test_file_snapshot_store_ignores_stale_migration_temp_when_current_file_is_valid);
     RUN_TEST(test_find_any_matches_record_pages);
     RUN_TEST(test_file_store_overwrites_oldest_when_capacity_is_full);
     RUN_TEST(test_file_snapshot_store_corrupt_header_preserves_existing_file);

@@ -388,6 +388,28 @@ void test_segmented_calibration_uses_two_valid_samples() {
     TEST_ASSERT_EQUAL_UINT32(40, result.startupPulseCount);
 }
 
+void test_segmented_calibration_rejects_time_estimate_params_out_of_range() {
+    SegmentedCalibrationSample samples[2]{};
+    samples[0].actualMl = 1500;
+    samples[0].totalPulses = 250;
+    samples[0].startupPulseCount = 40;
+    samples[0].stablePulseCount = 210;
+    samples[0].startupDurationSec = 5;
+    samples[0].stablePulsePerSec = 200.0f;
+    samples[1].actualMl = 7500;
+    samples[1].totalPulses = 1580;
+    samples[1].startupPulseCount = 40;
+    samples[1].stablePulseCount = 1540;
+    samples[1].startupDurationSec = 5;
+    samples[1].stablePulsePerSec = 200.0f;
+
+    SegmentedCalibrationResult result{};
+    TEST_ASSERT_FALSE(computeSegmentedCalibration(samples, 2, result));
+
+    TEST_ASSERT_FALSE(result.valid);
+    TEST_ASSERT_EQUAL(SegmentedCalibrationRejectReason::InvalidFit, result.rejectReason);
+}
+
 void test_segmented_calibration_fits_all_valid_samples() {
     SegmentedCalibrationSample samples[4]{};
     samples[0].actualMl = 1500;
@@ -1025,6 +1047,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_trace_bucket_aggregation_sums_pulses_by_selected_seconds);
     RUN_TEST(test_trace_bucket_aggregation_accepts_four_second_bucket);
     RUN_TEST(test_segmented_calibration_uses_two_valid_samples);
+    RUN_TEST(test_segmented_calibration_rejects_time_estimate_params_out_of_range);
     RUN_TEST(test_segmented_calibration_fits_all_valid_samples);
     RUN_TEST(test_segmented_calibration_rejects_error_above_configured_limits);
     RUN_TEST(test_segmented_calibration_warns_when_volume_span_is_small);

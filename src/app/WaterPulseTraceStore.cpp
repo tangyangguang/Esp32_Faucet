@@ -1291,6 +1291,14 @@ void fillSegmentedResult(const FitResult& fit,
     result.maxActualMl = fit.maxActualMl;
     result.maxErrorMl = fit.maxErrorMl;
     result.maxRelativeErrorTenthPercent = fit.maxRelativeErrorTenthPercent;
+    if (!validMeteringSchemeParameters(MeteringParameters{result.startupPulseCount,
+                                                          result.startupVolumeMl,
+                                                          result.stablePulsePerLiter,
+                                                          result.startupDurationMs,
+                                                          result.stableFlowMlPerMin})) {
+        result.valid = false;
+        result.rejectReason = SegmentedCalibrationRejectReason::InvalidFit;
+    }
 }
 
 }  // namespace

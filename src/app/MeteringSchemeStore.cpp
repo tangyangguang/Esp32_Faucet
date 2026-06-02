@@ -13,6 +13,7 @@ namespace {
 constexpr std::uint32_t kMeteringSchemeStoreMagic = 0x314D5346UL;  // FSM1
 constexpr std::uint16_t kMeteringSchemeStoreVersion = 2;
 constexpr std::uint16_t kLegacyMeteringSchemeStoreVersion = 1;
+constexpr std::size_t kMigrationCopyChunkSize = 256;
 
 struct LegacyMeteringParametersV1 {
     std::uint32_t startupPulseCount;
@@ -103,6 +104,47 @@ void meteringSlotKey(char* out, std::size_t len, std::size_t index, const char* 
     std::snprintf(out, len, "ms%u_%s", static_cast<unsigned>(index), suffix);
 }
 
+bool tempPathFor(const char* path, char* out, std::size_t len) {
+    if (!path || !out || len == 0) {
+        return false;
+    }
+    const int written = std::snprintf(out, len, "%s.tmp", path);
+    return written > 0 && static_cast<std::size_t>(written) < len;
+}
+
+bool copyFileBytes(WaterRecordFileBackend& backend, const char* from, const char* to, std::size_t size) {
+    if (!from || !to || !backend.createSized(to, size)) {
+        return false;
+    }
+    std::uint8_t buffer[kMigrationCopyChunkSize]{};
+    for (std::size_t offset = 0; offset < size; offset += sizeof(buffer)) {
+        const std::size_t chunk = std::min<std::size_t>(sizeof(buffer), size - offset);
+        if (!backend.readAt(from, offset, buffer, chunk) || !backend.writeAt(to, offset, buffer, chunk)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+std::size_t expectedFileSizeForHeader(const MeteringSchemeStoreHeader& header) {
+    return sizeof(MeteringSchemeStoreHeader) + sizeof(MeteringSchemeCandidate) +
+           static_cast<std::size_t>(header.slotCount) * sizeof(MeteringSchemeRecord);
+}
+
+bool validV2HeaderForFile(const MeteringSchemeStoreHeader& header, std::int64_t fileSize) {
+    if (header.magic != kMeteringSchemeStoreMagic ||
+        header.version != kMeteringSchemeStoreVersion ||
+        header.headerSize != sizeof(MeteringSchemeStoreHeader) ||
+        header.recordSize != sizeof(MeteringSchemeRecord) ||
+        header.candidateSize != sizeof(MeteringSchemeCandidate) ||
+        header.nextSchemeId == 0 ||
+        header.activeSchemeId == 0 ||
+        header.checksum != headerChecksum(header)) {
+        return false;
+    }
+    return fileSize >= static_cast<std::int64_t>(expectedFileSizeForHeader(header));
+}
+
 template <std::size_t N>
 void readConfigText(ConfigBackend& config, const char* key, char (&out)[N], const char* def = "") {
     config.getStr("faucet_cfg", key, out, N, def);
@@ -188,6 +230,33 @@ MeteringSchemeCandidate expandLegacyCandidate(const LegacyMeteringSchemeCandidat
         candidate = MeteringSchemeCandidate{};
     }
     return candidate;
+}
+
+bool writeV2SchemeFile(WaterRecordFileBackend& backend,
+                       const char* path,
+                       const MeteringSchemeStoreHeader& header,
+                       const MeteringSchemeCandidate& candidate,
+                       const MeteringSchemeRecord* records) {
+    if (!path || !records || !backend.createSized(path, expectedFileSizeForHeader(header))) {
+        return false;
+    }
+    if (!backend.writeAt(path, 0, reinterpret_cast<const std::uint8_t*>(&header), sizeof(header)) ||
+        !backend.writeAt(path,
+                         sizeof(MeteringSchemeStoreHeader),
+                         reinterpret_cast<const std::uint8_t*>(&candidate),
+                         sizeof(candidate))) {
+        return false;
+    }
+    const std::size_t recordBase = sizeof(MeteringSchemeStoreHeader) + sizeof(MeteringSchemeCandidate);
+    for (std::size_t i = 0; i < header.slotCount; ++i) {
+        if (!backend.writeAt(path,
+                             recordBase + i * sizeof(MeteringSchemeRecord),
+                             reinterpret_cast<const std::uint8_t*>(&records[i]),
+                             sizeof(MeteringSchemeRecord))) {
+            return false;
+        }
+    }
+    return true;
 }
 
 }  // namespace
@@ -681,24 +750,17 @@ bool MeteringSchemeStore::migrateV1File(const MeteringSchemeStoreHeader& loaded)
     }
     MeteringSchemeCandidate candidate = expandLegacyCandidate(legacyCandidate);
     header_ = makeHeader(loaded.activeSchemeId, loaded.nextSchemeId, loaded.slotCount);
-    if (!backend_.createSized(path_, expectedFileSize())) {
+    char tempPath[96]{};
+    if (!tempPathFor(path_, tempPath, sizeof(tempPath))) {
         return false;
     }
-    if (!backend_.writeAt(path_, 0, reinterpret_cast<const std::uint8_t*>(&header_), sizeof(header_)) ||
-        !backend_.writeAt(path_,
-                          candidateOffset(),
-                          reinterpret_cast<const std::uint8_t*>(&candidate),
-                          sizeof(candidate))) {
+    if (!writeV2SchemeFile(backend_, tempPath, header_, candidate, records.get())) {
         return false;
     }
-    for (std::size_t i = 0; i < loaded.slotCount; ++i) {
-        if (!backend_.writeAt(path_,
-                              recordOffset(i),
-                              reinterpret_cast<const std::uint8_t*>(&records[i]),
-                              sizeof(MeteringSchemeRecord))) {
-            return false;
-        }
+    if (!copyFileBytes(backend_, tempPath, path_, expectedFileSize())) {
+        return false;
     }
+    backend_.removeFile(tempPath);
     return true;
 }
 
@@ -741,24 +803,52 @@ bool MeteringSchemeStore::upgradeLegacyDefaultSchemeIfNeeded() {
 }
 
 bool MeteringSchemeStore::loadHeader() {
+    char tempPath[96]{};
+    const bool hasTempPath = tempPathFor(path_, tempPath, sizeof(tempPath));
+    auto recoverFromTemp = [&]() -> bool {
+        if (!hasTempPath || !backend_.exists(tempPath)) {
+            return false;
+        }
+        MeteringSchemeStoreHeader tempHeader{};
+        const std::int64_t tempSize = backend_.fileSize(tempPath);
+        if (tempSize >= static_cast<std::int64_t>(sizeof(tempHeader)) &&
+            backend_.readAt(tempPath, 0, reinterpret_cast<std::uint8_t*>(&tempHeader), sizeof(tempHeader)) &&
+            validV2HeaderForFile(tempHeader, tempSize) &&
+            copyFileBytes(backend_, tempPath, path_, expectedFileSizeForHeader(tempHeader))) {
+            backend_.removeFile(tempPath);
+            header_ = tempHeader;
+            return true;
+        }
+        return false;
+    };
     const std::int64_t fileSize = backend_.fileSize(path_);
     if (fileSize < static_cast<std::int64_t>(sizeof(MeteringSchemeStoreHeader))) {
-        return false;
+        return recoverFromTemp();
     }
     MeteringSchemeStoreHeader loaded{};
     if (!backend_.readAt(path_, 0, reinterpret_cast<std::uint8_t*>(&loaded), sizeof(loaded))) {
-        return false;
+        return recoverFromTemp();
     }
     if (loaded.magic != kMeteringSchemeStoreMagic ||
         loaded.headerSize != sizeof(MeteringSchemeStoreHeader) ||
         loaded.nextSchemeId == 0 ||
         loaded.activeSchemeId == 0 ||
         loaded.checksum != headerChecksum(loaded)) {
-        return false;
+        return recoverFromTemp();
+    }
+    if (validV2HeaderForFile(loaded, fileSize)) {
+        if (hasTempPath && backend_.exists(tempPath)) {
+            backend_.removeFile(tempPath);
+        }
+        header_ = loaded;
+        return true;
     }
     if (loaded.version == kLegacyMeteringSchemeStoreVersion &&
         loaded.recordSize == sizeof(LegacyMeteringSchemeRecordV1) &&
         loaded.candidateSize == sizeof(LegacyMeteringSchemeCandidateV1)) {
+        if (recoverFromTemp()) {
+            return true;
+        }
         const std::size_t minimumV1Size =
             sizeof(MeteringSchemeStoreHeader) + sizeof(LegacyMeteringSchemeCandidateV1) +
             static_cast<std::size_t>(loaded.slotCount) * sizeof(LegacyMeteringSchemeRecordV1);
@@ -767,19 +857,7 @@ bool MeteringSchemeStore::loadHeader() {
         }
         return migrateV1File(loaded);
     }
-    if (loaded.version != kMeteringSchemeStoreVersion ||
-        loaded.recordSize != sizeof(MeteringSchemeRecord) ||
-        loaded.candidateSize != sizeof(MeteringSchemeCandidate)) {
-        return false;
-    }
-    const std::size_t minimumSize =
-        sizeof(MeteringSchemeStoreHeader) + sizeof(MeteringSchemeCandidate) +
-        static_cast<std::size_t>(loaded.slotCount) * sizeof(MeteringSchemeRecord);
-    if (fileSize < static_cast<std::int64_t>(minimumSize)) {
-        return false;
-    }
-    header_ = loaded;
-    return true;
+    return recoverFromTemp();
 }
 
 bool MeteringSchemeStore::saveHeader() const {

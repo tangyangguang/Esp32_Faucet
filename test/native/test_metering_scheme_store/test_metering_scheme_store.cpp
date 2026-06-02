@@ -99,9 +99,30 @@ MeteringSchemeStoreHeader legacyHeader(std::uint32_t activeSchemeId,
     return header;
 }
 
+MeteringSchemeStoreHeader v2Header(std::uint32_t activeSchemeId,
+                                   std::uint32_t nextSchemeId,
+                                   std::uint32_t slotCount) {
+    MeteringSchemeStoreHeader header{
+        kTestMeteringSchemeStoreMagic,
+        2,
+        static_cast<std::uint16_t>(sizeof(MeteringSchemeStoreHeader)),
+        static_cast<std::uint16_t>(sizeof(MeteringSchemeRecord)),
+        static_cast<std::uint16_t>(sizeof(MeteringSchemeCandidate)),
+        activeSchemeId,
+        nextSchemeId,
+        slotCount,
+        0,
+        0,
+    };
+    header.checksum = testHeaderChecksum(header);
+    return header;
+}
+
 class MemoryFileBackend : public WaterRecordFileBackend {
 public:
     bool failWrite = false;
+    std::string failWritePath;
+    std::string failWriteAtPath;
     int failWriteAtCount = 0;
     std::size_t createSizedCalls = 0;
     std::size_t removeCalls = 0;
@@ -117,7 +138,7 @@ public:
 
     bool createSized(const char* path, std::size_t size) override {
         ++createSizedCalls;
-        if (failWrite || !path) {
+        if (failWrite || !path || shouldFailAnyWrite(path)) {
             return false;
         }
         files[path] = std::vector<std::uint8_t>(size, 0);
@@ -125,7 +146,7 @@ public:
     }
 
     bool appendBytes(const char* path, const std::uint8_t* data, std::size_t len) override {
-        if (failWrite || !path || (!data && len > 0)) {
+        if (failWrite || !path || shouldFailAnyWrite(path) || (!data && len > 0)) {
             return false;
         }
         std::vector<std::uint8_t>& file = files[path];
@@ -150,7 +171,7 @@ public:
     }
 
     bool writeAt(const char* path, std::size_t offset, const std::uint8_t* data, std::size_t len) override {
-        if (failWrite || !path) {
+        if (failWrite || !path || shouldFailAnyWrite(path) || shouldFailWriteAt(path)) {
             return false;
         }
         if (failWriteAtCount > 0) {
@@ -182,6 +203,14 @@ public:
     }
 
 private:
+    bool shouldFailAnyWrite(const char* path) const {
+        return path && !failWritePath.empty() && failWritePath == path;
+    }
+
+    bool shouldFailWriteAt(const char* path) const {
+        return path && !failWriteAtPath.empty() && failWriteAtPath == path;
+    }
+
     std::map<std::string, std::vector<std::uint8_t>> files;
 };
 
@@ -567,6 +596,82 @@ void test_begin_migrates_v1_scheme_file_to_time_estimate_params() {
     TEST_ASSERT_EQUAL_UINT32(480, migratedCandidate.params.stableFlowMlPerMin);
 }
 
+void test_begin_recovers_v1_scheme_migration_from_completed_temp_file() {
+    MemoryFileBackend backend;
+    const MeteringSchemeStoreHeader header = legacyHeader(7, 8, 1);
+    LegacyMeteringSchemeCandidateV1 candidate{};
+    LegacyMeteringSchemeRecordV1 record{};
+    record.id = 7;
+    record.valid = true;
+    record.enabled = true;
+    std::strncpy(record.name, "旧文件方案", sizeof(record.name) - 1);
+    record.params = LegacyMeteringParametersV1{40, 553, 222};
+    record.sourceType = MeteringSchemeSource::Manual;
+    record.revision = 3;
+
+    TEST_ASSERT_TRUE(backend.writeAt("/schemes.bin", 0, reinterpret_cast<const std::uint8_t*>(&header), sizeof(header)));
+    TEST_ASSERT_TRUE(backend.writeAt("/schemes.bin",
+                                     sizeof(MeteringSchemeStoreHeader),
+                                     reinterpret_cast<const std::uint8_t*>(&candidate),
+                                     sizeof(candidate)));
+    TEST_ASSERT_TRUE(backend.writeAt("/schemes.bin",
+                                     sizeof(MeteringSchemeStoreHeader) + sizeof(candidate),
+                                     reinterpret_cast<const std::uint8_t*>(&record),
+                                     sizeof(record)));
+
+    backend.failWriteAtPath = "/schemes.bin";
+    {
+        MeteringSchemeStore interrupted(backend, "/schemes.bin");
+        TEST_ASSERT_FALSE(interrupted.begin());
+    }
+    backend.failWriteAtPath.clear();
+
+    MeteringSchemeStore recovered(backend, "/schemes.bin");
+    TEST_ASSERT_TRUE(recovered.begin());
+    MeteringSchemeRecord migrated{};
+    TEST_ASSERT_TRUE(recovered.activeScheme(migrated));
+    TEST_ASSERT_EQUAL_STRING("旧文件方案", migrated.name);
+    TEST_ASSERT_EQUAL_UINT32(5000, migrated.params.startupDurationMs);
+    TEST_ASSERT_EQUAL_UINT32(480, migrated.params.stableFlowMlPerMin);
+}
+
+void test_begin_ignores_stale_scheme_migration_temp_when_current_file_is_valid() {
+    MemoryFileBackend backend;
+    {
+        MeteringSchemeStore store(backend, "/schemes.bin");
+        TEST_ASSERT_TRUE(store.begin());
+        std::uint32_t id = 0;
+        TEST_ASSERT_TRUE(store.createManual("当前方案", MeteringParameters{12, 180, 360}, 1770000000, id));
+        TEST_ASSERT_TRUE(store.enableScheme(id, 1770000001));
+    }
+
+    const MeteringSchemeStoreHeader header = v2Header(99, 100, 1);
+    MeteringSchemeCandidate candidate{};
+    MeteringSchemeRecord stale{};
+    initializeManualMeteringScheme(stale, 99, "陈旧临时方案", MeteringParameters{13, 190, 370}, 1770000000);
+    TEST_ASSERT_TRUE(backend.createSized("/schemes.bin.tmp",
+                                         sizeof(MeteringSchemeStoreHeader) + sizeof(MeteringSchemeCandidate) +
+                                             sizeof(MeteringSchemeRecord)));
+    TEST_ASSERT_TRUE(backend.writeAt("/schemes.bin.tmp",
+                                     0,
+                                     reinterpret_cast<const std::uint8_t*>(&header),
+                                     sizeof(header)));
+    TEST_ASSERT_TRUE(backend.writeAt("/schemes.bin.tmp",
+                                     sizeof(MeteringSchemeStoreHeader),
+                                     reinterpret_cast<const std::uint8_t*>(&candidate),
+                                     sizeof(candidate)));
+    TEST_ASSERT_TRUE(backend.writeAt("/schemes.bin.tmp",
+                                     sizeof(MeteringSchemeStoreHeader) + sizeof(MeteringSchemeCandidate),
+                                     reinterpret_cast<const std::uint8_t*>(&stale),
+                                     sizeof(stale)));
+
+    MeteringSchemeStore loaded(backend, "/schemes.bin");
+    TEST_ASSERT_TRUE(loaded.begin());
+    MeteringSchemeRecord active{};
+    TEST_ASSERT_TRUE(loaded.activeScheme(active));
+    TEST_ASSERT_EQUAL_STRING("当前方案", active.name);
+}
+
 void test_legacy_migration_avoids_large_metering_scheme_stack_arrays() {
     FILE* file = std::fopen("src/app/MeteringSchemeStore.cpp", "rb");
     TEST_ASSERT_NOT_NULL(file);
@@ -624,6 +729,8 @@ int main(int argc, char** argv) {
     RUN_TEST(test_increment_usage_marks_dirty_when_record_update_fails);
     RUN_TEST(test_migrates_legacy_config_slots_and_candidate_once);
     RUN_TEST(test_begin_migrates_v1_scheme_file_to_time_estimate_params);
+    RUN_TEST(test_begin_recovers_v1_scheme_migration_from_completed_temp_file);
+    RUN_TEST(test_begin_ignores_stale_scheme_migration_temp_when_current_file_is_valid);
     RUN_TEST(test_legacy_migration_avoids_large_metering_scheme_stack_arrays);
     RUN_TEST(test_begin_preserves_corrupt_scheme_file_without_reinitializing);
     return UNITY_END();

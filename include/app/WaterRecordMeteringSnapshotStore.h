@@ -97,6 +97,7 @@ public:
 
 private:
     bool initializeNewFile();
+    bool migrateV1File();
     bool loadHeader();
     bool saveHeader() const;
     bool readEntry(std::size_t index, WaterRecordMeteringSnapshot& output) const;

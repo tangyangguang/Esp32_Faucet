@@ -58,6 +58,8 @@ void test_default_store_has_one_enabled_active_default_scheme() {
     TEST_ASSERT_EQUAL_UINT32(8, active->params.startupPulseCount);
     TEST_ASSERT_EQUAL_UINT32(36, active->params.startupVolumeMl);
     TEST_ASSERT_EQUAL_UINT32(225, active->params.stablePulsePerLiter);
+    TEST_ASSERT_EQUAL_UINT32(5000, active->params.startupDurationMs);
+    TEST_ASSERT_EQUAL_UINT32(480, active->params.stableFlowMlPerMin);
     TEST_ASSERT_NOT_NULL(std::strstr(active->creationSummary, "YF-S201"));
     TEST_ASSERT_NOT_NULL(std::strstr(active->creationSummary, "启动约 5 秒"));
     TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(MeteringSchemeSource::Default),
@@ -85,6 +87,8 @@ void test_candidate_saves_as_new_scheme_without_enabling() {
     TEST_ASSERT_EQUAL_UINT32(40, saved->params.startupPulseCount);
     TEST_ASSERT_EQUAL_UINT32(553, saved->params.startupVolumeMl);
     TEST_ASSERT_EQUAL_UINT32(222, saved->params.stablePulsePerLiter);
+    TEST_ASSERT_EQUAL_UINT32(5000, saved->params.startupDurationMs);
+    TEST_ASSERT_EQUAL_UINT32(480, saved->params.stableFlowMlPerMin);
     TEST_ASSERT_EQUAL_UINT32(1, saved->revision);
     TEST_ASSERT_EQUAL_UINT16(3, saved->sampleCount);
     TEST_ASSERT_EQUAL_UINT32(101, saved->sampleTraceIds[0]);
@@ -212,6 +216,32 @@ void test_metering_estimate_handles_no_startup_segment() {
     TEST_ASSERT_EQUAL_UINT32(450, estimate.fullRunPulsePerLiter);
 }
 
+void test_time_estimate_uses_segmented_startup_and_stable_flow() {
+    const MeteringParameters params{8, 36, 225, 5000, 480};
+
+    TEST_ASSERT_EQUAL_UINT32(2500, estimateDurationMsForVolumeMl(params, 18));
+    TEST_ASSERT_EQUAL_UINT32(5000, estimateDurationMsForVolumeMl(params, 36));
+    TEST_ASSERT_EQUAL_UINT32(130000, estimateDurationMsForVolumeMl(params, 1036));
+
+    TEST_ASSERT_EQUAL_UINT32(18, estimateVolumeMlForDurationMs(params, 2500));
+    TEST_ASSERT_EQUAL_UINT32(36, estimateVolumeMlForDurationMs(params, 5000));
+    TEST_ASSERT_EQUAL_UINT32(1036, estimateVolumeMlForDurationMs(params, 130000));
+}
+
+void test_time_estimate_handles_no_startup_time_segment() {
+    const MeteringParameters params{0, 0, 450, 0, 600};
+
+    TEST_ASSERT_EQUAL_UINT32(100000, estimateDurationMsForVolumeMl(params, 1000));
+    TEST_ASSERT_EQUAL_UINT32(1000, estimateVolumeMlForDurationMs(params, 100000));
+}
+
+void test_time_estimate_parameter_validation() {
+    TEST_ASSERT_FALSE(validMeteringSchemeParameters(MeteringParameters{0, 0, 450, 0, 0}));
+    TEST_ASSERT_FALSE(validMeteringSchemeParameters(MeteringParameters{0, 0, 450, 0, 30001}));
+    TEST_ASSERT_FALSE(validMeteringSchemeParameters(MeteringParameters{0, 0, 450, 60001, 600}));
+    TEST_ASSERT_TRUE(validMeteringSchemeParameters(MeteringParameters{0, 0, 450, 0, 600}));
+}
+
 int main(int argc, char** argv) {
     (void)argc;
     (void)argv;
@@ -227,5 +257,8 @@ int main(int argc, char** argv) {
     RUN_TEST(test_unused_non_current_scheme_can_be_physically_deleted);
     RUN_TEST(test_metering_estimate_uses_segmented_parameters_for_target_volume);
     RUN_TEST(test_metering_estimate_handles_no_startup_segment);
+    RUN_TEST(test_time_estimate_uses_segmented_startup_and_stable_flow);
+    RUN_TEST(test_time_estimate_handles_no_startup_time_segment);
+    RUN_TEST(test_time_estimate_parameter_validation);
     return UNITY_END();
 }

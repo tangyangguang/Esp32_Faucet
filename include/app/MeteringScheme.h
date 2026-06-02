@@ -20,10 +20,15 @@ constexpr const char* kDefaultMeteringSchemeMeterLabel = "YF-S201";
 constexpr std::uint32_t kDefaultStartupPulseCount = 8;
 constexpr std::uint32_t kDefaultStartupVolumeMl = 36;
 constexpr std::uint32_t kDefaultStablePulsePerLiter = 225;
+constexpr std::uint32_t kDefaultStartupDurationMs = 5000;
+constexpr std::uint32_t kDefaultStableFlowMlPerMin = 480;
 constexpr std::uint32_t kMinSegmentedPulsePerLiter = 50;
 constexpr std::uint32_t kMaxSegmentedPulsePerLiter = 5000;
 constexpr std::uint32_t kMaxSegmentedStartupPulseCount = 100000;
 constexpr std::uint32_t kMaxSegmentedStartupVolumeMl = 20000;
+constexpr std::uint32_t kMaxSegmentedStartupDurationMs = 60000;
+constexpr std::uint32_t kMinStableFlowMlPerMin = 50;
+constexpr std::uint32_t kMaxStableFlowMlPerMin = 30000;
 
 enum class MeteringSchemeSource : std::uint8_t {
     Default = 0,
@@ -123,6 +128,8 @@ struct MeteringTargetEstimate {
 MeteringParameters defaultMeteringParameters();
 bool validMeteringSchemeParameters(const MeteringParameters& params);
 std::uint32_t estimatePulsesForVolumeMl(const MeteringParameters& params, std::uint32_t targetMl);
+std::uint32_t estimateDurationMsForVolumeMl(const MeteringParameters& params, std::uint32_t targetMl);
+std::uint32_t estimateVolumeMlForDurationMs(const MeteringParameters& params, std::uint32_t durationMs);
 std::uint32_t fullRunPulsePerLiter(std::uint32_t pulseCount, std::uint32_t volumeMl);
 MeteringTargetEstimate meteringEstimateForTarget(const MeteringParameters& params, std::uint32_t targetMl);
 

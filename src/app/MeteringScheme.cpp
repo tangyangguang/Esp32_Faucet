@@ -75,23 +75,38 @@ void copyCandidateMetadata(MeteringSchemeRecord& scheme, const MeteringSchemeCan
 void writeManualSummary(MeteringSchemeRecord& scheme) {
     std::snprintf(scheme.creationSummary,
                   sizeof(scheme.creationSummary),
-                  "手工创建：启动脉冲数 %lu，启动水量 %luml，稳态 %lu P/L。",
+                  "手工创建：启动脉冲数 %lu，启动水量 %luml，稳态 %lu P/L，启动时长 %lums，预计稳态流速 %luml/min。",
                   static_cast<unsigned long>(scheme.params.startupPulseCount),
                   static_cast<unsigned long>(scheme.params.startupVolumeMl),
-                  static_cast<unsigned long>(scheme.params.stablePulsePerLiter));
+                  static_cast<unsigned long>(scheme.params.stablePulsePerLiter),
+                  static_cast<unsigned long>(scheme.params.startupDurationMs),
+                  static_cast<unsigned long>(scheme.params.stableFlowMlPerMin));
+}
+
+std::uint32_t saturatingU32(std::uint64_t value) {
+    return value > UINT32_MAX ? UINT32_MAX : static_cast<std::uint32_t>(value);
 }
 
 }  // namespace
 
 MeteringParameters defaultMeteringParameters() {
-    return MeteringParameters{kDefaultStartupPulseCount, kDefaultStartupVolumeMl, kDefaultStablePulsePerLiter};
+    return MeteringParameters{
+        kDefaultStartupPulseCount,
+        kDefaultStartupVolumeMl,
+        kDefaultStablePulsePerLiter,
+        kDefaultStartupDurationMs,
+        kDefaultStableFlowMlPerMin,
+    };
 }
 
 bool validMeteringSchemeParameters(const MeteringParameters& params) {
     if (params.stablePulsePerLiter < kMinSegmentedPulsePerLiter ||
         params.stablePulsePerLiter > kMaxSegmentedPulsePerLiter ||
         params.startupPulseCount > kMaxSegmentedStartupPulseCount ||
-        params.startupVolumeMl > kMaxSegmentedStartupVolumeMl) {
+        params.startupVolumeMl > kMaxSegmentedStartupVolumeMl ||
+        params.startupDurationMs > kMaxSegmentedStartupDurationMs ||
+        params.stableFlowMlPerMin < kMinStableFlowMlPerMin ||
+        params.stableFlowMlPerMin > kMaxStableFlowMlPerMin) {
         return false;
     }
     return (params.startupPulseCount == 0 && params.startupVolumeMl == 0) ||
@@ -114,6 +129,44 @@ std::uint32_t estimatePulsesForVolumeMl(const MeteringParameters& params, std::u
         (static_cast<std::uint64_t>(stableTargetMl) * params.stablePulsePerLiter + 999ULL) / 1000ULL;
     const std::uint64_t totalPulses = static_cast<std::uint64_t>(params.startupPulseCount) + stablePulses;
     return totalPulses > UINT32_MAX ? UINT32_MAX : static_cast<std::uint32_t>(totalPulses);
+}
+
+std::uint32_t estimateDurationMsForVolumeMl(const MeteringParameters& params, std::uint32_t targetMl) {
+    if (!validMeteringSchemeParameters(params) || targetMl == 0 || params.stableFlowMlPerMin == 0) {
+        return 0;
+    }
+    if (params.startupDurationMs == 0 || params.startupVolumeMl == 0) {
+        return saturatingU32((static_cast<std::uint64_t>(targetMl) * 60000ULL +
+                              params.stableFlowMlPerMin / 2ULL) /
+                             params.stableFlowMlPerMin);
+    }
+    if (targetMl <= params.startupVolumeMl) {
+        return saturatingU32((static_cast<std::uint64_t>(targetMl) * params.startupDurationMs +
+                              params.startupVolumeMl / 2ULL) /
+                             params.startupVolumeMl);
+    }
+    const std::uint64_t stableMl = targetMl - params.startupVolumeMl;
+    const std::uint64_t stableMs =
+        (stableMl * 60000ULL + params.stableFlowMlPerMin / 2ULL) / params.stableFlowMlPerMin;
+    return saturatingU32(static_cast<std::uint64_t>(params.startupDurationMs) + stableMs);
+}
+
+std::uint32_t estimateVolumeMlForDurationMs(const MeteringParameters& params, std::uint32_t durationMs) {
+    if (!validMeteringSchemeParameters(params) || durationMs == 0 || params.stableFlowMlPerMin == 0) {
+        return 0;
+    }
+    if (params.startupDurationMs == 0 || params.startupVolumeMl == 0) {
+        return saturatingU32((static_cast<std::uint64_t>(durationMs) * params.stableFlowMlPerMin + 30000ULL) /
+                             60000ULL);
+    }
+    if (durationMs <= params.startupDurationMs) {
+        return saturatingU32((static_cast<std::uint64_t>(durationMs) * params.startupVolumeMl +
+                              params.startupDurationMs / 2ULL) /
+                             params.startupDurationMs);
+    }
+    const std::uint64_t stableMs = durationMs - params.startupDurationMs;
+    const std::uint64_t stableMl = (stableMs * params.stableFlowMlPerMin + 30000ULL) / 60000ULL;
+    return saturatingU32(static_cast<std::uint64_t>(params.startupVolumeMl) + stableMl);
 }
 
 std::uint32_t fullRunPulsePerLiter(std::uint32_t pulseCount, std::uint32_t volumeMl) {
@@ -268,7 +321,9 @@ MeteringSchemeEditKind classifyMeteringSchemeEdit(const MeteringSchemeRecord& sc
     const bool paramsChanged =
         scheme.params.startupPulseCount != edit.params.startupPulseCount ||
         scheme.params.startupVolumeMl != edit.params.startupVolumeMl ||
-        scheme.params.stablePulsePerLiter != edit.params.stablePulsePerLiter;
+        scheme.params.stablePulsePerLiter != edit.params.stablePulsePerLiter ||
+        scheme.params.startupDurationMs != edit.params.startupDurationMs ||
+        scheme.params.stableFlowMlPerMin != edit.params.stableFlowMlPerMin;
     const bool applicabilityChanged = !textEquals(scheme.meterLabel, edit.meterLabel) ||
                                       !textEquals(scheme.installationLabel, edit.installationLabel) ||
                                       !textEquals(scheme.conditionLabel, edit.conditionLabel) ||

@@ -369,11 +369,13 @@ void test_segmented_calibration_uses_two_valid_samples() {
     samples[0].startupPulseCount = 40;
     samples[0].stablePulseCount = 210;
     samples[0].startupDurationSec = 5;
+    samples[0].stablePulsePerSec = 37.0f;
     samples[1].actualMl = 7500;
     samples[1].totalPulses = 1580;
     samples[1].startupPulseCount = 40;
     samples[1].stablePulseCount = 1540;
     samples[1].startupDurationSec = 5;
+    samples[1].stablePulsePerSec = 37.0f;
 
     SegmentedCalibrationResult result{};
     TEST_ASSERT_TRUE(computeSegmentedCalibration(samples, 2, result));
@@ -381,6 +383,8 @@ void test_segmented_calibration_uses_two_valid_samples() {
     TEST_ASSERT_EQUAL_UINT32(222, result.stablePulsePerLiter);
     TEST_ASSERT_EQUAL_UINT32(553, result.startupVolumeMl);
     TEST_ASSERT_EQUAL_UINT16(5, result.startupDurationSec);
+    TEST_ASSERT_EQUAL_UINT32(5000, result.startupDurationMs);
+    TEST_ASSERT_EQUAL_UINT32(10000, result.stableFlowMlPerMin);
     TEST_ASSERT_EQUAL_UINT32(40, result.startupPulseCount);
 }
 

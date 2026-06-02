@@ -44,8 +44,13 @@ The form body becomes an unframed section inside the existing panel:
   - Scheme name spans the full width.
   - Existing scheme pages show compact read-only metadata when useful: scheme id, revision, and current enabled status if available.
 
-- `核心计量参数`
+- `容量估算计量参数`
   - Startup pulse count, startup volume, and stable P/L are presented as three equal fields on desktop.
+  - These fields are used for actual volume, filter usage, and statistics.
+
+- `时间估算计量参数`
+  - Startup duration and estimated stable flow are presented as numeric fields.
+  - These fields are used only for estimated display, not actual volume, filter usage, or statistics.
   - Each field has a short hint for unit and valid range.
   - Values remain numeric inputs with the existing min/max validation.
 
@@ -95,7 +100,8 @@ Desktop layout:
 
 - Use a 12-column responsive grid for edit sections.
 - Name and note fields span all columns.
-- Core metering fields each span four columns.
+- Capacity estimate metering fields each span four columns.
+- Time estimate metering fields each span four columns.
 - Applicability fields each span four columns.
 
 Mobile layout:
@@ -110,7 +116,7 @@ The page must not use nested cards. The existing panel remains the page containe
 Native route tests should assert that the page source contains:
 
 - Dedicated scheme edit section classes.
-- The `核心计量参数` section heading.
+- The `容量估算计量参数` and `时间估算计量参数` section headings.
 - The active-scheme warning string.
 - Existing action names and submit labels.
 

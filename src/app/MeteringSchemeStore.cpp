@@ -11,7 +11,63 @@ namespace faucet {
 namespace {
 
 constexpr std::uint32_t kMeteringSchemeStoreMagic = 0x314D5346UL;  // FSM1
-constexpr std::uint16_t kMeteringSchemeStoreVersion = 1;
+constexpr std::uint16_t kMeteringSchemeStoreVersion = 2;
+constexpr std::uint16_t kLegacyMeteringSchemeStoreVersion = 1;
+
+struct LegacyMeteringParametersV1 {
+    std::uint32_t startupPulseCount;
+    std::uint32_t startupVolumeMl;
+    std::uint32_t stablePulsePerLiter;
+};
+
+struct LegacyMeteringSchemeRecordV1 {
+    std::uint32_t id = 0;
+    bool valid = false;
+    bool enabled = false;
+    char name[kMeteringSchemeNameLength]{};
+    char meterLabel[kMeteringSchemeMeterLabelLength]{};
+    char installationLabel[kMeteringSchemeInstallationLabelLength]{};
+    char conditionLabel[kMeteringSchemeConditionLabelLength]{};
+    char userNote[kMeteringSchemeUserNoteLength]{};
+    LegacyMeteringParametersV1 params{};
+    MeteringSchemeSource sourceType = MeteringSchemeSource::Default;
+    std::uint32_t revision = 0;
+    std::uint32_t createdAt = 0;
+    std::uint32_t updatedAt = 0;
+    std::uint32_t lastActivatedAt = 0;
+    std::uint32_t useCount = 0;
+    std::uint32_t lastUsedAt = 0;
+    bool usageStatsDirty = false;
+    std::uint16_t sampleCount = 0;
+    std::uint32_t sampleTraceIds[kMeteringSchemeTraceIdCapacity]{};
+    std::uint32_t minActualMl = 0;
+    std::uint32_t maxActualMl = 0;
+    std::uint32_t maxErrorMl = 0;
+    float maxErrorPercent = 0.0f;
+    std::uint32_t startupDurationMinSec = 0;
+    std::uint32_t startupDurationMaxSec = 0;
+    std::uint32_t startupDurationMedianSec = 0;
+    std::uint32_t startupDurationAvgSec = 0;
+    char creationSummary[kMeteringSchemeSummaryLength]{};
+    char lastModifiedSummary[kMeteringSchemeSummaryLength]{};
+};
+
+struct LegacyMeteringSchemeCandidateV1 {
+    bool ready = false;
+    LegacyMeteringParametersV1 params{};
+    std::uint32_t generatedAt = 0;
+    std::uint16_t sampleCount = 0;
+    std::uint32_t sampleTraceIds[kMeteringSchemeTraceIdCapacity]{};
+    std::uint32_t minActualMl = 0;
+    std::uint32_t maxActualMl = 0;
+    std::uint32_t maxErrorMl = 0;
+    float maxErrorPercent = 0.0f;
+    std::uint32_t startupDurationMinSec = 0;
+    std::uint32_t startupDurationMaxSec = 0;
+    std::uint32_t startupDurationMedianSec = 0;
+    std::uint32_t startupDurationAvgSec = 0;
+    char creationSummary[kMeteringSchemeSummaryLength]{};
+};
 
 std::uint32_t headerChecksum(MeteringSchemeStoreHeader header) {
     header.checksum = 0;
@@ -66,6 +122,72 @@ bool legacyDefaultText(const MeteringSchemeRecord& scheme) {
     return (scheme.name[0] == '\0' || std::strcmp(scheme.name, "默认计量方案") == 0 ||
             std::strcmp(scheme.name, kDefaultMeteringSchemeName) == 0) &&
            (scheme.meterLabel[0] == '\0' || std::strcmp(scheme.meterLabel, kDefaultMeteringSchemeMeterLabel) == 0);
+}
+
+MeteringParameters expandLegacyParams(LegacyMeteringParametersV1 params) {
+    return MeteringParameters{
+        params.startupPulseCount,
+        params.startupVolumeMl,
+        params.stablePulsePerLiter,
+        kDefaultStartupDurationMs,
+        kDefaultStableFlowMlPerMin,
+    };
+}
+
+MeteringSchemeRecord expandLegacyRecord(const LegacyMeteringSchemeRecordV1& legacy) {
+    MeteringSchemeRecord record{};
+    record.id = legacy.id;
+    record.valid = legacy.valid;
+    record.enabled = legacy.enabled;
+    std::memcpy(record.name, legacy.name, sizeof(record.name));
+    std::memcpy(record.meterLabel, legacy.meterLabel, sizeof(record.meterLabel));
+    std::memcpy(record.installationLabel, legacy.installationLabel, sizeof(record.installationLabel));
+    std::memcpy(record.conditionLabel, legacy.conditionLabel, sizeof(record.conditionLabel));
+    std::memcpy(record.userNote, legacy.userNote, sizeof(record.userNote));
+    record.params = expandLegacyParams(legacy.params);
+    record.sourceType = legacy.sourceType;
+    record.revision = legacy.revision;
+    record.createdAt = legacy.createdAt;
+    record.updatedAt = legacy.updatedAt;
+    record.lastActivatedAt = legacy.lastActivatedAt;
+    record.useCount = legacy.useCount;
+    record.lastUsedAt = legacy.lastUsedAt;
+    record.usageStatsDirty = legacy.usageStatsDirty;
+    record.sampleCount = legacy.sampleCount;
+    std::memcpy(record.sampleTraceIds, legacy.sampleTraceIds, sizeof(record.sampleTraceIds));
+    record.minActualMl = legacy.minActualMl;
+    record.maxActualMl = legacy.maxActualMl;
+    record.maxErrorMl = legacy.maxErrorMl;
+    record.maxErrorPercent = legacy.maxErrorPercent;
+    record.startupDurationMinSec = legacy.startupDurationMinSec;
+    record.startupDurationMaxSec = legacy.startupDurationMaxSec;
+    record.startupDurationMedianSec = legacy.startupDurationMedianSec;
+    record.startupDurationAvgSec = legacy.startupDurationAvgSec;
+    std::memcpy(record.creationSummary, legacy.creationSummary, sizeof(record.creationSummary));
+    std::memcpy(record.lastModifiedSummary, legacy.lastModifiedSummary, sizeof(record.lastModifiedSummary));
+    return record;
+}
+
+MeteringSchemeCandidate expandLegacyCandidate(const LegacyMeteringSchemeCandidateV1& legacy) {
+    MeteringSchemeCandidate candidate{};
+    candidate.ready = legacy.ready;
+    candidate.params = expandLegacyParams(legacy.params);
+    candidate.generatedAt = legacy.generatedAt;
+    candidate.sampleCount = legacy.sampleCount;
+    std::memcpy(candidate.sampleTraceIds, legacy.sampleTraceIds, sizeof(candidate.sampleTraceIds));
+    candidate.minActualMl = legacy.minActualMl;
+    candidate.maxActualMl = legacy.maxActualMl;
+    candidate.maxErrorMl = legacy.maxErrorMl;
+    candidate.maxErrorPercent = legacy.maxErrorPercent;
+    candidate.startupDurationMinSec = legacy.startupDurationMinSec;
+    candidate.startupDurationMaxSec = legacy.startupDurationMaxSec;
+    candidate.startupDurationMedianSec = legacy.startupDurationMedianSec;
+    candidate.startupDurationAvgSec = legacy.startupDurationAvgSec;
+    std::memcpy(candidate.creationSummary, legacy.creationSummary, sizeof(candidate.creationSummary));
+    if (candidate.ready && !validMeteringSchemeParameters(candidate.params)) {
+        candidate = MeteringSchemeCandidate{};
+    }
+    return candidate;
 }
 
 }  // namespace
@@ -529,6 +651,57 @@ bool MeteringSchemeStore::initializeNewFile() {
     return ready_;
 }
 
+bool MeteringSchemeStore::migrateV1File(const MeteringSchemeStoreHeader& loaded) {
+    if (!validPath()) {
+        return false;
+    }
+    std::unique_ptr<LegacyMeteringSchemeRecordV1[]> legacyRecords(
+        new (std::nothrow) LegacyMeteringSchemeRecordV1[loaded.slotCount]{});
+    std::unique_ptr<MeteringSchemeRecord[]> records(
+        new (std::nothrow) MeteringSchemeRecord[loaded.slotCount]{});
+    if (!legacyRecords || !records) {
+        return false;
+    }
+    LegacyMeteringSchemeCandidateV1 legacyCandidate{};
+    if (!backend_.readAt(path_,
+                         sizeof(MeteringSchemeStoreHeader),
+                         reinterpret_cast<std::uint8_t*>(&legacyCandidate),
+                         sizeof(legacyCandidate))) {
+        return false;
+    }
+    const std::size_t legacyRecordBase = sizeof(MeteringSchemeStoreHeader) + sizeof(LegacyMeteringSchemeCandidateV1);
+    for (std::size_t i = 0; i < loaded.slotCount; ++i) {
+        if (!backend_.readAt(path_,
+                             legacyRecordBase + i * sizeof(LegacyMeteringSchemeRecordV1),
+                             reinterpret_cast<std::uint8_t*>(&legacyRecords[i]),
+                             sizeof(LegacyMeteringSchemeRecordV1))) {
+            return false;
+        }
+        records[i] = expandLegacyRecord(legacyRecords[i]);
+    }
+    MeteringSchemeCandidate candidate = expandLegacyCandidate(legacyCandidate);
+    header_ = makeHeader(loaded.activeSchemeId, loaded.nextSchemeId, loaded.slotCount);
+    if (!backend_.createSized(path_, expectedFileSize())) {
+        return false;
+    }
+    if (!backend_.writeAt(path_, 0, reinterpret_cast<const std::uint8_t*>(&header_), sizeof(header_)) ||
+        !backend_.writeAt(path_,
+                          candidateOffset(),
+                          reinterpret_cast<const std::uint8_t*>(&candidate),
+                          sizeof(candidate))) {
+        return false;
+    }
+    for (std::size_t i = 0; i < loaded.slotCount; ++i) {
+        if (!backend_.writeAt(path_,
+                              recordOffset(i),
+                              reinterpret_cast<const std::uint8_t*>(&records[i]),
+                              sizeof(MeteringSchemeRecord))) {
+            return false;
+        }
+    }
+    return true;
+}
+
 bool MeteringSchemeStore::upgradeLegacyDefaultSchemeIfNeeded() {
     if (!ready()) {
         return false;
@@ -577,13 +750,26 @@ bool MeteringSchemeStore::loadHeader() {
         return false;
     }
     if (loaded.magic != kMeteringSchemeStoreMagic ||
-        loaded.version != kMeteringSchemeStoreVersion ||
         loaded.headerSize != sizeof(MeteringSchemeStoreHeader) ||
-        loaded.recordSize != sizeof(MeteringSchemeRecord) ||
-        loaded.candidateSize != sizeof(MeteringSchemeCandidate) ||
         loaded.nextSchemeId == 0 ||
         loaded.activeSchemeId == 0 ||
         loaded.checksum != headerChecksum(loaded)) {
+        return false;
+    }
+    if (loaded.version == kLegacyMeteringSchemeStoreVersion &&
+        loaded.recordSize == sizeof(LegacyMeteringSchemeRecordV1) &&
+        loaded.candidateSize == sizeof(LegacyMeteringSchemeCandidateV1)) {
+        const std::size_t minimumV1Size =
+            sizeof(MeteringSchemeStoreHeader) + sizeof(LegacyMeteringSchemeCandidateV1) +
+            static_cast<std::size_t>(loaded.slotCount) * sizeof(LegacyMeteringSchemeRecordV1);
+        if (fileSize < static_cast<std::int64_t>(minimumV1Size)) {
+            return false;
+        }
+        return migrateV1File(loaded);
+    }
+    if (loaded.version != kMeteringSchemeStoreVersion ||
+        loaded.recordSize != sizeof(MeteringSchemeRecord) ||
+        loaded.candidateSize != sizeof(MeteringSchemeCandidate)) {
         return false;
     }
     const std::size_t minimumSize =

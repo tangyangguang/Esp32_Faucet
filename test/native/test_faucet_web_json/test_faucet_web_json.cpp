@@ -43,7 +43,7 @@ void test_status_json_contains_no_remote_control_capability() {
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"selectedPreset\":1"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"activePreset\":0"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"pulsePerLiter\":0"));
-    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"metering\":{\"startupPulseCount\":8,\"startupVolumeMl\":36,\"stablePulsePerLiter\":225}"));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"metering\":{\"startupPulseCount\":8,\"startupVolumeMl\":36,\"stablePulsePerLiter\":225,\"startupDurationMs\":5000,\"stableFlowMlPerMin\":480}"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"targetEstimate\":{\"available\":true"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"targetMl\":1500"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"pulseCount\":338"));
@@ -145,12 +145,12 @@ void test_status_json_reports_missing_time_estimate_reason() {
     AppSnapshot snapshot = makeSnapshot();
     snapshot.water.mode = WaterMode::Time;
     snapshot.water.targetValue = 249;
-    snapshot.targetEstimateReason = "缺少近期流速";
+    snapshot.targetEstimateReason = "计量参数未就绪";
 
     TEST_ASSERT_TRUE(writeStatusJson(snapshot, true, json, sizeof(json)));
 
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"targetEstimate\":{\"available\":false"));
-    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"reason\":\"缺少近期流速\""));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"reason\":\"计量参数未就绪\""));
 }
 
 void test_status_json_reports_time_next_preset_estimate() {

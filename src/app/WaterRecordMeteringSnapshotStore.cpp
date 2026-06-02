@@ -2,12 +2,38 @@
 
 #include <algorithm>
 #include <cstring>
+#include <new>
 
 namespace faucet {
 namespace {
 
 constexpr std::uint32_t kSnapshotMagic = 0x46574D53UL;  // FWMS
-constexpr std::uint16_t kSnapshotVersion = 1;
+constexpr std::uint16_t kSnapshotVersion = 2;
+constexpr std::uint16_t kLegacySnapshotVersion = 1;
+
+struct LegacyMeteringParametersV1 {
+    std::uint32_t startupPulseCount;
+    std::uint32_t startupVolumeMl;
+    std::uint32_t stablePulsePerLiter;
+};
+
+struct WaterRecordMeteringSnapshotV1 {
+    std::uint32_t startTime;
+    std::uint32_t volumeMl;
+    std::uint32_t targetValue;
+    std::uint32_t pulseCount;
+    std::uint32_t rejectedPulseCount;
+    std::uint16_t durationSec;
+    WaterMode mode;
+    WaterResult result;
+    std::uint8_t selectedPreset;
+    std::uint8_t reserved0;
+    float pulsePerMlAtRun;
+    std::uint32_t meteringSchemeId;
+    std::uint32_t meteringSchemeRevision;
+    LegacyMeteringParametersV1 params;
+    std::uint8_t reserved[4];
+};
 
 struct SnapshotHeader {
     std::uint32_t magic;
@@ -48,6 +74,33 @@ WaterRecord recordFromSnapshot(const WaterRecordMeteringSnapshot& snapshot) {
         snapshot.pulsePerMlAtRun,
         {0, 0, 0, 0},
     };
+}
+
+MeteringParameters expandLegacyParams(LegacyMeteringParametersV1 params) {
+    return MeteringParameters{
+        params.startupPulseCount,
+        params.startupVolumeMl,
+        params.stablePulsePerLiter,
+    };
+}
+
+WaterRecordMeteringSnapshot expandLegacySnapshot(const WaterRecordMeteringSnapshotV1& legacy) {
+    WaterRecordMeteringSnapshot snapshot{};
+    snapshot.startTime = legacy.startTime;
+    snapshot.volumeMl = legacy.volumeMl;
+    snapshot.targetValue = legacy.targetValue;
+    snapshot.pulseCount = legacy.pulseCount;
+    snapshot.rejectedPulseCount = legacy.rejectedPulseCount;
+    snapshot.durationSec = legacy.durationSec;
+    snapshot.mode = legacy.mode;
+    snapshot.result = legacy.result;
+    snapshot.selectedPreset = legacy.selectedPreset;
+    snapshot.pulsePerMlAtRun = legacy.pulsePerMlAtRun;
+    snapshot.meteringSchemeId = legacy.meteringSchemeId;
+    snapshot.meteringSchemeRevision = legacy.meteringSchemeRevision;
+    snapshot.params = expandLegacyParams(legacy.params);
+    std::memcpy(snapshot.reserved, legacy.reserved, sizeof(snapshot.reserved));
+    return snapshot;
 }
 
 }  // namespace
@@ -329,6 +382,60 @@ bool WaterRecordMeteringSnapshotFileStore::initializeNewFile() {
     return ready_;
 }
 
+bool WaterRecordMeteringSnapshotFileStore::migrateV1File() {
+    const std::int64_t fileSize = backend_.fileSize(path_);
+    SnapshotHeader header{};
+    if (fileSize < static_cast<std::int64_t>(sizeof(header)) ||
+        !backend_.readAt(path_, 0, reinterpret_cast<std::uint8_t*>(&header), sizeof(header)) ||
+        header.magic != kSnapshotMagic ||
+        header.version != kLegacySnapshotVersion ||
+        header.recordSize != sizeof(WaterRecordMeteringSnapshotV1) ||
+        header.capacity == 0 ||
+        header.capacity != capacity_ ||
+        header.count > header.capacity ||
+        header.oldestIndex >= header.capacity) {
+        return false;
+    }
+    const std::size_t requiredSize =
+        sizeof(SnapshotHeader) + static_cast<std::size_t>(header.count) * sizeof(WaterRecordMeteringSnapshotV1);
+    if (fileSize < static_cast<std::int64_t>(requiredSize)) {
+        return false;
+    }
+    WaterRecordMeteringSnapshot* migrated =
+        new (std::nothrow) WaterRecordMeteringSnapshot[header.count]{};
+    if (header.count > 0 && !migrated) {
+        return false;
+    }
+    for (std::size_t i = 0; i < header.count; ++i) {
+        WaterRecordMeteringSnapshotV1 legacy{};
+        if (!backend_.readAt(path_,
+                             sizeof(SnapshotHeader) + i * sizeof(WaterRecordMeteringSnapshotV1),
+                             reinterpret_cast<std::uint8_t*>(&legacy),
+                             sizeof(legacy))) {
+            delete[] migrated;
+            return false;
+        }
+        migrated[i] = expandLegacySnapshot(legacy);
+    }
+    capacity_ = header.capacity;
+    count_ = header.count;
+    oldestIndex_ = header.oldestIndex;
+    ready_ = backend_.createSized(path_, sizeof(SnapshotHeader)) && saveHeader();
+    if (!ready_) {
+        delete[] migrated;
+        return false;
+    }
+    for (std::size_t i = 0; i < count_; ++i) {
+        if (!appendEntry(i, migrated[i])) {
+            delete[] migrated;
+            ready_ = false;
+            return false;
+        }
+    }
+    delete[] migrated;
+    return true;
+}
+
 bool WaterRecordMeteringSnapshotFileStore::loadHeader() {
     const std::int64_t fileSize = backend_.fileSize(path_);
     if (fileSize < static_cast<std::int64_t>(sizeof(SnapshotHeader))) {
@@ -338,10 +445,15 @@ bool WaterRecordMeteringSnapshotFileStore::loadHeader() {
     if (!backend_.readAt(path_, 0, reinterpret_cast<std::uint8_t*>(&header), sizeof(header))) {
         return false;
     }
-    if (header.magic != kSnapshotMagic || header.version != kSnapshotVersion ||
-        header.recordSize != sizeof(WaterRecordMeteringSnapshot) || header.capacity == 0 ||
+    if (header.magic != kSnapshotMagic || header.capacity == 0 ||
         header.capacity != capacity_ || header.count > header.capacity ||
         header.oldestIndex >= header.capacity) {
+        return false;
+    }
+    if (header.version == kLegacySnapshotVersion && header.recordSize == sizeof(WaterRecordMeteringSnapshotV1)) {
+        return migrateV1File();
+    }
+    if (header.version != kSnapshotVersion || header.recordSize != sizeof(WaterRecordMeteringSnapshot)) {
         return false;
     }
     const std::size_t requiredSize =

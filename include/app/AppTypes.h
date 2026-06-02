@@ -55,9 +55,29 @@ struct FilterRecord {
 };
 
 struct MeteringParameters {
+    constexpr MeteringParameters()
+        : startupPulseCount(0),
+          startupVolumeMl(0),
+          stablePulsePerLiter(0),
+          startupDurationMs(5000),
+          stableFlowMlPerMin(480) {}
+
+    constexpr MeteringParameters(std::uint32_t startupPulseCountValue,
+                                 std::uint32_t startupVolumeMlValue,
+                                 std::uint32_t stablePulsePerLiterValue,
+                                 std::uint32_t startupDurationMsValue = 5000,
+                                 std::uint32_t stableFlowMlPerMinValue = 480)
+        : startupPulseCount(startupPulseCountValue),
+          startupVolumeMl(startupVolumeMlValue),
+          stablePulsePerLiter(stablePulsePerLiterValue),
+          startupDurationMs(startupDurationMsValue),
+          stableFlowMlPerMin(stableFlowMlPerMinValue) {}
+
     std::uint32_t startupPulseCount;
     std::uint32_t startupVolumeMl;
     std::uint32_t stablePulsePerLiter;
+    std::uint32_t startupDurationMs;
+    std::uint32_t stableFlowMlPerMin;
 };
 
 struct WaterRecord {

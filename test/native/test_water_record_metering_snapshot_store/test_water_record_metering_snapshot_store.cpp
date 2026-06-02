@@ -11,6 +11,42 @@ using namespace faucet;
 
 namespace {
 
+constexpr std::uint32_t kTestSnapshotMagic = 0x46574D53UL;
+
+struct SnapshotHeaderV1 {
+    std::uint32_t magic;
+    std::uint16_t version;
+    std::uint16_t recordSize;
+    std::uint32_t capacity;
+    std::uint32_t count;
+    std::uint32_t oldestIndex;
+    std::uint32_t reserved;
+};
+
+struct LegacyMeteringParametersV1 {
+    std::uint32_t startupPulseCount;
+    std::uint32_t startupVolumeMl;
+    std::uint32_t stablePulsePerLiter;
+};
+
+struct WaterRecordMeteringSnapshotV1 {
+    std::uint32_t startTime;
+    std::uint32_t volumeMl;
+    std::uint32_t targetValue;
+    std::uint32_t pulseCount;
+    std::uint32_t rejectedPulseCount;
+    std::uint16_t durationSec;
+    WaterMode mode;
+    WaterResult result;
+    std::uint8_t selectedPreset;
+    std::uint8_t reserved0;
+    float pulsePerMlAtRun;
+    std::uint32_t meteringSchemeId;
+    std::uint32_t meteringSchemeRevision;
+    LegacyMeteringParametersV1 params;
+    std::uint8_t reserved[4];
+};
+
 class MemoryFileBackend : public WaterRecordFileBackend {
 public:
     std::size_t createSizedCalls = 0;
@@ -105,6 +141,24 @@ WaterRecordMeteringSnapshot makeSnapshot(const WaterRecord& record, std::uint32_
     return snapshot;
 }
 
+WaterRecordMeteringSnapshotV1 makeLegacySnapshot(const WaterRecord& record, std::uint32_t schemeId) {
+    WaterRecordMeteringSnapshotV1 snapshot{};
+    snapshot.startTime = record.startTime;
+    snapshot.volumeMl = record.volumeMl;
+    snapshot.targetValue = record.targetValue;
+    snapshot.pulseCount = record.pulseCount;
+    snapshot.rejectedPulseCount = record.rejectedPulseCount;
+    snapshot.durationSec = record.durationSec;
+    snapshot.mode = record.mode;
+    snapshot.result = record.result;
+    snapshot.selectedPreset = record.selectedPreset;
+    snapshot.pulsePerMlAtRun = record.pulsePerMlAtRun;
+    snapshot.meteringSchemeId = schemeId;
+    snapshot.meteringSchemeRevision = 2;
+    snapshot.params = LegacyMeteringParametersV1{40, 553, 222};
+    return snapshot;
+}
+
 }  // namespace
 
 void test_ram_snapshot_store_upserts_by_water_record_identity() {
@@ -120,6 +174,8 @@ void test_ram_snapshot_store_upserts_by_water_record_identity() {
     TEST_ASSERT_EQUAL_size_t(1, store.count());
     TEST_ASSERT_EQUAL_UINT32(3, found.meteringSchemeId);
     TEST_ASSERT_EQUAL_UINT32(40, found.params.startupPulseCount);
+    TEST_ASSERT_EQUAL_UINT32(5000, found.params.startupDurationMs);
+    TEST_ASSERT_EQUAL_UINT32(480, found.params.stableFlowMlPerMin);
 }
 
 void test_file_snapshot_store_reloads_after_restart() {
@@ -137,6 +193,40 @@ void test_file_snapshot_store_reloads_after_restart() {
     TEST_ASSERT_TRUE(loaded.find(record, found));
     TEST_ASSERT_EQUAL_UINT32(2, found.meteringSchemeId);
     TEST_ASSERT_EQUAL_UINT32(222, found.params.stablePulsePerLiter);
+    TEST_ASSERT_EQUAL_UINT32(5000, found.params.startupDurationMs);
+    TEST_ASSERT_EQUAL_UINT32(480, found.params.stableFlowMlPerMin);
+}
+
+void test_file_snapshot_store_migrates_v1_records_to_time_estimate_params() {
+    MemoryFileBackend backend;
+    const WaterRecord record = makeRecord(100, 1500, 333);
+    const SnapshotHeaderV1 header{
+        kTestSnapshotMagic,
+        1,
+        static_cast<std::uint16_t>(sizeof(WaterRecordMeteringSnapshotV1)),
+        4,
+        1,
+        0,
+        0,
+    };
+    const WaterRecordMeteringSnapshotV1 legacy = makeLegacySnapshot(record, 2);
+    TEST_ASSERT_TRUE(backend.writeAt("/metering.bin", 0, reinterpret_cast<const std::uint8_t*>(&header), sizeof(header)));
+    TEST_ASSERT_TRUE(backend.writeAt("/metering.bin", sizeof(header), reinterpret_cast<const std::uint8_t*>(&legacy), sizeof(legacy)));
+    const std::size_t createCalls = backend.createSizedCalls;
+
+    WaterRecordMeteringSnapshotFileStore store(backend, "/metering.bin", 4);
+    TEST_ASSERT_TRUE(store.begin());
+    TEST_ASSERT_GREATER_THAN_size_t(createCalls, backend.createSizedCalls);
+    TEST_ASSERT_EQUAL_size_t(1, store.count());
+
+    WaterRecordMeteringSnapshot found{};
+    TEST_ASSERT_TRUE(store.find(record, found));
+    TEST_ASSERT_EQUAL_UINT32(2, found.meteringSchemeId);
+    TEST_ASSERT_EQUAL_UINT32(40, found.params.startupPulseCount);
+    TEST_ASSERT_EQUAL_UINT32(553, found.params.startupVolumeMl);
+    TEST_ASSERT_EQUAL_UINT32(222, found.params.stablePulsePerLiter);
+    TEST_ASSERT_EQUAL_UINT32(5000, found.params.startupDurationMs);
+    TEST_ASSERT_EQUAL_UINT32(480, found.params.stableFlowMlPerMin);
 }
 
 void test_find_any_matches_record_pages() {
@@ -222,6 +312,7 @@ int main(int argc, char** argv) {
     UNITY_BEGIN();
     RUN_TEST(test_ram_snapshot_store_upserts_by_water_record_identity);
     RUN_TEST(test_file_snapshot_store_reloads_after_restart);
+    RUN_TEST(test_file_snapshot_store_migrates_v1_records_to_time_estimate_params);
     RUN_TEST(test_find_any_matches_record_pages);
     RUN_TEST(test_file_store_overwrites_oldest_when_capacity_is_full);
     RUN_TEST(test_file_snapshot_store_corrupt_header_preserves_existing_file);

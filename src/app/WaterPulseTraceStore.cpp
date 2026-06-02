@@ -1,5 +1,7 @@
 #include "app/WaterPulseTraceStore.h"
 
+#include "app/MeteringScheme.h"
+
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -1183,6 +1185,8 @@ struct FitResult {
     std::uint16_t sampleCount = 0;
     std::uint64_t totalStartupDurationSec = 0;
     std::uint64_t totalStartupPulseCount = 0;
+    double totalStablePulsePerSec = 0.0;
+    std::uint16_t stablePulseRateSampleCount = 0;
     std::uint32_t minActualMl = UINT32_MAX;
     std::uint32_t maxActualMl = 0;
     double mlPerStablePulse = 0.0;
@@ -1216,6 +1220,10 @@ FitResult fitSegmentedSamples(const SegmentedCalibrationSample* samples,
         sumXY += x * y;
         fit.totalStartupDurationSec += samples[i].startupDurationSec;
         fit.totalStartupPulseCount += samples[i].startupPulseCount;
+        if (samples[i].stablePulsePerSec > 0.0f) {
+            fit.totalStablePulsePerSec += samples[i].stablePulsePerSec;
+            ++fit.stablePulseRateSampleCount;
+        }
         fit.minActualMl = std::min(fit.minActualMl, samples[i].actualMl);
         fit.maxActualMl = std::max(fit.maxActualMl, samples[i].actualMl);
         ++fit.sampleCount;
@@ -1264,10 +1272,21 @@ void fillSegmentedResult(const FitResult& fit,
     result.excludedSampleCount = excludedCount;
     result.startupDurationSec =
         static_cast<std::uint32_t>((fit.totalStartupDurationSec + fit.sampleCount / 2U) / fit.sampleCount);
+    result.startupDurationMs =
+        result.startupDurationSec > UINT32_MAX / 1000UL ? UINT32_MAX : result.startupDurationSec * 1000UL;
     result.startupPulseCount =
         static_cast<std::uint32_t>((fit.totalStartupPulseCount + fit.sampleCount / 2U) / fit.sampleCount);
     result.startupVolumeMl = roundU32(static_cast<float>(fit.startupVolumeMl));
     result.stablePulsePerLiter = roundU32(static_cast<float>(1000.0 / fit.mlPerStablePulse));
+    if (fit.stablePulseRateSampleCount > 0 && result.stablePulsePerLiter > 0) {
+        const double avgStablePulsePerSec =
+            fit.totalStablePulsePerSec / static_cast<double>(fit.stablePulseRateSampleCount);
+        result.stableFlowMlPerMin =
+            roundU32(static_cast<float>(avgStablePulsePerSec * 60000.0 /
+                                        static_cast<double>(result.stablePulsePerLiter)));
+    } else {
+        result.stableFlowMlPerMin = kDefaultStableFlowMlPerMin;
+    }
     result.minActualMl = fit.minActualMl;
     result.maxActualMl = fit.maxActualMl;
     result.maxErrorMl = fit.maxErrorMl;

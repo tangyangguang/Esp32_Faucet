@@ -54,6 +54,7 @@ public:
 private:
     bool validPath() const;
     bool initializeNewFile();
+    bool migrateV1File(const MeteringSchemeStoreHeader& loaded);
     bool upgradeLegacyDefaultSchemeIfNeeded();
     bool loadHeader();
     bool saveHeader() const;

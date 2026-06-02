@@ -251,7 +251,8 @@ bool writeStatusJson(const AppSnapshot& snapshot,
             : fullRunPulsePerLiter(targetEstimatePulses, targetEstimateMl);
     writer.append("{\"state\":\"%s\",\"valveOpen\":%s,\"volumeMl\":%lu,\"elapsedSec\":%lu,\"targetValue\":%lu,"
                   "\"lastResult\":\"%s\",\"mode\":\"%s\",\"selectedPreset\":%u,\"activePreset\":%u,\"pulsePerLiter\":%lu,"
-                  "\"metering\":{\"startupPulseCount\":%lu,\"startupVolumeMl\":%lu,\"stablePulsePerLiter\":%lu},"
+                  "\"metering\":{\"startupPulseCount\":%lu,\"startupVolumeMl\":%lu,\"stablePulsePerLiter\":%lu,"
+                  "\"startupDurationMs\":%lu,\"stableFlowMlPerMin\":%lu},"
                   "\"targetEstimate\":{\"available\":%s,\"targetMl\":%lu,\"pulseCount\":%lu,"
                   "\"fullRunPulsePerLiter\":%lu,\"estimatedDurationSec\":%lu,\"stablePulsePerSec\":%.2f,\"reason\":",
                   waterStateName(snapshot.water.state),
@@ -267,6 +268,8 @@ bool writeStatusJson(const AppSnapshot& snapshot,
                   static_cast<unsigned long>(snapshot.meteringParams.startupPulseCount),
                   static_cast<unsigned long>(snapshot.meteringParams.startupVolumeMl),
                   static_cast<unsigned long>(snapshot.meteringParams.stablePulsePerLiter),
+                  static_cast<unsigned long>(snapshot.meteringParams.startupDurationMs),
+                  static_cast<unsigned long>(snapshot.meteringParams.stableFlowMlPerMin),
                   targetEstimateValid ? "true" : "false",
                   static_cast<unsigned long>(targetEstimateMl),
                   static_cast<unsigned long>(targetEstimatePulses),

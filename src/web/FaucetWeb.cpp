@@ -630,12 +630,15 @@ std::uint32_t recentAverageFlowMlPerMin() {
         (static_cast<std::uint64_t>(totalMl) * 60ULL + totalDurationSec / 2ULL) / totalDurationSec);
 }
 
-std::uint32_t estimateDurationForVolumeTarget(std::uint32_t targetMl, std::uint32_t flowMlPerMin) {
-    if (targetMl == 0 || flowMlPerMin == 0) {
+std::uint32_t durationMsToDisplaySec(std::uint32_t durationMs) {
+    if (durationMs == 0) {
         return 0;
     }
-    return static_cast<std::uint32_t>(
-        (static_cast<std::uint64_t>(targetMl) * 60ULL + flowMlPerMin / 2ULL) / flowMlPerMin);
+    return static_cast<std::uint32_t>((static_cast<std::uint64_t>(durationMs) + 500ULL) / 1000ULL);
+}
+
+std::uint32_t estimateDurationForVolumeTarget(std::uint32_t targetMl, const MeteringParameters& params) {
+    return durationMsToDisplaySec(estimateDurationMsForVolumeMl(params, targetMl));
 }
 
 void applyTimeEstimateForTarget(AppSnapshot& snapshot,
@@ -652,17 +655,20 @@ void applyTimeEstimateForTarget(AppSnapshot& snapshot,
         reason = "计量参数未就绪";
         return;
     }
-    stablePulsePerSec = recentStablePulsePerSec();
-    if (targetSec == 0 || stablePulsePerSec <= 0.0f) {
-        stablePulsePerSec = 0.0f;
-        reason = "缺少近期流速";
+    if (targetSec == 0) {
+        reason = "目标时间为空";
         return;
     }
-    const double pulses = static_cast<double>(targetSec) * static_cast<double>(stablePulsePerSec);
-    pulseCount = static_cast<std::uint32_t>(std::lround(pulses));
-    volumeMl = estimateVolumeMlFromPulses(pulseCount, snapshot.meteringParams);
+    const std::uint64_t durationMs = static_cast<std::uint64_t>(targetSec) * 1000ULL;
+    volumeMl = estimateVolumeMlForDurationMs(
+        snapshot.meteringParams,
+        durationMs > UINT32_MAX ? UINT32_MAX : static_cast<std::uint32_t>(durationMs));
+    pulseCount = estimatePulsesForVolumeMl(snapshot.meteringParams, volumeMl);
+    stablePulsePerSec =
+        static_cast<float>(static_cast<double>(snapshot.meteringParams.stableFlowMlPerMin) *
+                           static_cast<double>(snapshot.meteringParams.stablePulsePerLiter) / 60000.0);
     if (pulseCount == 0 || volumeMl == 0) {
-        reason = "缺少近期流速";
+        reason = "计量参数未就绪";
         pulseCount = 0;
         volumeMl = 0;
         stablePulsePerSec = 0.0f;
@@ -683,7 +689,8 @@ void applyTargetDurationEstimate(AppSnapshot& snapshot) {
     const std::uint32_t flowMlPerMin = recentAverageFlowMlPerMin();
     snapshot.recentAverageFlowMlPerMin = flowMlPerMin;
     if (snapshot.water.mode == WaterMode::Volume) {
-        snapshot.targetEstimatedDurationSec = estimateDurationForVolumeTarget(snapshot.water.targetValue, flowMlPerMin);
+        snapshot.targetEstimatedDurationSec =
+            estimateDurationForVolumeTarget(snapshot.water.targetValue, snapshot.meteringParams);
         if (!validMeteringSchemeParameters(snapshot.meteringParams)) {
             snapshot.targetEstimateReason = "计量参数未就绪";
         }
@@ -698,7 +705,8 @@ void applyTargetDurationEstimate(AppSnapshot& snapshot) {
     if (g_context.config && snapshot.water.selectedPreset < kPresetCount) {
         const PresetConfig& preset = g_context.config->presets[snapshot.water.selectedPreset];
         if (preset.enabled && preset.type == PresetType::Volume) {
-            snapshot.selectedPresetEstimatedDurationSec = estimateDurationForVolumeTarget(preset.value, flowMlPerMin);
+            snapshot.selectedPresetEstimatedDurationSec =
+                estimateDurationForVolumeTarget(preset.value, snapshot.meteringParams);
             if (!validMeteringSchemeParameters(snapshot.meteringParams)) {
                 snapshot.selectedPresetEstimateReason = "计量参数未就绪";
             }
@@ -1031,6 +1039,7 @@ bool appendSegmentedSampleFromTrace(const WaterPulseTrace& trace,
         analysis.startupPulseCount,
         analysis.stablePulseCount,
         analysis.stableStartSec,
+        analysis.stablePulsePerSec,
     };
     if (trace.record.durationSec > 0) {
         diagnostics.validActualMlTotal += actualMl;
@@ -1195,7 +1204,13 @@ bool storeSegmentedCandidate(const SegmentedCalibrationResult& result,
     }
     MeteringSchemeCandidate candidate{};
     candidate.ready = true;
-    candidate.params = MeteringParameters{result.startupPulseCount, result.startupVolumeMl, result.stablePulsePerLiter};
+    candidate.params = MeteringParameters{
+        result.startupPulseCount,
+        result.startupVolumeMl,
+        result.stablePulsePerLiter,
+        result.startupDurationMs,
+        result.stableFlowMlPerMin,
+    };
     candidate.generatedAt = g_context.nowSeconds ? g_context.nowSeconds() : 0;
     candidate.sampleCount = result.sampleCount;
     candidate.minActualMl = result.minActualMl;
@@ -1514,10 +1529,12 @@ void sendCalibrationParameterPanels() {
         sendFmt("</div><small>rev %lu · %s</small></td>",
                 static_cast<unsigned long>(scheme.revision),
                 meteringSchemeSourceName(scheme.sourceType));
-        sendFmt("<td class='calibration-slot-values'><span><b>启动脉冲</b>%luP</span><span><b>启动水量</b>%s</span><span><b>稳态</b>%luP/L</span></td>",
+        sendFmt("<td class='calibration-slot-values'><span><b>启动脉冲</b>%luP</span><span><b>启动水量</b>%s</span><span><b>稳态</b>%luP/L</span><span><b>启动时长</b>%lums</span><span><b>预计流速</b>%luml/min</span></td>",
                 static_cast<unsigned long>(scheme.params.startupPulseCount),
                 startupVolume,
-                static_cast<unsigned long>(scheme.params.stablePulsePerLiter));
+                static_cast<unsigned long>(scheme.params.stablePulsePerLiter),
+                static_cast<unsigned long>(scheme.params.startupDurationMs),
+                static_cast<unsigned long>(scheme.params.stableFlowMlPerMin));
         Esp32BaseWeb::sendChunk("<td class='calibration-slot-note'>");
         if (scheme.meterLabel[0]) {
             Esp32BaseWeb::sendChunk("流量计：");
@@ -1593,7 +1610,7 @@ void sendMeteringSchemeEditPage(bool creating, const MeteringSchemeRecord* schem
                 static_cast<unsigned long>(scheme->revision),
                 scheme->enabled ? "可用" : "已禁用");
     }
-    Esp32BaseWeb::sendChunk("</div></div><div class='scheme-edit-section'><h3>核心计量参数</h3><div class='scheme-edit-grid'>");
+    Esp32BaseWeb::sendChunk("</div></div><div class='scheme-edit-section'><h3>容量估算计量参数</h3><div class='scheme-edit-grid'>");
     sendFmt("<label class='compact-field scheme-edit-field scheme-span-4'><span>启动脉冲数</span><input name='startupPulseCount' type='number' min='0' max='%lu' step='1' value='%lu'><small class='hint'>单位 P，范围 0-%lu</small></label>",
             static_cast<unsigned long>(kMaxSegmentedStartupPulseCount),
             static_cast<unsigned long>(params.startupPulseCount),
@@ -1608,6 +1625,17 @@ void sendMeteringSchemeEditPage(bool creating, const MeteringSchemeRecord* schem
             static_cast<unsigned long>(params.stablePulsePerLiter),
             static_cast<unsigned long>(kMinSegmentedPulsePerLiter),
             static_cast<unsigned long>(kMaxSegmentedPulsePerLiter));
+    Esp32BaseWeb::sendChunk("</div></div><div class='scheme-edit-section'><h3>时间估算计量参数</h3><p class='muted'>仅用于预计时间和预计流速展示，不参与实际容量、滤芯累计或统计累计。</p><div class='scheme-edit-grid'>");
+    sendFmt("<label class='compact-field scheme-edit-field scheme-span-4'><span>启动时长</span><input name='startupDurationMs' type='number' min='0' max='%lu' step='1' value='%lu'><small class='hint'>单位 ms，范围 0-%lu</small></label>",
+            static_cast<unsigned long>(kMaxSegmentedStartupDurationMs),
+            static_cast<unsigned long>(params.startupDurationMs),
+            static_cast<unsigned long>(kMaxSegmentedStartupDurationMs));
+    sendFmt("<label class='compact-field scheme-edit-field scheme-span-4'><span>预计稳态流速</span><input name='stableFlowMlPerMin' type='number' min='%lu' max='%lu' step='1' value='%lu'><small class='hint'>单位 ml/min，范围 %lu-%lu</small></label>",
+            static_cast<unsigned long>(kMinStableFlowMlPerMin),
+            static_cast<unsigned long>(kMaxStableFlowMlPerMin),
+            static_cast<unsigned long>(params.stableFlowMlPerMin),
+            static_cast<unsigned long>(kMinStableFlowMlPerMin),
+            static_cast<unsigned long>(kMaxStableFlowMlPerMin));
     Esp32BaseWeb::sendChunk("</div></div>");
     if (!creating && scheme) {
         Esp32BaseWeb::sendChunk("<div class='scheme-edit-section'><h3>适用条件</h3><div class='scheme-edit-grid'>");
@@ -1899,21 +1927,16 @@ void sendCalibrationSampleRow(const WaterPulseTrace& trace, bool savedSource, st
     MeteringParameters trialParams{};
     const bool trialParamsReady = meteringParamsForRecordTrend(trace.record, trialParams);
     const std::uint32_t trialVolumeMl = state.actualMl > 0 ? state.actualMl : trace.record.volumeMl;
-    const std::uint32_t trialFlowMlPerMin =
-        trace.record.durationSec > 0
-            ? static_cast<std::uint32_t>((static_cast<std::uint64_t>(trialVolumeMl) * 60ULL +
-                                          trace.record.durationSec / 2ULL) /
-                                         trace.record.durationSec)
-            : 0;
     const std::uint32_t trialDefaultTargetMl =
         trace.record.mode == WaterMode::Volume && trace.record.targetValue > 0 ? trace.record.targetValue : trialVolumeMl;
     if (trialParamsReady) {
-        sendFmt("<button class='btn-link' type='button' data-sample-trial='1' data-sample-label='%s' data-startup-pulses='%lu' data-startup-volume='%lu' data-stable-ppl='%lu' data-flow-ml-min='%lu' data-target-ml='%lu' onclick='faucetOpenSampleTrial(this)'>试算目标水量</button>",
+        sendFmt("<button class='btn-link' type='button' data-sample-trial='1' data-sample-label='%s' data-startup-pulses='%lu' data-startup-volume='%lu' data-stable-ppl='%lu' data-startup-duration-ms='%lu' data-stable-flow-ml-min='%lu' data-target-ml='%lu' onclick='faucetOpenSampleTrial(this)'>试算目标水量</button>",
                 savedSource ? "已保存样本" : "RAM 样本",
                 static_cast<unsigned long>(trialParams.startupPulseCount),
                 static_cast<unsigned long>(trialParams.startupVolumeMl),
                 static_cast<unsigned long>(trialParams.stablePulsePerLiter),
-                static_cast<unsigned long>(trialFlowMlPerMin),
+                static_cast<unsigned long>(trialParams.startupDurationMs),
+                static_cast<unsigned long>(trialParams.stableFlowMlPerMin),
                 static_cast<unsigned long>(trialDefaultTargetMl));
     }
     if (!trace.truncated && waterRecordCanCalibrate(trace.record)) {
@@ -2232,29 +2255,25 @@ void sendCalibrationGenerationPanel() {
         formatLiters(candidate.maxActualMl, generatedMaxActual, sizeof(generatedMaxActual));
         formatLiters(candidate.maxErrorMl, generatedError, sizeof(generatedError));
         std::snprintf(generatedRange, sizeof(generatedRange), "%s - %s", generatedMinActual, generatedMaxActual);
-        const std::uint32_t averageFlowMlPerMin =
-            diagnostics.validDurationSecTotal > 0
-                ? static_cast<std::uint32_t>((static_cast<std::uint64_t>(diagnostics.validActualMlTotal) * 60ULL +
-                                              diagnostics.validDurationSecTotal / 2ULL) /
-                                             diagnostics.validDurationSecTotal)
-                : 0;
         const std::uint32_t estimatorDefaultMl =
             candidate.maxActualMl > 0 ? candidate.maxActualMl : std::max<std::uint32_t>(1000, candidate.params.startupVolumeMl);
-        sendFmt("<section class='generated-scheme-result' data-startup-pulses='%lu' data-startup-volume='%lu' data-stable-ppl='%lu' data-startup-sec='%lu' data-flow-ml-min='%lu'>",
+        sendFmt("<section class='generated-scheme-result' data-startup-pulses='%lu' data-startup-volume='%lu' data-stable-ppl='%lu' data-startup-duration-ms='%lu' data-stable-flow-ml-min='%lu'>",
                 static_cast<unsigned long>(candidate.params.startupPulseCount),
                 static_cast<unsigned long>(candidate.params.startupVolumeMl),
                 static_cast<unsigned long>(candidate.params.stablePulsePerLiter),
-                static_cast<unsigned long>(candidate.startupDurationAvgSec),
-                static_cast<unsigned long>(averageFlowMlPerMin));
+                static_cast<unsigned long>(candidate.params.startupDurationMs),
+                static_cast<unsigned long>(candidate.params.stableFlowMlPerMin));
         Esp32BaseWeb::sendChunk("<div class='panel-head'><h3>生成结果</h3>"
                                 "<span class='status-pill status-warn'>已生成，待保存</span></div>"
                                 "<div class='generated-scheme-layout'><div class='generated-result-main'>"
-                                "<table class='generated-scheme-table'><tr><th>启动脉冲数</th><th>启动水量</th><th>稳态P/L</th><th>样本</th><th>容量范围</th><th>最大误差</th></tr>");
-        sendFmt("<tr><td>%luP</td><td>%s</td><td>%luP/L</td><td>%u 条</td><td>%s</td><td>%s / %.1f%%</td></tr></table>"
+                                "<table class='generated-scheme-table'><tr><th>启动脉冲数</th><th>启动水量</th><th>稳态P/L</th><th>启动时长</th><th>预计稳态流速</th><th>样本</th><th>容量范围</th><th>最大误差</th></tr>");
+        sendFmt("<tr><td>%luP</td><td>%s</td><td>%luP/L</td><td>%lums</td><td>%luml/min</td><td>%u 条</td><td>%s</td><td>%s / %.1f%%</td></tr></table>"
                 "<p class='generated-note'>",
                 static_cast<unsigned long>(candidate.params.startupPulseCount),
                 generatedStartupVolume,
                 static_cast<unsigned long>(candidate.params.stablePulsePerLiter),
+                static_cast<unsigned long>(candidate.params.startupDurationMs),
+                static_cast<unsigned long>(candidate.params.stableFlowMlPerMin),
                 static_cast<unsigned>(candidate.sampleCount),
                 generatedRange,
                 generatedError,
@@ -2278,7 +2297,7 @@ void sendCalibrationGenerationPanel() {
                 static_cast<unsigned long>(estimatorDefaultMl));
         Esp32BaseWeb::sendChunk("<div class='estimate-results'><div><span>预计出水时长</span><strong data-estimated-duration>-</strong></div>"
                                 "<div><span>预计脉冲总数</span><strong data-estimated-pulses>-</strong></div></div>"
-                                "<p class='generated-note'>脉冲按生成参数计算；时长按当前有效样本平均流速估算，仅用于核对。</p>"
+                                "<p class='generated-note'>脉冲按容量估算计量参数计算；时长按时间估算计量参数计算，仅用于核对。</p>"
                                 "</form></div></section>");
     }
     Esp32BaseWeb::sendChunk("<div class='form-actions'>"
@@ -2298,9 +2317,10 @@ void sendCalibrationPageScript() {
                             "function faucetResetSampleCalibrationForm(f){f.dataset.busy='';var b=f.querySelector('[type=submit]');if(b)b.disabled=false;}"
                             "function faucetFormatEstimateSeconds(s){if(!isFinite(s)||s<=0)return '-';s=Math.max(1,Math.round(s));var m=Math.floor(s/60),r=s%60;return m>0?(m+'分'+r+'秒'):(r+'秒');}"
                             "function faucetEstimatePulsesForMl(ml,ns,vs,ps){if(!(ml>0&&ps>0))return 0;if(ns>0&&vs>0&&ml<=vs)return Math.ceil(ml*ns/vs);return ns+Math.ceil(Math.max(0,ml-vs)*ps/1000);}"
-                            "function faucetEstimateGeneratedScheme(form){var box=form.closest('.generated-scheme-result');if(!box)return;var ml=Number((form.querySelector('[name=targetMl]')||{}).value)||0,ns=Number(box.dataset.startupPulses)||0,vs=Number(box.dataset.startupVolume)||0,ps=Number(box.dataset.stablePpl)||0,flow=Number(box.dataset.flowMlMin)||0,p=0;if(ml>0&&ps>0){if(ns>0&&vs>0&&ml<=vs){p=Math.ceil(ml*ns/vs);}else{p=ns+Math.ceil(Math.max(0,ml-vs)*ps/1000);}}var duration=flow>0?ml*60/flow:0;var d=form.querySelector('[data-estimated-duration]'),pc=form.querySelector('[data-estimated-pulses]');if(d)d.textContent=faucetFormatEstimateSeconds(duration);if(pc)pc.textContent=p>0?(p+'P'):'-';}"
-                            "function faucetEstimateSampleTrial(form){var ml=Number((form.querySelector('[name=targetMl]')||{}).value)||0,ns=Number(form.dataset.startupPulses)||0,vs=Number(form.dataset.startupVolume)||0,ps=Number(form.dataset.stablePpl)||0,flow=Number(form.dataset.flowMlMin)||0,p=faucetEstimatePulsesForMl(ml,ns,vs,ps),duration=flow>0?ml*60/flow:0;var d=form.querySelector('[data-estimated-duration]'),pc=form.querySelector('[data-estimated-pulses]');if(d)d.textContent=faucetFormatEstimateSeconds(duration);if(pc)pc.textContent=p>0?(p+'P'):'-';}"
-                            "function faucetOpenSampleTrial(btn){var modal=document.getElementById('sample-trial-modal');if(!modal)return;var form=modal.querySelector('.sample-trial-form');if(!form)return;form.dataset.startupPulses=btn.dataset.startupPulses||'0';form.dataset.startupVolume=btn.dataset.startupVolume||'0';form.dataset.stablePpl=btn.dataset.stablePpl||'0';form.dataset.flowMlMin=btn.dataset.flowMlMin||'0';var input=form.querySelector('[name=targetMl]');if(input)input.value=btn.dataset.targetMl||'1000';var label=form.querySelector('[data-sample-trial-label]');if(label)label.textContent=(btn.dataset.sampleLabel||'样本')+'：启动 '+form.dataset.startupPulses+'P / '+form.dataset.startupVolume+'ml，稳态 '+form.dataset.stablePpl+'P/L';modal.classList.add('is-open');modal.setAttribute('aria-hidden','false');faucetEstimateSampleTrial(form);}"
+                            "function faucetEstimateDurationForMl(ml,vs,ts,flow){if(!(ml>0&&flow>0))return 0;if(!(ts>0&&vs>0))return ml*60/flow;if(ml<=vs)return ml*ts/1000/vs;return ts/1000+(ml-vs)*60/flow;}"
+                            "function faucetEstimateGeneratedScheme(form){var box=form.closest('.generated-scheme-result');if(!box)return;var ml=Number((form.querySelector('[name=targetMl]')||{}).value)||0,ns=Number(box.dataset.startupPulses)||0,vs=Number(box.dataset.startupVolume)||0,ps=Number(box.dataset.stablePpl)||0,ts=Number(box.dataset.startupDurationMs)||0,flow=Number(box.dataset.stableFlowMlMin)||0,p=faucetEstimatePulsesForMl(ml,ns,vs,ps),duration=faucetEstimateDurationForMl(ml,vs,ts,flow);var d=form.querySelector('[data-estimated-duration]'),pc=form.querySelector('[data-estimated-pulses]');if(d)d.textContent=faucetFormatEstimateSeconds(duration);if(pc)pc.textContent=p>0?(p+'P'):'-';}"
+                            "function faucetEstimateSampleTrial(form){var ml=Number((form.querySelector('[name=targetMl]')||{}).value)||0,ns=Number(form.dataset.startupPulses)||0,vs=Number(form.dataset.startupVolume)||0,ps=Number(form.dataset.stablePpl)||0,ts=Number(form.dataset.startupDurationMs)||0,flow=Number(form.dataset.stableFlowMlMin)||0,p=faucetEstimatePulsesForMl(ml,ns,vs,ps),duration=faucetEstimateDurationForMl(ml,vs,ts,flow);var d=form.querySelector('[data-estimated-duration]'),pc=form.querySelector('[data-estimated-pulses]');if(d)d.textContent=faucetFormatEstimateSeconds(duration);if(pc)pc.textContent=p>0?(p+'P'):'-';}"
+                            "function faucetOpenSampleTrial(btn){var modal=document.getElementById('sample-trial-modal');if(!modal)return;var form=modal.querySelector('.sample-trial-form');if(!form)return;form.dataset.startupPulses=btn.dataset.startupPulses||'0';form.dataset.startupVolume=btn.dataset.startupVolume||'0';form.dataset.stablePpl=btn.dataset.stablePpl||'0';form.dataset.startupDurationMs=btn.dataset.startupDurationMs||'0';form.dataset.stableFlowMlMin=btn.dataset.stableFlowMlMin||'0';var input=form.querySelector('[name=targetMl]');if(input)input.value=btn.dataset.targetMl||'1000';var label=form.querySelector('[data-sample-trial-label]');if(label)label.textContent=(btn.dataset.sampleLabel||'样本')+'：容量参数 '+form.dataset.startupPulses+'P / '+form.dataset.startupVolume+'ml / '+form.dataset.stablePpl+'P/L，时间参数 '+form.dataset.startupDurationMs+'ms / '+form.dataset.stableFlowMlMin+'ml/min';modal.classList.add('is-open');modal.setAttribute('aria-hidden','false');faucetEstimateSampleTrial(form);}"
                             "function faucetCloseSampleTrial(){var modal=document.getElementById('sample-trial-modal');if(modal){modal.classList.remove('is-open');modal.setAttribute('aria-hidden','true');}}"
                             "function faucetInitGeneratedEstimators(){var forms=document.querySelectorAll('.generated-estimator');for(var i=0;i<forms.length;i++)faucetEstimateGeneratedScheme(forms[i]);}"
                             "function faucetReplaceCalibrationSection(id,url){return fetch(url,{cache:'no-store',credentials:'same-origin'}).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.text();}).then(function(html){var old=document.getElementById(id);if(!old)return;var box=document.createElement('div');box.innerHTML=html;var next=box.querySelector('#'+id);if(next){old.replaceWith(next);faucetInitGeneratedEstimators();}});}"
@@ -2971,12 +2991,12 @@ void formatPresetEstimate(const PresetConfig& preset,
             formatLiters(timeVolumeMl, volume, sizeof(volume));
             std::snprintf(out,
                           len,
-                          "稳态估算 %s · %luP · %luP/L",
+                          "预计容量 %s · %luP · 预计稳态 %luml/min",
                           volume,
                           static_cast<unsigned long>(timePulseCount),
-                          static_cast<unsigned long>(params.stablePulsePerLiter));
+                          static_cast<unsigned long>(params.stableFlowMlPerMin));
         } else {
-            std::snprintf(out, len, "%s", reason ? reason : "缺少近期流速");
+            std::snprintf(out, len, "%s", reason ? reason : "计量参数未就绪");
         }
         return;
     }
@@ -3175,7 +3195,7 @@ void sendMachineStatusCard(const AppSnapshot& snapshot, bool screenOn) {
                           "预计约 %s",
                           durationText);
         } else {
-            std::snprintf(targetMeta, sizeof(targetMeta), "缺少近期平均流速");
+            std::snprintf(targetMeta, sizeof(targetMeta), "计量参数未就绪");
         }
     } else if (snapshot.targetEstimatedVolumeMl > 0 && snapshot.targetEstimatedPulseCount > 0 &&
                snapshot.targetStablePulsePerSec > 0.0f) {
@@ -3191,14 +3211,16 @@ void sendMachineStatusCard(const AppSnapshot& snapshot, bool screenOn) {
     formatFlowNumber(snapshot.currentFlowMlPerMin, currentFlow, sizeof(currentFlow));
     char currentFlowMeta[40]{};
     formatFlowMeta(snapshot.recentAverageFlowMlPerMin, currentFlowMeta, sizeof(currentFlowMeta));
-    char meteringParams[64]{};
+    char meteringParams[96]{};
     if (validMeteringSchemeParameters(snapshot.meteringParams)) {
         std::snprintf(meteringParams,
                       sizeof(meteringParams),
-                      "启动 %luP · %luml / 稳态 %luP/L",
+                      "容量 %luP · %luml · %luP/L / 时间 %lums · %luml/min",
                       static_cast<unsigned long>(snapshot.meteringParams.startupPulseCount),
                       static_cast<unsigned long>(snapshot.meteringParams.startupVolumeMl),
-                      static_cast<unsigned long>(snapshot.meteringParams.stablePulsePerLiter));
+                      static_cast<unsigned long>(snapshot.meteringParams.stablePulsePerLiter),
+                      static_cast<unsigned long>(snapshot.meteringParams.startupDurationMs),
+                      static_cast<unsigned long>(snapshot.meteringParams.stableFlowMlPerMin));
     } else {
         std::snprintf(meteringParams, sizeof(meteringParams), "未校准");
     }
@@ -3355,8 +3377,8 @@ void sendHomeAutoRefreshScript() {
                             "function faucetStatusNote(s,r){return {idle:'设备可用，等待按键启动',confirm:'等待确认，确认后开始出水',running:'正在出水，请留意容器',paused:'已暂停，等待继续或取消',error:faucetResultText(r)}[s]||'状态未知';}"
                             "function faucetPresetTarget(p){return p&&p.mode==='time'?faucetSeconds(p.targetValue):faucetLiters(p&&p.targetValue);}"
                             "function faucetPresetLabel(p){if(!p||!p.available)return '无可用预设';return 'P'+p.enabledOrdinal+'/'+p.enabledCount+' · '+(p.name||'未命名')+' · '+faucetPresetTarget(p);}"
-                            "function faucetEstimateText(mode,e,m){if(!e||!e.available)return (e&&e.reason)||((mode==='time')?'缺少近期流速':'计量参数未就绪');if(mode==='time')return '稳态估算 '+faucetLiters(e.targetMl)+' · '+e.pulseCount+'P · '+((m&&m.stablePulsePerLiter)||0)+'P/L';var t='预计 '+e.fullRunPulsePerLiter+'P/L · '+e.pulseCount+'P';return e.estimatedDurationSec>0?t+' · 约 '+faucetSeconds(e.estimatedDurationSec):t;}"
-                            "function faucetTargetMeta(mode,e){if(mode==='time')return '';if(!e||!e.available)return (e&&e.reason)||'计量参数未就绪';return e.estimatedDurationSec>0?'预计约 '+faucetSeconds(e.estimatedDurationSec):'缺少近期平均流速';}"
+                            "function faucetEstimateText(mode,e,m){if(!e||!e.available)return (e&&e.reason)||'计量参数未就绪';if(mode==='time')return '预计容量 '+faucetLiters(e.targetMl)+' · '+e.pulseCount+'P · 预计稳态 '+((m&&m.stableFlowMlPerMin)||0)+'ml/min';var t='预计 '+e.fullRunPulsePerLiter+'P/L · '+e.pulseCount+'P';return e.estimatedDurationSec>0?t+' · 约 '+faucetSeconds(e.estimatedDurationSec):t;}"
+                            "function faucetTargetMeta(mode,e){if(mode==='time')return '';if(!e||!e.available)return (e&&e.reason)||'计量参数未就绪';return e.estimatedDurationSec>0?'预计约 '+faucetSeconds(e.estimatedDurationSec):'计量参数未就绪';}"
                             "function faucetPresetEstimate(p,m){if(!p||!p.available)return '';return faucetEstimateText(p.mode,p.targetEstimate,m);}"
                             "function faucetSet(id,text){var e=document.getElementById(id);if(e){e.textContent=text;}}"
                             "function faucetSetMaybe(id,text){var e=document.getElementById(id);if(e){e.textContent=text||'';e.style.display=text?'':'none';}}"
@@ -3378,7 +3400,7 @@ void sendHomeAutoRefreshScript() {
                             "var base=s.mode==='time'?s.elapsedSec:s.volumeMl;"
                             "var pct=s.targetValue>0?Math.min(100,Math.floor(base*100/s.targetValue)):0;"
                             "var metering=s.metering||{};"
-                            "var meteringParams=(metering.stablePulsePerLiter>0)?('启动 '+(metering.startupPulseCount||0)+'P · '+(metering.startupVolumeMl||0)+'ml / 稳态 '+metering.stablePulsePerLiter+'P/L'):'未校准';"
+                            "var meteringParams=(metering.stablePulsePerLiter>0)?('容量 '+(metering.startupPulseCount||0)+'P · '+(metering.startupVolumeMl||0)+'ml · '+metering.stablePulsePerLiter+'P/L / 时间 '+(metering.startupDurationMs||0)+'ms · '+(metering.stableFlowMlPerMin||0)+'ml/min'):'未校准';"
                             "var estimate=s.targetEstimate||{};"
                             "var targetMeta=faucetTargetMeta(s.mode,estimate);"
                             "faucetHomeActive=shown;"
@@ -3967,10 +3989,14 @@ void handleRecordInfoPage() {
         sendMeteringSnapshotLabel(meteringSnapshot, false);
         sendFmt("</td></tr><tr><th>启动脉冲数</th><td>%lu P</td></tr>"
                 "<tr><th>启动水量</th><td>%lu ml</td></tr>"
-                "<tr><th>稳态 P/L</th><td>%lu P/L</td></tr>",
+                "<tr><th>稳态 P/L</th><td>%lu P/L</td></tr>"
+                "<tr><th>启动时长</th><td>%lu ms</td></tr>"
+                "<tr><th>预计稳态流速</th><td>%lu ml/min</td></tr>",
                 static_cast<unsigned long>(meteringSnapshot.params.startupPulseCount),
                 static_cast<unsigned long>(meteringSnapshot.params.startupVolumeMl),
-                static_cast<unsigned long>(meteringSnapshot.params.stablePulsePerLiter));
+                static_cast<unsigned long>(meteringSnapshot.params.stablePulsePerLiter),
+                static_cast<unsigned long>(meteringSnapshot.params.startupDurationMs),
+                static_cast<unsigned long>(meteringSnapshot.params.stableFlowMlPerMin));
         if (record.mode == WaterMode::Volume) {
             const MeteringTargetEstimate targetEstimate =
                 meteringEstimateForTarget(meteringSnapshot.params, record.targetValue);
@@ -5559,6 +5585,8 @@ bool readMeteringParamsFromRequest(MeteringParameters& params) {
     return getParam("startupPulseCount", text, sizeof(text)) && parseU32(text, params.startupPulseCount) &&
            getParam("startupVolumeMl", text, sizeof(text)) && parseU32(text, params.startupVolumeMl) &&
            getParam("stablePulsePerLiter", text, sizeof(text)) && parseU32(text, params.stablePulsePerLiter) &&
+           getParam("startupDurationMs", text, sizeof(text)) && parseU32(text, params.startupDurationMs) &&
+           getParam("stableFlowMlPerMin", text, sizeof(text)) && parseU32(text, params.stableFlowMlPerMin) &&
            validMeteringSchemeParameters(params);
 }
 
@@ -5796,6 +5824,7 @@ void handleTraceCalibrationApi() {
             analysis.startupPulseCount,
             analysis.stablePulseCount,
             analysis.stableStartSec,
+            analysis.stablePulsePerSec,
         };
     }
 

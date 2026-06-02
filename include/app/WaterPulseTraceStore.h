@@ -102,11 +102,33 @@ struct WaterPulseTraceBucket {
 };
 
 struct SegmentedCalibrationSample {
+    constexpr SegmentedCalibrationSample()
+        : actualMl(0),
+          totalPulses(0),
+          startupPulseCount(0),
+          stablePulseCount(0),
+          startupDurationSec(0),
+          stablePulsePerSec(0.0f) {}
+
+    constexpr SegmentedCalibrationSample(std::uint32_t actualMlValue,
+                                         std::uint32_t totalPulsesValue,
+                                         std::uint32_t startupPulseCountValue,
+                                         std::uint32_t stablePulseCountValue,
+                                         std::uint32_t startupDurationSecValue,
+                                         float stablePulsePerSecValue = 0.0f)
+        : actualMl(actualMlValue),
+          totalPulses(totalPulsesValue),
+          startupPulseCount(startupPulseCountValue),
+          stablePulseCount(stablePulseCountValue),
+          startupDurationSec(startupDurationSecValue),
+          stablePulsePerSec(stablePulsePerSecValue) {}
+
     std::uint32_t actualMl;
     std::uint32_t totalPulses;
     std::uint32_t startupPulseCount;
     std::uint32_t stablePulseCount;
     std::uint32_t startupDurationSec;
+    float stablePulsePerSec;
 };
 
 struct SegmentedCalibrationResult {
@@ -116,9 +138,11 @@ struct SegmentedCalibrationResult {
     std::uint16_t sampleCount;
     std::uint16_t excludedSampleCount;
     std::uint32_t startupDurationSec;
+    std::uint32_t startupDurationMs;
     std::uint32_t startupPulseCount;
     std::uint32_t startupVolumeMl;
     std::uint32_t stablePulsePerLiter;
+    std::uint32_t stableFlowMlPerMin;
     std::uint32_t minActualMl;
     std::uint32_t maxActualMl;
     std::uint32_t maxErrorMl;

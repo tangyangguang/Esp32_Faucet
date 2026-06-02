@@ -273,11 +273,12 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "下次预设"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "预计 %luP/L · %luP"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "预计 %luP/L · %luP · 约 %s"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "稳态估算 %s · %luP · %luP/L"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "预计容量 %s · %luP · 预计稳态 %luml/min"));
     TEST_ASSERT_NULL(std::strstr(buffer, "预计 %s · %luP · 稳态 %.2fP/s"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "预计约 %s"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "缺少近期平均流速"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "缺少近期流速"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "计量参数未就绪"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "缺少近期平均流速"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "缺少近期流速"));
     TEST_ASSERT_NULL(std::strstr(buffer, "缺少稳态脉冲"));
     TEST_ASSERT_NULL(std::strstr(buffer, "<span>全程平均 %luP/L</span><span>预计 %luP</span>"));
     TEST_ASSERT_NULL(std::strstr(buffer, "时间预设 · 不估算脉冲"));
@@ -287,7 +288,7 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "faucetSelectPreset("));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "nextPresetControl"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "sendMachineStatusNoteOnlyItem(\"meteringParams\", \"计量参数\", meteringParams)"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "启动 %luP · %luml / 稳态 %luP/L"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "容量 %luP · %luml · %luP/L / 时间 %lums · %luml/min"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "currentFlowValue"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "currentFlowMlPerMin"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "recentAverageFlowMlPerMin"));
@@ -408,7 +409,8 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "calibration-slot-table"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "scheme-edit-form"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "scheme-edit-section"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "核心计量参数"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "容量估算计量参数"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "时间估算计量参数"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "当前启用方案：保存后会立即影响后续出水估算。"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, ".scheme-edit-grid{display:grid;grid-template-columns:repeat(12,1fr)"));
     TEST_ASSERT_NULL(std::strstr(buffer, ".calibration-slot-form{display:grid;grid-template-columns"));
@@ -681,6 +683,10 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "预计出水时长"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "预计脉冲总数"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "data-startup-pulses"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "data-startup-duration-ms"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "data-stable-flow-ml-min"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "faucetEstimateDurationForMl"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "时长按当前有效样本平均流速估算"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "calibration-generation-settings"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "generated-residual-table"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "误差偏大"));
@@ -710,7 +716,10 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NOT_NULL(schemeEditSource);
     TEST_ASSERT_NOT_NULL(std::strstr(schemeEditSource, "scheme ? scheme->params : defaultMeteringParameters()"));
     TEST_ASSERT_NOT_NULL(std::strstr(schemeEditSource, "方案信息"));
-    TEST_ASSERT_NOT_NULL(std::strstr(schemeEditSource, "核心计量参数"));
+    TEST_ASSERT_NOT_NULL(std::strstr(schemeEditSource, "容量估算计量参数"));
+    TEST_ASSERT_NOT_NULL(std::strstr(schemeEditSource, "时间估算计量参数"));
+    TEST_ASSERT_NOT_NULL(std::strstr(schemeEditSource, "startupDurationMs"));
+    TEST_ASSERT_NOT_NULL(std::strstr(schemeEditSource, "stableFlowMlPerMin"));
     TEST_ASSERT_NOT_NULL(std::strstr(schemeEditSource, "适用条件"));
     TEST_ASSERT_NOT_NULL(std::strstr(schemeEditSource, "scheme-edit-actions"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "启用只切换当前计量参数"));
@@ -992,7 +1001,7 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NULL(std::strstr(buffer, "<h2>出水详情</h2><div class='metric-grid'>"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "\"meteringParams\", \"计量参数\", meteringParams"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "'预计 '+e.fullRunPulsePerLiter+'P/L · '+e.pulseCount+'P"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "'稳态估算 '+faucetLiters(e.targetMl)+' · '+e.pulseCount+'P · '"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "'预计容量 '+faucetLiters(e.targetMl)+' · '+e.pulseCount+'P · 预计稳态 '"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "faucetTargetMeta"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "阀门"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "设备不在待机状态，请回到待机后再保存配置。"));

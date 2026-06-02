@@ -418,6 +418,13 @@ void test_used_scheme_delete_is_rejected_and_disable_is_explicit() {
     TEST_ASSERT_TRUE(scheme.valid);
     TEST_ASSERT_FALSE(scheme.enabled);
     TEST_ASSERT_EQUAL_UINT32(1, scheme.useCount);
+
+    TEST_ASSERT_TRUE(store.enableScheme(id, 1770000030));
+    TEST_ASSERT_TRUE(store.findById(id, scheme));
+    TEST_ASSERT_TRUE(scheme.enabled);
+    TEST_ASSERT_EQUAL_UINT32(id, store.activeSchemeId());
+    TEST_ASSERT_EQUAL_UINT32(1770000030, scheme.updatedAt);
+    TEST_ASSERT_EQUAL_UINT32(1770000030, scheme.lastActivatedAt);
 }
 
 void test_delete_keeps_at_least_one_valid_scheme() {

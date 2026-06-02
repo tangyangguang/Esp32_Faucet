@@ -444,9 +444,11 @@ bool MeteringSchemeStore::enableScheme(std::uint32_t schemeId, std::uint32_t now
     }
     MeteringSchemeRecord record{};
     std::size_t slot = 0;
-    if (!findSlotById(schemeId, record, slot) || !record.enabled) {
+    if (!findSlotById(schemeId, record, slot) || !record.valid) {
         return false;
     }
+    record.enabled = true;
+    record.updatedAt = nowSeconds;
     record.lastActivatedAt = nowSeconds;
     MeteringSchemeStoreHeader previous = header_;
     header_.activeSchemeId = schemeId;

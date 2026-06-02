@@ -30,7 +30,7 @@
 | `AppController` | 业务初始化、tick 调度、模块组合 |
 | `WaterController` | 出水状态机、安全兜底、命令处理 |
 | `ConfigStore` | 应用配置默认值、钳位、读写 |
-| `FlowMeter` | 脉冲计数、流量计算、校准系数 |
+| `FlowMeter` | 脉冲计数、容量换算、实时流速窗口估算和诊断瞬时流速 |
 | `ValveDriver` | 电磁阀开关、全压吸合、PWM 保持 |
 | `ButtonInput` | 四键消抖、短按/长按 |
 | `DisplayPresenter` | LCD1602 页面模型和刷新节流 |
@@ -221,6 +221,7 @@ struct StatisticsRecord {
 - Web 校准页样本列表同时展示 RAM 临时明细和已保存设备明细；校准 RAM 明细时必须先写入设备样本库，入库失败则本次校准失败。
 - Web 校准成功后保存记录级校准元数据；记录页用“已校准/未校准”和出水量单元格内的“实测 x.xx L”展示状态，重校会覆盖该记录的实测量并递增重校次数。
 - 分段计量公式和流量计计量方案规则见 `docs/脉冲分段计量参数说明.md`、`docs/segmented-metering.md` 与 `docs/10-flow-meter-metering-schemes.md`。
+- 实时流速显示、窗口估算、显示平滑和平均流速区分规则见 `docs/11-realtime-flow-display.md`。
 - Web 校准页生成方案后不直接启用；用户确认后只能保存为新方案。保存新方案不会影响当前计量，用户必须显式启用方案后设备才切换运行参数。
 
 ## 已确认实现决策

@@ -32,7 +32,6 @@ const char kKeyPauseTimeout[] = "pause_s";
 const char kKeyVolumeStep[] = "vol_step";
 const char kKeyTimeStep[] = "time_step";
 const char kKeyPulseMinIntervalUs[] = "pulse_min_us";
-const char kKeyRecentPulseTraceCount[] = "trace_count";
 const char kKeyCalibrationAnalysisPulseMinIntervalUs[] = "cal_an_us";
 const char kKeyCalibrationStableWindowSec[] = "cal_win_s";
 const char kKeyCalibrationStableTolerancePercent[] = "cal_tol";
@@ -158,7 +157,6 @@ bool addCoreFields() {
     ok = Esp32BaseAppConfig::addInt({kGroupLocal, kConfigNs, kKeyLcdAddress, "LCD I2C 地址", kDefaultLcdI2cAddress, 0x03, 0x77, 1, nullptr, "保存后需重启，重启后重新探测 LCD。", true, nullptr}) && ok;
     ok = Esp32BaseAppConfig::addBool({kGroupLocal, kConfigNs, kKeyBeep, "蜂鸣器提示音", true, "控制按键、完成和异常提示音。立即生效。", false, nullptr}) && ok;
 
-    ok = Esp32BaseAppConfig::addInt({kGroupMetering, kConfigNs, kKeyRecentPulseTraceCount, "RAM 最近脉冲明细条数", static_cast<std::int32_t>(kDefaultRecentPulseTraceCount), static_cast<std::int32_t>(kMinRecentPulseTraceCount), static_cast<std::int32_t>(kMaxRecentPulseTraceCount), 1, "条", "仅保存在 RAM 中，重启会丢失；用于查看最近出水明细。", false, nullptr}) && ok;
     ok = Esp32BaseAppConfig::addInt({kGroupMetering, kConfigNs, kKeyCalibrationAnalysisPulseMinIntervalUs, "生成分析脉冲间隔", static_cast<std::int32_t>(kDefaultCalibrationAnalysisPulseMinIntervalUs), 0, static_cast<std::int32_t>(kMaxPulseMinIntervalUs), 100, "us", "0 表示使用样本记录时保存的有效脉冲间隔；非 0 时按该间隔重新分析样本。", false, nullptr}) && ok;
     ok = Esp32BaseAppConfig::addInt({kGroupMetering, kConfigNs, kKeyCalibrationStableWindowSec, "生成稳态窗口", static_cast<std::int32_t>(kDefaultCalibrationStableWindowSec), static_cast<std::int32_t>(kMinCalibrationStableWindowSec), static_cast<std::int32_t>(kMaxCalibrationStableWindowSec), 1, "s", "识别稳定流量时要求连续满足条件的秒数。", false, nullptr}) && ok;
     ok = Esp32BaseAppConfig::addInt({kGroupMetering, kConfigNs, kKeyCalibrationStableTolerancePercent, "生成稳态容差", kDefaultCalibrationStableTolerancePercent, kMinCalibrationStableTolerancePercent, kMaxCalibrationStableTolerancePercent, 1, "%", "稳态窗口相对后半段稳定流量的允许偏差。", false, nullptr}) && ok;

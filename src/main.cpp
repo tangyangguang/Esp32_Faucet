@@ -4,6 +4,8 @@
 
 #include "app/AppController.h"
 #include "app/BeepDriver.h"
+#include "app/CalibrationSampleStore.h"
+#include "app/CalibrationSessionStore.h"
 #include "app/ConfigStore.h"
 #include "app/DisplayPresenter.h"
 #include "app/Esp32BaseConfigBackend.h"
@@ -52,6 +54,9 @@ constexpr const char* kWaterRecordCalibrationPath = "/faucet_record_cal_v1.bin";
 constexpr const char* kWaterRecordMeteringSnapshotPath = "/faucet_record_metering_v1.bin";
 constexpr const char* kMeteringSchemePath = "/faucet_metering_schemes_v1.bin";
 constexpr const char* kSavedPulseTracePath = "/faucet_pulse_traces_v4.bin";
+constexpr const char* kCalibrationSessionPath = "/faucet_cal_session_v1.bin";
+constexpr const char* kCalibrationSessionTracePath = "/faucet_cal_session_traces_v1.bin";
+constexpr const char* kCalibrationLongTermSamplesPath = "/faucet_cal_samples_v1.bin";
 
 class PersistentRecordWriter : public faucet::WaterRecordWriter, public faucet::WaterRecordReader {
 public:
@@ -223,6 +228,10 @@ faucet::WaterRecordMeteringSnapshotFileStore g_recordMeteringSnapshotFile(
     kWaterRecordMeteringSnapshotPath,
     kWaterRecordMeteringSnapshotCapacity);
 faucet::MeteringSchemeStore g_meteringSchemes(g_waterRecordBackend, kMeteringSchemePath);
+faucet::CalibrationSessionFileStore g_calibrationSession(g_waterRecordBackend, kCalibrationSessionPath);
+faucet::CalibrationSessionTraceStore g_calibrationSessionTraces(g_waterRecordBackend, kCalibrationSessionTracePath);
+faucet::CalibrationLongTermSampleStore g_calibrationLongTermSamples(g_waterRecordBackend,
+                                                                    kCalibrationLongTermSamplesPath);
 faucet::WaterPulseTraceFileStore g_savedPulseTraceFile(
     g_waterRecordBackend,
     kSavedPulseTracePath,
@@ -327,7 +336,7 @@ void checkFileSystemCapacity() {
     if (!Esp32BaseFs::isReady()) {
         return;
     }
-    constexpr std::size_t kLowFreeBytes = 100UL * 1024UL;
+    constexpr std::size_t kLowFreeBytes = 350UL * 1024UL;
     const std::size_t freeBytes = Esp32BaseFs::freeBytes();
     if (freeBytes < kLowFreeBytes) {
         ESP32BASE_LOG_W("app",
@@ -336,6 +345,32 @@ void checkFileSystemCapacity() {
                         static_cast<unsigned long>(Esp32BaseFs::totalBytes()),
                         static_cast<unsigned long>(Esp32BaseFs::usedBytes()));
     }
+#endif
+}
+
+bool canInitializeFixedCalibrationFile(const char* path, std::size_t requiredFreeBytes, const char* label) {
+#if ESP32BASE_ENABLE_FS
+    if (!Esp32BaseFs::isReady()) {
+        return true;
+    }
+    if (g_waterRecordBackend.exists(path)) {
+        return true;
+    }
+    const std::size_t freeBytes = Esp32BaseFs::freeBytes();
+    if (freeBytes >= requiredFreeBytes) {
+        return true;
+    }
+    ESP32BASE_LOG_W("app",
+                    "skip %s init, LittleFS free space below gate: free=%lu required=%lu",
+                    label ? label : "calibration file",
+                    static_cast<unsigned long>(freeBytes),
+                    static_cast<unsigned long>(requiredFreeBytes));
+    return false;
+#else
+    (void)path;
+    (void)requiredFreeBytes;
+    (void)label;
+    return true;
 #endif
 }
 
@@ -495,6 +530,25 @@ void initializeApplication() {
         ESP32BASE_LOG_W("app", "metering scheme store unavailable, using config fallback");
     } else if (!g_meteringSchemes.migrateLegacyFromConfig(g_configBackend, nowSeconds)) {
         ESP32BASE_LOG_W("app", "legacy metering scheme migration failed");
+    }
+    const bool calibrationSessionReady = canInitializeFixedCalibrationFile(
+                                             kCalibrationSessionPath, 120UL * 1024UL, "calibration session") &&
+                                         g_calibrationSession.begin();
+    const bool calibrationSessionTracesReady = canInitializeFixedCalibrationFile(
+                                                   kCalibrationSessionTracePath,
+                                                   120UL * 1024UL,
+                                                   "calibration session traces") &&
+                                               g_calibrationSessionTraces.begin();
+    const bool calibrationLongTermSamplesReady = canInitializeFixedCalibrationFile(
+                                                     kCalibrationLongTermSamplesPath,
+                                                     200UL * 1024UL,
+                                                     "calibration long-term samples") &&
+                                                 g_calibrationLongTermSamples.begin();
+    if (!calibrationSessionReady || !calibrationSessionTracesReady) {
+        ESP32BASE_LOG_W("app", "guided calibration session storage unavailable");
+    }
+    if (!calibrationLongTermSamplesReady) {
+        ESP32BASE_LOG_W("app", "calibration long-term sample library unavailable");
     }
     logStartupPhase("record_store_ready");
     g_pulseTraceRecords = new (std::nothrow) faucet::WaterPulseTrace[kPulseTraceCapacity]{};

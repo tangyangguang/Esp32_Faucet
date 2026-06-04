@@ -28,9 +28,9 @@ void test_default_config_matches_product_defaults() {
     TEST_ASSERT_EQUAL_UINT32(100, kMinPulseMinIntervalUs);
     TEST_ASSERT_EQUAL_UINT32(100000, kMaxPulseMinIntervalUs);
     TEST_ASSERT_EQUAL_UINT32(kDefaultRecentPulseTraceCount, config.recentPulseTraceCount);
-    TEST_ASSERT_EQUAL_UINT32(3, config.recentPulseTraceCount);
+    TEST_ASSERT_EQUAL_UINT32(1, config.recentPulseTraceCount);
     TEST_ASSERT_EQUAL_UINT32(1, kMinRecentPulseTraceCount);
-    TEST_ASSERT_EQUAL_UINT32(3, kMaxRecentPulseTraceCount);
+    TEST_ASSERT_EQUAL_UINT32(1, kMaxRecentPulseTraceCount);
     TEST_ASSERT_EQUAL_UINT32(kDefaultCalibrationAnalysisPulseMinIntervalUs, config.calibrationAnalysisPulseMinIntervalUs);
     TEST_ASSERT_EQUAL_UINT32(0, config.calibrationAnalysisPulseMinIntervalUs);
     TEST_ASSERT_EQUAL_UINT32(kDefaultCalibrationStableWindowSec, config.calibrationStableWindowSec);
@@ -142,7 +142,7 @@ void test_sanitize_config_clamps_scalar_ranges() {
     TEST_ASSERT_EQUAL_UINT32(1, config.timeAdjustStepSec);
     TEST_ASSERT_EQUAL_UINT32(kMinPulseMinIntervalUs, config.pulseMinIntervalUs);
     TEST_ASSERT_EQUAL_UINT32(kMaxRecentPulseTraceCount, config.recentPulseTraceCount);
-    TEST_ASSERT_EQUAL_UINT32(3, config.recentPulseTraceCount);
+    TEST_ASSERT_EQUAL_UINT32(1, config.recentPulseTraceCount);
     TEST_ASSERT_EQUAL_UINT32(kMinPulseMinIntervalUs, config.calibrationAnalysisPulseMinIntervalUs);
     TEST_ASSERT_EQUAL_UINT32(kMinCalibrationStableWindowSec, config.calibrationStableWindowSec);
     TEST_ASSERT_EQUAL_UINT8(kMinCalibrationStableTolerancePercent, config.calibrationStableTolerancePercent);
@@ -241,6 +241,18 @@ void test_record_page_size_and_filter_life_helpers() {
                             static_cast<unsigned>(filterLifeStatus(filter, 1)));
 }
 
+void test_recent_pulse_trace_count_is_not_editable_in_app_config_page() {
+    FILE* file = std::fopen("src/app/FaucetAppConfig.cpp", "rb");
+    TEST_ASSERT_NOT_NULL(file);
+    char buffer[32000]{};
+    const std::size_t len = std::fread(buffer, 1, sizeof(buffer) - 1, file);
+    std::fclose(file);
+    TEST_ASSERT_GREATER_THAN_size_t(0, len);
+
+    TEST_ASSERT_NULL(std::strstr(buffer, "RAM 最近脉冲明细条数"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "kKeyRecentPulseTraceCount"));
+}
+
 int main(int argc, char** argv) {
     (void)argc;
     (void)argv;
@@ -252,5 +264,6 @@ int main(int argc, char** argv) {
     RUN_TEST(test_sanitize_config_clamps_scalar_ranges);
     RUN_TEST(test_sanitize_config_clamps_preset_values_by_type);
     RUN_TEST(test_record_page_size_and_filter_life_helpers);
+    RUN_TEST(test_recent_pulse_trace_count_is_not_editable_in_app_config_page);
     return UNITY_END();
 }

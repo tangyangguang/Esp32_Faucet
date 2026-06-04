@@ -16,6 +16,7 @@
 - Do not migrate old pulse trace or old sample files.
 - Do not delete or overwrite old files as part of normal boot.
 - Existing metering scheme storage remains protected and readable.
+- Keep existing `/faucet_pulse_traces_v4.bin` as the ordinary record pulse-detail store for record detail and technical viewing. It is no longer the primary calibration sample source for the guided calibration session.
 - Main firmware upload for board testing should prefer `pio run -e esp32dev -t webota`; serial upload is reserved for first flash, partition changes, unreachable network, or OTA recovery.
 
 ## File Structure
@@ -240,6 +241,22 @@ Expected: FAIL because the stores do not exist.
 
 - [ ] **Step 3: Define fixed store APIs**
 
+`CalibrationSessionStore.h` must expose:
+
+```cpp
+class CalibrationSessionFileStore {
+public:
+    CalibrationSessionFileStore(WaterRecordFileBackend& backend, const char* path);
+
+    bool begin();
+    bool ready() const;
+    bool load(CalibrationSessionRecord& output) const;
+    bool save(const CalibrationSessionRecord& session);
+    bool clear();
+    const char* storageName() const;
+};
+```
+
 `CalibrationSampleStore.h` must expose:
 
 ```cpp
@@ -257,24 +274,32 @@ struct CalibrationStoredTrace {
 
 class CalibrationSessionTraceStore {
 public:
+    CalibrationSessionTraceStore(WaterRecordFileBackend& backend, const char* path);
+
     bool begin();
+    bool clear();
     bool clearForNewSession(std::uint32_t sessionId);
     bool save(std::uint8_t slot, const CalibrationStoredTrace& trace, const WaterPulseTraceSample* samples, std::size_t sampleCount);
     bool load(std::uint8_t slot, CalibrationStoredTrace& trace) const;
     std::size_t readSamples(std::uint8_t slot, WaterPulseTraceSample* output, std::size_t outputCapacity) const;
     std::size_t capacity() const;
     bool ready() const;
+    const char* storageName() const;
 };
 
 class CalibrationLongTermSampleStore {
 public:
+    CalibrationLongTermSampleStore(WaterRecordFileBackend& backend, const char* path);
+
     bool begin();
+    bool clear();
     bool save(const CalibrationStoredTrace& trace, const WaterPulseTraceSample* samples, std::size_t sampleCount, std::uint32_t& sampleId);
     bool remove(std::uint32_t sampleId);
     bool load(std::uint32_t sampleId, CalibrationStoredTrace& trace) const;
     std::size_t list(CalibrationStoredTrace* output, std::size_t outputCapacity) const;
     std::size_t capacity() const;
     bool ready() const;
+    const char* storageName() const;
 };
 ```
 
@@ -349,7 +374,7 @@ constexpr const char* kCalibrationSessionTracePath = "/faucet_cal_session_traces
 constexpr const char* kCalibrationLongTermSamplesPath = "/faucet_cal_samples_v1.bin";
 ```
 
-Instantiate stores beside the existing record and metering stores. Keep old `/faucet_pulse_traces_v4.bin` unused for new calibration flows.
+Instantiate stores beside the existing record and metering stores. Keep old `/faucet_pulse_traces_v4.bin` available for ordinary record pulse-detail viewing and manual diagnostic saves; do not use it as the guided calibration session sample source.
 
 - [ ] **Step 5: Add clean-device space gates**
 
@@ -362,6 +387,8 @@ refuse to initialize long-term sample library below 200 KiB free LittleFS
 ```
 
 If fixed files are already created and stores are ready, normal slot overwrite does not require free-space growth.
+
+Session sample storage is required for guided calibration. Long-term sample storage is optional professional functionality: if `CalibrationLongTermSampleStore::begin()` fails because of space or file corruption, disable “样本库 / 存入长期样本库 / 从样本库生成” actions but still allow guided calibration if the session store and 5-slot session trace store are ready.
 
 - [ ] **Step 6: Run tests and build**
 
@@ -446,13 +473,24 @@ In CAL mode:
 
 ```text
 OK on Preparing -> WaitingLocalRun
-OK on WaitingLocalRun -> use existing local water start path
+OK on WaitingLocalRun -> start a local calibration run with the current target hint
 OK on AwaitingActual -> save adjusted actual ml
 CANCEL short on AwaitingActual -> confirm skip current attempt
 CANCEL long outside Running -> confirm discard session
 CANCEL during Running -> existing stop path
 OK during Running -> existing pause path
 ```
+
+Calibration run target hints are advisory, not required measured volumes:
+
+```text
+small hint: 500ml target hint, 1000ml safety stop
+common hint: 1500ml target hint, 3000ml safety stop
+large hint: 7500ml target hint, 10000ml safety stop
+custom hint: locally adjusted target hint, bounded by maxOutVolumeMl
+```
+
+The user should normally stop the calibration run locally with `CANCEL` when the container reaches a readable amount. The recorded actual ml entered after the run is the calibration truth. Safety stop values only prevent unattended overflow and do not become the actual calibration volume.
 
 - [ ] **Step 5: Save valid samples to session trace store**
 
@@ -462,10 +500,11 @@ When a calibration run ends and actual ml is submitted:
 copy latest RAM trace
 reject if truncated / resumed after pause / no pulse / analysis failed
 write to session trace slot
+write WaterRecordCalibrationStore actualMl metadata for the run record
 then mark attempt Valid
 ```
 
-If save fails, mark attempt invalid with `StorageFailed`.
+If session trace save fails or `WaterRecordCalibrationStore` write fails, mark the attempt invalid with `StorageFailed`. Do not count the sample as valid unless both the trace slot and the record calibration metadata are saved.
 
 - [ ] **Step 6: Re-run AppController tests**
 
@@ -505,6 +544,7 @@ Add tests proving:
 session apply creates and activates a new scheme
 old active scheme remains valid
 scheme stores source summary even when session trace slots are later overwritten
+scheme stores aggregate evidence and source ids even when session trace slots are later overwritten
 long-term sample generation still saves new scheme without activation
 ```
 
@@ -529,6 +569,20 @@ migrated
 generated from calibration session
 generated from long-term sample library
 ```
+
+Do not rely only on free-form text. Do not expand `MeteringSchemeRecord` to store full per-sample details in this task. Preserve structured scheme evidence in existing candidate/scheme evidence fields:
+
+```text
+sampleCount
+sampleTraceIds or long-term sample ids
+minActualMl
+maxActualMl
+maxErrorMl
+maxErrorPercent
+startup duration summary
+```
+
+Expose full per-sample details only while the source session slots or long-term sample entries still exist. The scheme itself must remain understandable after those details are unavailable because it stores aggregate evidence and source ids.
 
 - [ ] **Step 4: Implement apply path**
 

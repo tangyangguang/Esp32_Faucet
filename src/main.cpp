@@ -589,10 +589,21 @@ void initializeApplication() {
             g_recordMeteringSnapshots,
             g_meteringSchemes,
             g_pulseTraces,
-            &g_recordCalibrations);
+            &g_recordCalibrations,
+            &g_calibrationSession,
+            &g_calibrationSessionTraces,
+            &g_calibrationLongTermSamples);
     } else {
         g_app = new (std::nothrow) faucet::AppController(
-            g_config, g_statistics, *g_filters, g_records, g_pulseTraces, &g_recordCalibrations);
+            g_config,
+            g_statistics,
+            *g_filters,
+            g_records,
+            g_pulseTraces,
+            &g_recordCalibrations,
+            &g_calibrationSession,
+            &g_calibrationSessionTraces,
+            &g_calibrationLongTermSamples);
     }
     if (!g_app) {
         ESP32BASE_LOG_E("app", "app controller allocation failed");

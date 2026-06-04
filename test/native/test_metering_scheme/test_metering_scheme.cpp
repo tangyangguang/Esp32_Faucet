@@ -16,6 +16,7 @@ MeteringSchemeCollection collectionFor(MeteringSchemeRecord (&records)[N]) {
 MeteringSchemeCandidate sampleCandidate() {
     MeteringSchemeCandidate candidate{};
     candidate.ready = true;
+    candidate.generatedKind = MeteringSchemeGeneratedKind::CalibrationSession;
     candidate.params = MeteringParameters{40, 553, 222};
     candidate.generatedAt = 1770000000;
     candidate.sampleCount = 3;
@@ -64,6 +65,8 @@ void test_default_store_has_one_enabled_active_default_scheme() {
     TEST_ASSERT_NOT_NULL(std::strstr(active->creationSummary, "启动约 5 秒"));
     TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(MeteringSchemeSource::Default),
                             static_cast<unsigned>(active->sourceType));
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(MeteringSchemeGeneratedKind::None),
+                            static_cast<unsigned>(active->generatedKind));
 }
 
 void test_candidate_saves_as_new_scheme_without_enabling() {
@@ -83,6 +86,10 @@ void test_candidate_saves_as_new_scheme_without_enabling() {
     TEST_ASSERT_NOT_NULL(saved);
     TEST_ASSERT_TRUE(saved->valid);
     TEST_ASSERT_TRUE(saved->enabled);
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(MeteringSchemeSource::Generated),
+                            static_cast<unsigned>(saved->sourceType));
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(MeteringSchemeGeneratedKind::CalibrationSession),
+                            static_cast<unsigned>(saved->generatedKind));
     TEST_ASSERT_EQUAL_STRING("低压实验", saved->name);
     TEST_ASSERT_EQUAL_UINT32(40, saved->params.startupPulseCount);
     TEST_ASSERT_EQUAL_UINT32(553, saved->params.startupVolumeMl);
@@ -92,7 +99,38 @@ void test_candidate_saves_as_new_scheme_without_enabling() {
     TEST_ASSERT_EQUAL_UINT32(1, saved->revision);
     TEST_ASSERT_EQUAL_UINT16(3, saved->sampleCount);
     TEST_ASSERT_EQUAL_UINT32(101, saved->sampleTraceIds[0]);
+    TEST_ASSERT_EQUAL_UINT32(102, saved->sampleTraceIds[1]);
+    TEST_ASSERT_EQUAL_UINT32(103, saved->sampleTraceIds[2]);
+    TEST_ASSERT_EQUAL_UINT32(1500, saved->minActualMl);
+    TEST_ASSERT_EQUAL_UINT32(7500, saved->maxActualMl);
+    TEST_ASSERT_EQUAL_UINT32(28, saved->maxErrorMl);
     TEST_ASSERT_EQUAL_UINT32(5, saved->startupDurationAvgSec);
+    TEST_ASSERT_NOT_NULL(std::strstr(saved->creationSummary, "样本数量 3"));
+}
+
+void test_long_term_candidate_saves_generated_kind_without_activation() {
+    MeteringSchemeRecord records[4]{};
+    MeteringSchemeCollection schemes = collectionFor(records);
+    TEST_ASSERT_TRUE(initializeDefaultMeteringSchemes(schemes, 1770000000));
+    MeteringSchemeCandidate candidate = sampleCandidate();
+    candidate.generatedKind = MeteringSchemeGeneratedKind::LongTermSampleLibrary;
+    candidate.sampleTraceIds[0] = 9001;
+    candidate.sampleTraceIds[1] = 9002;
+    candidate.sampleTraceIds[2] = 9003;
+
+    std::uint32_t newId = 0;
+    TEST_ASSERT_TRUE(saveCandidateAsNewMeteringScheme(schemes, candidate, "长期样本生成", 1770000100, newId));
+
+    TEST_ASSERT_EQUAL_UINT32(1, schemes.activeSchemeId);
+    const MeteringSchemeRecord* saved = findMeteringSchemeById(schemes, newId);
+    TEST_ASSERT_NOT_NULL(saved);
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(MeteringSchemeSource::Generated),
+                            static_cast<unsigned>(saved->sourceType));
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(MeteringSchemeGeneratedKind::LongTermSampleLibrary),
+                            static_cast<unsigned>(saved->generatedKind));
+    TEST_ASSERT_EQUAL_UINT16(3, saved->sampleCount);
+    TEST_ASSERT_EQUAL_UINT32(9001, saved->sampleTraceIds[0]);
+    TEST_ASSERT_EQUAL_UINT32(9003, saved->sampleTraceIds[2]);
     TEST_ASSERT_NOT_NULL(std::strstr(saved->creationSummary, "样本数量 3"));
 }
 
@@ -109,6 +147,8 @@ void test_manual_create_uses_source_manual_and_revision_one() {
     TEST_ASSERT_NOT_NULL(saved);
     TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(MeteringSchemeSource::Manual),
                             static_cast<unsigned>(saved->sourceType));
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(MeteringSchemeGeneratedKind::None),
+                            static_cast<unsigned>(saved->generatedKind));
     TEST_ASSERT_EQUAL_UINT32(1, saved->revision);
     TEST_ASSERT_EQUAL_UINT16(0, saved->sampleCount);
     TEST_ASSERT_EQUAL_UINT32(0, saved->sampleTraceIds[0]);
@@ -248,6 +288,7 @@ int main(int argc, char** argv) {
     UNITY_BEGIN();
     RUN_TEST(test_default_store_has_one_enabled_active_default_scheme);
     RUN_TEST(test_candidate_saves_as_new_scheme_without_enabling);
+    RUN_TEST(test_long_term_candidate_saves_generated_kind_without_activation);
     RUN_TEST(test_manual_create_uses_source_manual_and_revision_one);
     RUN_TEST(test_core_or_environment_edit_increments_revision);
     RUN_TEST(test_name_only_edit_does_not_increment_revision);

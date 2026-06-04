@@ -37,6 +37,12 @@ enum class MeteringSchemeSource : std::uint8_t {
     Migrated = 3,
 };
 
+enum class MeteringSchemeGeneratedKind : std::uint8_t {
+    None = 0,
+    CalibrationSession = 1,
+    LongTermSampleLibrary = 2,
+};
+
 enum class MeteringSchemeEditKind : std::uint8_t {
     NameOnly = 0,
     MeteringOrApplicability = 1,
@@ -54,6 +60,7 @@ struct MeteringSchemeRecord {
     char userNote[kMeteringSchemeUserNoteLength]{};
     MeteringParameters params{};
     MeteringSchemeSource sourceType = MeteringSchemeSource::Default;
+    MeteringSchemeGeneratedKind generatedKind = MeteringSchemeGeneratedKind::None;
     std::uint32_t revision = 0;
     std::uint32_t createdAt = 0;
     std::uint32_t updatedAt = 0;
@@ -77,6 +84,7 @@ struct MeteringSchemeRecord {
 
 struct MeteringSchemeCandidate {
     bool ready = false;
+    MeteringSchemeGeneratedKind generatedKind = MeteringSchemeGeneratedKind::None;
     MeteringParameters params{};
     std::uint32_t generatedAt = 0;
     std::uint16_t sampleCount = 0;

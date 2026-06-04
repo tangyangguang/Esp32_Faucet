@@ -55,6 +55,7 @@ void initializeCommonScheme(MeteringSchemeRecord& scheme,
 }
 
 void copyCandidateMetadata(MeteringSchemeRecord& scheme, const MeteringSchemeCandidate& candidate) {
+    scheme.generatedKind = candidate.generatedKind;
     scheme.sampleCount = candidate.sampleCount;
     const std::size_t traceCount =
         std::min<std::size_t>(candidate.sampleCount, kMeteringSchemeTraceIdCapacity);

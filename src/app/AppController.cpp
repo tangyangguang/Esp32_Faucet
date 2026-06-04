@@ -3,13 +3,13 @@
 #include "app/TimeUtils.h"
 
 #include <algorithm>
+#include <cstdio>
 #include <limits>
 #include <new>
 
 namespace faucet {
 namespace {
 
-constexpr std::uint32_t kResultCalibrationHoldMs = 5000;
 constexpr std::uint32_t kCalibrationMinActualMl = 100;
 std::uint32_t msFromSeconds(std::uint32_t seconds) {
     constexpr std::uint32_t maxMs = std::numeric_limits<std::uint32_t>::max();
@@ -37,6 +37,93 @@ MeteringSchemeRecord schemeFromLegacyConfig(const SystemConfig& config) {
     MeteringSchemeRecord scheme{};
     initializeManualMeteringScheme(scheme, 1, "运行计量方案", defaultMeteringParameters(), 0);
     return scheme;
+}
+
+bool appendSessionCalibrationSample(const CalibrationStoredTrace& stored,
+                                    const CalibrationSessionTraceStore& traceStore,
+                                    std::uint8_t slot,
+                                    const SegmentedCalibrationOptions& options,
+                                    SegmentedCalibrationSample* samples,
+                                    std::size_t sampleCapacity,
+                                    std::uint32_t* sourceIds,
+                                    std::size_t& sampleCount) {
+    if (!samples || !sourceIds || sampleCount >= sampleCapacity || !stored.valid || stored.pendingActual ||
+        stored.actualMl == 0 || stored.trace.sampleCount < 6 || stored.trace.totalPulses == 0 ||
+        stored.trace.truncated || stored.trace.resumedAfterPause) {
+        return false;
+    }
+    WaterPulseTraceSample* traceSamples = new (std::nothrow) WaterPulseTraceSample[stored.trace.sampleCount]{};
+    if (!traceSamples) {
+        return false;
+    }
+    const std::size_t copied = traceStore.readSamples(slot, traceSamples, stored.trace.sampleCount);
+    if (copied != stored.trace.sampleCount) {
+        delete[] traceSamples;
+        return false;
+    }
+    const WaterPulseTraceAnalysis analysis =
+        analyzeWaterPulseTrace(stored.trace, traceSamples, stored.trace.sampleCount, options);
+    delete[] traceSamples;
+    if (!analysis.stable || analysis.stablePulseCount == 0) {
+        return false;
+    }
+    samples[sampleCount] = SegmentedCalibrationSample{
+        stored.actualMl,
+        stored.trace.totalPulses,
+        analysis.startupPulseCount,
+        analysis.stablePulseCount,
+        analysis.stableStartSec,
+        analysis.stablePulsePerSec,
+    };
+    sourceIds[sampleCount] = stored.trace.traceId == 0 ? static_cast<std::uint32_t>(slot + 1) : stored.trace.traceId;
+    ++sampleCount;
+    return true;
+}
+
+void fillCandidateFromSegmentedResult(MeteringSchemeCandidate& candidate,
+                                      const SegmentedCalibrationResult& result,
+                                      const SegmentedCalibrationOptions& options,
+                                      const std::uint32_t* sourceIds,
+                                      std::size_t sourceCount,
+                                      std::uint32_t nowSeconds,
+                                      MeteringSchemeGeneratedKind generatedKind) {
+    candidate = MeteringSchemeCandidate{};
+    candidate.ready = true;
+    candidate.generatedKind = generatedKind;
+    candidate.params = MeteringParameters{
+        result.startupPulseCount,
+        result.startupVolumeMl,
+        result.stablePulsePerLiter,
+        result.startupDurationMs,
+        result.stableFlowMlPerMin,
+    };
+    candidate.generatedAt = nowSeconds;
+    candidate.sampleCount = result.sampleCount;
+    const std::size_t idCount = std::min<std::size_t>(
+        std::min<std::size_t>(sourceCount, result.sampleCount), kMeteringSchemeTraceIdCapacity);
+    for (std::size_t i = 0; i < idCount; ++i) {
+        candidate.sampleTraceIds[i] = sourceIds[i];
+    }
+    candidate.minActualMl = result.minActualMl;
+    candidate.maxActualMl = result.maxActualMl;
+    candidate.maxErrorMl = result.maxErrorMl;
+    candidate.maxErrorPercent = static_cast<float>(result.maxRelativeErrorTenthPercent) / 10.0f;
+    candidate.startupDurationMinSec = result.startupDurationSec;
+    candidate.startupDurationMaxSec = result.startupDurationSec;
+    candidate.startupDurationMedianSec = result.startupDurationSec;
+    candidate.startupDurationAvgSec = result.startupDurationSec;
+    std::snprintf(candidate.creationSummary,
+                  sizeof(candidate.creationSummary),
+                  "样本数量 %u，容量范围 %luml-%luml，最大误差 %luml，最大相对误差 %.1f%%，启动阶段平均 %lus。生成设置：分析脉冲间隔 %s，稳态窗口 %lus，稳态容差 %u%%。",
+                  static_cast<unsigned>(result.sampleCount),
+                  static_cast<unsigned long>(result.minActualMl),
+                  static_cast<unsigned long>(result.maxActualMl),
+                  static_cast<unsigned long>(result.maxErrorMl),
+                  static_cast<double>(candidate.maxErrorPercent),
+                  static_cast<unsigned long>(result.startupDurationSec),
+                  options.pulseMinIntervalUsOverride == 0 ? "记录值" : "覆盖值",
+                  static_cast<unsigned long>(options.stableWindowSec),
+                  static_cast<unsigned>(options.stableTolerancePercent));
 }
 
 }  // namespace
@@ -449,12 +536,83 @@ bool AppController::skipCalibrationAttemptForWeb(CalibrationSkipReason reason, s
     return saveCalibrationSession();
 }
 
-bool AppController::generateCalibrationForWeb(std::uint32_t) {
-    return false;
+bool AppController::generateCalibrationForWeb(std::uint32_t nowSeconds) {
+    if (!meteringSchemes_ || !meteringSchemes_->ready() || !calibrationSessionTraces_ ||
+        !calibrationSessionTraces_->ready() || !calibrationCanQuickGenerate(calibrationSession_) ||
+        water_.snapshot().state != WaterState::Idle) {
+        return false;
+    }
+
+    SegmentedCalibrationSample samples[kCalibrationMaxValidSamples]{};
+    std::uint32_t sourceIds[kCalibrationMaxValidSamples]{};
+    std::size_t sampleCount = 0;
+    const SegmentedCalibrationOptions options = segmentedCalibrationOptionsFromConfig(config_);
+    for (std::uint8_t i = 0; i < calibrationSession_.attemptCount && i < kCalibrationMaxAttempts; ++i) {
+        const CalibrationAttempt& attempt = calibrationSession_.attempts[i];
+        if (attempt.status != CalibrationAttemptStatus::Valid ||
+            attempt.sessionTraceSlot >= kCalibrationSessionTraceSlots) {
+            continue;
+        }
+        CalibrationStoredTrace stored{};
+        if (!calibrationSessionTraces_->load(attempt.sessionTraceSlot, stored)) {
+            continue;
+        }
+        appendSessionCalibrationSample(stored,
+                                       *calibrationSessionTraces_,
+                                       attempt.sessionTraceSlot,
+                                       options,
+                                       samples,
+                                       kCalibrationMaxValidSamples,
+                                       sourceIds,
+                                       sampleCount);
+    }
+
+    SegmentedCalibrationResult result{};
+    if (!computeSegmentedCalibration(samples, sampleCount, options, result) || !result.valid) {
+        return false;
+    }
+    MeteringSchemeCandidate candidate{};
+    fillCandidateFromSegmentedResult(candidate,
+                                     result,
+                                     options,
+                                     sourceIds,
+                                     sampleCount,
+                                     nowSeconds,
+                                     MeteringSchemeGeneratedKind::CalibrationSession);
+    if (!meteringSchemes_->saveCandidate(candidate)) {
+        return false;
+    }
+    calibrationSession_.status = CalibrationSessionStatus::Generated;
+    calibrationSession_.updatedAt = nowSeconds;
+    pendingBeep_ = BeepPattern::Done;
+    return saveCalibrationSession();
 }
 
-bool AppController::applyGeneratedCalibrationForWeb(std::uint32_t) {
-    return false;
+bool AppController::applyGeneratedCalibrationForWeb(std::uint32_t nowSeconds) {
+    if (!meteringSchemes_ || !meteringSchemes_->ready() ||
+        calibrationSession_.status != CalibrationSessionStatus::Generated ||
+        water_.snapshot().state != WaterState::Idle) {
+        return false;
+    }
+    MeteringSchemeCandidate candidate{};
+    if (!meteringSchemes_->loadCandidate(candidate) || !candidate.ready ||
+        candidate.generatedKind != MeteringSchemeGeneratedKind::CalibrationSession) {
+        return false;
+    }
+    std::uint32_t newId = 0;
+    if (!meteringSchemes_->saveCandidateAsNew("校准生成计量方案", nowSeconds, newId) ||
+        !meteringSchemes_->enableScheme(newId, nowSeconds)) {
+        return false;
+    }
+    MeteringSchemeRecord active{};
+    if (!meteringSchemes_->activeScheme(active) || !applyActiveMeteringScheme(active)) {
+        return false;
+    }
+    calibrationSession_.status = CalibrationSessionStatus::Applied;
+    calibrationSession_.appliedSchemeId = newId;
+    calibrationSession_.updatedAt = nowSeconds;
+    pendingBeep_ = BeepPattern::Done;
+    return saveCalibrationSession();
 }
 
 CalibrationApplyResult AppController::applyCalibrationFromRecord(const WaterRecord& record, std::uint32_t actualMl) {

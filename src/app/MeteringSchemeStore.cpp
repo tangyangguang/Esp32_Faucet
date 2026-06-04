@@ -11,7 +11,7 @@ namespace faucet {
 namespace {
 
 constexpr std::uint32_t kMeteringSchemeStoreMagic = 0x314D5346UL;  // FSM1
-constexpr std::uint16_t kMeteringSchemeStoreVersion = 2;
+constexpr std::uint16_t kMeteringSchemeStoreVersion = 3;
 constexpr std::uint16_t kLegacyMeteringSchemeStoreVersion = 1;
 constexpr std::size_t kMigrationCopyChunkSize = 256;
 

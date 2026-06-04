@@ -216,6 +216,90 @@ void applyTestMeteringScheme(AppController& app, std::uint32_t stablePulsePerLit
     TEST_ASSERT_TRUE(app.applyActiveMeteringScheme(scheme));
 }
 
+WaterRecord calibrationRecord(std::uint32_t startTime, std::uint32_t totalPulses, std::uint32_t actualMl) {
+    return WaterRecord{
+        startTime,
+        actualMl,
+        actualMl,
+        totalPulses,
+        0,
+        0,
+        WaterMode::Volume,
+        WaterResult::Completed,
+        0,
+        0,
+        1.0f,
+        {0, 0, 0, 0},
+    };
+}
+
+std::size_t fillCalibrationSamples(WaterPulseTraceSample* samples,
+                                   std::size_t capacity,
+                                   std::uint32_t startupPulses,
+                                   std::uint32_t stablePulses,
+                                   std::uint32_t stableSeconds) {
+    if (!samples || capacity < startupPulses + stablePulses || stableSeconds == 0) {
+        return 0;
+    }
+    std::size_t count = 0;
+    for (std::uint32_t sec = 0; sec < 5; ++sec) {
+        const std::uint32_t pulsesThisSec = startupPulses / 5 + (sec < startupPulses % 5 ? 1 : 0);
+        for (std::uint32_t i = 0; i < pulsesThisSec; ++i) {
+            samples[count++] = WaterPulseTraceSample{static_cast<std::uint32_t>(sec * 1000000UL + i * 5000UL)};
+        }
+    }
+    for (std::uint32_t sec = 0; sec < stableSeconds; ++sec) {
+        const std::uint32_t pulsesThisSec = stablePulses / stableSeconds + (sec < stablePulses % stableSeconds ? 1 : 0);
+        for (std::uint32_t i = 0; i < pulsesThisSec; ++i) {
+            samples[count++] =
+                WaterPulseTraceSample{static_cast<std::uint32_t>((5 + sec) * 1000000UL + i * 5000UL)};
+        }
+    }
+    return count;
+}
+
+void saveCalibrationSessionSample(CalibrationSessionTraceStore& traceStore,
+                                  CalibrationSessionRecord& session,
+                                  std::uint8_t slot,
+                                  std::uint32_t startTime,
+                                  std::uint32_t actualMl,
+                                  std::uint32_t startupPulses,
+                                  std::uint32_t stablePulses,
+                                  std::uint32_t stableSeconds) {
+    WaterPulseTraceSample samples[2048]{};
+    const std::size_t sampleCount =
+        fillCalibrationSamples(samples, 2048, startupPulses, stablePulses, stableSeconds);
+    TEST_ASSERT_GREATER_THAN_size_t(0, sampleCount);
+    const std::uint32_t totalPulses = startupPulses + stablePulses;
+    WaterRecord record = calibrationRecord(startTime, totalPulses, actualMl);
+    record.durationSec = 5 + stableSeconds;
+
+    CalibrationStoredTrace stored{};
+    stored.pendingActual = true;
+    stored.sessionId = session.sessionId;
+    stored.attemptIndex = slot;
+    stored.trace.traceId = slot + 1;
+    stored.trace.startTime = startTime;
+    stored.trace.record = record;
+    stored.trace.sampleCount = sampleCount;
+    stored.trace.totalPulses = totalPulses;
+    stored.trace.actualMl = actualMl;
+    stored.trace.pulseMinIntervalUs = kDefaultPulseMinIntervalUs;
+    stored.trace.finalState = WaterPulseTraceState::Completed;
+    stored.trace.finished = true;
+    TEST_ASSERT_TRUE(traceStore.savePending(slot, stored, samples, sampleCount));
+    TEST_ASSERT_TRUE(traceStore.commitValid(slot, actualMl, startTime + 10));
+
+    CalibrationAttempt attempt{};
+    attempt.attemptIndex = slot;
+    attempt.sessionTraceSlot = slot;
+    attempt.record = record;
+    attempt.targetHintMl = actualMl;
+    attempt.actualMl = actualMl;
+    attempt.status = CalibrationAttemptStatus::Valid;
+    TEST_ASSERT_TRUE(appendCalibrationAttempt(session, attempt));
+}
+
 }  // namespace
 
 void test_app_controller_uses_active_scheme_parameters_for_flow_meter() {
@@ -539,6 +623,119 @@ void test_app_controller_local_ok_starts_calibration_run_and_completion_awaits_a
     TEST_ASSERT_TRUE(traceStore.load(0, valid));
     TEST_ASSERT_TRUE(valid.valid);
     TEST_ASSERT_FALSE(valid.pendingActual);
+}
+
+void test_app_controller_generates_calibration_session_candidate() {
+    SystemConfig config = makeDefaultConfig();
+    StatisticsStore statistics;
+    FilterStore filters(config.filters);
+    MemoryRecordWriter records;
+    MemorySnapshotWriter snapshots;
+    MemoryCalibrationWriter calibrations;
+    MemoryFileBackend backend;
+    MeteringSchemeStore schemes(backend, "/schemes.bin");
+    MeteringSchemeRecord active{};
+    TEST_ASSERT_TRUE(prepareMeteringScheme(schemes, 225, active));
+    CalibrationSessionFileStore sessionStore(backend, "/cal-session.bin");
+    CalibrationSessionTraceStore traceStore(backend, "/cal-traces.bin");
+    CalibrationLongTermSampleStore sampleStore(backend, "/cal-samples.bin");
+    TEST_ASSERT_TRUE(sessionStore.begin());
+    TEST_ASSERT_TRUE(traceStore.begin());
+    TEST_ASSERT_TRUE(sampleStore.begin());
+
+    CalibrationSessionRecord session = makeCalibrationSession(77, 1714502400);
+    saveCalibrationSessionSample(traceStore, session, 0, 1714502401, 1500, 40, 210, 6);
+    saveCalibrationSessionSample(traceStore, session, 1, 1714502410, 7500, 40, 1540, 11);
+    session.status = CalibrationSessionStatus::ReadyToGenerate;
+    session.validSampleCount = countValidCalibrationSamples(session);
+    TEST_ASSERT_TRUE(sessionStore.save(session));
+
+    AppController app(config,
+                      active,
+                      statistics,
+                      filters,
+                      records,
+                      snapshots,
+                      schemes,
+                      nullptr,
+                      &calibrations,
+                      &sessionStore,
+                      &traceStore,
+                      &sampleStore);
+
+    TEST_ASSERT_TRUE(app.generateCalibrationForWeb(1714502500));
+
+    MeteringSchemeCandidate candidate{};
+    TEST_ASSERT_TRUE(schemes.loadCandidate(candidate));
+    TEST_ASSERT_TRUE(candidate.ready);
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(MeteringSchemeGeneratedKind::CalibrationSession),
+                            static_cast<unsigned>(candidate.generatedKind));
+    TEST_ASSERT_EQUAL_UINT16(2, candidate.sampleCount);
+    TEST_ASSERT_EQUAL_UINT32(1500, candidate.minActualMl);
+    TEST_ASSERT_EQUAL_UINT32(7500, candidate.maxActualMl);
+    TEST_ASSERT_EQUAL_UINT32(1, candidate.sampleTraceIds[0]);
+    TEST_ASSERT_EQUAL_UINT32(2, candidate.sampleTraceIds[1]);
+    TEST_ASSERT_UINT32_WITHIN(5, 222, candidate.params.stablePulsePerLiter);
+    TEST_ASSERT_NOT_NULL(std::strstr(candidate.creationSummary, "样本数量 2"));
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationSessionStatus::Generated),
+                            static_cast<unsigned>(app.snapshot().calibrationStatus));
+}
+
+void test_app_controller_applies_generated_session_scheme_and_keeps_old_scheme() {
+    SystemConfig config = makeDefaultConfig();
+    StatisticsStore statistics;
+    FilterStore filters(config.filters);
+    MemoryRecordWriter records;
+    MemorySnapshotWriter snapshots;
+    MemoryCalibrationWriter calibrations;
+    MemoryFileBackend backend;
+    MeteringSchemeStore schemes(backend, "/schemes.bin");
+    MeteringSchemeRecord active{};
+    TEST_ASSERT_TRUE(prepareMeteringScheme(schemes, 225, active));
+    const std::uint32_t oldActiveId = active.id;
+    CalibrationSessionFileStore sessionStore(backend, "/cal-session.bin");
+    CalibrationSessionTraceStore traceStore(backend, "/cal-traces.bin");
+    CalibrationLongTermSampleStore sampleStore(backend, "/cal-samples.bin");
+    TEST_ASSERT_TRUE(sessionStore.begin());
+    TEST_ASSERT_TRUE(traceStore.begin());
+    TEST_ASSERT_TRUE(sampleStore.begin());
+
+    CalibrationSessionRecord session = makeCalibrationSession(78, 1714502400);
+    saveCalibrationSessionSample(traceStore, session, 0, 1714502401, 1500, 40, 210, 6);
+    saveCalibrationSessionSample(traceStore, session, 1, 1714502410, 7500, 40, 1540, 11);
+    session.status = CalibrationSessionStatus::ReadyToGenerate;
+    session.validSampleCount = countValidCalibrationSamples(session);
+    TEST_ASSERT_TRUE(sessionStore.save(session));
+
+    AppController app(config,
+                      active,
+                      statistics,
+                      filters,
+                      records,
+                      snapshots,
+                      schemes,
+                      nullptr,
+                      &calibrations,
+                      &sessionStore,
+                      &traceStore,
+                      &sampleStore);
+    TEST_ASSERT_TRUE(app.generateCalibrationForWeb(1714502500));
+    TEST_ASSERT_TRUE(app.applyGeneratedCalibrationForWeb(1714502600));
+
+    TEST_ASSERT_NOT_EQUAL(oldActiveId, schemes.activeSchemeId());
+    TEST_ASSERT_EQUAL_UINT32(schemes.activeSchemeId(), app.activeMeteringScheme().id);
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(MeteringSchemeGeneratedKind::CalibrationSession),
+                            static_cast<unsigned>(app.activeMeteringScheme().generatedKind));
+    TEST_ASSERT_UINT32_WITHIN(5, 222, app.activeMeteringScheme().params.stablePulsePerLiter);
+    MeteringSchemeRecord oldScheme{};
+    TEST_ASSERT_TRUE(schemes.findById(oldActiveId, oldScheme));
+    TEST_ASSERT_TRUE(oldScheme.valid);
+    TEST_ASSERT_TRUE(oldScheme.enabled);
+    MeteringSchemeCandidate candidate{};
+    TEST_ASSERT_TRUE(schemes.loadCandidate(candidate));
+    TEST_ASSERT_FALSE(candidate.ready);
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationSessionStatus::Applied),
+                            static_cast<unsigned>(app.snapshot().calibrationStatus));
 }
 
 void test_app_controller_applies_calibration_from_raw_record() {
@@ -1148,6 +1345,8 @@ int main(int argc, char** argv) {
     RUN_TEST(test_app_controller_starting_calibration_from_idle_enters_preparing);
     RUN_TEST(test_app_controller_starting_calibration_while_running_is_rejected);
     RUN_TEST(test_app_controller_local_ok_starts_calibration_run_and_completion_awaits_actual);
+    RUN_TEST(test_app_controller_generates_calibration_session_candidate);
+    RUN_TEST(test_app_controller_applies_generated_session_scheme_and_keeps_old_scheme);
     RUN_TEST(test_app_controller_applies_calibration_from_raw_record);
     RUN_TEST(test_app_controller_small_record_calibration_keeps_metering_parameters);
     RUN_TEST(test_app_controller_pause_timeout_trace_is_not_marked_error_and_can_calibrate);

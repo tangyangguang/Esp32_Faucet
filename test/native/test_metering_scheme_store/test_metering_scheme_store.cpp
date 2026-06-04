@@ -99,12 +99,12 @@ MeteringSchemeStoreHeader legacyHeader(std::uint32_t activeSchemeId,
     return header;
 }
 
-MeteringSchemeStoreHeader v2Header(std::uint32_t activeSchemeId,
+MeteringSchemeStoreHeader currentHeader(std::uint32_t activeSchemeId,
                                    std::uint32_t nextSchemeId,
                                    std::uint32_t slotCount) {
     MeteringSchemeStoreHeader header{
         kTestMeteringSchemeStoreMagic,
-        2,
+        3,
         static_cast<std::uint16_t>(sizeof(MeteringSchemeStoreHeader)),
         static_cast<std::uint16_t>(sizeof(MeteringSchemeRecord)),
         static_cast<std::uint16_t>(sizeof(MeteringSchemeCandidate)),
@@ -273,6 +273,7 @@ private:
 MeteringSchemeCandidate candidate() {
     MeteringSchemeCandidate out{};
     out.ready = true;
+    out.generatedKind = MeteringSchemeGeneratedKind::CalibrationSession;
     out.params = MeteringParameters{40, 553, 222};
     out.generatedAt = 1770000000;
     out.sampleCount = 3;
@@ -370,9 +371,33 @@ void test_save_candidate_reloads_after_restart() {
     TEST_ASSERT_EQUAL_UINT32(2, list[1].id);
     TEST_ASSERT_EQUAL_STRING("低压实验", list[1].name);
     TEST_ASSERT_EQUAL_UINT32(553, list[1].params.startupVolumeMl);
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(MeteringSchemeSource::Generated),
+                            static_cast<unsigned>(list[1].sourceType));
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(MeteringSchemeGeneratedKind::CalibrationSession),
+                            static_cast<unsigned>(list[1].generatedKind));
     TEST_ASSERT_EQUAL_UINT32(5000, list[1].params.startupDurationMs);
     TEST_ASSERT_EQUAL_UINT32(480, list[1].params.stableFlowMlPerMin);
     TEST_ASSERT_EQUAL_UINT32(5, list[1].startupDurationAvgSec);
+}
+
+void test_candidate_generated_kind_round_trips_without_saving_scheme() {
+    MemoryFileBackend backend;
+    MeteringSchemeStore store(backend, "/schemes.bin");
+    TEST_ASSERT_TRUE(store.begin());
+    MeteringSchemeCandidate generated = candidate();
+    generated.generatedKind = MeteringSchemeGeneratedKind::LongTermSampleLibrary;
+    generated.sampleTraceIds[0] = 9101;
+    generated.sampleTraceIds[1] = 9102;
+    TEST_ASSERT_TRUE(store.saveCandidate(generated));
+
+    MeteringSchemeCandidate loaded{};
+    TEST_ASSERT_TRUE(store.loadCandidate(loaded));
+    TEST_ASSERT_TRUE(loaded.ready);
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(MeteringSchemeGeneratedKind::LongTermSampleLibrary),
+                            static_cast<unsigned>(loaded.generatedKind));
+    TEST_ASSERT_EQUAL_UINT16(3, loaded.sampleCount);
+    TEST_ASSERT_EQUAL_UINT32(9101, loaded.sampleTraceIds[0]);
+    TEST_ASSERT_EQUAL_UINT32(9102, loaded.sampleTraceIds[1]);
 }
 
 void test_manual_create_reuses_deleted_unused_slot_with_new_id() {
@@ -652,7 +677,7 @@ void test_begin_ignores_stale_scheme_migration_temp_when_current_file_is_valid()
         TEST_ASSERT_TRUE(store.enableScheme(id, 1770000001));
     }
 
-    const MeteringSchemeStoreHeader header = v2Header(99, 100, 1);
+    const MeteringSchemeStoreHeader header = currentHeader(99, 100, 1);
     MeteringSchemeCandidate candidate{};
     MeteringSchemeRecord stale{};
     initializeManualMeteringScheme(stale, 99, "陈旧临时方案", MeteringParameters{13, 190, 370}, 1770000000);
@@ -729,6 +754,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_begin_initializes_default_scheme_file);
     RUN_TEST(test_begin_upgrades_single_legacy_default_scheme_to_yfs201_builtin_default);
     RUN_TEST(test_save_candidate_reloads_after_restart);
+    RUN_TEST(test_candidate_generated_kind_round_trips_without_saving_scheme);
     RUN_TEST(test_manual_create_reuses_deleted_unused_slot_with_new_id);
     RUN_TEST(test_used_scheme_delete_is_rejected_and_disable_is_explicit);
     RUN_TEST(test_delete_keeps_at_least_one_valid_scheme);

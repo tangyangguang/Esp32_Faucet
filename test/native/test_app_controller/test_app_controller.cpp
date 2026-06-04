@@ -1,6 +1,8 @@
 #include <unity.h>
 
 #include "app/AppController.h"
+#include "app/CalibrationSampleStore.h"
+#include "app/CalibrationSessionStore.h"
 #include "app/MeteringSchemeStore.h"
 #include "app/WaterRecordCalibrationStore.h"
 #include "app/WaterRecordMeteringSnapshotStore.h"
@@ -420,83 +422,123 @@ void test_app_controller_local_plus_does_not_switch_preset_while_running() {
     TEST_ASSERT_EQUAL_size_t(0, app.snapshot().water.activePreset);
 }
 
-void test_app_controller_holds_ok_five_seconds_to_enter_local_calibration() {
+void test_app_controller_starting_calibration_from_idle_enters_preparing() {
     SystemConfig config = makeDefaultConfig();
     StatisticsStore statistics;
     statistics.reset({20260506, 202619, 202605});
     FilterStore filters(config.filters);
     MemoryRecordWriter records;
-    AppController app(config, statistics, filters, records);
+    MemoryFileBackend backend;
+    CalibrationSessionFileStore sessionStore(backend, "/cal-session.bin");
+    CalibrationSessionTraceStore traceStore(backend, "/cal-traces.bin");
+    CalibrationLongTermSampleStore sampleStore(backend, "/cal-samples.bin");
+    TEST_ASSERT_TRUE(sessionStore.begin());
+    TEST_ASSERT_TRUE(traceStore.begin());
+    TEST_ASSERT_TRUE(sampleStore.begin());
+    AppController app(config, statistics, filters, records, nullptr, nullptr, &sessionStore, &traceStore, &sampleStore);
+    applyTestMeteringScheme(app);
+
+    TEST_ASSERT_TRUE(app.startCalibrationSessionForWeb(1714502400));
+
+    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(LocalUiMode::Calibration),
+                            static_cast<std::uint8_t>(app.snapshot().localMode));
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationSessionStatus::Preparing),
+                            static_cast<unsigned>(app.snapshot().calibrationStatus));
+    TEST_ASSERT_EQUAL_UINT8(0, app.snapshot().calibrationAttemptCount);
+    TEST_ASSERT_EQUAL_UINT8(0, app.snapshot().calibrationValidSampleCount);
+    TEST_ASSERT_FALSE(app.snapshot().water.valveOpen);
+}
+
+void test_app_controller_starting_calibration_while_running_is_rejected() {
+    SystemConfig config = makeDefaultConfig();
+    StatisticsStore statistics;
+    statistics.reset({20260506, 202619, 202605});
+    FilterStore filters(config.filters);
+    MemoryRecordWriter records;
+    MemoryFileBackend backend;
+    CalibrationSessionFileStore sessionStore(backend, "/cal-session.bin");
+    CalibrationSessionTraceStore traceStore(backend, "/cal-traces.bin");
+    CalibrationLongTermSampleStore sampleStore(backend, "/cal-samples.bin");
+    TEST_ASSERT_TRUE(sessionStore.begin());
+    TEST_ASSERT_TRUE(traceStore.begin());
+    TEST_ASSERT_TRUE(sampleStore.begin());
+    AppController app(config, statistics, filters, records, nullptr, nullptr, &sessionStore, &traceStore, &sampleStore);
     applyTestMeteringScheme(app);
 
     app.resetInputs({false, false, false, false}, 0);
     pressAndReleaseOk(app, 100);
     pressAndReleaseOk(app, 300);
-    for (std::uint32_t i = 0; i < 1500; ++i) {
-        app.onFlowPulse(1000000UL + i * 2000UL);
-    }
-    app.tick(input({false, false, false, false}, 5000, 5000000, 1714502400));
 
-    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(LocalUiMode::Result),
+    TEST_ASSERT_FALSE(app.startCalibrationSessionForWeb(1714502400));
+    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(LocalUiMode::Normal),
                             static_cast<std::uint8_t>(app.snapshot().localMode));
-    app.tick(input({false, true, false, false}, 6000, 6000000, 1714502401));
-    app.tick(input({false, true, false, false}, 6000 + kButtonDebounceMs, (6000 + kButtonDebounceMs) * 1000UL, 1714502401));
-    app.tick(input({false, true, false, false}, 6000 + kButtonDebounceMs + kButtonLongPressMs,
-                   (6000 + kButtonDebounceMs + kButtonLongPressMs) * 1000UL,
-                   1714502402));
-    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(LocalUiMode::Result),
-                            static_cast<std::uint8_t>(app.snapshot().localMode));
-    app.tick(input({false, true, false, false}, 11000, 11000000, 1714502406));
-
-    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(LocalUiMode::Calibration),
-                            static_cast<std::uint8_t>(app.snapshot().localMode));
-    TEST_ASSERT_EQUAL_UINT32(1500, app.snapshot().calibrationActualMl);
-    TEST_ASSERT_EQUAL_UINT32(100, app.snapshot().calibrationStepMl);
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationSessionStatus::Idle),
+                            static_cast<unsigned>(app.snapshot().calibrationStatus));
 }
 
-void test_app_controller_ok_saves_local_calibration() {
+void test_app_controller_local_ok_starts_calibration_run_and_completion_awaits_actual() {
     SystemConfig config = makeDefaultConfig();
     StatisticsStore statistics;
     statistics.reset({20260506, 202619, 202605});
     FilterStore filters(config.filters);
     MemoryRecordWriter records;
     MemoryCalibrationWriter calibrations;
-    AppController app(config, statistics, filters, records, nullptr, &calibrations);
+    WaterPulseTrace traces[1]{};
+    WaterPulseTraceSample samples[4096]{};
+    WaterPulseTraceStore pulseTraces(traces, 1, samples, 4096, 1);
+    MemoryFileBackend backend;
+    CalibrationSessionFileStore sessionStore(backend, "/cal-session.bin");
+    CalibrationSessionTraceStore traceStore(backend, "/cal-traces.bin");
+    CalibrationLongTermSampleStore sampleStore(backend, "/cal-samples.bin");
+    TEST_ASSERT_TRUE(sessionStore.begin());
+    TEST_ASSERT_TRUE(traceStore.begin());
+    TEST_ASSERT_TRUE(sampleStore.begin());
+    AppController app(config,
+                      statistics,
+                      filters,
+                      records,
+                      &pulseTraces,
+                      &calibrations,
+                      &sessionStore,
+                      &traceStore,
+                      &sampleStore);
     applyTestMeteringScheme(app);
 
+    TEST_ASSERT_TRUE(app.startCalibrationSessionForWeb(1714502400));
     app.resetInputs({false, false, false, false}, 0);
     pressAndReleaseOk(app, 100);
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationSessionStatus::WaitingLocalRun),
+                            static_cast<unsigned>(app.snapshot().calibrationStatus));
     pressAndReleaseOk(app, 300);
-    for (std::uint32_t i = 0; i < 1500; ++i) {
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationSessionStatus::Running),
+                            static_cast<unsigned>(app.snapshot().calibrationStatus));
+    TEST_ASSERT_TRUE(app.snapshot().water.valveOpen);
+
+    for (std::uint32_t i = 0; i < 500; ++i) {
         app.onFlowPulse(1000000UL + i * 2000UL);
     }
-    app.tick(input({false, false, false, false}, 5000, 5000000, 1714502400));
-    app.tick(input({false, true, false, false}, 6000, 6000000, 1714502401));
-    app.tick(input({false, true, false, false}, 6000 + kButtonDebounceMs, (6000 + kButtonDebounceMs) * 1000UL, 1714502401));
-    app.tick(input({false, true, false, false}, 6000 + kButtonDebounceMs + kButtonLongPressMs,
-                   (6000 + kButtonDebounceMs + kButtonLongPressMs) * 1000UL,
-                   1714502402));
-    app.tick(input({false, true, false, false}, 11000, 11000000, 1714502406));
-    app.tick(input({false, false, false, false}, 11080, 11080000, 1714502406));
-    app.tick(input({false, false, false, false}, 11080 + kButtonDebounceMs, (11080 + kButtonDebounceMs) * 1000UL, 1714502406));
-    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(LocalUiMode::Calibration),
-                            static_cast<std::uint8_t>(app.snapshot().localMode));
+    app.tick(input({true, false, false, false}, 1600, 1600000, 1714502401));
+    app.tick(input({true, false, false, false}, 1600 + kButtonDebounceMs, (1600 + kButtonDebounceMs) * 1000UL, 1714502401));
 
-    pressAndReleaseMinus(app, 11300);
-    pressAndReleaseMinus(app, 11500);
-    pressAndReleaseMinus(app, 11700);
-    TEST_ASSERT_EQUAL_UINT32(1200, app.snapshot().calibrationActualMl);
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationSessionStatus::AwaitingActual),
+                            static_cast<unsigned>(app.snapshot().calibrationStatus));
+    TEST_ASSERT_EQUAL_size_t(1, records.records.size());
+    TEST_ASSERT_EQUAL_UINT32(500, statistics.record().todayMl);
+    TEST_ASSERT_EQUAL_UINT32(500, filters.record(0).usedMl);
+    CalibrationStoredTrace pending{};
+    TEST_ASSERT_TRUE(traceStore.load(0, pending));
+    TEST_ASSERT_TRUE(pending.pendingActual);
+    TEST_ASSERT_FALSE(pending.valid);
 
-    pressAndReleaseOk(app, 11900);
-
-    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(LocalUiMode::Result),
-                            static_cast<std::uint8_t>(app.snapshot().localMode));
-    TEST_ASSERT_FLOAT_WITHIN(0.001f, 1.0f, static_cast<float>(app.activeMeteringScheme().params.stablePulsePerLiter) / 1000.0f);
-    TEST_ASSERT_FALSE(app.consumeConfigDirty());
+    TEST_ASSERT_TRUE(app.submitCalibrationActualForWeb(520, 1714502402));
+    TEST_ASSERT_EQUAL_UINT8(1, app.snapshot().calibrationValidSampleCount);
     TEST_ASSERT_EQUAL_size_t(1, calibrations.calibrations.size());
-    TEST_ASSERT_EQUAL_UINT32(1200, calibrations.calibrations[0].actualMl);
-    TEST_ASSERT_EQUAL_UINT32(1000, calibrations.calibrations[0].calibratedAt);
+    TEST_ASSERT_EQUAL_UINT32(520, calibrations.calibrations[0].actualMl);
     TEST_ASSERT_EQUAL_UINT32(records.records[0].pulseCount, calibrations.calibrations[0].pulseCount);
+    CalibrationStoredTrace valid{};
+    TEST_ASSERT_TRUE(traceStore.load(0, valid));
+    TEST_ASSERT_TRUE(valid.valid);
+    TEST_ASSERT_FALSE(valid.pendingActual);
 }
 
 void test_app_controller_applies_calibration_from_raw_record() {
@@ -1103,8 +1145,9 @@ int main(int argc, char** argv) {
     RUN_TEST(test_app_controller_adjusts_volume_target_with_configured_step_without_ok_long_toggle);
     RUN_TEST(test_app_controller_adjusts_time_target_with_configured_step);
     RUN_TEST(test_app_controller_stopped_volume_does_not_clamp_next_confirm_adjustment);
-    RUN_TEST(test_app_controller_holds_ok_five_seconds_to_enter_local_calibration);
-    RUN_TEST(test_app_controller_ok_saves_local_calibration);
+    RUN_TEST(test_app_controller_starting_calibration_from_idle_enters_preparing);
+    RUN_TEST(test_app_controller_starting_calibration_while_running_is_rejected);
+    RUN_TEST(test_app_controller_local_ok_starts_calibration_run_and_completion_awaits_actual);
     RUN_TEST(test_app_controller_applies_calibration_from_raw_record);
     RUN_TEST(test_app_controller_small_record_calibration_keeps_metering_parameters);
     RUN_TEST(test_app_controller_pause_timeout_trace_is_not_marked_error_and_can_calibrate);

@@ -120,21 +120,58 @@ DisplayFrame DisplayPresenter::render(const AppSnapshot& snapshot, std::uint32_t
         char left[kDisplayLineLength]{};
         std::snprintf(left, sizeof(left), "%s %s", stateText(snapshot.water.lastResult), volume);
         composeTopLine(line1, left, snapshot.pulsePerLiter);
-        std::snprintf(line2, sizeof(line2), snapshot.calibrationReady ? "Hold OK Cal" : "OK Back");
+        std::snprintf(line2, sizeof(line2), "OK Back");
         return makeFrame(DisplayPage::Result, true, line1, line2);
     }
 
     if (snapshot.localMode == LocalUiMode::Calibration) {
-        char actual[8]{};
-        char step[8]{};
-        formatLiters(actual, sizeof(actual), snapshot.calibrationActualMl);
-        formatLitersNumber(step, sizeof(step), snapshot.calibrationStepMl);
         char line1[kDisplayLineLength]{};
         char line2[kDisplayLineLength]{};
         char left[kDisplayLineLength]{};
-        std::snprintf(left, sizeof(left), "A%s", actual);
+        switch (snapshot.calibrationStatus) {
+            case CalibrationSessionStatus::Preparing:
+                std::snprintf(left, sizeof(left), "Cal Ready");
+                std::snprintf(line2, sizeof(line2), "Cup Ready OK");
+                break;
+            case CalibrationSessionStatus::WaitingLocalRun:
+                std::snprintf(left, sizeof(left), "Cal Sample");
+                std::snprintf(line2, sizeof(line2), "OK Start");
+                break;
+            case CalibrationSessionStatus::Running: {
+                char volume[8]{};
+                formatLiters(volume, sizeof(volume), snapshot.water.volumeMl);
+                std::snprintf(left, sizeof(left), "Cal %s", volume);
+                std::snprintf(line2, sizeof(line2), "Cancel Stop");
+                break;
+            }
+            case CalibrationSessionStatus::AwaitingActual:
+                std::snprintf(left, sizeof(left), "Actual ml");
+                std::snprintf(line2, sizeof(line2), "Input/Cancel");
+                break;
+            case CalibrationSessionStatus::ReadyToGenerate:
+                std::snprintf(left, sizeof(left), "%u Samples", static_cast<unsigned>(snapshot.calibrationValidSampleCount));
+                std::snprintf(line2, sizeof(line2), "Generate Web");
+                break;
+            case CalibrationSessionStatus::Generated:
+                std::snprintf(left, sizeof(left), "Scheme Ready");
+                std::snprintf(line2, sizeof(line2), "Apply Web");
+                break;
+            case CalibrationSessionStatus::Applied:
+                std::snprintf(left, sizeof(left), "Applied");
+                std::snprintf(line2, sizeof(line2), "OK Back");
+                break;
+            case CalibrationSessionStatus::Failed:
+                std::snprintf(left, sizeof(left), "Cal Failed");
+                std::snprintf(line2, sizeof(line2), "Cancel Back");
+                break;
+            case CalibrationSessionStatus::Discarded:
+            case CalibrationSessionStatus::Idle:
+            default:
+                std::snprintf(left, sizeof(left), "Cal");
+                std::snprintf(line2, sizeof(line2), "OK Back");
+                break;
+        }
         composeTopLine(line1, left, snapshot.pulsePerLiter);
-        std::snprintf(line2, sizeof(line2), "S%s +/- OK", step);
         return makeFrame(DisplayPage::Calibration, true, line1, line2);
     }
 

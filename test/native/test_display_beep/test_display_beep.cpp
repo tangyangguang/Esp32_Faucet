@@ -145,6 +145,7 @@ void test_display_result_page_shows_summary() {
     snapshot.water.elapsedSec = 163;
     snapshot.water.lastResult = WaterResult::Completed;
     snapshot.localMode = LocalUiMode::Result;
+    snapshot.calibrationReady = true;
 
     DisplayFrame frame = presenter.render(snapshot, 500);
 
@@ -155,20 +156,34 @@ void test_display_result_page_shows_summary() {
     assertDisplayLinesFit(frame);
 }
 
-void test_display_local_calibration_page_shows_actual_and_step() {
+void test_display_local_calibration_page_shows_session_state() {
     DisplayPresenter presenter(30);
     presenter.wake(0);
     AppSnapshot snapshot = makeSnapshot(WaterState::Idle, 1500, 1500);
     snapshot.localMode = LocalUiMode::Calibration;
-    snapshot.calibrationActualMl = 1000;
-    snapshot.calibrationStepMl = 100;
+    snapshot.calibrationStatus = CalibrationSessionStatus::Preparing;
     snapshot.pulsePerLiter = 450;
 
     DisplayFrame frame = presenter.render(snapshot, 500);
 
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(DisplayPage::Calibration), static_cast<std::uint8_t>(frame.page));
-    TEST_ASSERT_EQUAL_STRING("A1.00L      450P", frame.line1);
-    TEST_ASSERT_EQUAL_STRING("S0.10 +/- OK", frame.line2);
+    TEST_ASSERT_EQUAL_STRING("Cal Ready   450P", frame.line1);
+    TEST_ASSERT_EQUAL_STRING("Cup Ready OK", frame.line2);
+    assertPulseLabelFixedRight(frame);
+    assertDisplayLinesFit(frame);
+
+    snapshot.calibrationStatus = CalibrationSessionStatus::Running;
+    snapshot.water.volumeMl = 520;
+    frame = presenter.render(snapshot, 800);
+    TEST_ASSERT_EQUAL_STRING("Cal 0.52L   450P", frame.line1);
+    TEST_ASSERT_EQUAL_STRING("Cancel Stop", frame.line2);
+    assertPulseLabelFixedRight(frame);
+    assertDisplayLinesFit(frame);
+
+    snapshot.calibrationStatus = CalibrationSessionStatus::AwaitingActual;
+    frame = presenter.render(snapshot, 900);
+    TEST_ASSERT_EQUAL_STRING("Actual ml   450P", frame.line1);
+    TEST_ASSERT_EQUAL_STRING("Input/Cancel", frame.line2);
     assertPulseLabelFixedRight(frame);
     assertDisplayLinesFit(frame);
 }
@@ -263,7 +278,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_display_time_preset_shows_remaining_seconds_and_error_reason);
     RUN_TEST(test_display_confirm_and_pause_pages_are_short);
     RUN_TEST(test_display_result_page_shows_summary);
-    RUN_TEST(test_display_local_calibration_page_shows_actual_and_step);
+    RUN_TEST(test_display_local_calibration_page_shows_session_state);
     RUN_TEST(test_display_omits_pulse_label_when_unavailable);
     RUN_TEST(test_beep_click_turns_off_after_duration);
     RUN_TEST(test_beep_duration_survives_millis_wrap);

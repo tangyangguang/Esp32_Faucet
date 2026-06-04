@@ -2,6 +2,8 @@
 
 #include "app/ButtonInput.h"
 #include "app/BeepDriver.h"
+#include "app/CalibrationSampleStore.h"
+#include "app/CalibrationSessionStore.h"
 #include "app/FilterStore.h"
 #include "app/FlowMeter.h"
 #include "app/MeteringSchemeStore.h"
@@ -49,6 +51,13 @@ struct AppSnapshot {
     std::uint32_t calibrationActualMl = 0;
     std::uint32_t calibrationStepMl = 100;
     bool calibrationReady = false;
+    CalibrationSessionStatus calibrationStatus = CalibrationSessionStatus::Idle;
+    std::uint8_t calibrationAttemptCount = 0;
+    std::uint8_t calibrationValidSampleCount = 0;
+    std::uint32_t calibrationMinActualMl = 0;
+    std::uint32_t calibrationMaxActualMl = 0;
+    bool calibrationCanQuickGenerate = false;
+    bool calibrationRecommended = false;
     std::uint32_t pulsePerLiter = 0;
     MeteringParameters meteringParams{};
     std::uint32_t targetEstimatedDurationSec = 0;
@@ -89,7 +98,10 @@ public:
                   FilterStore& filters,
                   WaterRecordWriter& records,
                   WaterPulseTraceStore* pulseTraces = nullptr,
-                  WaterRecordCalibrationWriter* recordCalibrations = nullptr);
+                  WaterRecordCalibrationWriter* recordCalibrations = nullptr,
+                  CalibrationSessionFileStore* calibrationSessions = nullptr,
+                  CalibrationSessionTraceStore* calibrationSessionTraces = nullptr,
+                  CalibrationLongTermSampleStore* calibrationLongTermSamples = nullptr);
     AppController(const SystemConfig& config,
                   const MeteringSchemeRecord& activeScheme,
                   StatisticsStore& statistics,
@@ -98,7 +110,10 @@ public:
                   WaterRecordMeteringSnapshotWriter& meteringSnapshots,
                   MeteringSchemeStore& meteringSchemes,
                   WaterPulseTraceStore* pulseTraces = nullptr,
-                  WaterRecordCalibrationWriter* recordCalibrations = nullptr);
+                  WaterRecordCalibrationWriter* recordCalibrations = nullptr,
+                  CalibrationSessionFileStore* calibrationSessions = nullptr,
+                  CalibrationSessionTraceStore* calibrationSessionTraces = nullptr,
+                  CalibrationLongTermSampleStore* calibrationLongTermSamples = nullptr);
 
     void resetInputs(ButtonLevels levels, std::uint32_t nowMs);
     void onFlowPulse(std::uint32_t nowUs);
@@ -118,6 +133,12 @@ public:
     bool applyConfig(const SystemConfig& config);
     bool applyActiveMeteringScheme(const MeteringSchemeRecord& activeScheme);
     CalibrationApplyResult applyCalibrationFromRecord(const WaterRecord& record, std::uint32_t actualMl);
+    bool startCalibrationSessionForWeb(std::uint32_t nowSeconds);
+    bool discardCalibrationSessionForWeb(std::uint32_t nowSeconds);
+    bool submitCalibrationActualForWeb(std::uint32_t actualMl, std::uint32_t nowSeconds);
+    bool skipCalibrationAttemptForWeb(CalibrationSkipReason reason, std::uint32_t nowSeconds);
+    bool generateCalibrationForWeb(std::uint32_t nowSeconds);
+    bool applyGeneratedCalibrationForWeb(std::uint32_t nowSeconds);
     const SystemConfig& config() const;
     const MeteringSchemeRecord& activeMeteringScheme() const;
 
@@ -134,15 +155,18 @@ private:
                              bool timeSynced,
                              std::uint32_t bootId);
     void exitResultDisplay(std::uint32_t nowMs);
-    void toggleCalibrationStep();
-    void enterCalibrationFromResult(std::uint32_t nowMs);
-    void updateResultCalibrationHold(bool okPressed, std::uint32_t nowMs);
-    bool adjustCalibrationActual(std::int32_t deltaMl);
-    CalibrationApplyResult saveLocalCalibration(std::uint32_t nowSeconds);
     CalibrationApplyResult applyCalibrationFromRecordInternal(const WaterRecord& record,
                                                               std::uint32_t actualMl,
                                                               bool allowLocalCalibration,
                                                               std::uint32_t calibratedAt);
+    void restoreCalibrationSession();
+    bool saveCalibrationSession();
+    bool beginCalibrationLocalRun(std::uint32_t nowMs,
+                                  std::uint32_t nowUs,
+                                  std::uint32_t nowSeconds,
+                                  bool timeSynced,
+                                  std::uint32_t bootId);
+    void persistCalibrationPendingAttempt(const WaterRecord& record, std::uint32_t nowSeconds);
     void syncFlow(std::uint32_t nowUs);
     void finishPulseTrace(const WaterRecord& record,
                           WaterPulseTraceState finalState,
@@ -172,6 +196,10 @@ private:
     WaterRecordMeteringSnapshotWriter* meteringSnapshots_;
     MeteringSchemeStore* meteringSchemes_;
     WaterPulseTraceStore* pulseTraces_;
+    CalibrationSessionFileStore* calibrationSessions_;
+    CalibrationSessionTraceStore* calibrationSessionTraces_;
+    CalibrationLongTermSampleStore* calibrationLongTermSamples_;
+    CalibrationSessionRecord calibrationSession_;
     std::uint32_t activeTraceId_;
     std::uint32_t activeTraceStartUs_;
     std::uint32_t lastFlowVolumeMl_;
@@ -195,12 +223,6 @@ private:
     std::uint32_t timeAdjustmentStepSec_;
     bool lastResultRecordValid_;
     WaterRecord lastResultRecord_;
-    bool resultOkHoldTracking_;
-    bool resultOkHoldTriggered_;
-    std::uint32_t resultOkHoldStartMs_;
-    std::uint32_t calibrationActualMl_;
-    std::uint32_t calibrationStepMl_;
-    bool calibrationIgnoreOkUntilReleased_;
 };
 
 }  // namespace faucet

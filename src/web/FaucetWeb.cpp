@@ -96,7 +96,9 @@ float recentStablePulsePerSec();
 void handleRecordDetailPage();
 void handleRecordInfoPage();
 void handleCalibrationPage();
+void handleMeteringPage();
 void handleCalibrationPost();
+void handleMeteringPost();
 void handleRecordCalibrationApi();
 void handleGenerateSegmentedCalibrationApi();
 void handleSaveGeneratedSchemeApi();
@@ -108,6 +110,8 @@ void handleDeleteMeteringSchemeApi();
 void handleTraceCalibrationApi();
 void handleTraceSaveApi();
 void handleTraceDeleteApi();
+const char* calibrationSessionStatusText(CalibrationSessionStatus status);
+void redirectCalibrationResult(bool ok, const char* success);
 void formatWaterRecordTime(const WaterRecord& record, char* out, std::size_t len);
 void formatWaterRecordListTime(const WaterRecord& record, char* out, std::size_t len);
 void formatRecordTime(std::uint32_t seconds, char* out, std::size_t len);
@@ -1704,7 +1708,7 @@ void sendCalibrationParameterPanels() {
     }
 
     Esp32BaseWeb::sendChunk("<section class='panel calibration-param-panel'><div class='panel-head'><h3>流量计计量方案</h3>"
-                            "<a class='btn-link' href='/faucet/calibration?scheme=new'>新建方案</a></div>"
+                            "<a class='btn-link' href='/faucet/metering?scheme=new'>新建方案</a></div>"
                             "<table class='calibration-slot-table metering-scheme-table'><tr><th>方案</th><th>容量估算参数</th><th>时间估算参数</th><th>适用条件</th><th>使用次数</th><th>操作</th></tr>");
     if (!ready) {
         Esp32BaseWeb::sendChunk("<tr><td colspan='6'>计量方案存储不可用。</td></tr>");
@@ -1763,15 +1767,15 @@ void sendCalibrationParameterPanels() {
                 scheme.usageStatsDirty ? "<span class='status-pill status-warn'>统计待核对</span>" : "");
         sendSchemeDetailButton(scheme, activeId);
         sendMeteringTrialButton(scheme.name[0] ? scheme.name : "计量方案", scheme.params, 1000, 10);
-        sendFmt("<a class='btn-link' href='/faucet/calibration?scheme=%lu'>编辑</a>",
+        sendFmt("<a class='btn-link' href='/faucet/metering?scheme=%lu'>编辑</a>",
                 static_cast<unsigned long>(scheme.id));
         if (scheme.id != activeId) {
-            sendFmt("<form method='post' action='/faucet/calibration' onsubmit=\"return confirm('确认切换当前计量方案？')&&once(this)\"><input type='hidden' name='action' value='enable_metering_scheme'><input type='hidden' name='id' value='%lu'><input class='primary' type='submit' value='%s'></form>",
+            sendFmt("<form method='post' action='/faucet/metering' onsubmit=\"return confirm('确认切换当前计量方案？')&&once(this)\"><input type='hidden' name='action' value='enable_metering_scheme'><input type='hidden' name='id' value='%lu'><input class='primary' type='submit' value='%s'></form>",
                     static_cast<unsigned long>(scheme.id),
                     scheme.id == createdSchemeId ? "切换使用此方案" : "切换使用");
         }
         if (canPhysicallyDeleteMeteringScheme(scheme, activeId, count)) {
-            sendFmt("<form method='post' action='/faucet/calibration' onsubmit=\"return confirm('确认删除未使用的计量方案？')&&once(this)\"><input type='hidden' name='action' value='delete_metering_scheme'><input type='hidden' name='id' value='%lu'><input class='danger' type='submit' value='删除'></form>",
+            sendFmt("<form method='post' action='/faucet/metering' onsubmit=\"return confirm('确认删除未使用的计量方案？')&&once(this)\"><input type='hidden' name='action' value='delete_metering_scheme'><input type='hidden' name='id' value='%lu'><input class='danger' type='submit' value='删除'></form>",
                     static_cast<unsigned long>(scheme.id));
         }
         Esp32BaseWeb::sendChunk("</div></td></tr>");
@@ -1788,12 +1792,12 @@ void sendCalibrationParameterPanels() {
 void sendMeteringSchemeEditPage(bool creating, const MeteringSchemeRecord* scheme) {
     const char* title = creating ? "新建计量方案" : "修改计量方案";
     Esp32BaseWeb::sendHeader(title);
-    sendFmt("<h2>%s</h2><p><a class='btn-link' href='/faucet/calibration'>返回校准</a></p>", title);
+    sendFmt("<h2>%s</h2><p><a class='btn-link' href='/faucet/metering'>返回计量方案</a></p>", title);
     sendNoticeFromQuery();
     const MeteringParameters params = scheme ? scheme->params : MeteringParameters{};
     const bool editingActive = !creating && scheme && ensureMeteringSchemesReady() &&
                                scheme->id == g_context.meteringSchemes->activeSchemeId();
-    Esp32BaseWeb::sendChunk("<section class='panel calibration-param-panel scheme-edit-panel'><form class='scheme-edit-form' method='post' action='/faucet/calibration' onsubmit='return once(this)'>");
+    Esp32BaseWeb::sendChunk("<section class='panel calibration-param-panel scheme-edit-panel'><form class='scheme-edit-form' method='post' action='/faucet/metering' onsubmit='return once(this)'>");
     Esp32BaseWeb::sendChunk(creating ? "<input type='hidden' name='action' value='create_metering_scheme'>"
                                      : "<input type='hidden' name='action' value='edit_metering_scheme'>");
     if (!creating && scheme) {
@@ -1880,7 +1884,7 @@ void sendMeteringSchemeEditPage(bool creating, const MeteringSchemeRecord* schem
     }
     Esp32BaseWeb::sendChunk(creating ? "<div class='form-actions scheme-edit-actions'><input class='primary' type='submit' value='保存为新方案'>"
                                      : "<div class='form-actions scheme-edit-actions'><input class='primary' type='submit' value='保存修改'>");
-    Esp32BaseWeb::sendChunk("<a class='btn-link' href='/faucet/calibration'>取消</a></div></form></section>");
+    Esp32BaseWeb::sendChunk("<a class='btn-link' href='/faucet/metering'>取消</a></div></form></section>");
     sendPageEnd();
 }
 
@@ -2540,11 +2544,11 @@ void sendCalibrationGenerationPanel() {
         sendFmt(" 启动阶段平均 %lus。</p>",
                 static_cast<unsigned long>(candidate.startupDurationAvgSec));
         sendGeneratedSampleResiduals(candidate, options);
-        Esp32BaseWeb::sendChunk("<div class='form-actions generated-result-actions'><form class='inline-form' method='post' action='/faucet/calibration' onsubmit='return once(this)'>"
+        Esp32BaseWeb::sendChunk("<div class='form-actions generated-result-actions'><form class='inline-form' method='post' action='/faucet/metering' onsubmit='return once(this)'>"
                                 "<input type='hidden' name='action' value='save_generated_scheme'>"
                                 "<label class='compact-field generated-name-field'><span>新方案名称</span><input name='name' maxlength='31' value='样本生成方案'></label>"
                                 "<input class='primary' type='submit' value='保存为新方案'></form>"
-                                "<form method='post' action='/faucet/calibration' onsubmit='return faucetSubmitGenerationAction(this)'>"
+                                "<form method='post' action='/faucet/metering' onsubmit='return faucetSubmitGenerationAction(this)'>"
                                 "<input type='hidden' name='action' value='discard_generated_scheme'>"
                                 "<input type='hidden' name='ajax' value='1'>"
                                 "<input class='secondary' type='submit' value='放弃生成结果'></form></div></div>"
@@ -2553,7 +2557,7 @@ void sendCalibrationGenerationPanel() {
         Esp32BaseWeb::sendChunk("</div></div></section>");
     }
     Esp32BaseWeb::sendChunk("<div class='form-actions'>"
-                            "<form method='post' action='/faucet/calibration' onsubmit='return faucetSubmitGenerationAction(this)'>"
+                            "<form method='post' action='/faucet/metering' onsubmit='return faucetSubmitGenerationAction(this)'>"
                             "<input type='hidden' name='action' value='generate_segmented'>"
                             "<input type='hidden' name='ajax' value='1'>");
     sendFmt("<input type='submit' value='%s'></form>", candidateReady ? "重新生成" : "生成参数");
@@ -2581,7 +2585,7 @@ void sendCalibrationPageScript() {
                             "function faucetReplaceCalibrationSection(id,url){return fetch(url,{cache:'no-store',credentials:'same-origin'}).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.text();}).then(function(html){var old=document.getElementById(id);if(!old)return;var box=document.createElement('div');box.innerHTML=html;var next=box.querySelector('#'+id);if(next)old.replaceWith(next);});}"
                             "function faucetRefreshCalibrationSamples(){return faucetReplaceCalibrationSection('calibration-samples','/faucet/calibration?partial=samples');}"
                             "function faucetSubmitSampleCalibration(f){if(typeof once==='function'&&!once(f))return false;fetch('/faucet/calibration',{method:'POST',body:new FormData(f),cache:'no-store',credentials:'same-origin'}).then(function(r){if(!r.ok)return faucetReadCalibrationError(r).then(function(code){throw new Error(code);});return r.json();}).then(function(){return faucetRefreshCalibrationSamples().catch(function(){faucetResetSampleCalibrationForm(f);alert('校准已保存，但页面刷新失败，请手动刷新查看最新状态。');});}).catch(function(e){faucetResetSampleCalibrationForm(f);alert('保存失败：'+faucetCalibrationErrorMessage(e.message));});return false;}"
-                            "function faucetSubmitGenerationAction(f){if(typeof once==='function'&&!once(f))return false;var fd=new FormData(f),action=String(fd.get('action')||'');fetch('/faucet/calibration',{method:'POST',body:fd,cache:'no-store',credentials:'same-origin'}).then(function(r){if(!r.ok)return faucetReadCalibrationError(r).then(function(code){throw new Error(code);});return r.json();}).then(function(){var url='/faucet/calibration?partial=generation'+(action==='generate_segmented'?'&generated=1':'');return faucetReplaceCalibrationSection('scheme-generation',url).catch(function(){alert('生成操作已完成，但页面刷新失败，请手动刷新查看最新状态。');});}).catch(function(e){f.dataset.busy='';var b=f.querySelector('[type=submit]');if(b)b.disabled=false;alert('操作失败：'+faucetCalibrationErrorMessage(e.message));});return false;}"
+                            "function faucetSubmitGenerationAction(f){if(typeof once==='function'&&!once(f))return false;var fd=new FormData(f),action=String(fd.get('action')||'');fetch('/faucet/metering',{method:'POST',body:fd,cache:'no-store',credentials:'same-origin'}).then(function(r){if(!r.ok)return faucetReadCalibrationError(r).then(function(code){throw new Error(code);});return r.json();}).then(function(){var url='/faucet/metering?partial=generation'+(action==='generate_segmented'?'&generated=1':'');return faucetReplaceCalibrationSection('scheme-generation',url).catch(function(){alert('生成操作已完成，但页面刷新失败，请手动刷新查看最新状态。');});}).catch(function(e){f.dataset.busy='';var b=f.querySelector('[type=submit]');if(b)b.disabled=false;alert('操作失败：'+faucetCalibrationErrorMessage(e.message));});return false;}"
                             "</script>");
 }
 
@@ -4341,7 +4345,99 @@ void handleCalibrationPage() {
         return;
     }
 
-    const std::uint32_t samplePulseWindowSec = selectedSamplePulseWindowSec();
+    char text[32]{};
+    if (getParam("partial", text, sizeof(text))) {
+        if (!Esp32BaseWeb::beginResponse(200, "text/html; charset=utf-8", nullptr)) {
+            return;
+        }
+        if (std::strcmp(text, "samples") == 0) {
+            sendCalibrationSamplesPanel(selectedSamplePulseWindowSec());
+        }
+        Esp32BaseWeb::endResponse();
+        return;
+    }
+
+    const AppSnapshot snapshot = g_context.app->snapshot();
+    const bool sessionActive = snapshot.calibrationStatus != CalibrationSessionStatus::Idle &&
+                               snapshot.calibrationStatus != CalibrationSessionStatus::Applied &&
+                               snapshot.calibrationStatus != CalibrationSessionStatus::Discarded &&
+                               snapshot.calibrationStatus != CalibrationSessionStatus::Failed;
+    const bool canEnterActual = snapshot.calibrationStatus == CalibrationSessionStatus::AwaitingActual;
+    const bool canGenerate = snapshot.calibrationCanQuickGenerate &&
+                             (snapshot.calibrationStatus == CalibrationSessionStatus::ReadyToGenerate ||
+                              snapshot.calibrationStatus == CalibrationSessionStatus::AwaitingActual);
+    const bool canApply = snapshot.calibrationStatus == CalibrationSessionStatus::Generated;
+
+    Esp32BaseWeb::sendHeader("校准");
+    Esp32BaseWeb::sendChunk("<h2>校准</h2>");
+    sendNoticeFromQuery();
+    Esp32BaseWeb::sendChunk("<section class='panel calibration-session-panel'><div class='panel-head'><h3>校准会话</h3>");
+    sendFmt("<span class='status-pill %s'>%s</span></div>",
+            sessionActive ? "status-warn" : "status-muted",
+            calibrationSessionStatusText(snapshot.calibrationStatus));
+    Esp32BaseWeb::sendChunk("<p class='muted'>网页可以进入/退出校准模式、填写实测容量、放弃本次和确认应用；出水与停水只允许在设备旁通过本地按键操作。</p>"
+                            "<div class='stat-grid'>");
+    sendFmt("<div><span>已尝试</span><b>%u</b><small>最多 5 次</small></div>",
+            static_cast<unsigned>(snapshot.calibrationAttemptCount));
+    sendFmt("<div><span>有效样本</span><b>%u</b><small>至少 2 条，建议 3 条以上</small></div>",
+            static_cast<unsigned>(snapshot.calibrationValidSampleCount));
+    char minText[24]{};
+    char maxText[24]{};
+    formatLiters(snapshot.calibrationMinActualMl, minText, sizeof(minText));
+    formatLiters(snapshot.calibrationMaxActualMl, maxText, sizeof(maxText));
+    sendFmt("<div><span>容量差距建议</span><b>%s - %s</b><small>优先覆盖小/中/大差异，不强制指定容器</small></div>",
+            snapshot.calibrationValidSampleCount > 0 ? minText : "-",
+            snapshot.calibrationValidSampleCount > 0 ? maxText : "-");
+    Esp32BaseWeb::sendChunk("</div><div class='form-actions'>"
+                            "<form method='post' action='/faucet/calibration' onsubmit='return once(this)'>"
+                            "<input type='hidden' name='action' value='start_session'>"
+                            "<input class='primary' type='submit' value='进入校准模式'></form>"
+                            "<form method='post' action='/faucet/calibration' onsubmit=\"return confirm('确认退出并丢弃本次校准会话？')&&once(this)\">"
+                            "<input type='hidden' name='action' value='discard_session'>"
+                            "<input class='secondary' type='submit' value='退出校准模式'></form></div>");
+    if (canEnterActual) {
+        Esp32BaseWeb::sendChunk("<form class='sample-calibration-form' method='post' action='/faucet/calibration' onsubmit='return once(this)'>"
+                                "<input type='hidden' name='action' value='save_actual'>"
+                                "<label class='compact-field'><span>本次实测容量</span><span class='estimator-input-row'>"
+                                "<input name='actualMl' type='number' min='1' max='");
+        sendFmt("%lu", static_cast<unsigned long>(kMaxVolumePresetMl));
+        Esp32BaseWeb::sendChunk("' step='1' required><span class='unit-label'>ml</span></span></label>"
+                                "<div class='form-actions'><input class='primary' type='submit' value='保存为有效样本'></form>"
+                                "<form method='post' action='/faucet/calibration' onsubmit=\"return confirm('确认放弃本次出水样本？')&&once(this)\">"
+                                "<input type='hidden' name='action' value='skip_attempt'>"
+                                "<input class='danger' type='submit' value='放弃本次'></form></div>");
+    }
+    Esp32BaseWeb::sendChunk("<div class='form-actions'>"
+                            "<form method='post' action='/faucet/calibration' onsubmit='return once(this)'>"
+                            "<input type='hidden' name='action' value='generate_session'>");
+    sendFmt("<input class='secondary' type='submit' value='生成计量方案'%s></form>",
+            canGenerate ? "" : " disabled");
+    Esp32BaseWeb::sendChunk("<form method='post' action='/faucet/calibration' onsubmit=\"return confirm('确认保存并启用本次生成的计量方案？')&&once(this)\">"
+                            "<input type='hidden' name='action' value='apply_session'>");
+    sendFmt("<input class='primary' type='submit' value='确认应用'%s></form></div>",
+            canApply ? "" : " disabled");
+    Esp32BaseWeb::sendChunk("</section>");
+    sendCalibrationSamplesPanel(selectedSamplePulseWindowSec());
+    sendCalibrationPageScript();
+    sendPageEnd();
+}
+
+void handleMeteringPage() {
+    if (!Esp32BaseWeb::checkAuth()) {
+        return;
+    }
+    if (!requireContext()) {
+        return;
+    }
+    if (Esp32BaseWeb::isMethod(Esp32BaseWeb::METHOD_POST)) {
+        handleMeteringPost();
+        return;
+    }
+    if (waterTaskActive()) {
+        sendBusyJson("metering_page");
+        return;
+    }
+
     char text[32]{};
     if (getParam("partial", text, sizeof(text))) {
         if (!Esp32BaseWeb::beginResponse(200, "text/html; charset=utf-8", nullptr)) {
@@ -4349,8 +4445,6 @@ void handleCalibrationPage() {
         }
         if (std::strcmp(text, "generation") == 0) {
             sendCalibrationGenerationPanel();
-        } else if (std::strcmp(text, "samples") == 0) {
-            sendCalibrationSamplesPanel(samplePulseWindowSec);
         }
         Esp32BaseWeb::endResponse();
         return;
@@ -4363,23 +4457,24 @@ void handleCalibrationPage() {
         std::uint32_t id = 0;
         MeteringSchemeRecord scheme{};
         if (!parseU32(text, id) || !ensureMeteringSchemesReady() || !g_context.meteringSchemes->findById(id, scheme)) {
-            Esp32BaseWeb::redirectSeeOther("/faucet/calibration?error=invalid_value");
+            Esp32BaseWeb::redirectSeeOther("/faucet/metering?error=invalid_value");
             return;
         }
         sendMeteringSchemeEditPage(false, &scheme);
         return;
     }
 
-    Esp32BaseWeb::sendHeader("校准工作台");
-    Esp32BaseWeb::sendChunk("<h2>校准工作台</h2>");
+    Esp32BaseWeb::sendHeader("计量方案");
+    Esp32BaseWeb::sendChunk("<h2>计量方案</h2>");
     sendNoticeFromQuery();
+    Esp32BaseWeb::sendChunk("<p class='muted'>集中管理当前启用的流量计计量参数、手工方案，以及从样本库生成的新方案；本页不提供远程出水或停水能力。</p>");
     Esp32BaseWeb::sendChunk("<div class='records-top-grid records-diagnostic-strip'>");
     sendSegmentedMeteringPanel();
     sendPulseTraceCachePanel();
     Esp32BaseWeb::sendChunk("</div>");
 
+    Esp32BaseWeb::sendChunk("<p class='muted'>从样本库生成</p>");
     sendCalibrationGenerationPanel();
-    sendCalibrationSamplesPanel(samplePulseWindowSec);
     Esp32BaseWeb::sendChunk("<div class='calibration-param-layout'>");
     sendCalibrationParameterPanels();
     Esp32BaseWeb::sendChunk("</div>");
@@ -5339,8 +5434,78 @@ void handleCalibrationPost() {
         Esp32BaseWeb::redirectSeeOther("/faucet/calibration?error=invalid_value");
         return;
     }
+    if (std::strcmp(text, "start_session") == 0) {
+        if (waterTaskActive()) {
+            Esp32BaseWeb::redirectSeeOther("/faucet/calibration?error=busy");
+            return;
+        }
+        redirectCalibrationResult(g_context.app && g_context.app->startCalibrationSessionForWeb(
+                                                   g_context.nowSeconds ? g_context.nowSeconds() : 0),
+                                  "session_started");
+        return;
+    }
+    if (std::strcmp(text, "discard_session") == 0) {
+        redirectCalibrationResult(g_context.app && g_context.app->discardCalibrationSessionForWeb(
+                                                   g_context.nowSeconds ? g_context.nowSeconds() : 0),
+                                  "session_discarded");
+        return;
+    }
+    if (std::strcmp(text, "save_actual") == 0) {
+        std::uint32_t actualMl = 0;
+        if (!getParam("actualMl", text, sizeof(text)) || !parseU32(text, actualMl)) {
+            Esp32BaseWeb::redirectSeeOther("/faucet/calibration?error=invalid_value");
+            return;
+        }
+        redirectCalibrationResult(g_context.app && g_context.app->submitCalibrationActualForWeb(
+                                                   actualMl, g_context.nowSeconds ? g_context.nowSeconds() : 0),
+                                  "actual");
+        return;
+    }
+    if (std::strcmp(text, "skip_attempt") == 0) {
+        redirectCalibrationResult(g_context.app && g_context.app->skipCalibrationAttemptForWeb(
+                                                   CalibrationSkipReason::Mistake,
+                                                   g_context.nowSeconds ? g_context.nowSeconds() : 0),
+                                  "attempt_skipped");
+        return;
+    }
+    if (std::strcmp(text, "generate_session") == 0) {
+        redirectCalibrationResult(g_context.app && g_context.app->generateCalibrationForWeb(
+                                                   g_context.nowSeconds ? g_context.nowSeconds() : 0),
+                                  "generated");
+        return;
+    }
+    if (std::strcmp(text, "apply_session") == 0) {
+        redirectCalibrationResult(g_context.app && g_context.app->applyGeneratedCalibrationForWeb(
+                                                   g_context.nowSeconds ? g_context.nowSeconds() : 0),
+                                  "applied");
+        return;
+    }
     if (std::strcmp(text, "calibrate") == 0) {
         handleRecordCalibrationApi();
+        return;
+    }
+    if (std::strcmp(text, "generate_segmented") == 0) {
+        Esp32BaseWeb::redirectSeeOther("/faucet/metering?error=invalid_action");
+        return;
+    }
+    if (std::strcmp(text, "save_generated_scheme") == 0) {
+        Esp32BaseWeb::redirectSeeOther("/faucet/metering?error=invalid_action");
+        return;
+    }
+    Esp32BaseWeb::redirectSeeOther("/faucet/calibration?error=invalid_value");
+}
+
+void handleMeteringPost() {
+    if (!Esp32BaseWeb::isMethod(Esp32BaseWeb::METHOD_POST)) {
+        Esp32BaseWeb::sendJson(405, "{\"error\":\"method_not_allowed\"}");
+        return;
+    }
+    if (!Esp32BaseWeb::checkPostAllowed("faucet_metering")) {
+        return;
+    }
+    char text[32]{};
+    if (!getParam("action", text, sizeof(text))) {
+        Esp32BaseWeb::redirectSeeOther("/faucet/metering?error=invalid_value");
         return;
     }
     if (std::strcmp(text, "generate_segmented") == 0) {
@@ -5371,7 +5536,7 @@ void handleCalibrationPost() {
         handleDeleteMeteringSchemeApi();
         return;
     }
-    Esp32BaseWeb::redirectSeeOther("/faucet/calibration?error=invalid_value");
+    Esp32BaseWeb::redirectSeeOther("/faucet/metering?error=invalid_value");
 }
 
 bool persistFilterConfig(const FilterRecord& record, std::size_t index) {
@@ -5437,6 +5602,52 @@ void sendCurrentStatusJson() {
     sendJsonBuffer(
         writeStatusJson(snapshot, displayStatus.screenOn, *g_context.config, &configStatus, json, sizeof(json)),
         json);
+}
+
+const char* calibrationSessionStatusText(CalibrationSessionStatus status) {
+    switch (status) {
+        case CalibrationSessionStatus::Idle:
+            return "未开始";
+        case CalibrationSessionStatus::Preparing:
+            return "准备中";
+        case CalibrationSessionStatus::WaitingLocalRun:
+            return "等待本地出水";
+        case CalibrationSessionStatus::Running:
+            return "本地出水中";
+        case CalibrationSessionStatus::AwaitingActual:
+            return "等待输入实际容量";
+        case CalibrationSessionStatus::ReadyToGenerate:
+            return "可生成";
+        case CalibrationSessionStatus::Generated:
+            return "已生成，待应用";
+        case CalibrationSessionStatus::Applied:
+            return "已应用";
+        case CalibrationSessionStatus::Discarded:
+            return "已放弃";
+        case CalibrationSessionStatus::Failed:
+            return "失败";
+    }
+    return "未知";
+}
+
+void redirectCalibrationResult(bool ok, const char* success) {
+    if (ok) {
+        char url[96]{};
+        std::snprintf(url, sizeof(url), "/faucet/calibration?saved=%s", success ? success : "1");
+        Esp32BaseWeb::redirectSeeOther(url);
+    } else {
+        Esp32BaseWeb::redirectSeeOther("/faucet/calibration?error=invalid_value");
+    }
+}
+
+void redirectMeteringResult(bool ok, const char* success) {
+    if (ok) {
+        char url[96]{};
+        std::snprintf(url, sizeof(url), "/faucet/metering?saved=%s", success ? success : "1");
+        Esp32BaseWeb::redirectSeeOther(url);
+    } else {
+        Esp32BaseWeb::redirectSeeOther("/faucet/metering?error=invalid_value");
+    }
 }
 
 void handleStatusApi() {
@@ -5794,15 +6005,15 @@ void handleGenerateSegmentedCalibrationApi() {
         if (ajax) {
             Esp32BaseWeb::sendJson(200, "{\"ok\":true}");
         } else {
-            Esp32BaseWeb::redirectSeeOther("/faucet/calibration?saved=generated");
+            Esp32BaseWeb::redirectSeeOther("/faucet/metering?saved=generated");
         }
     };
     if (waterTaskActive()) {
-        fail(409, "{\"error\":\"busy\"}", "/faucet/calibration?error=busy");
+        fail(409, "{\"error\":\"busy\"}", "/faucet/metering?error=busy");
         return;
     }
     if (!generateSegmentedCalibrationResultFromSavedSamples()) {
-        fail(400, "{\"error\":\"sample_not_enough\"}", "/faucet/calibration?error=sample_not_enough");
+        fail(400, "{\"error\":\"sample_not_enough\"}", "/faucet/metering?error=sample_not_enough");
         return;
     }
     ok();
@@ -5817,16 +6028,16 @@ void handleSaveGeneratedSchemeApi() {
         return;
     }
     if (waterTaskActive()) {
-        Esp32BaseWeb::redirectSeeOther("/faucet/calibration?generated=1&error=busy");
+        Esp32BaseWeb::redirectSeeOther("/faucet/metering?generated=1&error=busy");
         return;
     }
     if (!ensureMeteringSchemesReady()) {
-        Esp32BaseWeb::redirectSeeOther("/faucet/calibration?generated=1&error=save_failed");
+        Esp32BaseWeb::redirectSeeOther("/faucet/metering?generated=1&error=save_failed");
         return;
     }
     MeteringSchemeCandidate candidate{};
     if (!g_context.meteringSchemes->loadCandidate(candidate) || !candidate.ready) {
-        Esp32BaseWeb::redirectSeeOther("/faucet/calibration?error=no_generated_result");
+        Esp32BaseWeb::redirectSeeOther("/faucet/metering?error=no_generated_result");
         return;
     }
     char name[kMeteringSchemeNameLength]{};
@@ -5836,13 +6047,13 @@ void handleSaveGeneratedSchemeApi() {
     }
     std::uint32_t newId = 0;
     if (!g_context.meteringSchemes->saveCandidateAsNew(name, g_context.nowSeconds ? g_context.nowSeconds() : 0, newId)) {
-        Esp32BaseWeb::redirectSeeOther("/faucet/calibration?generated=1&error=save_failed");
+        Esp32BaseWeb::redirectSeeOther("/faucet/metering?generated=1&error=save_failed");
         return;
     }
     char url[80]{};
     std::snprintf(url,
                   sizeof(url),
-                  "/faucet/calibration?saved=scheme_created&createdScheme=%lu",
+                  "/faucet/metering?saved=scheme_created&createdScheme=%lu",
                   static_cast<unsigned long>(newId));
     Esp32BaseWeb::redirectSeeOther(url);
 }
@@ -5867,20 +6078,20 @@ void handleDiscardGeneratedSchemeApi() {
         if (ajax) {
             Esp32BaseWeb::sendJson(200, "{\"ok\":true}");
         } else {
-            Esp32BaseWeb::redirectSeeOther("/faucet/calibration?saved=generated_discarded");
+            Esp32BaseWeb::redirectSeeOther("/faucet/metering?saved=generated_discarded");
         }
     };
     if (waterTaskActive()) {
-        fail(409, "{\"error\":\"busy\"}", "/faucet/calibration?error=busy");
+        fail(409, "{\"error\":\"busy\"}", "/faucet/metering?error=busy");
         return;
     }
     if (!ensureMeteringSchemesReady()) {
-        fail(500, "{\"error\":\"save_failed\"}", "/faucet/calibration?error=save_failed");
+        fail(500, "{\"error\":\"save_failed\"}", "/faucet/metering?error=save_failed");
         return;
     }
     MeteringSchemeCandidate empty{};
     if (!g_context.meteringSchemes->saveCandidate(empty)) {
-        fail(500, "{\"error\":\"save_failed\"}", "/faucet/calibration?error=save_failed");
+        fail(500, "{\"error\":\"save_failed\"}", "/faucet/metering?error=save_failed");
         return;
     }
     ok();
@@ -5910,29 +6121,29 @@ void handleCreateMeteringSchemeApi() {
         return;
     }
     if (waterTaskActive()) {
-        Esp32BaseWeb::redirectSeeOther("/faucet/calibration?error=busy");
+        Esp32BaseWeb::redirectSeeOther("/faucet/metering?error=busy");
         return;
     }
     if (!ensureMeteringSchemesReady()) {
-        Esp32BaseWeb::redirectSeeOther("/faucet/calibration?error=save_failed");
+        Esp32BaseWeb::redirectSeeOther("/faucet/metering?error=save_failed");
         return;
     }
     MeteringParameters params{};
     if (!readMeteringParamsFromRequest(params)) {
-        Esp32BaseWeb::redirectSeeOther("/faucet/calibration?error=invalid_value");
+        Esp32BaseWeb::redirectSeeOther("/faucet/metering?error=invalid_value");
         return;
     }
     char name[kMeteringSchemeNameLength]{};
     if (!getParam("name", name, sizeof(name)) || name[0] == '\0') {
-        Esp32BaseWeb::redirectSeeOther("/faucet/calibration?error=invalid_value");
+        Esp32BaseWeb::redirectSeeOther("/faucet/metering?error=invalid_value");
         return;
     }
     std::uint32_t newId = 0;
     if (!g_context.meteringSchemes->createManual(name, params, g_context.nowSeconds ? g_context.nowSeconds() : 0, newId)) {
-        Esp32BaseWeb::redirectSeeOther("/faucet/calibration?error=save_failed");
+        Esp32BaseWeb::redirectSeeOther("/faucet/metering?error=save_failed");
         return;
     }
-    Esp32BaseWeb::redirectSeeOther("/faucet/calibration?saved=scheme_created");
+    Esp32BaseWeb::redirectSeeOther("/faucet/metering?saved=scheme_created");
 }
 
 void handleEditMeteringSchemeApi() {
@@ -5944,22 +6155,22 @@ void handleEditMeteringSchemeApi() {
         return;
     }
     if (waterTaskActive()) {
-        Esp32BaseWeb::redirectSeeOther("/faucet/calibration?error=busy");
+        Esp32BaseWeb::redirectSeeOther("/faucet/metering?error=busy");
         return;
     }
     if (!ensureMeteringSchemesReady()) {
-        Esp32BaseWeb::redirectSeeOther("/faucet/calibration?error=save_failed");
+        Esp32BaseWeb::redirectSeeOther("/faucet/metering?error=save_failed");
         return;
     }
     std::uint32_t id = 0;
     MeteringParameters params{};
     if (!readMeteringSchemeId(id) || !readMeteringParamsFromRequest(params)) {
-        Esp32BaseWeb::redirectSeeOther("/faucet/calibration?error=invalid_value");
+        Esp32BaseWeb::redirectSeeOther("/faucet/metering?error=invalid_value");
         return;
     }
     MeteringSchemeRecord edited{};
     if (!g_context.meteringSchemes->findById(id, edited)) {
-        Esp32BaseWeb::redirectSeeOther("/faucet/calibration?error=invalid_value");
+        Esp32BaseWeb::redirectSeeOther("/faucet/metering?error=invalid_value");
         return;
     }
     Esp32BaseWeb::getParam("name", edited.name, sizeof(edited.name));
@@ -5969,7 +6180,7 @@ void handleEditMeteringSchemeApi() {
     Esp32BaseWeb::getParam("userNote", edited.userNote, sizeof(edited.userNote));
     edited.params = params;
     if (!g_context.meteringSchemes->updateScheme(edited, g_context.nowSeconds ? g_context.nowSeconds() : 0)) {
-        Esp32BaseWeb::redirectSeeOther("/faucet/calibration?error=save_failed");
+        Esp32BaseWeb::redirectSeeOther("/faucet/metering?error=save_failed");
         return;
     }
     if (id == g_context.meteringSchemes->activeSchemeId()) {
@@ -5978,7 +6189,7 @@ void handleEditMeteringSchemeApi() {
             g_context.app->applyActiveMeteringScheme(active);
         }
     }
-    Esp32BaseWeb::redirectSeeOther("/faucet/calibration?saved=scheme");
+    Esp32BaseWeb::redirectSeeOther("/faucet/metering?saved=scheme");
 }
 
 void handleEnableMeteringSchemeApi() {
@@ -5990,28 +6201,28 @@ void handleEnableMeteringSchemeApi() {
         return;
     }
     if (waterTaskActive() || !g_context.app || !g_context.app->canApplyConfig()) {
-        Esp32BaseWeb::redirectSeeOther("/faucet/calibration?error=busy");
+        Esp32BaseWeb::redirectSeeOther("/faucet/metering?error=busy");
         return;
     }
     if (!ensureMeteringSchemesReady()) {
-        Esp32BaseWeb::redirectSeeOther("/faucet/calibration?error=save_failed");
+        Esp32BaseWeb::redirectSeeOther("/faucet/metering?error=save_failed");
         return;
     }
     std::uint32_t id = 0;
     if (!readMeteringSchemeId(id)) {
-        Esp32BaseWeb::redirectSeeOther("/faucet/calibration?error=invalid_value");
+        Esp32BaseWeb::redirectSeeOther("/faucet/metering?error=invalid_value");
         return;
     }
     if (!g_context.meteringSchemes->enableScheme(id, g_context.nowSeconds ? g_context.nowSeconds() : 0)) {
-        Esp32BaseWeb::redirectSeeOther("/faucet/calibration?error=save_failed");
+        Esp32BaseWeb::redirectSeeOther("/faucet/metering?error=save_failed");
         return;
     }
     MeteringSchemeRecord active{};
     if (!g_context.meteringSchemes->activeScheme(active) || !g_context.app->applyActiveMeteringScheme(active)) {
-        Esp32BaseWeb::redirectSeeOther("/faucet/calibration?error=save_failed");
+        Esp32BaseWeb::redirectSeeOther("/faucet/metering?error=save_failed");
         return;
     }
-    Esp32BaseWeb::redirectSeeOther("/faucet/calibration?saved=scheme_enabled");
+    Esp32BaseWeb::redirectSeeOther("/faucet/metering?saved=scheme_enabled");
 }
 
 void handleDeleteMeteringSchemeApi() {
@@ -6023,19 +6234,19 @@ void handleDeleteMeteringSchemeApi() {
         return;
     }
     if (waterTaskActive()) {
-        Esp32BaseWeb::redirectSeeOther("/faucet/calibration?error=busy");
+        Esp32BaseWeb::redirectSeeOther("/faucet/metering?error=busy");
         return;
     }
     if (!ensureMeteringSchemesReady()) {
-        Esp32BaseWeb::redirectSeeOther("/faucet/calibration?error=save_failed");
+        Esp32BaseWeb::redirectSeeOther("/faucet/metering?error=save_failed");
         return;
     }
     std::uint32_t id = 0;
     if (!readMeteringSchemeId(id) || !g_context.meteringSchemes->deleteScheme(id)) {
-        Esp32BaseWeb::redirectSeeOther("/faucet/calibration?error=invalid_value");
+        Esp32BaseWeb::redirectSeeOther("/faucet/metering?error=invalid_value");
         return;
     }
-    Esp32BaseWeb::redirectSeeOther("/faucet/calibration?saved=scheme_deleted");
+    Esp32BaseWeb::redirectSeeOther("/faucet/metering?saved=scheme_deleted");
 }
 
 void handleTraceCalibrationApi() {
@@ -6116,7 +6327,7 @@ void handleTraceCalibrationApi() {
             Esp32BaseWeb::redirectSeeOther("/faucet/records?error=save_failed");
             return;
         }
-        Esp32BaseWeb::redirectSeeOther("/faucet/calibration?saved=generated");
+        Esp32BaseWeb::redirectSeeOther("/faucet/metering?saved=generated");
         return;
     }
 
@@ -6313,6 +6524,9 @@ Esp32BaseWeb::Handler handlerFor(const FaucetWebRoute& route) {
         if (std::strcmp(route.path, "/faucet/calibration") == 0) {
             return handleCalibrationPage;
         }
+        if (std::strcmp(route.path, "/faucet/metering") == 0) {
+            return handleMeteringPage;
+        }
         if (std::strcmp(route.path, "/faucet/stats") == 0) {
             return handleStatsPage;
         }
@@ -6339,6 +6553,12 @@ Esp32BaseWeb::Handler handlerFor(const FaucetWebRoute& route) {
     }
     if (std::strcmp(route.path, "/faucet/calibration") == 0) {
         return handleCalibrationPost;
+    }
+    if (std::strcmp(route.path, "/faucet/metering") == 0) {
+        return handleMeteringPost;
+    }
+    if (std::strcmp(route.path, "/faucet/calibration/samples") == 0) {
+        return handleCalibrationPage;
     }
     if (std::strcmp(route.path, "/api/faucet/presets") == 0) {
         return handlePresetsApi;

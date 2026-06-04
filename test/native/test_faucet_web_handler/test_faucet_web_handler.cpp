@@ -320,6 +320,37 @@ void test_records_handler_redirects_trace_delete_busy_to_calibration_context() {
     TEST_ASSERT_EQUAL_STRING("/faucet/calibration?error=busy", Esp32BaseWeb::nativeTestResponseHeader("Location"));
 }
 
+void test_calibration_session_start_redirects_busy_to_calibration_page() {
+    WebFixture fixture;
+    setRunning(fixture.app);
+    registerRoutes();
+    Esp32BaseWeb::nativeTestBeginRequest(Esp32BaseWeb::METHOD_POST, "/faucet/calibration");
+    Esp32BaseWeb::nativeTestSetAuthenticated(true);
+    Esp32BaseWeb::nativeTestSetSameOrigin(true);
+    Esp32BaseWeb::nativeTestSetParam("action", "start_session");
+
+    TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch("/faucet/calibration", Esp32BaseWeb::METHOD_POST));
+
+    TEST_ASSERT_EQUAL(303, Esp32BaseWeb::nativeTestResponse().code);
+    TEST_ASSERT_EQUAL_STRING("/faucet/calibration?error=busy", Esp32BaseWeb::nativeTestResponseHeader("Location"));
+}
+
+void test_metering_scheme_write_redirects_busy_to_metering_page() {
+    WebFixture fixture;
+    setRunning(fixture.app);
+    registerRoutes();
+    Esp32BaseWeb::nativeTestBeginRequest(Esp32BaseWeb::METHOD_POST, "/faucet/metering");
+    Esp32BaseWeb::nativeTestSetAuthenticated(true);
+    Esp32BaseWeb::nativeTestSetSameOrigin(true);
+    Esp32BaseWeb::nativeTestSetParam("action", "enable_metering_scheme");
+    Esp32BaseWeb::nativeTestSetParam("id", "1");
+
+    TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch("/faucet/metering", Esp32BaseWeb::METHOD_POST));
+
+    TEST_ASSERT_EQUAL(303, Esp32BaseWeb::nativeTestResponse().code);
+    TEST_ASSERT_EQUAL_STRING("/faucet/metering?error=busy", Esp32BaseWeb::nativeTestResponseHeader("Location"));
+}
+
 void test_presets_handler_rejects_missing_auth_before_context_work() {
     registerRoutes();
     Esp32BaseWeb::nativeTestBeginRequest(Esp32BaseWeb::METHOD_POST, "/api/faucet/presets");
@@ -414,6 +445,8 @@ int main(int, char**) {
     RUN_TEST(test_filter_reset_handler_redirects_busy_before_runtime_write);
     RUN_TEST(test_records_handler_redirects_trace_save_busy_before_trace_store_work);
     RUN_TEST(test_records_handler_redirects_trace_delete_busy_to_calibration_context);
+    RUN_TEST(test_calibration_session_start_redirects_busy_to_calibration_page);
+    RUN_TEST(test_metering_scheme_write_redirects_busy_to_metering_page);
     RUN_TEST(test_presets_handler_rejects_missing_auth_before_context_work);
     RUN_TEST(test_presets_handler_rejects_cross_origin_post);
     RUN_TEST(test_presets_handler_rejects_invalid_action);

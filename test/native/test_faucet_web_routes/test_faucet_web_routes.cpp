@@ -594,7 +594,8 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NULL(std::strstr(buffer, "量杯实际水量"));
     TEST_ASSERT_NULL(std::strstr(buffer, "确认/校准"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "校准容量"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "校准工作台"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "校准会话"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "计量方案"));
     TEST_ASSERT_NULL(std::strstr(buffer, "latest-record-table"));
     TEST_ASSERT_NULL(std::strstr(buffer, "latest-calibration-edit-row"));
     TEST_ASSERT_NULL(std::strstr(buffer, "最后一条出水记录"));
@@ -748,8 +749,8 @@ void test_web_page_source_contains_expected_ui_improvements() {
     const char* recordsApiActionBuffer = std::strstr(recordsApi, "char text[32]{};");
     TEST_ASSERT_NOT_NULL(recordsApiActionBuffer);
     TEST_ASSERT_TRUE(recordsApiActionBuffer < recordsApiEnd);
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "href='/faucet/calibration?scheme=new'"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "href='/faucet/calibration?scheme=%lu'"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "href='/faucet/metering?scheme=new'"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "href='/faucet/metering?scheme=%lu'"));
     const char* schemeEditSource = std::strstr(buffer, "void sendMeteringSchemeEditPage");
     TEST_ASSERT_NOT_NULL(schemeEditSource);
     TEST_ASSERT_NULL(std::strstr(schemeEditSource, "scheme ? scheme->params : defaultMeteringParameters()"));
@@ -772,6 +773,7 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NULL(findWithin(createSchemeApi, editSchemeApi, "std::snprintf(name, sizeof(name), \"手工方案\")"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "启用只切换当前计量参数"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "action='/faucet/calibration'"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "action='/faucet/metering'"));
     TEST_ASSERT_NULL(std::strstr(buffer, "<span class='status-pill status-muted'>手动执行</span>"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "手动执行：只扫描满足有效样本条件的数据"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "生成参数：样本与拟合"));

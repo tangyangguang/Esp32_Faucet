@@ -83,7 +83,7 @@ TEST_ASSERT_EQUAL_UINT8(10, kCalibrationMaxAttempts);
 Run:
 
 ```bash
-pio test -e native -f test_calibration_session
+pio test -e native -f native/test_calibration_session
 ```
 
 Expected: FAIL because `app/CalibrationSession.h` does not exist.
@@ -194,7 +194,7 @@ Implement the helpers in `src/app/CalibrationSession.cpp` so the tests pass. `ap
 Run:
 
 ```bash
-pio test -e native -f test_calibration_session
+pio test -e native -f native/test_calibration_session
 ```
 
 Expected: PASS.
@@ -235,7 +235,7 @@ long-term sample remove clears only the fixed slot index entry and frees that sl
 Run:
 
 ```bash
-pio test -e native -f test_calibration_session_store -f test_calibration_sample_store
+pio test -e native -f native/test_calibration_session_store -f native/test_calibration_sample_store
 ```
 
 Expected: FAIL because the stores do not exist.
@@ -331,7 +331,7 @@ valid: trace body plus actual ml are committed and can participate in generation
 Run:
 
 ```bash
-pio test -e native -f test_calibration_session_store -f test_calibration_sample_store
+pio test -e native -f native/test_calibration_session_store -f native/test_calibration_sample_store
 ```
 
 Expected: PASS.
@@ -368,7 +368,7 @@ Also add a source-level assertion that the generated app config page no longer r
 Run:
 
 ```bash
-pio test -e native -f test_app_config
+pio test -e native -f native/test_app_config
 ```
 
 Expected: FAIL until config defaults and constants are updated.
@@ -418,7 +418,7 @@ Session sample storage is required for guided calibration. Long-term sample stor
 Run:
 
 ```bash
-pio test -e native -f test_app_config
+pio test -e native -f native/test_app_config
 pio run -e esp32dev
 ```
 
@@ -463,7 +463,7 @@ restored Running session marks the interrupted attempt invalid
 Run:
 
 ```bash
-pio test -e native -f test_app_controller
+pio test -e native -f native/test_app_controller
 ```
 
 Expected: FAIL until CAL mode exists.
@@ -563,7 +563,7 @@ If session trace save fails or `WaterRecordCalibrationStore` write fails, mark t
 Run:
 
 ```bash
-pio test -e native -f test_app_controller
+pio test -e native -f native/test_app_controller
 ```
 
 Expected: PASS.
@@ -607,7 +607,7 @@ long-term sample generation still saves new scheme without activation
 Run:
 
 ```bash
-pio test -e native -f test_metering_scheme -f test_metering_scheme_store
+pio test -e native -f native/test_metering_scheme -f native/test_metering_scheme_store
 ```
 
 Expected: FAIL until session source handling exists.
@@ -670,7 +670,7 @@ clear pending generated state only after success
 Run:
 
 ```bash
-pio test -e native -f test_metering_scheme -f test_metering_scheme_store
+pio test -e native -f native/test_metering_scheme -f native/test_metering_scheme_store
 ```
 
 Expected: PASS.
@@ -742,7 +742,7 @@ Require status JSON to include:
 Run:
 
 ```bash
-pio test -e native -f test_faucet_web_routes -f test_faucet_web_policy -f test_faucet_web_json
+pio test -e native -f native/test_faucet_web_routes -f native/test_faucet_web_policy -f native/test_faucet_web_json
 ```
 
 Expected: FAIL until routes and JSON are updated.
@@ -762,7 +762,7 @@ Add compact calibration JSON. Keep it small and bounded; do not serialize raw sa
 Run:
 
 ```bash
-pio test -e native -f test_faucet_web_routes -f test_faucet_web_policy -f test_faucet_web_json
+pio test -e native -f native/test_faucet_web_routes -f native/test_faucet_web_policy -f native/test_faucet_web_json
 ```
 
 Expected: PASS.
@@ -849,7 +849,7 @@ POST /faucet/metering enable_metering_scheme is rejected while waterTaskActive a
 Run:
 
 ```bash
-pio test -e native -f test_faucet_web_routes -f test_faucet_web_handler
+pio test -e native -f native/test_faucet_web_routes -f native/test_faucet_web_handler
 ```
 
 Expected: FAIL until pages and handlers are split.
@@ -876,7 +876,7 @@ Only allow “store to long-term sample library” when the record has actual ml
 Run:
 
 ```bash
-pio test -e native -f test_faucet_web_routes -f test_faucet_web_handler
+pio test -e native -f native/test_faucet_web_routes -f native/test_faucet_web_handler
 ```
 
 Expected: PASS.

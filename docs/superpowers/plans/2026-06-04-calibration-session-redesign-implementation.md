@@ -33,6 +33,7 @@
 - Modify `include/web/FaucetWeb.h`: add session and sample store pointers to `FaucetWebContext`.
 - Modify `src/web/FaucetWebRoutes.cpp`: adjust navigation order and add `/faucet/metering`.
 - Modify `src/web/FaucetWeb.cpp`: replace calibration page with session workflow, move scheme list/edit to metering page, add sample library views.
+- Modify `include/web/FaucetWebPolicy.h`: add a dedicated `Metering` write target for `/faucet/metering` busy redirects.
 - Modify `src/web/FaucetWebPolicy.cpp`: keep calibration and metering write guards busy-safe.
 - Modify `src/web/FaucetWebJson.cpp`: expose calibration session snapshot in status JSON.
 - Modify docs `docs/03-software-architecture.md`, `docs/04-ui-interaction.md`, `docs/08-change-record.md`: reflect final routes, local CAL flow, and the split between calibration session and metering scheme management.
@@ -226,7 +227,7 @@ session trace store has exactly 5 slots
 starting a new session clears the 5 session slots
 long-term sample store has exactly 10 slots
 long-term sample store refuses the 11th sample
-long-term sample delete frees a slot
+long-term sample remove clears only the fixed slot index entry and frees that slot
 ```
 
 - [ ] **Step 2: Run the failing tests**
@@ -307,6 +308,8 @@ public:
 
 Use `WaterRecordFileBackend::readAt()` and `writeAt()` like existing record stores. Write a slot body first, then mark slot valid in its index/header so power loss cannot create a half-valid sample.
 
+`CalibrationLongTermSampleStore::remove(sampleId)` must not delete the whole file and must not compact slots. It must find the fixed slot by `sampleId`, write a blank/invalid index entry, and leave the body bytes untouched. This matches the existing saved pulse trace pattern and keeps erase/write behavior bounded.
+
 - [ ] **Step 5: Re-run persistence tests**
 
 Run:
@@ -342,6 +345,8 @@ TEST_ASSERT_EQUAL_UINT32(1, makeDefaultConfig().recentPulseTraceCount);
 TEST_ASSERT_EQUAL_UINT32(1, kMaxRecentPulseTraceCount);
 ```
 
+Also add a source-level assertion that the generated app config page no longer registers an editable setting named `RAM 最近脉冲明细条数`.
+
 - [ ] **Step 2: Run native tests**
 
 Run:
@@ -363,6 +368,8 @@ constexpr std::uint32_t kMaxRecentPulseTraceCount = 1;
 ```
 
 Keep Web/app config help text clear that this is the latest trace cache, not the long-term sample library.
+
+Do not leave `recentPulseTraceCount` as an editable Web/app config field with min=max=1. Keep the config value internally for allocation compatibility, but remove or hide the user-facing setting from `FaucetAppConfig.cpp`. The UI may show a read-only technical note elsewhere if needed.
 
 - [ ] **Step 4: Wire new stores in `main.cpp`**
 
@@ -428,6 +435,8 @@ run completion moves to AwaitingActual
 CANCEL during AwaitingActual asks to skip sample
 pause then resume marks the attempt invalid for generation
 calibration outflow still increments statistics and filters
+existing result-page actual-ml editing mode is removed or renamed so it cannot conflict with the new calibration session mode
+safety-stop completion enters AwaitingActual with a warning instead of using the safety target as actual ml
 ```
 
 - [ ] **Step 2: Run failing tests**
@@ -467,7 +476,13 @@ bool applyGeneratedCalibrationForWeb(std::uint32_t nowSeconds);
 
 No method may open, close, pause, resume, or stop the valve from Web.
 
-- [ ] **Step 4: Implement local button transitions**
+Update `AppController` constructors and native test fixtures in the same task so the controller receives the session store, session trace store, long-term sample store, and record calibration writer through explicit dependencies. Do not make Web handlers reach around `AppController` to mutate session state.
+
+- [ ] **Step 4: Replace the old local calibration mode with the session mode**
+
+The current `LocalUiMode::Calibration` is used by result-page single-record actual-ml editing. Remove that old flow or rename it to a non-conflicting mode before adding the new session workflow. The new device-level calibration session must not share button handling with the old result-page edit flow.
+
+- [ ] **Step 5: Implement local button transitions**
 
 In CAL mode:
 
@@ -492,21 +507,24 @@ custom hint: locally adjusted target hint, bounded by maxOutVolumeMl
 
 The user should normally stop the calibration run locally with `CANCEL` when the container reaches a readable amount. The recorded actual ml entered after the run is the calibration truth. Safety stop values only prevent unattended overflow and do not become the actual calibration volume.
 
-- [ ] **Step 5: Save valid samples to session trace store**
+If the run ends because the safety stop target was reached, still transition to `AwaitingActual`, but surface a warning state/message such as “已触发安全停止；如量杯读数不可确认，请放弃本次”. Never prefill or save the safety stop volume as `actualMl`.
+
+- [ ] **Step 6: Save valid samples to session trace store**
 
 When a calibration run ends and actual ml is submitted:
 
 ```text
 copy latest RAM trace
 reject if truncated / resumed after pause / no pulse / analysis failed
-write to session trace slot
+write trace body to a pending session trace slot
 write WaterRecordCalibrationStore actualMl metadata for the run record
-then mark attempt Valid
+write the session trace index/header as valid
+then mark attempt Valid in the session record
 ```
 
 If session trace save fails or `WaterRecordCalibrationStore` write fails, mark the attempt invalid with `StorageFailed`. Do not count the sample as valid unless both the trace slot and the record calibration metadata are saved.
 
-- [ ] **Step 6: Re-run AppController tests**
+- [ ] **Step 7: Re-run AppController tests**
 
 Run:
 
@@ -516,7 +534,7 @@ pio test -e native -f test_app_controller
 
 Expected: PASS.
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
 git add include/app/AppController.h src/app/AppController.cpp test/native/test_app_controller/test_app_controller.cpp
@@ -619,8 +637,11 @@ git commit -m "feat: apply calibration session schemes"
 **Files:**
 - Modify: `src/web/FaucetWebRoutes.cpp`
 - Modify: `include/web/FaucetWeb.h`
+- Modify: `include/web/FaucetWebPolicy.h`
+- Modify: `src/web/FaucetWebPolicy.cpp`
 - Modify: `src/web/FaucetWebJson.cpp`
 - Test: `test/native/test_faucet_web_routes/test_faucet_web_routes.cpp`
+- Test: `test/native/test_faucet_web_policy/test_faucet_web_policy.cpp`
 - Test: `test/native/test_faucet_web_json/test_faucet_web_json.cpp`
 
 - [ ] **Step 1: Add failing Web route tests**
@@ -651,6 +672,13 @@ action=start_water
 action=stop_water
 ```
 
+Assert busy redirect policy includes:
+
+```cpp
+TEST_ASSERT_TRUE(faucetWebWriteBusyRedirect(true, FaucetWebWriteTarget::Metering, location, sizeof(location)));
+TEST_ASSERT_EQUAL_STRING("/faucet/metering?error=busy", location);
+```
+
 - [ ] **Step 2: Add failing JSON tests**
 
 Require status JSON to include:
@@ -664,7 +692,7 @@ Require status JSON to include:
 Run:
 
 ```bash
-pio test -e native -f test_faucet_web_routes -f test_faucet_web_json
+pio test -e native -f test_faucet_web_routes -f test_faucet_web_policy -f test_faucet_web_json
 ```
 
 Expected: FAIL until routes and JSON are updated.
@@ -672,6 +700,8 @@ Expected: FAIL until routes and JSON are updated.
 - [ ] **Step 4: Update routes and context**
 
 Move scheme management from calibration route to `/faucet/metering`. Add store pointers for session and samples to `FaucetWebContext`.
+
+Add `FaucetWebWriteTarget::Metering` and route metering write failures to `/faucet/metering?error=busy`. Keep calibration writes on `/faucet/calibration?error=busy`.
 
 - [ ] **Step 5: Serialize session status**
 
@@ -682,7 +712,7 @@ Add compact calibration JSON. Keep it small and bounded; do not serialize raw sa
 Run:
 
 ```bash
-pio test -e native -f test_faucet_web_routes -f test_faucet_web_json
+pio test -e native -f test_faucet_web_routes -f test_faucet_web_policy -f test_faucet_web_json
 ```
 
 Expected: PASS.
@@ -690,7 +720,7 @@ Expected: PASS.
 - [ ] **Step 7: Commit**
 
 ```bash
-git add src/web/FaucetWebRoutes.cpp include/web/FaucetWeb.h src/web/FaucetWebJson.cpp test/native/test_faucet_web_routes/test_faucet_web_routes.cpp test/native/test_faucet_web_json/test_faucet_web_json.cpp
+git add src/web/FaucetWebRoutes.cpp include/web/FaucetWeb.h include/web/FaucetWebPolicy.h src/web/FaucetWebPolicy.cpp src/web/FaucetWebJson.cpp test/native/test_faucet_web_routes/test_faucet_web_routes.cpp test/native/test_faucet_web_policy/test_faucet_web_policy.cpp test/native/test_faucet_web_json/test_faucet_web_json.cpp
 git commit -m "feat: expose calibration session routes"
 ```
 
@@ -698,7 +728,6 @@ git commit -m "feat: expose calibration session routes"
 
 **Files:**
 - Modify: `src/web/FaucetWeb.cpp`
-- Modify: `src/web/FaucetWebPolicy.cpp`
 - Test: `test/native/test_faucet_web_routes/test_faucet_web_routes.cpp`
 - Test: `test/native/test_faucet_web_handler/test_faucet_web_handler.cpp`
 
@@ -758,6 +787,13 @@ discard_generated_scheme
 
 Busy guard must reject write actions while water is running or confirmation/pause state is active.
 
+Handler tests must separately prove:
+
+```text
+POST /faucet/calibration start_session is rejected while waterTaskActive
+POST /faucet/metering enable_metering_scheme is rejected while waterTaskActive and redirects to /faucet/metering?error=busy
+```
+
 - [ ] **Step 3: Run failing Web handler tests**
 
 Run:
@@ -798,7 +834,7 @@ Expected: PASS.
 - [ ] **Step 7: Commit**
 
 ```bash
-git add src/web/FaucetWeb.cpp src/web/FaucetWebPolicy.cpp test/native/test_faucet_web_routes/test_faucet_web_routes.cpp test/native/test_faucet_web_handler/test_faucet_web_handler.cpp
+git add src/web/FaucetWeb.cpp test/native/test_faucet_web_routes/test_faucet_web_routes.cpp test/native/test_faucet_web_handler/test_faucet_web_handler.cpp
 git commit -m "feat: split calibration and metering pages"
 ```
 
@@ -854,7 +890,7 @@ Run:
 pio test -e native
 ```
 
-Expected: PASS.
+Expected: PASS, including `test_faucet_web_policy` for `/faucet/metering?error=busy`.
 
 - [ ] **Step 2: Build firmware**
 

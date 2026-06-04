@@ -66,6 +66,7 @@ void test_five_valid_samples_stop_new_runs();
 void test_ten_attempts_stop_session_when_not_ready();
 void test_skipped_attempt_does_not_count_as_valid();
 void test_paused_resume_attempt_is_invalid_for_generation();
+void test_attempt_keeps_full_water_record_identity();
 ```
 
 Use these expected constants in the assertions:
@@ -151,8 +152,7 @@ enum class CalibrationCoverageQuality : std::uint8_t {
 struct CalibrationAttempt {
     std::uint8_t attemptIndex = 0;
     std::uint8_t sessionTraceSlot = 255;
-    std::uint32_t recordStartTime = 0;
-    std::uint32_t recordVolumeMl = 0;
+    WaterRecord record{};
     std::uint32_t targetHintMl = 0;
     std::uint32_t actualMl = 0;
     CalibrationAttemptStatus status = CalibrationAttemptStatus::Empty;
@@ -258,6 +258,8 @@ public:
 };
 ```
 
+`WaterRecord record{}` is required so restored `AwaitingActual` attempts can later write `WaterRecordCalibrationStore` metadata using the same identity fields as `sameWaterRecordCalibrationIdentity()`: `startTime`, `volumeMl`, `targetValue`, `pulseCount`, `rejectedPulseCount`, `durationSec`, `mode`, `result`, and `selectedPreset`.
+
 `CalibrationSampleStore.h` must expose:
 
 ```cpp
@@ -266,8 +268,10 @@ constexpr std::size_t kCalibrationLongTermSampleSlots = 10;
 
 struct CalibrationStoredTrace {
     bool valid = false;
+    bool pendingActual = false;
     std::uint32_t sampleId = 0;
     std::uint32_t sessionId = 0;
+    std::uint8_t attemptIndex = 0;
     std::uint32_t actualMl = 0;
     std::uint32_t savedAt = 0;
     WaterPulseTrace trace{};
@@ -280,7 +284,9 @@ public:
     bool begin();
     bool clear();
     bool clearForNewSession(std::uint32_t sessionId);
-    bool save(std::uint8_t slot, const CalibrationStoredTrace& trace, const WaterPulseTraceSample* samples, std::size_t sampleCount);
+    bool savePending(std::uint8_t slot, const CalibrationStoredTrace& trace, const WaterPulseTraceSample* samples, std::size_t sampleCount);
+    bool commitValid(std::uint8_t slot, std::uint32_t actualMl, std::uint32_t savedAt);
+    bool invalidate(std::uint8_t slot);
     bool load(std::uint8_t slot, CalibrationStoredTrace& trace) const;
     std::size_t readSamples(std::uint8_t slot, WaterPulseTraceSample* output, std::size_t outputCapacity) const;
     std::size_t capacity() const;
@@ -307,6 +313,16 @@ public:
 - [ ] **Step 4: Implement fixed-slot files with checksum**
 
 Use `WaterRecordFileBackend::readAt()` and `writeAt()` like existing record stores. Write a slot body first, then mark slot valid in its index/header so power loss cannot create a half-valid sample.
+
+Session trace slots have three visible states:
+
+```text
+empty: no usable attempt trace
+pendingActual: trace body is durable, actual ml has not been accepted yet
+valid: trace body plus actual ml are committed and can participate in generation
+```
+
+`savePending()` writes the body and then writes an index entry with `pendingActual=true, valid=false`. `commitValid()` only flips the index entry to `valid=true, pendingActual=false` after actual ml and record calibration metadata have been saved. `invalidate()` clears both flags when the user skips the attempt or the trace cannot be used.
 
 `CalibrationLongTermSampleStore::remove(sampleId)` must not delete the whole file and must not compact slots. It must find the fixed slot by `sampleId`, write a blank/invalid index entry, and leave the body bytes untouched. This matches the existing saved pulse trace pattern and keeps erase/write behavior bounded.
 
@@ -432,11 +448,14 @@ starting calibration while running is rejected
 Web cannot start water in calibration mode
 local OK starts calibration run from WaitingLocalRun
 run completion moves to AwaitingActual
+run completion writes pending session trace before AwaitingActual
 CANCEL during AwaitingActual asks to skip sample
 pause then resume marks the attempt invalid for generation
 calibration outflow still increments statistics and filters
 existing result-page actual-ml editing mode is removed or renamed so it cannot conflict with the new calibration session mode
 safety-stop completion enters AwaitingActual with a warning instead of using the safety target as actual ml
+restored AwaitingActual session can submit actual ml after reboot
+restored Running session marks the interrupted attempt invalid
 ```
 
 - [ ] **Step 2: Run failing tests**
@@ -509,22 +528,37 @@ The user should normally stop the calibration run locally with `CANCEL` when the
 
 If the run ends because the safety stop target was reached, still transition to `AwaitingActual`, but surface a warning state/message such as “已触发安全停止；如量杯读数不可确认，请放弃本次”. Never prefill or save the safety stop volume as `actualMl`.
 
-- [ ] **Step 6: Save valid samples to session trace store**
+- [ ] **Step 6: Persist pending attempt before awaiting actual ml**
+
+When a calibration run ends, before switching to `AwaitingActual`:
+
+```text
+copy latest RAM trace
+copy the completed WaterRecord into CalibrationAttempt::record
+reject immediately if the trace is missing or cannot be copied
+write trace body to a pending session trace slot with savePending()
+save the session record with status AwaitingActual, attempt status PendingActual, and sessionTraceSlot set
+```
+
+This is required because RAM only keeps one recent trace and is lost across reboot. A restored `AwaitingActual` session must still be able to accept actual ml using the pending trace slot and the full stored `WaterRecord` identity.
+
+When boot restores a session whose status is `Running`, mark that attempt `Invalid` with `CalibrationInvalidReason::ErrorResult`, invalidate any pending trace slot for that attempt, and show that the previous run was interrupted and cannot participate in generation.
+
+- [ ] **Step 7: Save valid samples to session trace store**
 
 When a calibration run ends and actual ml is submitted:
 
 ```text
-copy latest RAM trace
-reject if truncated / resumed after pause / no pulse / analysis failed
-write trace body to a pending session trace slot
-write WaterRecordCalibrationStore actualMl metadata for the run record
-write the session trace index/header as valid
+load the pending session trace slot
+reject if missing / truncated / resumed after pause / no pulse / analysis failed
+write WaterRecordCalibrationStore actualMl metadata using CalibrationAttempt::record
+commitValid() the pending trace slot with actualMl
 then mark attempt Valid in the session record
 ```
 
 If session trace save fails or `WaterRecordCalibrationStore` write fails, mark the attempt invalid with `StorageFailed`. Do not count the sample as valid unless both the trace slot and the record calibration metadata are saved.
 
-- [ ] **Step 7: Re-run AppController tests**
+- [ ] **Step 8: Re-run AppController tests**
 
 Run:
 
@@ -534,7 +568,7 @@ pio test -e native -f test_app_controller
 
 Expected: PASS.
 
-- [ ] **Step 8: Commit**
+- [ ] **Step 9: Commit**
 
 ```bash
 git add include/app/AppController.h src/app/AppController.cpp test/native/test_app_controller/test_app_controller.cpp
@@ -561,6 +595,8 @@ Add tests proving:
 3 valid samples with 1000ml span is recommended
 session apply creates and activates a new scheme
 old active scheme remains valid
+session-generated scheme stores generatedKind=CalibrationSession
+long-term sample generated scheme stores generatedKind=LongTermSampleLibrary
 scheme stores source summary even when session trace slots are later overwritten
 scheme stores aggregate evidence and source ids even when session trace slots are later overwritten
 long-term sample generation still saves new scheme without activation
@@ -576,19 +612,33 @@ pio test -e native -f test_metering_scheme -f test_metering_scheme_store
 
 Expected: FAIL until session source handling exists.
 
-- [ ] **Step 3: Add source distinction**
+- [ ] **Step 3: Add structured generated source distinction**
 
-Keep `MeteringSchemeSource::Generated` for generated schemes and write source detail into `creationSummary` so UI can distinguish:
+Keep `MeteringSchemeSource::Generated` for generated schemes, and add a generated-source subtype:
 
-```text
-default
-manual
-migrated
-generated from calibration session
-generated from long-term sample library
+```cpp
+enum class MeteringSchemeGeneratedKind : std::uint8_t {
+    None = 0,
+    CalibrationSession = 1,
+    LongTermSampleLibrary = 2,
+};
 ```
 
-Do not rely only on free-form text. Do not expand `MeteringSchemeRecord` to store full per-sample details in this task. Preserve structured scheme evidence in existing candidate/scheme evidence fields:
+Add this field to both `MeteringSchemeRecord` and `MeteringSchemeCandidate`:
+
+```cpp
+MeteringSchemeGeneratedKind generatedKind = MeteringSchemeGeneratedKind::None;
+```
+
+Set it as follows:
+
+```text
+Default / Manual / Migrated schemes: generatedKind=None
+Generated from ordinary calibration session: sourceType=Generated, generatedKind=CalibrationSession
+Generated from long-term sample library: sourceType=Generated, generatedKind=LongTermSampleLibrary
+```
+
+`creationSummary` should still contain human-readable text, but UI and tests must use `generatedKind` for the source distinction. Do not expand `MeteringSchemeRecord` to store full per-sample details in this task. Preserve structured scheme evidence in existing candidate/scheme evidence fields:
 
 ```text
 sampleCount
@@ -975,6 +1025,6 @@ Update `docs/07-board-bringup.md` with date, firmware commit, upload method, cal
 
 ## Self-Review Checklist
 
-- Spec coverage: guided session, Web no water control, local CAL mode, 5 session slots, 10 long-term slots, clean PCB assumption, space gates, scheme application, and documentation alignment are covered.
+- Spec coverage: guided session, Web no water control, local CAL mode, pending trace recovery before actual ml entry, interrupted Running recovery invalidation, 5 session slots, 10 long-term slots, clean PCB assumption, space gates, structured generated scheme source, scheme application, and documentation alignment are covered.
 - Placeholder scan: this plan leaves no open-ended implementation choices where they affect behavior.
 - Type consistency: constants and type names introduced in Task 1 are reused by later tasks.

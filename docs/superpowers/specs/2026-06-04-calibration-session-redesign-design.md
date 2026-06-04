@@ -307,7 +307,7 @@ attempts[10]
 attemptIndex
 targetHintLabel: small/common/large/custom
 targetHintMl
-record identity
+完整 WaterRecord 身份
 sessionTraceSlot
 actualMl
 status: pendingActual / valid / skipped / invalid
@@ -374,6 +374,7 @@ elapsedUs[4096]
 - 用户保存实测容量后，系统自动保存本次有效样本明细到校准会话样本区。
 - 普通用户不需要额外点击“保存明细”。
 - 保存失败时，该样本不能算作有效样本，页面必须明确提示。
+- 出水结束进入 `AwaitingActual` 前，系统必须先把本次完整脉冲明细写入会话样本区的 pending 槽位，并在会话 attempt 中保存完整 `WaterRecord` 身份。用户稍后录入实测容量时，只补充实测容量、校验质量、写记录校准元数据，并把 pending 槽位提交为 valid。
 
 长期样本库：
 
@@ -397,6 +398,7 @@ elapsedUs[4096]
 新方案保存：
 
 - 5 个计量参数。
+- 结构化生成来源：校准会话或长期样本库。
 - 样本数量。
 - 实测容量范围。
 - 最大绝对误差。

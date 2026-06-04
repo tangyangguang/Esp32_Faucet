@@ -5,7 +5,7 @@
 
 namespace faucet {
 
-constexpr std::size_t kFaucetWebMaxRoutes = 21;
+constexpr std::size_t kFaucetWebMaxRoutes = 24;
 
 enum class FaucetWebMethod : std::uint8_t {
     Get = 0,

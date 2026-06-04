@@ -22,6 +22,10 @@ void test_web_write_busy_policy_redirects_record_and_calibration_writes() {
     location[0] = '\0';
     TEST_ASSERT_TRUE(faucetWebWriteBusyRedirect(true, FaucetWebWriteTarget::Calibration, location, sizeof(location)));
     TEST_ASSERT_EQUAL_STRING("/faucet/calibration?error=busy", location);
+
+    location[0] = '\0';
+    TEST_ASSERT_TRUE(faucetWebWriteBusyRedirect(true, FaucetWebWriteTarget::Metering, location, sizeof(location)));
+    TEST_ASSERT_EQUAL_STRING("/faucet/metering?error=busy", location);
 }
 
 void test_web_write_busy_policy_redirects_filter_reset_before_runtime_write() {

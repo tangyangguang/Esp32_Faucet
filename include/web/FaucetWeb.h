@@ -7,6 +7,9 @@
 namespace faucet {
 
 class AppController;
+class CalibrationLongTermSampleStore;
+class CalibrationSessionFileStore;
+class CalibrationSessionTraceStore;
 class ConfigStore;
 class FilterStore;
 class MeteringSchemeStore;
@@ -49,6 +52,9 @@ struct FaucetWebContext {
     const WaterRecordMeteringSnapshotReader* recordMeteringSnapshots;
     WaterRecordMeteringSnapshotWriter* recordMeteringSnapshotWriter;
     MeteringSchemeStore* meteringSchemes;
+    CalibrationSessionFileStore* calibrationSessions;
+    CalibrationSessionTraceStore* calibrationSessionTraces;
+    CalibrationLongTermSampleStore* calibrationLongTermSamples;
     WaterPulseTraceStore* pulseTraces;
     WaterPulseTraceFileStore* savedPulseTraces;
     FaucetNowSeconds nowSeconds;

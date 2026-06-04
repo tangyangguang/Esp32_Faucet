@@ -11,9 +11,9 @@ const char* findWithin(const char* begin, const char* end, const char* needle);
 
 void test_routes_fit_esp32base_default_route_capacity() {
     TEST_ASSERT_TRUE(faucetWebRoutesFitEsp32Base());
-    TEST_ASSERT_TRUE(faucetWebRoutesFitEsp32Base(21));
-    TEST_ASSERT_LESS_OR_EQUAL_size_t(21, faucetWebRouteCount());
-    TEST_ASSERT_EQUAL_size_t(21, faucetWebRouteCount());
+    TEST_ASSERT_TRUE(faucetWebRoutesFitEsp32Base(24));
+    TEST_ASSERT_LESS_OR_EQUAL_size_t(24, faucetWebRouteCount());
+    TEST_ASSERT_EQUAL_size_t(24, faucetWebRouteCount());
 }
 
 void test_routes_do_not_register_remote_water_control_paths() {
@@ -29,10 +29,10 @@ void test_routes_do_not_register_remote_water_control_paths() {
 void test_navigation_pages_use_requested_order_and_labels() {
     const FaucetWebRoute* routes = faucetWebRoutes();
     const char* expectedPaths[] = {
-        "/index", "/faucet/records", "/faucet/calibration", "/faucet/stats", "/faucet/presets", "/faucet/filters"};
-    const char* expectedTitles[] = {"首页", "记录", "校准", "统计", "预设", "滤芯"};
+        "/index", "/faucet/records", "/faucet/stats", "/faucet/presets", "/faucet/filters", "/faucet/calibration", "/faucet/metering"};
+    const char* expectedTitles[] = {"首页", "记录", "统计", "预设", "滤芯", "校准", "计量方案"};
 
-    for (std::size_t i = 0; i < 6; ++i) {
+    for (std::size_t i = 0; i < 7; ++i) {
         TEST_ASSERT_EQUAL_STRING(expectedPaths[i], routes[i].path);
         TEST_ASSERT_EQUAL(FaucetWebMethod::Get, routes[i].method);
         TEST_ASSERT_EQUAL(FaucetWebRouteKind::Page, routes[i].kind);
@@ -164,6 +164,9 @@ void test_records_page_and_calibration_api_are_available() {
     bool foundCalibrationPage = false;
     bool foundCalibrationPost = false;
     bool foundCalibrationDetail = false;
+    bool foundCalibrationSamples = false;
+    bool foundMeteringPage = false;
+    bool foundMeteringPost = false;
     bool foundApi = false;
     for (std::size_t i = 0; i < faucetWebRouteCount(); ++i) {
         if (std::strcmp(routes[i].path, "/faucet/records") == 0) {
@@ -185,6 +188,21 @@ void test_records_page_and_calibration_api_are_available() {
                                      routes[i].kind == FaucetWebRouteKind::Api &&
                                      routes[i].title == nullptr;
         }
+        if (std::strcmp(routes[i].path, "/faucet/calibration/samples") == 0) {
+            foundCalibrationSamples = routes[i].method == FaucetWebMethod::Get &&
+                                      routes[i].kind == FaucetWebRouteKind::Api &&
+                                      routes[i].title == nullptr;
+        }
+        if (std::strcmp(routes[i].path, "/faucet/metering") == 0) {
+            foundMeteringPage = foundMeteringPage ||
+                                (routes[i].method == FaucetWebMethod::Get &&
+                                 routes[i].kind == FaucetWebRouteKind::Page &&
+                                 std::strcmp(routes[i].title, "计量方案") == 0);
+            foundMeteringPost = foundMeteringPost ||
+                                (routes[i].method == FaucetWebMethod::Post &&
+                                 routes[i].kind == FaucetWebRouteKind::Api &&
+                                 routes[i].title == nullptr);
+        }
         if (std::strcmp(routes[i].path, "/api/faucet/records") == 0) {
             foundApi = foundApi || (routes[i].method == FaucetWebMethod::Post &&
                                     routes[i].kind == FaucetWebRouteKind::Api && routes[i].title == nullptr);
@@ -194,6 +212,9 @@ void test_records_page_and_calibration_api_are_available() {
     TEST_ASSERT_TRUE(foundCalibrationPage);
     TEST_ASSERT_TRUE(foundCalibrationPost);
     TEST_ASSERT_TRUE(foundCalibrationDetail);
+    TEST_ASSERT_TRUE(foundCalibrationSamples);
+    TEST_ASSERT_TRUE(foundMeteringPage);
+    TEST_ASSERT_TRUE(foundMeteringPost);
     TEST_ASSERT_TRUE(foundApi);
 }
 
@@ -1495,7 +1516,7 @@ void test_app_config_source_uses_clear_business_labels_and_help() {
     TEST_ASSERT_NULL(std::strstr(buffer, "按秒保存最近出水脉冲明细"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "容量步进"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "时间步进"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "RAM 最近脉冲明细条数"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "RAM 最近脉冲明细条数"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "loadSystemConfig()"));
     TEST_ASSERT_NULL(std::strstr(buffer, "SystemConfig defaults = makeDefaultConfig()"));
     TEST_ASSERT_NULL(std::strstr(buffer, "addCoreFields(const SystemConfig& defaults)"));
@@ -1510,7 +1531,7 @@ void test_app_config_source_uses_clear_business_labels_and_help() {
     TEST_ASSERT_NULL(std::strstr(buffer, "高级救援参数"));
     TEST_ASSERT_NULL(std::strstr(buffer, "pulse/ml"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "保存后需重启，重启后重新探测 LCD。"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "仅保存在 RAM 中，重启会丢失；用于查看最近出水明细。"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "仅保存在 RAM 中，重启会丢失；用于查看最近出水明细。"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "有效脉冲间隔阈值；最大频率 = 1000000 / 当前值 Hz。"));
     TEST_ASSERT_NULL(std::strstr(buffer, "实时计量和明细分析的有效脉冲判定阈值；最大有效频率 = 1000000 / 当前值 Hz。"));
     TEST_ASSERT_NULL(std::strstr(buffer, "用于查看最近出水明细和校准后自动入库。"));

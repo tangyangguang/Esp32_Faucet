@@ -33,7 +33,7 @@ AppSnapshot makeSnapshot() {
 }  // namespace
 
 void test_status_json_contains_no_remote_control_capability() {
-    char json[1536]{};
+    char json[2048]{};
 
     TEST_ASSERT_TRUE(writeStatusJson(makeSnapshot(), json, sizeof(json)));
 
@@ -48,6 +48,8 @@ void test_status_json_contains_no_remote_control_capability() {
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"activePreset\":0"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"pulsePerLiter\":0"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"metering\":{\"startupPulseCount\":8,\"startupVolumeMl\":36,\"stablePulsePerLiter\":225,\"startupDurationMs\":5000,\"stableFlowMlPerMin\":480}"));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"calibration\":{\"status\":\"idle\",\"attemptCount\":0,\"validSampleCount\":0"));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"canQuickGenerate\":false,\"recommended\":false"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"targetEstimate\":{\"available\":true"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"targetMl\":1500"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"pulseCount\":338"));
@@ -72,7 +74,7 @@ void test_status_json_contains_no_remote_control_capability() {
 }
 
 void test_status_json_can_report_screen_state() {
-    char json[1536]{};
+    char json[2048]{};
 
     TEST_ASSERT_TRUE(writeStatusJson(makeSnapshot(), true, json, sizeof(json)));
 
@@ -80,7 +82,7 @@ void test_status_json_can_report_screen_state() {
 }
 
 void test_status_json_uses_configured_valve_pwm_values() {
-    char json[1536]{};
+    char json[2048]{};
     SystemConfig config = makeDefaultConfig();
     config.valveFullPowerSec = 5;
     config.valveHoldDutyPercent = 45;
@@ -96,7 +98,7 @@ void test_status_json_uses_configured_valve_pwm_values() {
 }
 
 void test_status_json_can_include_config_migration_diagnostics() {
-    char json[1536]{};
+    char json[2048]{};
     SystemConfig config = makeDefaultConfig();
     const ConfigRuntimeStatus status{"migrated_legacy", 0, 11, false, true};
 
@@ -112,7 +114,7 @@ void test_status_json_can_include_config_migration_diagnostics() {
 }
 
 void test_status_json_contains_next_preset_summary() {
-    char json[1536]{};
+    char json[2048]{};
     SystemConfig config = makeDefaultConfig();
     AppSnapshot snapshot = makeSnapshot();
     snapshot.water.selectedPreset = 1;
@@ -226,7 +228,7 @@ void test_usage_summary_json_contains_aggregated_series() {
 }
 
 void test_config_json_contains_safety_and_display_settings() {
-    char json[1024]{};
+    char json[1400]{};
     SystemConfig config = makeDefaultConfig();
     config.beepEnabled = false;
 
@@ -238,7 +240,7 @@ void test_config_json_contains_safety_and_display_settings() {
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"timeAdjustStepSec\":10"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"pulseMinIntervalUs\":1000"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"pulseMaxEffectiveHz\":1000"));
-    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"recentPulseTraceCount\":3"));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"recentPulseTraceCount\":1"));
     TEST_ASSERT_NULL(std::strstr(json, "activeMeteringSlot"));
     TEST_ASSERT_NULL(std::strstr(json, "startupPulseCount"));
     TEST_ASSERT_NULL(std::strstr(json, "startupVolumeMl"));

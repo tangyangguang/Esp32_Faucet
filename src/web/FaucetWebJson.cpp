@@ -86,6 +86,32 @@ const char* waterResultName(WaterResult result) {
     return "unknown";
 }
 
+const char* calibrationStatusName(CalibrationSessionStatus status) {
+    switch (status) {
+        case CalibrationSessionStatus::Idle:
+            return "idle";
+        case CalibrationSessionStatus::Preparing:
+            return "preparing";
+        case CalibrationSessionStatus::WaitingLocalRun:
+            return "waitingLocalRun";
+        case CalibrationSessionStatus::Running:
+            return "running";
+        case CalibrationSessionStatus::AwaitingActual:
+            return "awaitingActual";
+        case CalibrationSessionStatus::ReadyToGenerate:
+            return "readyToGenerate";
+        case CalibrationSessionStatus::Generated:
+            return "generated";
+        case CalibrationSessionStatus::Applied:
+            return "applied";
+        case CalibrationSessionStatus::Discarded:
+            return "discarded";
+        case CalibrationSessionStatus::Failed:
+            return "failed";
+    }
+    return "unknown";
+}
+
 const char* presetTypeName(PresetType type) {
     return type == PresetType::Time ? "time" : "volume";
 }
@@ -253,6 +279,8 @@ bool writeStatusJson(const AppSnapshot& snapshot,
                   "\"lastResult\":\"%s\",\"mode\":\"%s\",\"selectedPreset\":%u,\"activePreset\":%u,\"pulsePerLiter\":%lu,"
                   "\"metering\":{\"startupPulseCount\":%lu,\"startupVolumeMl\":%lu,\"stablePulsePerLiter\":%lu,"
                   "\"startupDurationMs\":%lu,\"stableFlowMlPerMin\":%lu},"
+                  "\"calibration\":{\"status\":\"%s\",\"attemptCount\":%u,\"validSampleCount\":%u,"
+                  "\"minActualMl\":%lu,\"maxActualMl\":%lu,\"canQuickGenerate\":%s,\"recommended\":%s},"
                   "\"targetEstimate\":{\"available\":%s,\"targetMl\":%lu,\"pulseCount\":%lu,"
                   "\"fullRunPulsePerLiter\":%lu,\"estimatedDurationSec\":%lu,\"stablePulsePerSec\":%.2f,\"reason\":",
                   waterStateName(snapshot.water.state),
@@ -270,6 +298,13 @@ bool writeStatusJson(const AppSnapshot& snapshot,
                   static_cast<unsigned long>(snapshot.meteringParams.stablePulsePerLiter),
                   static_cast<unsigned long>(snapshot.meteringParams.startupDurationMs),
                   static_cast<unsigned long>(snapshot.meteringParams.stableFlowMlPerMin),
+                  calibrationStatusName(snapshot.calibrationStatus),
+                  static_cast<unsigned>(snapshot.calibrationAttemptCount),
+                  static_cast<unsigned>(snapshot.calibrationValidSampleCount),
+                  static_cast<unsigned long>(snapshot.calibrationMinActualMl),
+                  static_cast<unsigned long>(snapshot.calibrationMaxActualMl),
+                  snapshot.calibrationCanQuickGenerate ? "true" : "false",
+                  snapshot.calibrationRecommended ? "true" : "false",
                   targetEstimateValid ? "true" : "false",
                   static_cast<unsigned long>(targetEstimateMl),
                   static_cast<unsigned long>(targetEstimatePulses),

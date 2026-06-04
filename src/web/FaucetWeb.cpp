@@ -3380,13 +3380,13 @@ void formatFlowNumber(std::uint32_t flowMlPerMin, char* out, std::size_t len) {
                   static_cast<unsigned long>(centiLitersPerMin % 100U));
 }
 
-void formatFlowMeta(std::uint32_t recentAverageFlowMlPerMin, char* out, std::size_t len) {
+void formatFlowMeta(std::uint32_t runAverageFlowMlPerMin, char* out, std::size_t len) {
     if (!out || len == 0) {
         return;
     }
     char average[16]{};
-    formatFlowNumber(recentAverageFlowMlPerMin, average, sizeof(average));
-    std::snprintf(out, len, "L/min · 近期平均 %s", average);
+    formatFlowNumber(runAverageFlowMlPerMin, average, sizeof(average));
+    std::snprintf(out, len, "L/min · 本次平均 %s", average);
 }
 
 void sendNextPresetControl(const AppSnapshot& snapshot) {
@@ -3512,7 +3512,7 @@ void sendMachineStatusCard(const AppSnapshot& snapshot, bool screenOn) {
     char currentFlow[24]{};
     formatFlowNumber(snapshot.currentFlowMlPerMin, currentFlow, sizeof(currentFlow));
     char currentFlowMeta[40]{};
-    formatFlowMeta(snapshot.recentAverageFlowMlPerMin, currentFlowMeta, sizeof(currentFlowMeta));
+    formatFlowMeta(snapshot.runAverageFlowMlPerMin, currentFlowMeta, sizeof(currentFlowMeta));
     char meteringParams[96]{};
     if (validMeteringSchemeParameters(snapshot.meteringParams)) {
         char startupVolume[20]{};
@@ -3681,7 +3681,7 @@ void sendHomeAutoRefreshScript() {
                             "function faucetFlowLitersPerMin(ml){var n=Number(ml)||0;var c=Math.round(n/10);return n>0?Math.floor(c/100)+'.'+String(c%100).padStart(2,'0')+' L/min':'-';}"
                             "function faucetFlowLitersPerMinCompact(ml){var n=Math.max(0,Math.round(Number(ml)||0));return n>0?Math.floor(n/1000)+'.'+String(n%1000).padStart(3,'0')+'L/min':'-';}"
                             "function faucetFlowValue(ml){var n=Number(ml)||0;var c=Math.round(n/10);return n>0?Math.floor(c/100)+'.'+String(c%100).padStart(2,'0'):'-';}"
-                            "function faucetFlowMeta(ml){return 'L/min · 近期平均 '+faucetFlowValue(ml);}"
+                            "function faucetFlowMeta(ml){return 'L/min · 本次平均 '+faucetFlowValue(ml);}"
                             "function faucetMillisSecondsCompact(ms){ms=Math.max(0,Math.round(Number(ms)||0));if(ms%1000===0)return Math.floor(ms/1000)+'S';var c=Math.round(ms/10);return Math.floor(c/100)+'.'+String(c%100).padStart(2,'0')+'S';}"
                             "function faucetSeconds(s){s=Number(s)||0;if(s>=3600){return Math.floor(s/3600)+' 小时 '+Math.floor((s%3600)/60)+' 分 '+(s%60)+' 秒';}if(s>=60){return Math.floor(s/60)+' 分 '+(s%60)+' 秒';}return s+' 秒';}"
                             "function faucetStateText(s){return {idle:'待机',confirm:'确认',running:'出水中',paused:'暂停',error:'异常'}[s]||'未知';}"
@@ -3725,7 +3725,7 @@ void sendHomeAutoRefreshScript() {
                             "faucetSet('targetValue',target);faucetSet('outputValue',out);"
                             "faucetSet('remainingValue',s.mode==='time'?faucetSeconds(remaining):faucetLiters(remaining));"
                             "faucetSet('currentFlowValue',faucetFlowValue(s.currentFlowMlPerMin));"
-                            "faucetSet('currentFlowMeta',faucetFlowMeta(s.recentAverageFlowMlPerMin));"
+                            "faucetSet('currentFlowMeta',faucetFlowMeta(s.runAverageFlowMlPerMin));"
                             "faucetSetMaybe('targetMeta',targetMeta);"
                             "faucetSet('outputMeta','已运行 '+faucetSeconds(s.elapsedSec));"
                             "faucetSet('remainingMeta','完成 '+pct+'%');"

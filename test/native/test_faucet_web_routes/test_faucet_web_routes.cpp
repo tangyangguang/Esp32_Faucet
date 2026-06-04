@@ -275,7 +275,7 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "下次预设"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "预计 %luP/L · %luP"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "预计 %luP/L · %luP · 约 %s"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "预计容量 %s · %luP · 预计稳态 %luml/min"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "预计 %s · %luP · 稳态 %s"));
     TEST_ASSERT_NULL(std::strstr(buffer, "预计 %s · %luP · 稳态 %.2fP/s"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "预计约 %s"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "计量参数未就绪"));
@@ -290,11 +290,13 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "faucetSelectPreset("));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "nextPresetControl"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "sendMachineStatusNoteOnlyItem(\"meteringParams\", \"计量参数\", meteringParams)"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "容量 %luP · %luml · %luP/L / 时间 %lums · %luml/min"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "启动段 %luP · %s · %s / 稳态段 %luP/L · %s"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "currentFlowValue"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "currentFlowMlPerMin"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "runAverageFlowMlPerMin"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "recentAverageFlowMlPerMin"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "L/min · 近期平均"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "L/min · 近期平均"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "L/min · 本次平均"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "faucetFlowMeta"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "faucetFlowLitersPerMin"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "return n>0?"));
@@ -906,7 +908,7 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, ".machine-hero-head{display:grid;grid-template-columns:max-content minmax(0,1fr);align-items:center;gap:14px"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, ".machine-context{display:flex;flex-direction:column;gap:6px;min-width:0"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, ".machine-alert{margin:0;color:#8a6f3d;font-size:13px;font-weight:400"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, ".machine-progress-alert{margin:8px 0 0;text-align:right}"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, ".machine-progress-alert{margin:8px 0 0;text-align:left}"));
     TEST_ASSERT_NULL(std::strstr(buffer, ".machine-running-note"));
     TEST_ASSERT_NULL(std::strstr(buffer, ".machine-running-note-row"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, ".next-preset-control{display:grid;grid-template-columns:30px minmax(0,1fr) 30px"));
@@ -1049,7 +1051,7 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NULL(std::strstr(buffer, "<h2>出水详情</h2><div class='metric-grid'>"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "\"meteringParams\", \"计量参数\", meteringParams"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "'预计 '+e.fullRunPulsePerLiter+'P/L · '+e.pulseCount+'P"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "'预计容量 '+faucetLiters(e.targetMl)+' · '+e.pulseCount+'P · 预计稳态 '"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "'预计 '+faucetLiters(e.targetMl)+' · '+e.pulseCount+'P · 稳态 '"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "faucetTargetMeta"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "阀门"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "设备不在待机状态，请回到待机后再保存配置。"));

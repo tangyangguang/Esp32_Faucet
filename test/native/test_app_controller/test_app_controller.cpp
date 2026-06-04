@@ -1038,10 +1038,44 @@ void test_app_controller_snapshot_reports_current_flow_rate() {
     app.tick(input({false, false, false, false}, 2100, 2100000UL, 1714502400));
 
     TEST_ASSERT_EQUAL_UINT32(60, app.snapshot().currentFlowMlPerMin);
+    TEST_ASSERT_EQUAL_UINT32(60, app.snapshot().windowFlowMlPerMin);
+    TEST_ASSERT_EQUAL_UINT32(60, app.snapshot().instantFlowMlPerMin);
+    TEST_ASSERT_EQUAL_UINT32(60, app.snapshot().displayFlowMlPerMin);
+    TEST_ASSERT_EQUAL_UINT32(120, app.snapshot().runAverageFlowMlPerMin);
 
-    app.tick(input({false, false, false, false}, 5000, 5000000UL, 1714502403));
+    app.tick(input({false, false, false, false}, 5100, 5100000UL, 1714502403));
 
     TEST_ASSERT_EQUAL_UINT32(0, app.snapshot().currentFlowMlPerMin);
+    TEST_ASSERT_EQUAL_UINT32(0, app.snapshot().windowFlowMlPerMin);
+    TEST_ASSERT_EQUAL_UINT32(0, app.snapshot().instantFlowMlPerMin);
+    TEST_ASSERT_EQUAL_UINT32(0, app.snapshot().displayFlowMlPerMin);
+}
+
+void test_app_controller_uses_window_flow_for_high_flow_safety() {
+    SystemConfig config = makeDefaultConfig();
+    config.highFlowMlPerMin = 1000;
+    config.highFlowDurationSec = 1;
+    StatisticsStore statistics;
+    statistics.reset({20260506, 202619, 202605});
+    FilterStore filters(config.filters);
+    MemoryRecordWriter records;
+    AppController app(config, statistics, filters, records);
+    applyTestMeteringScheme(app, 1000);
+
+    app.resetInputs({false, false, false, false}, 0);
+    pressAndReleaseOk(app, 100);
+    pressAndReleaseOk(app, 300);
+    app.onFlowPulse(1000000UL);
+    app.onFlowPulse(1001000UL);
+    app.tick(input({false, false, false, false}, 1100, 1100000UL, 1714502400));
+    TEST_ASSERT_GREATER_THAN_UINT32(1000, app.snapshot().instantFlowMlPerMin);
+    TEST_ASSERT_LESS_THAN_UINT32(1000, app.snapshot().windowFlowMlPerMin);
+
+    app.tick(input({false, false, false, false}, 2200, 2200000UL, 1714502401));
+    TEST_ASSERT_FALSE(records.records.size() > 0 &&
+                      records.records.back().result == WaterResult::FlowError);
+    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(WaterState::Running),
+                            static_cast<std::uint8_t>(app.snapshot().water.state));
 }
 
 int main(int argc, char** argv) {
@@ -1077,5 +1111,6 @@ int main(int argc, char** argv) {
     RUN_TEST(test_app_controller_applies_calibration_from_pause_timeout_record);
     RUN_TEST(test_app_controller_result_display_exits_after_configured_timeout);
     RUN_TEST(test_app_controller_snapshot_reports_current_flow_rate);
+    RUN_TEST(test_app_controller_uses_window_flow_for_high_flow_safety);
     return UNITY_END();
 }

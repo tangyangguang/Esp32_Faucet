@@ -278,11 +278,17 @@ bool writeStatusJson(const AppSnapshot& snapshot,
                   static_cast<double>(snapshot.water.mode == WaterMode::Time ? snapshot.targetStablePulsePerSec : 0.0f));
     appendEscaped(writer, targetEstimateValid ? "" : (snapshot.targetEstimateReason ? snapshot.targetEstimateReason : ""));
     writer.append("},"
-                  "\"currentFlowMlPerMin\":%lu,\"recentAverageFlowMlPerMin\":%lu,\"flowDroppedPulses\":%lu,"
+                  "\"currentFlowMlPerMin\":%lu,\"instantFlowMlPerMin\":%lu,\"windowFlowMlPerMin\":%lu,"
+                  "\"displayFlowMlPerMin\":%lu,\"runAverageFlowMlPerMin\":%lu,"
+                  "\"recentAverageFlowMlPerMin\":%lu,\"flowDroppedPulses\":%lu,"
                   "\"maxLoopIntervalUs\":%lu,\"maxAppTickUs\":%lu,\"maxBaseHandleUs\":%lu,"
                   "\"valveDutyPercent\":%u,\"valveFullPowerSec\":%lu,\"valveHoldDutyPercent\":%u,"
                   "\"screenOn\":%s,\"waterControl\":false",
                   static_cast<unsigned long>(snapshot.currentFlowMlPerMin),
+                  static_cast<unsigned long>(snapshot.instantFlowMlPerMin),
+                  static_cast<unsigned long>(snapshot.windowFlowMlPerMin),
+                  static_cast<unsigned long>(snapshot.displayFlowMlPerMin),
+                  static_cast<unsigned long>(snapshot.runAverageFlowMlPerMin),
                   static_cast<unsigned long>(snapshot.recentAverageFlowMlPerMin),
                   static_cast<unsigned long>(snapshot.flowDroppedPulses),
                   static_cast<unsigned long>(snapshot.maxLoopIntervalUs),

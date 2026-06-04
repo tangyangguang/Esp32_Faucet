@@ -65,6 +65,10 @@ AppController::AppController(const SystemConfig& config,
       activeTraceStartUs_(0),
       lastFlowVolumeMl_(0),
       currentFlowMlPerMin_(0),
+      instantFlowMlPerMin_(0),
+      windowFlowMlPerMin_(0),
+      displayFlowMlPerMin_(0),
+      runAverageFlowMlPerMin_(0),
       activeStartTimeSec_(0),
       activeStartTimeSynced_(false),
       activeStartBootId_(0),
@@ -116,6 +120,10 @@ AppController::AppController(const SystemConfig& config,
       activeTraceStartUs_(0),
       lastFlowVolumeMl_(0),
       currentFlowMlPerMin_(0),
+      instantFlowMlPerMin_(0),
+      windowFlowMlPerMin_(0),
+      displayFlowMlPerMin_(0),
+      runAverageFlowMlPerMin_(0),
       activeStartTimeSec_(0),
       activeStartTimeSynced_(false),
       activeStartBootId_(0),
@@ -170,7 +178,17 @@ void AppController::tick(const AppTickInput& input) {
     syncFlow(input.nowUs);
     const FlowSnapshot flow = flow_.snapshot(input.nowUs);
     currentFlowMlPerMin_ = flow.currentFlowMlPerMin;
-    water_.tick(input.nowMs, flow.currentFlowMlPerMin);
+    instantFlowMlPerMin_ = flow.instantFlowMlPerMin;
+    windowFlowMlPerMin_ = flow.windowFlowMlPerMin;
+    displayFlowMlPerMin_ = flow.displayFlowMlPerMin;
+    water_.tick(input.nowMs, flow.windowFlowMlPerMin);
+    const WaterSnapshot waterAfterTick = water_.snapshot();
+    runAverageFlowMlPerMin_ =
+        waterAfterTick.elapsedSec == 0
+            ? 0
+            : static_cast<std::uint32_t>(
+                  (static_cast<std::uint64_t>(waterAfterTick.volumeMl) * 60ULL + waterAfterTick.elapsedSec / 2ULL) /
+                  waterAfterTick.elapsedSec);
     syncValve(input.nowMs);
 
     if (water_.hasResult()) {
@@ -217,6 +235,10 @@ AppSnapshot AppController::snapshot() const {
     snapshot.pulsePerLiter = activeMeteringScheme_.params.stablePulsePerLiter;
     snapshot.meteringParams = activeMeteringScheme_.params;
     snapshot.currentFlowMlPerMin = currentFlowMlPerMin_;
+    snapshot.instantFlowMlPerMin = instantFlowMlPerMin_;
+    snapshot.windowFlowMlPerMin = windowFlowMlPerMin_;
+    snapshot.displayFlowMlPerMin = displayFlowMlPerMin_;
+    snapshot.runAverageFlowMlPerMin = runAverageFlowMlPerMin_;
     snapshot.flowDroppedPulses = flowDroppedPulses_;
     return snapshot;
 }
@@ -502,6 +524,10 @@ void AppController::startSelectedPreset(std::uint32_t nowMs,
         flow_.reset();
         lastFlowVolumeMl_ = 0;
         currentFlowMlPerMin_ = 0;
+        instantFlowMlPerMin_ = 0;
+        windowFlowMlPerMin_ = 0;
+        displayFlowMlPerMin_ = 0;
+        runAverageFlowMlPerMin_ = 0;
         if (pulseTraces_) {
             pulseTraces_->setRecentTraceLimit(config_.recentPulseTraceCount);
             activeTraceId_ = pulseTraces_->beginTrace(nowSeconds, config_.pulseMinIntervalUs);

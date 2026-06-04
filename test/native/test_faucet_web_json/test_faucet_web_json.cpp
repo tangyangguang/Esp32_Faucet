@@ -21,6 +21,10 @@ AppSnapshot makeSnapshot() {
     snapshot.maxAppTickUs = 1400;
     snapshot.maxBaseHandleUs = 76800;
     snapshot.currentFlowMlPerMin = 1870;
+    snapshot.instantFlowMlPerMin = 1910;
+    snapshot.windowFlowMlPerMin = 1840;
+    snapshot.displayFlowMlPerMin = 1870;
+    snapshot.runAverageFlowMlPerMin = 1660;
     snapshot.recentAverageFlowMlPerMin = 1810;
     snapshot.meteringParams = MeteringParameters{8, 36, 225};
     return snapshot;
@@ -49,6 +53,10 @@ void test_status_json_contains_no_remote_control_capability() {
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"pulseCount\":338"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"fullRunPulsePerLiter\":225"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"currentFlowMlPerMin\":1870"));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"instantFlowMlPerMin\":1910"));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"windowFlowMlPerMin\":1840"));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"displayFlowMlPerMin\":1870"));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"runAverageFlowMlPerMin\":1660"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"recentAverageFlowMlPerMin\":1810"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"flowDroppedPulses\":7"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"maxLoopIntervalUs\":82300"));

@@ -80,7 +80,7 @@ void test_current_flow_uses_recent_pulse_interval() {
     TEST_ASSERT_TRUE(meter.onPulse(2000000));
 
     FlowSnapshot snapshot = meter.snapshot(2000000);
-    TEST_ASSERT_EQUAL_UINT32(60, snapshot.currentFlowMlPerMin);
+    TEST_ASSERT_EQUAL_UINT32(60, snapshot.instantFlowMlPerMin);
 }
 
 void test_current_flow_survives_micros_wrap() {
@@ -92,7 +92,7 @@ void test_current_flow_survives_micros_wrap() {
     TEST_ASSERT_TRUE(meter.onPulse(secondPulseUs));
 
     FlowSnapshot snapshot = meter.snapshot(secondPulseUs);
-    TEST_ASSERT_EQUAL_UINT32(60, snapshot.currentFlowMlPerMin);
+    TEST_ASSERT_EQUAL_UINT32(60, snapshot.instantFlowMlPerMin);
 }
 
 void test_current_flow_expires_when_no_recent_pulse() {
@@ -103,6 +103,73 @@ void test_current_flow_expires_when_no_recent_pulse() {
 
     FlowSnapshot snapshot = meter.snapshot(5000001);
     TEST_ASSERT_EQUAL_UINT32(0, snapshot.currentFlowMlPerMin);
+    TEST_ASSERT_EQUAL_UINT32(0, snapshot.instantFlowMlPerMin);
+    TEST_ASSERT_EQUAL_UINT32(0, snapshot.windowFlowMlPerMin);
+    TEST_ASSERT_EQUAL_UINT32(0, snapshot.displayFlowMlPerMin);
+}
+
+void test_window_flow_uses_recent_two_second_pulse_count() {
+    FlowMeter meter(MeteringParameters{0, 0, 1000});
+
+    TEST_ASSERT_TRUE(meter.onPulse(1000000));
+    TEST_ASSERT_TRUE(meter.onPulse(1500000));
+    TEST_ASSERT_TRUE(meter.onPulse(2000000));
+    TEST_ASSERT_TRUE(meter.onPulse(2500000));
+
+    FlowSnapshot snapshot = meter.snapshot(2500000);
+    TEST_ASSERT_EQUAL_UINT32(120, snapshot.windowFlowMlPerMin);
+    TEST_ASSERT_EQUAL_UINT32(120, snapshot.currentFlowMlPerMin);
+    TEST_ASSERT_EQUAL_UINT32(120, snapshot.displayFlowMlPerMin);
+}
+
+void test_window_flow_slides_out_old_pulses() {
+    FlowMeter meter(MeteringParameters{0, 0, 1000});
+
+    TEST_ASSERT_TRUE(meter.onPulse(0));
+    TEST_ASSERT_TRUE(meter.onPulse(1000000));
+    TEST_ASSERT_TRUE(meter.onPulse(2000000));
+    TEST_ASSERT_TRUE(meter.onPulse(3000000));
+
+    FlowSnapshot snapshot = meter.snapshot(3000000);
+    TEST_ASSERT_EQUAL_UINT32(90, snapshot.windowFlowMlPerMin);
+}
+
+void test_low_flow_window_extends_to_three_seconds() {
+    FlowMeter meter(MeteringParameters{0, 0, 1000});
+
+    TEST_ASSERT_TRUE(meter.onPulse(1000000));
+    TEST_ASSERT_TRUE(meter.onPulse(4000000));
+
+    FlowSnapshot snapshot = meter.snapshot(4000000);
+    TEST_ASSERT_EQUAL_UINT32(40, snapshot.windowFlowMlPerMin);
+}
+
+void test_display_flow_smooths_window_changes() {
+    FlowMeter meter(MeteringParameters{0, 0, 1000});
+
+    TEST_ASSERT_TRUE(meter.onPulse(1000000));
+    TEST_ASSERT_TRUE(meter.onPulse(1500000));
+    TEST_ASSERT_TRUE(meter.onPulse(2000000));
+    TEST_ASSERT_TRUE(meter.onPulse(2500000));
+    TEST_ASSERT_EQUAL_UINT32(120, meter.snapshot(2500000).displayFlowMlPerMin);
+
+    TEST_ASSERT_TRUE(meter.onPulse(3000000));
+    FlowSnapshot snapshot = meter.snapshot(3000000);
+    TEST_ASSERT_EQUAL_UINT32(150, snapshot.windowFlowMlPerMin);
+    TEST_ASSERT_EQUAL_UINT32(129, snapshot.displayFlowMlPerMin);
+}
+
+void test_filtered_pulses_do_not_enter_flow_window() {
+    FlowMeter meter(MeteringParameters{0, 0, 1000}, 1000);
+
+    TEST_ASSERT_TRUE(meter.onPulse(1000000));
+    TEST_ASSERT_FALSE(meter.onPulse(1000500));
+    TEST_ASSERT_TRUE(meter.onPulse(2000000));
+
+    FlowSnapshot snapshot = meter.snapshot(2000000);
+    TEST_ASSERT_EQUAL_UINT32(2, snapshot.pulseCount);
+    TEST_ASSERT_EQUAL_UINT32(1, snapshot.rejectedPulses);
+    TEST_ASSERT_EQUAL_UINT32(60, snapshot.windowFlowMlPerMin);
 }
 
 void test_rejects_invalid_metering_parameters() {
@@ -131,7 +198,7 @@ void test_high_frequency_flow_saturates_without_overflow() {
     TEST_ASSERT_TRUE(meter.onPulse(1000));
     TEST_ASSERT_TRUE(meter.onPulse(1001));
 
-    TEST_ASSERT_UINT32_WITHIN(100UL, 1200000000UL, meter.snapshot(1001).currentFlowMlPerMin);
+    TEST_ASSERT_UINT32_WITHIN(100UL, 1200000000UL, meter.snapshot(1001).instantFlowMlPerMin);
 }
 
 void test_reset_clears_counts_and_flow() {
@@ -145,6 +212,9 @@ void test_reset_clears_counts_and_flow() {
     TEST_ASSERT_EQUAL_UINT32(0, snapshot.pulseCount);
     TEST_ASSERT_EQUAL_UINT32(0, snapshot.volumeMl);
     TEST_ASSERT_EQUAL_UINT32(0, snapshot.currentFlowMlPerMin);
+    TEST_ASSERT_EQUAL_UINT32(0, snapshot.instantFlowMlPerMin);
+    TEST_ASSERT_EQUAL_UINT32(0, snapshot.windowFlowMlPerMin);
+    TEST_ASSERT_EQUAL_UINT32(0, snapshot.displayFlowMlPerMin);
 }
 
 int main(int argc, char** argv) {
@@ -161,6 +231,11 @@ int main(int argc, char** argv) {
     RUN_TEST(test_current_flow_uses_recent_pulse_interval);
     RUN_TEST(test_current_flow_survives_micros_wrap);
     RUN_TEST(test_current_flow_expires_when_no_recent_pulse);
+    RUN_TEST(test_window_flow_uses_recent_two_second_pulse_count);
+    RUN_TEST(test_window_flow_slides_out_old_pulses);
+    RUN_TEST(test_low_flow_window_extends_to_three_seconds);
+    RUN_TEST(test_display_flow_smooths_window_changes);
+    RUN_TEST(test_filtered_pulses_do_not_enter_flow_window);
     RUN_TEST(test_rejects_invalid_metering_parameters);
     RUN_TEST(test_pulse_per_liter_boundaries_are_accepted);
     RUN_TEST(test_high_frequency_flow_saturates_without_overflow);

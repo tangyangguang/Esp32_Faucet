@@ -299,7 +299,7 @@ void test_config_save_and_load_round_trips_system_config() {
     TEST_ASSERT_EQUAL_UINT32(250, loaded.volumeAdjustStepMl);
     TEST_ASSERT_EQUAL_UINT32(15, loaded.timeAdjustStepSec);
     TEST_ASSERT_EQUAL_UINT32(2500, loaded.pulseMinIntervalUs);
-    TEST_ASSERT_EQUAL_UINT32(2, loaded.recentPulseTraceCount);
+    TEST_ASSERT_EQUAL_UINT32(kMaxRecentPulseTraceCount, loaded.recentPulseTraceCount);
     TEST_ASSERT_EQUAL_UINT32(1500, loaded.calibrationAnalysisPulseMinIntervalUs);
     TEST_ASSERT_EQUAL_UINT32(5, loaded.calibrationStableWindowSec);
     TEST_ASSERT_EQUAL_UINT8(30, loaded.calibrationStableTolerancePercent);

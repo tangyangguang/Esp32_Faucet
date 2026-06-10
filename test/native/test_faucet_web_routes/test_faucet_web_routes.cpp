@@ -385,7 +385,8 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NULL(std::strstr(buffer, "启动等效"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "可生成样本"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, ".diagnostic-metric strong{display:block;color:var(--text);font-size:14px;line-height:1.2;font-weight:650;font-variant-numeric:tabular-nums;white-space:nowrap;overflow-wrap:normal}"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "已保存明细 <b>%u条</b>"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "长期样本 <b>%u条</b>"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "已保存明细 <b>%u条</b>"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "已测容量 <b>%u条</b>"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "还需 <b>%s</b>"));
     TEST_ASSERT_NULL(std::strstr(buffer, "建议补偿"));

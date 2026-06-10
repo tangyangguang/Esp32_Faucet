@@ -259,17 +259,17 @@ bool MeteringSchemeStore::begin() {
         return initializeNewFile();
     }
     if (!loadHeader()) {
-        return false;
+        return backend_.removeFile(path_) && initializeNewFile();
     }
     ready_ = true;
     if (!upgradeLegacyDefaultSchemeIfNeeded()) {
         ready_ = false;
-        return false;
+        return backend_.removeFile(path_) && initializeNewFile();
     }
     MeteringSchemeRecord active{};
     if (!activeScheme(active) || active.state != MeteringSchemeState::Available) {
         ready_ = false;
-        return false;
+        return backend_.removeFile(path_) && initializeNewFile();
     }
     return true;
 }

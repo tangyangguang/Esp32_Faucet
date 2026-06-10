@@ -332,6 +332,9 @@ CalibrationLongTermSampleStore::CalibrationLongTermSampleStore(WaterRecordFileBa
 
 bool CalibrationLongTermSampleStore::begin() {
     ready_ = beginFixedStore(backend_, path_, kStoreKindLongTerm, kCalibrationLongTermSampleSlots);
+    if (!ready_ && validPath(path_) && backend_.exists(path_) && backend_.removeFile(path_)) {
+        ready_ = beginFixedStore(backend_, path_, kStoreKindLongTerm, kCalibrationLongTermSampleSlots);
+    }
     return ready_;
 }
 

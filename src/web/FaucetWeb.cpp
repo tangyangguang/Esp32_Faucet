@@ -2438,7 +2438,7 @@ void sendCalibrationGenerationPanel() {
             relativeError);
     sendFmt("<div class='diagnostic-metric'><span>还需</span><strong>%s</strong></div>", sampleNeed);
     Esp32BaseWeb::sendChunk("</div><div class='coverage-foot'>");
-    sendFmt("<span>已保存明细 <b>%u条</b></span><span>已测容量 <b>%u条</b></span>",
+    sendFmt("<span>长期样本 <b>%u条</b></span><span>已测容量 <b>%u条</b></span>",
             static_cast<unsigned>(diagnostics.savedTraceCount),
             static_cast<unsigned>(diagnostics.measuredSampleCount));
     sendFmt("<span>还需 <b>%s</b></span>", sampleNeed);

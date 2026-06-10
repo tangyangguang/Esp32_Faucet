@@ -128,6 +128,20 @@ bool beginFixedStore(WaterRecordFileBackend& backend, const char* path, std::uin
         return false;
     }
     if (!backend.exists(path)) {
+        return true;
+    }
+    if (backend.fileSize(path) != static_cast<std::int64_t>(fileSizeFor(slots))) {
+        return false;
+    }
+    SampleHeader header{};
+    return readHeader(backend, path, header) && validHeader(header, kind, slots);
+}
+
+bool ensureFileForWrite(WaterRecordFileBackend& backend, const char* path, std::uint8_t kind, std::size_t slots) {
+    if (!validPath(path)) {
+        return false;
+    }
+    if (!backend.exists(path)) {
         return initializeFile(backend, path, kind, slots);
     }
     if (backend.fileSize(path) != static_cast<std::int64_t>(fileSizeFor(slots))) {
@@ -224,6 +238,9 @@ bool CalibrationSessionTraceStore::clear() {
     if (!ready()) {
         return false;
     }
+    if (!backend_.exists(path_)) {
+        return true;
+    }
     for (std::uint8_t i = 0; i < kCalibrationSessionTraceSlots; ++i) {
         if (!writeBlankEntry(backend_, path_, i)) {
             return false;
@@ -242,6 +259,7 @@ bool CalibrationSessionTraceStore::savePending(std::uint8_t slot,
                                                const WaterPulseTraceSample* samples,
                                                std::size_t sampleCount) {
     if (!ready() || slot >= kCalibrationSessionTraceSlots ||
+        !ensureFileForWrite(backend_, path_, kStoreKindSession, kCalibrationSessionTraceSlots) ||
         !writeSamples(backend_, path_, kCalibrationSessionTraceSlots, slot, samples, sampleCount)) {
         return false;
     }
@@ -253,7 +271,7 @@ bool CalibrationSessionTraceStore::savePending(std::uint8_t slot,
 }
 
 bool CalibrationSessionTraceStore::commitValid(std::uint8_t slot, std::uint32_t actualMl, std::uint32_t savedAt) {
-    if (!ready() || slot >= kCalibrationSessionTraceSlots) {
+    if (!ready() || slot >= kCalibrationSessionTraceSlots || !backend_.exists(path_)) {
         return false;
     }
     SampleIndexEntry entry{};
@@ -269,11 +287,12 @@ bool CalibrationSessionTraceStore::commitValid(std::uint8_t slot, std::uint32_t 
 }
 
 bool CalibrationSessionTraceStore::invalidate(std::uint8_t slot) {
-    return ready() && slot < kCalibrationSessionTraceSlots && writeBlankEntry(backend_, path_, slot);
+    return ready() && slot < kCalibrationSessionTraceSlots &&
+           (!backend_.exists(path_) || writeBlankEntry(backend_, path_, slot));
 }
 
 bool CalibrationSessionTraceStore::load(std::uint8_t slot, CalibrationStoredTrace& trace) const {
-    if (!ready() || slot >= kCalibrationSessionTraceSlots) {
+    if (!ready() || slot >= kCalibrationSessionTraceSlots || !backend_.exists(path_)) {
         return false;
     }
     SampleIndexEntry entry{};
@@ -287,7 +306,7 @@ bool CalibrationSessionTraceStore::load(std::uint8_t slot, CalibrationStoredTrac
 std::size_t CalibrationSessionTraceStore::readSamples(std::uint8_t slot,
                                                       WaterPulseTraceSample* output,
                                                       std::size_t outputCapacity) const {
-    if (!ready() || slot >= kCalibrationSessionTraceSlots) {
+    if (!ready() || slot >= kCalibrationSessionTraceSlots || !backend_.exists(path_)) {
         return 0;
     }
     return readStoredSamples(backend_, path_, kCalibrationSessionTraceSlots, slot, output, outputCapacity);
@@ -298,7 +317,7 @@ std::size_t CalibrationSessionTraceStore::capacity() const {
 }
 
 bool CalibrationSessionTraceStore::ready() const {
-    return ready_ && backend_.exists(path_);
+    return ready_;
 }
 
 const char* CalibrationSessionTraceStore::storageName() const {
@@ -317,6 +336,9 @@ bool CalibrationLongTermSampleStore::clear() {
     if (!ready()) {
         return false;
     }
+    if (!backend_.exists(path_)) {
+        return true;
+    }
     for (std::uint8_t i = 0; i < kCalibrationLongTermSampleSlots; ++i) {
         if (!writeBlankEntry(backend_, path_, i)) {
             return false;
@@ -330,7 +352,7 @@ bool CalibrationLongTermSampleStore::save(const CalibrationStoredTrace& trace,
                                           std::size_t sampleCount,
                                           std::uint32_t& sampleId) {
     sampleId = 0;
-    if (!ready()) {
+    if (!ready() || !ensureFileForWrite(backend_, path_, kStoreKindLongTerm, kCalibrationLongTermSampleSlots)) {
         return false;
     }
     SampleHeader header{};
@@ -365,7 +387,7 @@ bool CalibrationLongTermSampleStore::save(const CalibrationStoredTrace& trace,
 }
 
 bool CalibrationLongTermSampleStore::remove(std::uint32_t sampleId) {
-    if (!ready() || sampleId == 0) {
+    if (!ready() || sampleId == 0 || !backend_.exists(path_)) {
         return false;
     }
     for (std::uint8_t i = 0; i < kCalibrationLongTermSampleSlots; ++i) {
@@ -381,7 +403,7 @@ bool CalibrationLongTermSampleStore::remove(std::uint32_t sampleId) {
 }
 
 bool CalibrationLongTermSampleStore::load(std::uint32_t sampleId, CalibrationStoredTrace& trace) const {
-    if (!ready() || sampleId == 0) {
+    if (!ready() || sampleId == 0 || !backend_.exists(path_)) {
         return false;
     }
     for (std::uint8_t i = 0; i < kCalibrationLongTermSampleSlots; ++i) {
@@ -399,6 +421,9 @@ bool CalibrationLongTermSampleStore::load(std::uint32_t sampleId, CalibrationSto
 
 std::size_t CalibrationLongTermSampleStore::list(CalibrationStoredTrace* output, std::size_t outputCapacity) const {
     if (!ready() || !output || outputCapacity == 0) {
+        return 0;
+    }
+    if (!backend_.exists(path_)) {
         return 0;
     }
     std::size_t count = 0;
@@ -419,7 +444,7 @@ std::size_t CalibrationLongTermSampleStore::capacity() const {
 }
 
 bool CalibrationLongTermSampleStore::ready() const {
-    return ready_ && backend_.exists(path_);
+    return ready_;
 }
 
 const char* CalibrationLongTermSampleStore::storageName() const {

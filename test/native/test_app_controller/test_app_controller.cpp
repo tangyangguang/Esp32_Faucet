@@ -319,7 +319,7 @@ void test_app_controller_uses_active_scheme_parameters_for_flow_meter() {
     TEST_ASSERT_EQUAL_UINT32(1000, app.snapshot().pulsePerLiter);
 }
 
-void test_app_controller_successful_record_writes_metering_snapshot_and_usage_count() {
+void test_app_controller_successful_record_writes_metering_snapshot_and_used_flag() {
     SystemConfig config = makeDefaultConfig();
     StatisticsStore statistics;
     statistics.reset({20260506, 202619, 202605});
@@ -342,9 +342,7 @@ void test_app_controller_successful_record_writes_metering_snapshot_and_usage_co
     TEST_ASSERT_EQUAL_UINT32(1000, snapshots.snapshots[0].params.stablePulsePerLiter);
     MeteringSchemeRecord updated{};
     TEST_ASSERT_TRUE(schemes.findById(active.id, updated));
-    TEST_ASSERT_EQUAL_UINT32(1, updated.useCount);
-    TEST_ASSERT_EQUAL_UINT32(1714502400, updated.lastUsedAt);
-    TEST_ASSERT_FALSE(updated.usageStatsDirty);
+    TEST_ASSERT_TRUE(updated.usedEver);
 }
 
 void test_app_controller_record_write_failure_does_not_write_snapshot_or_usage() {
@@ -367,11 +365,10 @@ void test_app_controller_record_write_failure_does_not_write_snapshot_or_usage()
     TEST_ASSERT_EQUAL_size_t(0, snapshots.snapshots.size());
     MeteringSchemeRecord updated{};
     TEST_ASSERT_TRUE(schemes.findById(active.id, updated));
-    TEST_ASSERT_EQUAL_UINT32(0, updated.useCount);
-    TEST_ASSERT_FALSE(updated.usageStatsDirty);
+    TEST_ASSERT_FALSE(updated.usedEver);
 }
 
-void test_app_controller_snapshot_write_failure_marks_usage_stats_dirty() {
+void test_app_controller_snapshot_write_failure_does_not_mark_used() {
     SystemConfig config = makeDefaultConfig();
     StatisticsStore statistics;
     statistics.reset({20260506, 202619, 202605});
@@ -391,8 +388,7 @@ void test_app_controller_snapshot_write_failure_marks_usage_stats_dirty() {
     TEST_ASSERT_EQUAL_size_t(1, records.records.size());
     MeteringSchemeRecord updated{};
     TEST_ASSERT_TRUE(schemes.findById(active.id, updated));
-    TEST_ASSERT_EQUAL_UINT32(0, updated.useCount);
-    TEST_ASSERT_TRUE(updated.usageStatsDirty);
+    TEST_ASSERT_FALSE(updated.usedEver);
 }
 
 void test_app_controller_starts_after_double_ok_and_opens_valve() {
@@ -610,9 +606,7 @@ void test_app_controller_local_ok_starts_calibration_run_and_completion_awaits_a
     TEST_ASSERT_EQUAL_UINT32(500, statistics.record().todayMl);
     TEST_ASSERT_EQUAL_UINT32(500, filters.record(0).usedMl);
     CalibrationStoredTrace pending{};
-    TEST_ASSERT_TRUE(traceStore.load(0, pending));
-    TEST_ASSERT_TRUE(pending.pendingActual);
-    TEST_ASSERT_FALSE(pending.valid);
+    TEST_ASSERT_FALSE(traceStore.load(0, pending));
 
     TEST_ASSERT_TRUE(app.submitCalibrationActualForWeb(520, 1714502402));
     TEST_ASSERT_EQUAL_UINT8(1, app.snapshot().calibrationValidSampleCount);
@@ -668,15 +662,12 @@ void test_app_controller_generates_calibration_session_candidate() {
     MeteringSchemeCandidate candidate{};
     TEST_ASSERT_TRUE(schemes.loadCandidate(candidate));
     TEST_ASSERT_TRUE(candidate.ready);
-    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(MeteringSchemeGeneratedKind::CalibrationSession),
-                            static_cast<unsigned>(candidate.generatedKind));
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(MeteringSchemeSource::CalibrationSession),
+                            static_cast<unsigned>(candidate.sourceType));
     TEST_ASSERT_EQUAL_UINT16(2, candidate.sampleCount);
     TEST_ASSERT_EQUAL_UINT32(1500, candidate.minActualMl);
     TEST_ASSERT_EQUAL_UINT32(7500, candidate.maxActualMl);
-    TEST_ASSERT_EQUAL_UINT32(1, candidate.sampleTraceIds[0]);
-    TEST_ASSERT_EQUAL_UINT32(2, candidate.sampleTraceIds[1]);
     TEST_ASSERT_UINT32_WITHIN(5, 222, candidate.params.stablePulsePerLiter);
-    TEST_ASSERT_NOT_NULL(std::strstr(candidate.creationSummary, "样本数量 2"));
     TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationSessionStatus::Generated),
                             static_cast<unsigned>(app.snapshot().calibrationStatus));
 }
@@ -724,13 +715,14 @@ void test_app_controller_applies_generated_session_scheme_and_keeps_old_scheme()
 
     TEST_ASSERT_NOT_EQUAL(oldActiveId, schemes.activeSchemeId());
     TEST_ASSERT_EQUAL_UINT32(schemes.activeSchemeId(), app.activeMeteringScheme().id);
-    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(MeteringSchemeGeneratedKind::CalibrationSession),
-                            static_cast<unsigned>(app.activeMeteringScheme().generatedKind));
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(MeteringSchemeSource::CalibrationSession),
+                            static_cast<unsigned>(app.activeMeteringScheme().sourceType));
     TEST_ASSERT_UINT32_WITHIN(5, 222, app.activeMeteringScheme().params.stablePulsePerLiter);
     MeteringSchemeRecord oldScheme{};
     TEST_ASSERT_TRUE(schemes.findById(oldActiveId, oldScheme));
-    TEST_ASSERT_TRUE(oldScheme.valid);
-    TEST_ASSERT_TRUE(oldScheme.enabled);
+    TEST_ASSERT_TRUE(oldScheme.recordUsed);
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(MeteringSchemeState::Available),
+                            static_cast<unsigned>(oldScheme.state));
     MeteringSchemeCandidate candidate{};
     TEST_ASSERT_TRUE(schemes.loadCandidate(candidate));
     TEST_ASSERT_FALSE(candidate.ready);
@@ -1323,9 +1315,9 @@ int main(int argc, char** argv) {
 
     UNITY_BEGIN();
     RUN_TEST(test_app_controller_uses_active_scheme_parameters_for_flow_meter);
-    RUN_TEST(test_app_controller_successful_record_writes_metering_snapshot_and_usage_count);
+    RUN_TEST(test_app_controller_successful_record_writes_metering_snapshot_and_used_flag);
     RUN_TEST(test_app_controller_record_write_failure_does_not_write_snapshot_or_usage);
-    RUN_TEST(test_app_controller_snapshot_write_failure_marks_usage_stats_dirty);
+    RUN_TEST(test_app_controller_snapshot_write_failure_does_not_mark_used);
     RUN_TEST(test_app_controller_starts_after_double_ok_and_opens_valve);
     RUN_TEST(test_app_controller_completion_writes_record_statistics_and_filters);
     RUN_TEST(test_app_controller_web_preset_switch_during_run_updates_next_preset_only);

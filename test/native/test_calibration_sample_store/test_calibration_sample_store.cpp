@@ -101,13 +101,15 @@ void fillSamples(WaterPulseTraceSample (&samples)[3], std::uint32_t baseUs) {
 
 }  // namespace
 
-void test_session_trace_store_has_exactly_five_slots() {
+void test_session_trace_store_has_exactly_three_slots_and_lazy_file() {
     MemoryFileBackend backend;
     CalibrationSessionTraceStore store(backend, "/session-traces.bin");
 
+    TEST_ASSERT_FALSE(backend.exists("/session-traces.bin"));
     TEST_ASSERT_TRUE(store.begin());
-    TEST_ASSERT_EQUAL_size_t(5, kCalibrationSessionTraceSlots);
-    TEST_ASSERT_EQUAL_size_t(5, store.capacity());
+    TEST_ASSERT_FALSE(backend.exists("/session-traces.bin"));
+    TEST_ASSERT_EQUAL_size_t(3, kCalibrationSessionTraceSlots);
+    TEST_ASSERT_EQUAL_size_t(3, store.capacity());
 }
 
 void test_session_trace_pending_then_valid_round_trips_samples() {
@@ -117,7 +119,9 @@ void test_session_trace_pending_then_valid_round_trips_samples() {
     WaterPulseTraceSample samples[3]{};
     fillSamples(samples, 10000);
 
+    TEST_ASSERT_FALSE(backend.exists("/session-traces.bin"));
     TEST_ASSERT_TRUE(store.savePending(0, traceFor(11, 0, 0), samples, 3));
+    TEST_ASSERT_TRUE(backend.exists("/session-traces.bin"));
     CalibrationStoredTrace pending{};
     TEST_ASSERT_TRUE(store.load(0, pending));
     TEST_ASSERT_TRUE(pending.pendingActual);
@@ -134,7 +138,7 @@ void test_session_trace_pending_then_valid_round_trips_samples() {
     TEST_ASSERT_EQUAL_UINT32(20000, copied[2].elapsedUs);
 }
 
-void test_starting_new_session_clears_the_five_session_slots() {
+void test_starting_new_session_clears_the_three_session_slots() {
     MemoryFileBackend backend;
     CalibrationSessionTraceStore store(backend, "/session-traces.bin");
     TEST_ASSERT_TRUE(store.begin());
@@ -150,16 +154,18 @@ void test_starting_new_session_clears_the_five_session_slots() {
     TEST_ASSERT_EQUAL_size_t(0, store.readSamples(0, samples, 3));
 }
 
-void test_long_term_sample_store_has_exactly_ten_slots() {
+void test_long_term_sample_store_has_exactly_five_slots_and_lazy_file() {
     MemoryFileBackend backend;
     CalibrationLongTermSampleStore store(backend, "/samples.bin");
 
+    TEST_ASSERT_FALSE(backend.exists("/samples.bin"));
     TEST_ASSERT_TRUE(store.begin());
-    TEST_ASSERT_EQUAL_size_t(10, kCalibrationLongTermSampleSlots);
-    TEST_ASSERT_EQUAL_size_t(10, store.capacity());
+    TEST_ASSERT_FALSE(backend.exists("/samples.bin"));
+    TEST_ASSERT_EQUAL_size_t(5, kCalibrationLongTermSampleSlots);
+    TEST_ASSERT_EQUAL_size_t(5, store.capacity());
 }
 
-void test_long_term_sample_store_refuses_the_eleventh_sample() {
+void test_long_term_sample_store_refuses_the_sixth_sample() {
     MemoryFileBackend backend;
     CalibrationLongTermSampleStore store(backend, "/samples.bin");
     TEST_ASSERT_TRUE(store.begin());
@@ -200,11 +206,11 @@ int main(int argc, char** argv) {
     (void)argc;
     (void)argv;
     UNITY_BEGIN();
-    RUN_TEST(test_session_trace_store_has_exactly_five_slots);
+    RUN_TEST(test_session_trace_store_has_exactly_three_slots_and_lazy_file);
     RUN_TEST(test_session_trace_pending_then_valid_round_trips_samples);
-    RUN_TEST(test_starting_new_session_clears_the_five_session_slots);
-    RUN_TEST(test_long_term_sample_store_has_exactly_ten_slots);
-    RUN_TEST(test_long_term_sample_store_refuses_the_eleventh_sample);
+    RUN_TEST(test_starting_new_session_clears_the_three_session_slots);
+    RUN_TEST(test_long_term_sample_store_has_exactly_five_slots_and_lazy_file);
+    RUN_TEST(test_long_term_sample_store_refuses_the_sixth_sample);
     RUN_TEST(test_long_term_sample_remove_clears_index_and_frees_slot);
     return UNITY_END();
 }

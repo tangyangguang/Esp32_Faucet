@@ -7,8 +7,8 @@
 
 namespace faucet {
 
-constexpr std::size_t kCalibrationSessionTraceSlots = 5;
-constexpr std::size_t kCalibrationLongTermSampleSlots = 10;
+constexpr std::size_t kCalibrationSessionTraceSlots = 3;
+constexpr std::size_t kCalibrationLongTermSampleSlots = 5;
 
 struct CalibrationStoredTrace {
     bool valid = false;

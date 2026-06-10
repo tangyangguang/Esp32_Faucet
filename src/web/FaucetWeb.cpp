@@ -4278,7 +4278,7 @@ void handleCalibrationPage() {
                                snapshot.calibrationStatus != CalibrationSessionStatus::Applied &&
                                snapshot.calibrationStatus != CalibrationSessionStatus::Discarded &&
                                snapshot.calibrationStatus != CalibrationSessionStatus::Failed;
-    const bool canStartSession = calibrationSessionInactive(snapshot.calibrationStatus) && calibrationSessionStorageReady();
+    const bool canStartSession = calibrationSessionInactive(snapshot.calibrationStatus);
     const bool canDiscardSession = sessionActive && snapshot.calibrationStatus != CalibrationSessionStatus::Running;
     const bool canEnterActual = snapshot.calibrationStatus == CalibrationSessionStatus::AwaitingActual;
     const bool canGenerate = snapshot.calibrationCanQuickGenerate &&
@@ -4310,9 +4310,8 @@ void handleCalibrationPage() {
     if (!sessionActive) {
         Esp32BaseWeb::sendChunk("<form method='post' action='/faucet/calibration' onsubmit='return once(this)'>"
                                 "<input type='hidden' name='action' value='start_session'>");
-        sendFmt("<input class='primary' type='submit' value='进入校准模式'%s%s></form>",
-                canStartSession ? "" : " disabled",
-                canStartSession ? "" : " title='校准存储未就绪'");
+        sendFmt("<input class='primary' type='submit' value='进入校准模式'%s></form>",
+                canStartSession ? "" : " disabled");
     } else {
         Esp32BaseWeb::sendChunk("<form method='post' action='/faucet/calibration' onsubmit=\"return confirm('确认退出并丢弃本次校准会话？')&&once(this)\">"
                                 "<input type='hidden' name='action' value='discard_session'>");

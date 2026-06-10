@@ -595,6 +595,8 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NULL(std::strstr(buffer, "确认/校准"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "校准容量"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "校准会话"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "const bool canStartSession = calibrationSessionInactive(snapshot.calibrationStatus);"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "title='校准存储未就绪'"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "计量方案"));
     TEST_ASSERT_NULL(std::strstr(buffer, "latest-record-table"));
     TEST_ASSERT_NULL(std::strstr(buffer, "latest-calibration-edit-row"));

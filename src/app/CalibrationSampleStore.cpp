@@ -231,6 +231,9 @@ CalibrationSessionTraceStore::CalibrationSessionTraceStore(WaterRecordFileBacken
 
 bool CalibrationSessionTraceStore::begin() {
     ready_ = beginFixedStore(backend_, path_, kStoreKindSession, kCalibrationSessionTraceSlots);
+    if (!ready_ && validPath(path_) && backend_.exists(path_) && backend_.removeFile(path_)) {
+        ready_ = beginFixedStore(backend_, path_, kStoreKindSession, kCalibrationSessionTraceSlots);
+    }
     return ready_;
 }
 

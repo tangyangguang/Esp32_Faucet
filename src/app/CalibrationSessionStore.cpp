@@ -55,21 +55,23 @@ bool CalibrationSessionFileStore::begin() {
     if (!validPath(path_)) {
         return false;
     }
-    if (!backend_.exists(path_)) {
+    const auto initializeEmpty = [this]() {
         SessionFile empty = makeFile(CalibrationSessionRecord{});
-        if (!backend_.createSized(path_, sizeof(SessionFile)) ||
-            !backend_.writeAt(path_, 0, reinterpret_cast<const std::uint8_t*>(&empty), sizeof(empty))) {
-            return false;
-        }
-        ready_ = true;
-        return true;
-    }
-    if (backend_.fileSize(path_) != static_cast<std::int64_t>(sizeof(SessionFile))) {
-        return false;
+        return backend_.createSized(path_, sizeof(SessionFile)) &&
+               backend_.writeAt(path_, 0, reinterpret_cast<const std::uint8_t*>(&empty), sizeof(empty));
+    };
+    if (!backend_.exists(path_)) {
+        ready_ = initializeEmpty();
+        return ready_;
     }
     SessionFile file{};
-    if (!backend_.readAt(path_, 0, reinterpret_cast<std::uint8_t*>(&file), sizeof(file)) || !validFile(file)) {
-        return false;
+    if (backend_.fileSize(path_) != static_cast<std::int64_t>(sizeof(SessionFile)) ||
+        !backend_.readAt(path_, 0, reinterpret_cast<std::uint8_t*>(&file), sizeof(file)) || !validFile(file)) {
+        if (!backend_.removeFile(path_)) {
+            return false;
+        }
+        ready_ = initializeEmpty();
+        return ready_;
     }
     ready_ = true;
     return true;

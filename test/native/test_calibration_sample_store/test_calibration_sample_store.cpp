@@ -112,6 +112,16 @@ void test_session_trace_store_has_exactly_three_slots_and_lazy_file() {
     TEST_ASSERT_EQUAL_size_t(3, store.capacity());
 }
 
+void test_session_trace_store_recovers_invalid_existing_file() {
+    MemoryFileBackend backend;
+    backend.files["/session-traces.bin"] = std::vector<std::uint8_t>(7, 0x55);
+    CalibrationSessionTraceStore store(backend, "/session-traces.bin");
+
+    TEST_ASSERT_TRUE(store.begin());
+    TEST_ASSERT_TRUE(store.ready());
+    TEST_ASSERT_FALSE(backend.exists("/session-traces.bin"));
+}
+
 void test_session_trace_pending_then_valid_round_trips_samples() {
     MemoryFileBackend backend;
     CalibrationSessionTraceStore store(backend, "/session-traces.bin");
@@ -165,6 +175,17 @@ void test_long_term_sample_store_has_exactly_five_slots_and_lazy_file() {
     TEST_ASSERT_EQUAL_size_t(5, store.capacity());
 }
 
+void test_long_term_sample_store_keeps_invalid_existing_file_unmodified() {
+    MemoryFileBackend backend;
+    backend.files["/samples.bin"] = std::vector<std::uint8_t>(7, 0x55);
+    CalibrationLongTermSampleStore store(backend, "/samples.bin");
+
+    TEST_ASSERT_FALSE(store.begin());
+    TEST_ASSERT_FALSE(store.ready());
+    TEST_ASSERT_TRUE(backend.exists("/samples.bin"));
+    TEST_ASSERT_EQUAL_size_t(7, backend.files["/samples.bin"].size());
+}
+
 void test_long_term_sample_store_refuses_the_sixth_sample() {
     MemoryFileBackend backend;
     CalibrationLongTermSampleStore store(backend, "/samples.bin");
@@ -207,9 +228,11 @@ int main(int argc, char** argv) {
     (void)argv;
     UNITY_BEGIN();
     RUN_TEST(test_session_trace_store_has_exactly_three_slots_and_lazy_file);
+    RUN_TEST(test_session_trace_store_recovers_invalid_existing_file);
     RUN_TEST(test_session_trace_pending_then_valid_round_trips_samples);
     RUN_TEST(test_starting_new_session_clears_the_three_session_slots);
     RUN_TEST(test_long_term_sample_store_has_exactly_five_slots_and_lazy_file);
+    RUN_TEST(test_long_term_sample_store_keeps_invalid_existing_file_unmodified);
     RUN_TEST(test_long_term_sample_store_refuses_the_sixth_sample);
     RUN_TEST(test_long_term_sample_remove_clears_index_and_frees_slot);
     return UNITY_END();

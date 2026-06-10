@@ -99,7 +99,7 @@ void test_session_store_writes_and_reads_one_current_session() {
     TEST_ASSERT_EQUAL_UINT8(2, output.validSampleCount);
 }
 
-void test_session_store_marks_corrupt_checksum_as_not_ready() {
+void test_session_store_recovers_corrupt_checksum_to_empty_session() {
     MemoryFileBackend backend;
     CalibrationSessionFileStore store(backend, "/session.bin");
     TEST_ASSERT_TRUE(store.begin());
@@ -108,10 +108,13 @@ void test_session_store_marks_corrupt_checksum_as_not_ready() {
     backend.files["/session.bin"][sizeof(std::uint32_t)] ^= 0x7f;
 
     CalibrationSessionFileStore loaded(backend, "/session.bin");
-    TEST_ASSERT_FALSE(loaded.begin());
-    TEST_ASSERT_FALSE(loaded.ready());
+    TEST_ASSERT_TRUE(loaded.begin());
+    TEST_ASSERT_TRUE(loaded.ready());
     CalibrationSessionRecord output{};
-    TEST_ASSERT_FALSE(loaded.load(output));
+    TEST_ASSERT_TRUE(loaded.load(output));
+    TEST_ASSERT_EQUAL_UINT32(0, output.sessionId);
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationSessionStatus::Idle),
+                            static_cast<unsigned>(output.status));
 }
 
 int main(int argc, char** argv) {
@@ -119,6 +122,6 @@ int main(int argc, char** argv) {
     (void)argv;
     UNITY_BEGIN();
     RUN_TEST(test_session_store_writes_and_reads_one_current_session);
-    RUN_TEST(test_session_store_marks_corrupt_checksum_as_not_ready);
+    RUN_TEST(test_session_store_recovers_corrupt_checksum_to_empty_session);
     return UNITY_END();
 }

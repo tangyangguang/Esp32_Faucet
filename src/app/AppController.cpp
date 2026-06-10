@@ -431,6 +431,7 @@ bool AppController::startCalibrationSessionForWeb(std::uint32_t nowSeconds) {
         return false;
     }
     calibrationSession_ = makeCalibrationSession(sessionId, nowSeconds);
+    calibrationCandidate_ = MeteringSchemeCandidate{};
     if (!saveCalibrationSession()) {
         calibrationSession_ = CalibrationSessionRecord{};
         return false;
@@ -446,6 +447,7 @@ bool AppController::discardCalibrationSessionForWeb(std::uint32_t nowSeconds) {
         return false;
     }
     calibrationSession_.status = CalibrationSessionStatus::Discarded;
+    calibrationCandidate_ = MeteringSchemeCandidate{};
     calibrationSession_.updatedAt = nowSeconds;
     const bool ok = saveCalibrationSession();
     localMode_ = LocalUiMode::Normal;
@@ -583,9 +585,7 @@ bool AppController::generateCalibrationForWeb(std::uint32_t nowSeconds) {
                                      sampleCount,
                                      nowSeconds,
                                      MeteringSchemeSource::CalibrationSession);
-    if (!meteringSchemes_->saveCandidate(candidate)) {
-        return false;
-    }
+    calibrationCandidate_ = candidate;
     calibrationSession_.status = CalibrationSessionStatus::Generated;
     calibrationSession_.updatedAt = nowSeconds;
     pendingBeep_ = BeepPattern::Done;
@@ -598,17 +598,16 @@ bool AppController::applyGeneratedCalibrationForWeb(std::uint32_t nowSeconds) {
         water_.snapshot().state != WaterState::Idle) {
         return false;
     }
-    MeteringSchemeCandidate candidate{};
-    if (!meteringSchemes_->loadCandidate(candidate) || !candidate.ready ||
-        candidate.sourceType != MeteringSchemeSource::CalibrationSession) {
+    if (!calibrationCandidate_.ready ||
+        calibrationCandidate_.sourceType != MeteringSchemeSource::CalibrationSession) {
         return false;
     }
     std::uint32_t newId = 0;
-    if (!meteringSchemes_->saveCandidateAsNew(candidate, "校准生成计量方案", nowSeconds, newId) ||
+    if (!meteringSchemes_->saveCandidateAsNew(calibrationCandidate_, "校准生成计量方案", nowSeconds, newId) ||
         !meteringSchemes_->enableScheme(newId, nowSeconds)) {
         return false;
     }
-    meteringSchemes_->discardCandidate();
+    calibrationCandidate_ = MeteringSchemeCandidate{};
     MeteringSchemeRecord active{};
     if (!meteringSchemes_->activeScheme(active) || !applyActiveMeteringScheme(active)) {
         return false;

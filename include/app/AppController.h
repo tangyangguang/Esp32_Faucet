@@ -200,6 +200,7 @@ private:
     CalibrationSessionTraceStore* calibrationSessionTraces_;
     CalibrationLongTermSampleStore* calibrationLongTermSamples_;
     CalibrationSessionRecord calibrationSession_;
+    MeteringSchemeCandidate calibrationCandidate_;
     std::uint32_t activeTraceId_;
     std::uint32_t activeTraceStartUs_;
     std::uint32_t lastFlowVolumeMl_;

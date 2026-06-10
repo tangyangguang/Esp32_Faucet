@@ -659,15 +659,9 @@ void test_app_controller_generates_calibration_session_candidate() {
 
     TEST_ASSERT_TRUE(app.generateCalibrationForWeb(1714502500));
 
-    MeteringSchemeCandidate candidate{};
-    TEST_ASSERT_TRUE(schemes.loadCandidate(candidate));
-    TEST_ASSERT_TRUE(candidate.ready);
-    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(MeteringSchemeSource::CalibrationSession),
-                            static_cast<unsigned>(candidate.sourceType));
-    TEST_ASSERT_EQUAL_UINT16(2, candidate.sampleCount);
-    TEST_ASSERT_EQUAL_UINT32(1500, candidate.minActualMl);
-    TEST_ASSERT_EQUAL_UINT32(7500, candidate.maxActualMl);
-    TEST_ASSERT_UINT32_WITHIN(5, 222, candidate.params.stablePulsePerLiter);
+    MeteringSchemeCandidate storedCandidate{};
+    TEST_ASSERT_TRUE(schemes.loadCandidate(storedCandidate));
+    TEST_ASSERT_FALSE(storedCandidate.ready);
     TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationSessionStatus::Generated),
                             static_cast<unsigned>(app.snapshot().calibrationStatus));
 }
@@ -723,9 +717,9 @@ void test_app_controller_applies_generated_session_scheme_and_keeps_old_scheme()
     TEST_ASSERT_TRUE(oldScheme.recordUsed);
     TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(MeteringSchemeState::Available),
                             static_cast<unsigned>(oldScheme.state));
-    MeteringSchemeCandidate candidate{};
-    TEST_ASSERT_TRUE(schemes.loadCandidate(candidate));
-    TEST_ASSERT_FALSE(candidate.ready);
+    MeteringSchemeCandidate storedCandidate{};
+    TEST_ASSERT_TRUE(schemes.loadCandidate(storedCandidate));
+    TEST_ASSERT_FALSE(storedCandidate.ready);
     TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationSessionStatus::Applied),
                             static_cast<unsigned>(app.snapshot().calibrationStatus));
 }

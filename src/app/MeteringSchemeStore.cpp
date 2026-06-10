@@ -262,6 +262,10 @@ bool MeteringSchemeStore::begin() {
         return backend_.removeFile(path_) && initializeNewFile();
     }
     ready_ = true;
+    if (!normalizeSlotCount()) {
+        ready_ = false;
+        return backend_.removeFile(path_) && initializeNewFile();
+    }
     if (!upgradeLegacyDefaultSchemeIfNeeded()) {
         ready_ = false;
         return backend_.removeFile(path_) && initializeNewFile();
@@ -326,18 +330,15 @@ bool MeteringSchemeStore::saveCandidateAsNew(const MeteringSchemeCandidate& cand
     }
 
     std::size_t slot = 0;
-    const bool reuseSlot = findFreeSlot(slot);
+    const bool reuseSlot = findFreeSlot(slot) || findReusableSlot(slot);
     if (!reuseSlot) {
-        slot = header_.slotCount;
+        return false;
     }
     if (!writeRecord(slot, records[0])) {
         return false;
     }
     MeteringSchemeStoreHeader previous = header_;
     header_.nextSchemeId = collection.nextSchemeId;
-    if (!reuseSlot) {
-        ++header_.slotCount;
-    }
     header_.checksum = headerChecksum(header_);
     if (!saveHeader()) {
         header_ = previous;
@@ -361,18 +362,15 @@ bool MeteringSchemeStore::createManual(const char* name,
     }
 
     std::size_t slot = 0;
-    const bool reuseSlot = findFreeSlot(slot);
+    const bool reuseSlot = findFreeSlot(slot) || findReusableSlot(slot);
     if (!reuseSlot) {
-        slot = header_.slotCount;
+        return false;
     }
     if (!writeRecord(slot, records[0])) {
         return false;
     }
     MeteringSchemeStoreHeader previous = header_;
     header_.nextSchemeId = collection.nextSchemeId;
-    if (!reuseSlot) {
-        ++header_.slotCount;
-    }
     header_.checksum = headerChecksum(header_);
     if (!saveHeader()) {
         header_ = previous;
@@ -594,16 +592,27 @@ bool MeteringSchemeStore::migrateLegacyFromConfig(ConfigBackend& config, std::ui
         return true;
     }
 
-    header_ = makeHeader(1, static_cast<std::uint32_t>(migratedCount + 1), static_cast<std::uint32_t>(migratedCount));
-    const std::size_t size = expectedFileSize();
-    if (!backend_.createSized(path_, size)) {
-        return false;
-    }
-    if (!saveHeader()) {
+    std::unique_ptr<MeteringSchemeRecord[]> records(
+        new (std::nothrow) MeteringSchemeRecord[kMeteringSchemeStoreSlotCount]{});
+    if (!records) {
         return false;
     }
     for (std::size_t i = 0; i < migratedCount; ++i) {
-        if (!writeRecord(i, migrated[i])) {
+        records[i] = migrated[i];
+    }
+    header_ = makeHeader(1,
+                         static_cast<std::uint32_t>(migratedCount + 1),
+                         static_cast<std::uint32_t>(kMeteringSchemeStoreSlotCount));
+    const std::size_t size = expectedFileSize();
+    if (!backend_.createSized(path_, size) ||
+        !backend_.writeAt(path_, 0, reinterpret_cast<const std::uint8_t*>(&header_), sizeof(header_))) {
+        return false;
+    }
+    for (std::size_t i = 0; i < kMeteringSchemeStoreSlotCount; ++i) {
+        if (!backend_.writeAt(path_,
+                              recordOffset(i),
+                              reinterpret_cast<const std::uint8_t*>(&records[i]),
+                              sizeof(MeteringSchemeRecord))) {
             return false;
         }
     }
@@ -615,22 +624,60 @@ bool MeteringSchemeStore::validPath() const {
 }
 
 bool MeteringSchemeStore::initializeNewFile() {
-    MeteringSchemeRecord record{};
-    MeteringSchemeCollection collection{&record, 1, 0, 0};
+    std::unique_ptr<MeteringSchemeRecord[]> records(
+        new (std::nothrow) MeteringSchemeRecord[kMeteringSchemeStoreSlotCount]{});
+    if (!records) {
+        return false;
+    }
+    MeteringSchemeCollection collection{records.get(), kMeteringSchemeStoreSlotCount, 0, 0};
     if (!initializeDefaultMeteringSchemes(collection, 0)) {
         return false;
     }
-    header_ = makeHeader(collection.activeSchemeId, collection.nextSchemeId, 1);
-    const std::size_t size = expectedFileSize();
-    if (!backend_.createSized(path_, size)) {
+    header_ = makeHeader(collection.activeSchemeId,
+                         collection.nextSchemeId,
+                         static_cast<std::uint32_t>(kMeteringSchemeStoreSlotCount));
+    ready_ = writeCurrentSchemeFile(backend_, path_, header_, records.get());
+    return ready_;
+}
+
+bool MeteringSchemeStore::normalizeSlotCount() {
+    if (!ready()) {
         return false;
     }
-    ready_ = backend_.writeAt(path_, 0, reinterpret_cast<const std::uint8_t*>(&header_), sizeof(header_)) &&
-             backend_.writeAt(path_,
-                              recordOffset(0),
-                              reinterpret_cast<const std::uint8_t*>(&record),
-                              sizeof(record));
-    return ready_;
+    if (header_.slotCount == kMeteringSchemeStoreSlotCount &&
+        backend_.fileSize(path_) == static_cast<std::int64_t>(expectedFileSize())) {
+        return true;
+    }
+
+    std::unique_ptr<MeteringSchemeRecord[]> records(
+        new (std::nothrow) MeteringSchemeRecord[kMeteringSchemeStoreSlotCount]{});
+    if (!records) {
+        return false;
+    }
+    const std::size_t copyCount = std::min<std::size_t>(header_.slotCount, kMeteringSchemeStoreSlotCount);
+    std::uint32_t maxId = 0;
+    bool activeFound = false;
+    for (std::size_t i = 0; i < copyCount; ++i) {
+        MeteringSchemeRecord record{};
+        if (!readRecord(i, record)) {
+            return false;
+        }
+        records[i] = record;
+        if (record.recordUsed) {
+            maxId = std::max(maxId, record.id);
+            if (record.id == header_.activeSchemeId) {
+                activeFound = true;
+            }
+        }
+    }
+    if (!activeFound) {
+        return false;
+    }
+    const std::uint32_t nextId = std::max<std::uint32_t>(header_.nextSchemeId, maxId + 1U);
+    header_ = makeHeader(header_.activeSchemeId,
+                         nextId == 0 ? 1 : nextId,
+                         static_cast<std::uint32_t>(kMeteringSchemeStoreSlotCount));
+    return writeCurrentSchemeFile(backend_, path_, header_, records.get());
 }
 
 bool MeteringSchemeStore::migrateV1File(const MeteringSchemeStoreHeader& loaded) {
@@ -829,7 +876,7 @@ bool MeteringSchemeStore::readRecord(std::size_t slot, MeteringSchemeRecord& out
 }
 
 bool MeteringSchemeStore::writeRecord(std::size_t slot, const MeteringSchemeRecord& record) {
-    if (!ready_ || slot > header_.slotCount) {
+    if (!ready_ || slot >= header_.slotCount) {
         return false;
     }
     return writeOrAppendAt(recordOffset(slot),
@@ -868,6 +915,39 @@ bool MeteringSchemeStore::findFreeSlot(std::size_t& slot) const {
         }
         if (!record.recordUsed) {
             slot = i;
+            return true;
+        }
+    }
+    return false;
+}
+
+bool MeteringSchemeStore::findReusableSlot(std::size_t& slot) const {
+    if (!ready()) {
+        return false;
+    }
+    bool found = false;
+    std::uint32_t bestId = UINT32_MAX;
+    for (int pass = 0; pass < 2; ++pass) {
+        found = false;
+        bestId = UINT32_MAX;
+        for (std::size_t i = 0; i < header_.slotCount; ++i) {
+            MeteringSchemeRecord record{};
+            if (!readRecord(i, record)) {
+                return false;
+            }
+            if (!record.recordUsed || record.id == header_.activeSchemeId) {
+                continue;
+            }
+            if (pass == 0 && record.state != MeteringSchemeState::Disabled) {
+                continue;
+            }
+            if (record.id < bestId) {
+                bestId = record.id;
+                slot = i;
+                found = true;
+            }
+        }
+        if (found) {
             return true;
         }
     }

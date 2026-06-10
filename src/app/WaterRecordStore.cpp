@@ -163,6 +163,10 @@ const char* WaterRecordStore::storageName() const {
     return ready() ? "ram" : "unavailable";
 }
 
+WaterRecordFileStatus WaterRecordStore::status() const {
+    return ready() ? WaterRecordFileStatus::Ready : WaterRecordFileStatus::Unavailable;
+}
+
 bool WaterRecordStore::full() const {
     return count_ == capacity_ && capacity_ > 0;
 }

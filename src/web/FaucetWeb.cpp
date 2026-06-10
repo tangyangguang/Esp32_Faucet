@@ -12,7 +12,6 @@
 #include "app/FilterStore.h"
 #include "app/MeteringSchemeStore.h"
 #include "app/WaterRecordCalibrationStore.h"
-#include "app/WaterRecordMeteringSnapshotStore.h"
 #include "app/WaterRecordStore.h"
 #include "app/WaterPulseTraceStore.h"
 #include "web/FaucetWebJson.h"
@@ -27,7 +26,6 @@
 #endif
 #include <algorithm>
 #include <cstdarg>
-#include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <new>
@@ -90,6 +88,7 @@ bool requireContext();
 bool contextReady();
 bool getParam(const char* name, char* out, std::size_t len);
 bool persistConfig(const SystemConfig& config);
+bool ensureMeteringSchemesReady();
 bool activeMeteringSchemeForWeb(MeteringSchemeRecord& output);
 std::uint32_t estimateVolumeMlFromPulses(std::uint32_t pulseCount, const MeteringParameters& params);
 float recentStablePulsePerSec();
@@ -735,13 +734,6 @@ bool sameWaterRecordIdentity(const WaterRecord& a, const WaterRecord& b) {
            a.result == b.result;
 }
 
-std::uint32_t historicalPulsePerLiter(float pulsePerMlAtRun) {
-    if (!std::isfinite(pulsePerMlAtRun) || pulsePerMlAtRun <= 0.0f) {
-        return 0;
-    }
-    return static_cast<std::uint32_t>(std::lround(pulsePerMlAtRun * 1000.0f));
-}
-
 std::uint32_t estimateVolumeMlFromPulses(std::uint32_t pulseCount, const MeteringParameters& params) {
     if (pulseCount == 0 || params.stablePulsePerLiter == 0) {
         return 0;
@@ -765,24 +757,14 @@ bool findRecordCalibration(const WaterRecord& record, WaterRecordCalibration& ca
            g_context.recordCalibrations->find(record, calibration);
 }
 
-bool findRecordMeteringSnapshot(const WaterRecord& record, WaterRecordMeteringSnapshot& snapshot) {
-    return g_context.recordMeteringSnapshots && g_context.recordMeteringSnapshots->ready() &&
-           g_context.recordMeteringSnapshots->find(record, snapshot);
-}
-
 bool meteringParamsForRecordTrend(const WaterRecord& record, MeteringParameters& params) {
-    WaterRecordMeteringSnapshot snapshot{};
-    if (findRecordMeteringSnapshot(record, snapshot) && validMeteringSchemeParameters(snapshot.params)) {
-        params = snapshot.params;
+    MeteringSchemeRecord scheme{};
+    if (ensureMeteringSchemesReady() && g_context.meteringSchemes->findById(record.meteringSchemeId, scheme) &&
+        validMeteringSchemeParameters(scheme.params)) {
+        params = scheme.params;
         return true;
     }
-    const std::uint32_t pulsePerLiter = historicalPulsePerLiter(record.pulsePerMlAtRun);
-    const MeteringParameters fallback{0, 0, pulsePerLiter};
-    if (!validMeteringSchemeParameters(fallback)) {
-        return false;
-    }
-    params = fallback;
-    return true;
+    return false;
 }
 
 std::uint32_t actualMlForSegmentedSample(const WaterPulseTrace& trace) {
@@ -1233,6 +1215,50 @@ const char* meteringSchemeSourceName(MeteringSchemeSource source) {
     return "-";
 }
 
+const char* waterRecordFileStatusCode(WaterRecordFileStatus status) {
+    switch (status) {
+        case WaterRecordFileStatus::Ready:
+            return "ready";
+        case WaterRecordFileStatus::Unavailable:
+            return "unavailable";
+        case WaterRecordFileStatus::Missing:
+            return "missing";
+        case WaterRecordFileStatus::InvalidPath:
+            return "invalid_path";
+        case WaterRecordFileStatus::InvalidCapacity:
+            return "invalid_capacity";
+        case WaterRecordFileStatus::BackendFailure:
+            return "backend_failure";
+        case WaterRecordFileStatus::Corrupt:
+            return "corrupt";
+        case WaterRecordFileStatus::IncompatibleFormat:
+            return "incompatible_format";
+    }
+    return "unknown";
+}
+
+const char* waterRecordFileStatusMessage(WaterRecordFileStatus status) {
+    switch (status) {
+        case WaterRecordFileStatus::Ready:
+            return "记录存储正常。";
+        case WaterRecordFileStatus::Missing:
+            return "记录文件不存在，正在使用 RAM 临时记录；下次写入会尝试重新创建文件。";
+        case WaterRecordFileStatus::InvalidPath:
+            return "记录文件路径配置无效，正在使用 RAM 临时记录。";
+        case WaterRecordFileStatus::InvalidCapacity:
+            return "记录文件容量配置无效，正在使用 RAM 临时记录。";
+        case WaterRecordFileStatus::BackendFailure:
+            return "记录文件读写失败，正在使用 RAM 临时记录；请检查 Flash 文件系统。";
+        case WaterRecordFileStatus::Corrupt:
+            return "记录文件损坏或不完整，正在使用 RAM 临时记录。";
+        case WaterRecordFileStatus::IncompatibleFormat:
+            return "记录文件格式不兼容，正在使用 RAM 临时记录。";
+        case WaterRecordFileStatus::Unavailable:
+        default:
+            return "记录存储不可用。";
+    }
+}
+
 bool activeMeteringSchemeForWeb(MeteringSchemeRecord& output) {
     if (ensureMeteringSchemesReady() && g_context.meteringSchemes->activeScheme(output)) {
         return true;
@@ -1242,25 +1268,6 @@ bool activeMeteringSchemeForWeb(MeteringSchemeRecord& output) {
         return output.recordUsed;
     }
     return false;
-}
-
-bool meteringSchemeForSnapshot(const WaterRecordMeteringSnapshot& snapshot, MeteringSchemeRecord& output) {
-    return ensureMeteringSchemesReady() && g_context.meteringSchemes->findById(snapshot.meteringSchemeId, output);
-}
-
-void sendMeteringSnapshotLabel(const WaterRecordMeteringSnapshot& snapshot, bool compact) {
-    MeteringSchemeRecord scheme{};
-    const bool schemeReady = meteringSchemeForSnapshot(snapshot, scheme);
-    if (schemeReady && scheme.name[0]) {
-        sendHtmlEscapedBounded(scheme.name, sizeof(scheme.name));
-    } else {
-        sendFmt("计量方案 %lu", static_cast<unsigned long>(snapshot.meteringSchemeId));
-    }
-    if (!compact) {
-        sendFmt("<span class='inline-note'>ID #%lu · rev %lu</span>",
-                static_cast<unsigned long>(snapshot.meteringSchemeId),
-                static_cast<unsigned long>(snapshot.meteringSchemeRevision));
-    }
 }
 
 bool makeSegmentedCandidate(const SegmentedCalibrationResult& result, MeteringSchemeCandidate& candidate) {
@@ -1503,6 +1510,9 @@ void sendPulseTraceCachePanel() {
                 static_cast<unsigned long>(stats.sampleCapacityPerTrace));
     }
 
+    if (!g_context.savedPulseTraces) {
+        return;
+    }
     WaterPulseTraceFileStats savedStats{};
     const bool savedReady = ensureSavedPulseTracesReady();
     char savedCount[32]{};
@@ -1522,7 +1532,7 @@ void sendPulseTraceCachePanel() {
         formatKb(savedStats.maxBytes, savedMax, sizeof(savedMax));
         std::snprintf(savedSpace, sizeof(savedSpace), "%s / %s", savedUsed, savedMax);
     }
-    Esp32BaseWeb::sendChunk("<section class='panel records-diagnostic-panel saved-trace-diagnostic'><div class='diagnostic-head'><h3>已保存明细</h3>"
+    Esp32BaseWeb::sendChunk("<section class='panel records-diagnostic-panel saved-trace-diagnostic'><div class='diagnostic-head'><h3>设备明细</h3>"
                             "<span class='status-pill status-muted flash-badge'>Flash</span></div><div class='diagnostic-metric-grid'>");
     sendFmt("<div class='diagnostic-metric'><span>保存</span><strong>%s</strong></div>", savedCount);
     sendFmt("<div class='diagnostic-metric'><span>文件占用</span><strong>%s</strong></div>", savedSpace);
@@ -1876,7 +1886,7 @@ void sendCalibrationFormulaPanel() {
                             "<tr><th>P &gt; Ns</th><td><code>估算出水量 = Vs + round((P - Ns) × 1000 / Ps)</code>。</td></tr>"
                             "<tr><th>时间估算字段</th><td>时间目标模式使用启动时长和预计稳态流速测算出水量；得到预计出水量后，再用容量估算参数折算预计脉冲数。</td></tr>"
                             "<tr><th>测算入口</th><td>样本、生成结果和每套计量方案的“测算”只在浏览器本地核对容量目标或时间目标，不会远程启动出水。</td></tr>"
-                            "<tr><th>启用方案</th><td>启用只切换当前计量参数；历史出水记录保留当时使用的方案 ID、版本和参数快照。</td></tr>"
+                            "<tr><th>启用方案</th><td>启用只切换当前计量参数；历史出水记录只保留当时使用的方案 ID，方案仍在时可查看参数，已覆盖时提示不可查看。</td></tr>"
                             "</table></section></div></details>");
 }
 
@@ -1966,7 +1976,7 @@ void sendCalibrationSampleStatusPills(const CalibrationSampleState& state, bool 
         Esp32BaseWeb::sendChunk("</span>");
         return;
     }
-    Esp32BaseWeb::sendChunk(savedSource ? "<span class='status-pill status-muted'>已保存明细</span>"
+    Esp32BaseWeb::sendChunk(savedSource ? "<span class='status-pill status-muted'>设备明细</span>"
                                         : "<span class='status-pill status-muted'>RAM 明细</span>");
     Esp32BaseWeb::sendChunk("</span>");
 }
@@ -2178,7 +2188,7 @@ void sendCalibrationSampleRow(const WaterPulseTrace& trace, bool savedSource, st
                                           WaterResult::Completed,
                                           0,
                                           0,
-                                          0.0f,
+                                          0,
                                           {0, 0, 0, 0}},
                               calibratedAt,
                               sizeof(calibratedAt));
@@ -2934,7 +2944,7 @@ void sendNoticeFromQuery() {
                                 : generatedDiscarded ? "生成结果已放弃。"
                                 : restored           ? "已恢复上一套参数。"
                                 : traceSaved         ? "明细已保存到设备。"
-                                : traceDeleted       ? "已保存明细已删除。"
+                                : traceDeleted       ? "设备明细已删除。"
                                 : longTermSample     ? "样本已存入长期样本库。"
                                                      : "已保存。");
         Esp32BaseWeb::sendChunk("</p>");
@@ -2964,12 +2974,14 @@ void sendNoticeFromQuery() {
         message = "日期格式无效，请重新选择日期。";
     } else if (std::strcmp(text, "save_failed") == 0) {
         message = "保存失败，请稍后重试。";
+    } else if (std::strcmp(text, "used_scheme_locked") == 0) {
+        message = "已使用方案不能直接覆盖计量参数，请另存为新方案。";
     } else if (std::strcmp(text, "saved_trace_full") == 0) {
-        message = "已保存脉冲明细已达上限，请先删除不需要的明细。";
+        message = "设备明细已达上限，请先删除不需要的明细。";
     } else if (std::strcmp(text, "saved_trace_corrupt") == 0) {
         message = "设备存储明细文件异常，已停止写入以保护已有数据。";
     } else if (std::strcmp(text, "saved_trace_read_failed") == 0) {
-        message = "已保存脉冲明细读取失败，文件可能未写完整或已损坏。";
+        message = "设备明细读取失败，文件可能未写完整或已损坏。";
     } else if (std::strcmp(text, "no_calibration_record") == 0) {
         message = "最新记录没有可用的原始脉冲，不能用于校准。";
     } else if (std::strcmp(text, "calibration_mark_failed") == 0) {
@@ -4137,6 +4149,7 @@ void handleRecordsPage() {
         Esp32BaseWeb::sendJson(500, "{\"error\":\"oom\"}");
         return;
     }
+    const WaterRecordFileStatus recordStatus = g_context.records->status();
     const bool ready = g_context.records->ready();
     std::size_t total = ready ? g_context.records->count() : 0;
     std::size_t count =
@@ -4189,8 +4202,13 @@ void handleRecordsPage() {
             static_cast<unsigned long>(filteredMaxPage + 1),
             static_cast<unsigned long>(page + 1),
             static_cast<unsigned long>(total));
+    if (recordStatus != WaterRecordFileStatus::Ready) {
+        sendFmt("<p class='%s'>%s</p>",
+                ready ? "warn" : "err",
+                waterRecordFileStatusMessage(recordStatus));
+    }
     if (!ready) {
-        Esp32BaseWeb::sendChunk("<p class='err'>记录存储不可用。</p>");
+        Esp32BaseWeb::sendChunk("<p class='err'>当前没有可读取的临时记录。</p>");
     } else if (total == 0) {
         Esp32BaseWeb::sendChunk("<p class='ok'>暂无出水记录。</p>");
     }
@@ -4308,7 +4326,7 @@ void handleRecordsPage() {
                     static_cast<unsigned long>(records[i].rejectedPulseCount));
         }
         if (hasSavedTrace) {
-            sendFmt("<a class='trace-badge' href='/faucet/records/detail?saved=1&trace=%lu&bucket=1'>已存明细</a>",
+            sendFmt("<a class='trace-badge' href='/faucet/records/detail?saved=1&trace=%lu&bucket=1'>设备明细</a>",
                     static_cast<unsigned long>(savedTrace.traceId));
         } else if (trace) {
             sendFmt("<a class='trace-badge' href='/faucet/records/detail?trace=%lu&bucket=1'>明细</a>",
@@ -4396,23 +4414,30 @@ void handleRecordInfoPage() {
             static_cast<unsigned long>(record.rejectedPulseCount),
             resultText(record.result),
             static_cast<unsigned>(record.selectedPreset));
-    WaterRecordMeteringSnapshot meteringSnapshot{};
-    if (findRecordMeteringSnapshot(record, meteringSnapshot)) {
+    MeteringSchemeRecord meteringScheme{};
+    if (ensureMeteringSchemesReady() && g_context.meteringSchemes->findById(record.meteringSchemeId, meteringScheme)) {
         Esp32BaseWeb::sendChunk("<tr><th>计量方案</th><td>");
-        sendMeteringSnapshotLabel(meteringSnapshot, false);
-        sendFmt("</td></tr><tr><th>启动脉冲数</th><td>%lu P</td></tr>"
+        if (meteringScheme.name[0]) {
+            sendHtmlEscapedBounded(meteringScheme.name, sizeof(meteringScheme.name));
+        } else {
+            sendFmt("计量方案 %lu", static_cast<unsigned long>(record.meteringSchemeId));
+        }
+        sendFmt("<span class='inline-note'>ID #%lu · rev %lu</span></td></tr>"
+                "<tr><th>启动脉冲数</th><td>%lu P</td></tr>"
                 "<tr><th>启动水量</th><td>%lu ml</td></tr>"
                 "<tr><th>稳态 P/L</th><td>%lu P/L</td></tr>"
                 "<tr><th>启动时长</th><td>%lu ms</td></tr>"
                 "<tr><th>预计稳态流速</th><td>%lu ml/min</td></tr>",
-                static_cast<unsigned long>(meteringSnapshot.params.startupPulseCount),
-                static_cast<unsigned long>(meteringSnapshot.params.startupVolumeMl),
-                static_cast<unsigned long>(meteringSnapshot.params.stablePulsePerLiter),
-                static_cast<unsigned long>(meteringSnapshot.params.startupDurationMs),
-                static_cast<unsigned long>(meteringSnapshot.params.stableFlowMlPerMin));
+                static_cast<unsigned long>(meteringScheme.id),
+                static_cast<unsigned long>(meteringScheme.revision),
+                static_cast<unsigned long>(meteringScheme.params.startupPulseCount),
+                static_cast<unsigned long>(meteringScheme.params.startupVolumeMl),
+                static_cast<unsigned long>(meteringScheme.params.stablePulsePerLiter),
+                static_cast<unsigned long>(meteringScheme.params.startupDurationMs),
+                static_cast<unsigned long>(meteringScheme.params.stableFlowMlPerMin));
         if (record.mode == WaterMode::Volume) {
             const MeteringTargetEstimate targetEstimate =
-                meteringEstimateForTarget(meteringSnapshot.params, record.targetValue);
+                meteringEstimateForTarget(meteringScheme.params, record.targetValue);
             if (targetEstimate.valid) {
                 sendFmt("<tr><th>目标预计总脉冲</th><td>%lu P</td></tr>"
                         "<tr><th>目标全程平均 P/L</th><td>%lu P/L</td></tr>",
@@ -4420,6 +4445,11 @@ void handleRecordInfoPage() {
                         static_cast<unsigned long>(targetEstimate.fullRunPulsePerLiter));
             }
         }
+    } else if (record.meteringSchemeId != 0) {
+        sendFmt("<tr><th>计量方案</th><td>计量方案 ID #%lu 已被覆盖，历史参数不可查看</td></tr>",
+                static_cast<unsigned long>(record.meteringSchemeId));
+    } else {
+        Esp32BaseWeb::sendChunk("<tr><th>计量方案</th><td>记录格式不兼容，历史参数不可查看</td></tr>");
     }
     Esp32BaseWeb::sendChunk("</table></section>");
     sendPageEnd();
@@ -4758,11 +4788,11 @@ void handleRecordDetailPage() {
             g_context.savedPulseTraces->readSamples(trace->traceId, samples, trace->sampleCount) != trace->sampleCount) {
             delete[] samples;
             if (rawRequest) {
-                sendPlainTextResponse(500, "已保存明细读取失败。\n");
+                sendPlainTextResponse(500, "设备明细读取失败。\n");
                 return;
             }
             Esp32BaseWeb::sendHeader("脉冲明细");
-            Esp32BaseWeb::sendChunk("<p class='err'>已保存明细读取失败。</p>");
+            Esp32BaseWeb::sendChunk("<p class='err'>设备明细读取失败。</p>");
             sendPageEnd();
             return;
         }
@@ -4836,12 +4866,12 @@ void handleRecordDetailPage() {
             backHref,
             backLabel);
     if (savedSource || alreadySaved) {
-        Esp32BaseWeb::sendChunk("<form method='post' action='/api/faucet/records' onsubmit=\"return confirm('确认删除这条已保存的脉冲明细？')&&once(this)\">"
+        Esp32BaseWeb::sendChunk("<form method='post' action='/api/faucet/records' onsubmit=\"return confirm('确认删除这条设备明细？')&&once(this)\">"
                                 "<input type='hidden' name='action' value='delete'>");
         if (fromCalibration) {
             Esp32BaseWeb::sendChunk("<input type='hidden' name='returnTo' value='calibration'>");
         }
-        sendFmt("<input type='hidden' name='trace' value='%lu'><input class='secondary' type='submit' value='删除已保存明细'></form>",
+        sendFmt("<input type='hidden' name='trace' value='%lu'><input class='secondary' type='submit' value='删除设备明细'></form>",
                 static_cast<unsigned long>(savedSource ? trace->traceId : savedTraceForRecord.traceId));
     } else if (savedStoreReady) {
         Esp32BaseWeb::sendChunk("<form method='post' action='/api/faucet/records' onsubmit=\"return once(this)\">"
@@ -4849,7 +4879,7 @@ void handleRecordDetailPage() {
         if (fromCalibration) {
             Esp32BaseWeb::sendChunk("<input type='hidden' name='returnTo' value='calibration'>");
         }
-        sendFmt("<input type='hidden' name='trace' value='%lu'><input class='secondary' type='submit' value='保存明细'></form>",
+        sendFmt("<input type='hidden' name='trace' value='%lu'><input class='secondary' type='submit' value='保存设备明细'></form>",
                 static_cast<unsigned long>(trace->traceId));
     } else {
         Esp32BaseWeb::sendChunk("<span class='status-pill status-muted'>样本库不可用</span>");
@@ -4888,7 +4918,7 @@ void handleRecordDetailPage() {
     } else {
         Esp32BaseWeb::sendChunk("<tr><th>可用性</th><td>缺少实测容量且稳态识别失败。</td></tr>");
     }
-    Esp32BaseWeb::sendChunk("</table><p class='hint'>校准容量统一从校准页脉冲明细保存；计量方案生成只使用长期样本库，不直接扫描 RAM 或已保存明细。</p></section>");
+    Esp32BaseWeb::sendChunk("</table><p class='hint'>校准容量统一从校准页脉冲明细保存；计量方案生成只使用长期样本库，不直接扫描 RAM 或设备明细。</p></section>");
 
     Esp32BaseWeb::sendChunk("<section class='panel'><h3>明细概况</h3><table class='kv'>");
     sendFmt("<tr><th>开始时间</th><td>%s</td></tr>"
@@ -6092,6 +6122,7 @@ void handleRecordsApi() {
         Esp32BaseWeb::sendJson(500, "{\"error\":\"oom\"}");
         return;
     }
+    const WaterRecordFileStatus recordStatus = g_context.records->status();
     const bool ready = g_context.records->ready();
     std::size_t totalCount = 0;
     const std::size_t readCount =
@@ -6102,6 +6133,7 @@ void handleRecordsApi() {
                                       sanitizedPageSize,
                                       totalCount,
                                       g_context.records->storageName(),
+                                      waterRecordFileStatusCode(recordStatus),
                                       json,
                                       32768),
                    json);
@@ -6368,13 +6400,19 @@ void handleEditMeteringSchemeApi() {
         Esp32BaseWeb::redirectSeeOther("/faucet/metering?error=invalid_value");
         return;
     }
-    MeteringSchemeRecord edited{};
-    if (!g_context.meteringSchemes->findById(id, edited)) {
+    MeteringSchemeRecord current{};
+    if (!g_context.meteringSchemes->findById(id, current)) {
         Esp32BaseWeb::redirectSeeOther("/faucet/metering?error=invalid_value");
         return;
     }
+    MeteringSchemeRecord edited = current;
     Esp32BaseWeb::getParam("name", edited.name, sizeof(edited.name));
     edited.params = params;
+    const MeteringSchemeEdit edit = makeMeteringSchemeEdit(edited);
+    if (current.usedEver && classifyMeteringSchemeEdit(current, edit) == MeteringSchemeEditKind::MeteringOrApplicability) {
+        Esp32BaseWeb::redirectSeeOther("/faucet/metering?error=used_scheme_locked");
+        return;
+    }
     if (!g_context.meteringSchemes->updateScheme(edited, g_context.nowSeconds ? g_context.nowSeconds() : 0)) {
         Esp32BaseWeb::redirectSeeOther("/faucet/metering?error=save_failed");
         return;

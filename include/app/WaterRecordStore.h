@@ -47,6 +47,17 @@ struct WaterUsageSummary {
     std::uint8_t dayCount;
 };
 
+enum class WaterRecordFileStatus : std::uint8_t {
+    Ready = 0,
+    Unavailable = 1,
+    Missing = 2,
+    InvalidPath = 3,
+    InvalidCapacity = 4,
+    BackendFailure = 5,
+    Corrupt = 6,
+    IncompatibleFormat = 7,
+};
+
 class WaterRecordReader {
 public:
     virtual ~WaterRecordReader() = default;
@@ -58,6 +69,9 @@ public:
     virtual std::size_t count() const = 0;
     virtual bool ready() const = 0;
     virtual const char* storageName() const = 0;
+    virtual WaterRecordFileStatus status() const {
+        return ready() ? WaterRecordFileStatus::Ready : WaterRecordFileStatus::Unavailable;
+    }
 };
 
 class WaterRecordStore : public WaterRecordReader {
@@ -77,6 +91,7 @@ public:
     std::size_t capacity() const;
     bool ready() const override;
     const char* storageName() const override;
+    WaterRecordFileStatus status() const override;
     bool full() const;
 
 private:

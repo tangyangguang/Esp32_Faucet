@@ -44,6 +44,7 @@ bool writeWaterRecordsJson(const WaterRecord* records,
                            std::uint16_t pageSize,
                            std::size_t totalCount,
                            const char* storageName,
+                           const char* storageStatus,
                            char* out,
                            std::size_t len);
 

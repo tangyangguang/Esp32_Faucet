@@ -137,7 +137,6 @@ AppController::AppController(const SystemConfig& config,
       filters_(filters),
       records_(records),
       recordCalibrations_(recordCalibrations),
-      meteringSnapshots_(nullptr),
       meteringSchemes_(nullptr),
       pulseTraces_(pulseTraces),
       calibrationSessions_(calibrationSessions),
@@ -176,7 +175,6 @@ AppController::AppController(const SystemConfig& config,
                              StatisticsStore& statistics,
                              FilterStore& filters,
                              WaterRecordWriter& records,
-                             WaterRecordMeteringSnapshotWriter& meteringSnapshots,
                              MeteringSchemeStore& meteringSchemes,
                              WaterPulseTraceStore* pulseTraces,
                              WaterRecordCalibrationWriter* recordCalibrations,
@@ -194,7 +192,6 @@ AppController::AppController(const SystemConfig& config,
       filters_(filters),
       records_(records),
       recordCalibrations_(recordCalibrations),
-      meteringSnapshots_(&meteringSnapshots),
       meteringSchemes_(&meteringSchemes),
       pulseTraces_(pulseTraces),
       calibrationSessions_(calibrationSessions),
@@ -1141,7 +1138,7 @@ void AppController::processResult(std::uint32_t startTime,
         result.result,
         result.selectedPreset,
         0,
-        static_cast<float>(activeMeteringScheme_.params.stablePulsePerLiter) / 1000.0f,
+        activeMeteringScheme_.id,
         {0, 0, 0, 0},
     };
     if (!startTimeSynced) {
@@ -1154,17 +1151,9 @@ void AppController::processResult(std::uint32_t startTime,
     lastResultRecord_ = record;
     lastResultRecordValid_ = record.pulseCount > 0 && waterResultAllowsCalibration(record.result);
     lastRecordWriteOk_ = records_.append(record);
-    if (lastRecordWriteOk_ && meteringSnapshots_) {
-        WaterRecordMeteringSnapshot snapshot = makeWaterRecordMeteringSnapshot(record);
-        snapshot.meteringSchemeId = activeMeteringScheme_.id;
-        snapshot.meteringSchemeRevision = activeMeteringScheme_.revision;
-        snapshot.params = activeMeteringScheme_.params;
-        if (!meteringSnapshots_->upsert(snapshot)) {
-            lastRecordWriteOk_ = false;
-        } else if (meteringSchemes_ && !activeMeteringScheme_.usedEver) {
-            if (meteringSchemes_->markUsedAfterRecordWrite(activeMeteringScheme_.id)) {
-                activeMeteringScheme_.usedEver = true;
-            }
+    if (lastRecordWriteOk_ && meteringSchemes_ && !activeMeteringScheme_.usedEver) {
+        if (meteringSchemes_->markUsedAfterRecordWrite(activeMeteringScheme_.id)) {
+            activeMeteringScheme_.usedEver = true;
         }
     }
     if (periodKeysValid) {

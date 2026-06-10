@@ -117,7 +117,7 @@ WaterRecord makeRecord(std::uint32_t startTime,
         WaterResult::Completed,
         1,
         0,
-        0.221f,
+        1,
         {0, 0, 0, 0},
     };
 }

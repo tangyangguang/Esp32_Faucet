@@ -9,6 +9,7 @@ namespace faucet {
 
 constexpr std::size_t kMeteringSchemeNameLength = 32;
 constexpr std::size_t kLegacyMeteringSlotCount = 4;
+constexpr std::size_t kMeteringSchemeStoreSlotCount = 100;
 constexpr const char* kDefaultMeteringSchemeName = "YF-S201 默认计量方案";
 constexpr std::uint32_t kDefaultStartupPulseCount = 8;
 constexpr std::uint32_t kDefaultStartupVolumeMl = 36;

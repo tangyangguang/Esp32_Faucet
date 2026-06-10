@@ -5,7 +5,6 @@
 #include "app/AppController.h"
 #include "app/ConfigStore.h"
 #include "app/WaterRecordCalibrationStore.h"
-#include "app/WaterRecordMeteringSnapshotStore.h"
 #include "web/FaucetWeb.h"
 
 #include <cstring>
@@ -227,10 +226,9 @@ struct WebFixture {
     WaterRecordStore records{recordsStorage, 4};
     WaterRecordCalibration calibrationsStorage[4]{};
     WaterRecordCalibrationStore calibrations{calibrationsStorage, 4};
-    WaterRecordMeteringSnapshot snapshotsStorage[4]{};
-    WaterRecordMeteringSnapshotStore snapshots{snapshotsStorage, 4};
     MemoryRecordWriter recordWriter;
     MemoryFileBackend calibrationFiles;
+    MeteringSchemeStore meteringSchemes{calibrationFiles, "/metering-schemes.bin"};
     CalibrationSessionFileStore sessionStore{calibrationFiles, "/cal-session.bin"};
     CalibrationSessionTraceStore traceStore{calibrationFiles, "/cal-traces.bin"};
     CalibrationLongTermSampleStore sampleStore{calibrationFiles, "/cal-samples.bin"};
@@ -257,8 +255,7 @@ struct WebFixture {
         context.records = &records;
         context.recordCalibrations = &calibrations;
         context.recordCalibrationWriter = &calibrations;
-        context.recordMeteringSnapshots = &snapshots;
-        context.recordMeteringSnapshotWriter = &snapshots;
+        context.meteringSchemes = &meteringSchemes;
         context.calibrationSessions = &sessionStore;
         context.calibrationSessionTraces = &traceStore;
         context.calibrationLongTermSamples = &sampleStore;

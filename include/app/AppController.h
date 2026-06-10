@@ -11,7 +11,6 @@
 #include "app/ValveDriver.h"
 #include "app/WaterController.h"
 #include "app/WaterRecordCalibrationStore.h"
-#include "app/WaterRecordMeteringSnapshotStore.h"
 #include "app/WaterPulseTraceStore.h"
 
 #include <cstdint>
@@ -108,7 +107,6 @@ public:
                   StatisticsStore& statistics,
                   FilterStore& filters,
                   WaterRecordWriter& records,
-                  WaterRecordMeteringSnapshotWriter& meteringSnapshots,
                   MeteringSchemeStore& meteringSchemes,
                   WaterPulseTraceStore* pulseTraces = nullptr,
                   WaterRecordCalibrationWriter* recordCalibrations = nullptr,
@@ -199,7 +197,6 @@ private:
     FilterStore& filters_;
     WaterRecordWriter& records_;
     WaterRecordCalibrationWriter* recordCalibrations_;
-    WaterRecordMeteringSnapshotWriter* meteringSnapshots_;
     MeteringSchemeStore* meteringSchemes_;
     WaterPulseTraceStore* pulseTraces_;
     CalibrationSessionFileStore* calibrationSessions_;

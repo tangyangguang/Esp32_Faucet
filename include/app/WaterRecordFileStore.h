@@ -39,6 +39,7 @@ public:
     std::size_t capacity() const;
     bool ready() const override;
     const char* storageName() const override;
+    WaterRecordFileStatus status() const override;
 
 private:
     bool initializeNewFile();
@@ -56,6 +57,7 @@ private:
     std::size_t oldestIndex_;
     std::size_t count_;
     bool ready_;
+    WaterRecordFileStatus status_;
 };
 
 }  // namespace faucet

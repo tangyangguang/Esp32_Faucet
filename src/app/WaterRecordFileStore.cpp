@@ -45,11 +45,14 @@ WaterRecordFileStore::WaterRecordFileStore(WaterRecordFileBackend& backend, cons
       capacity_(capacity),
       oldestIndex_(0),
       count_(0),
-      ready_(false) {}
+      ready_(false),
+      status_(WaterRecordFileStatus::Unavailable) {}
 
 bool WaterRecordFileStore::begin() {
     ready_ = false;
+    status_ = WaterRecordFileStatus::Unavailable;
     if (!validPath(path_) || capacity_ == 0 || capacity_ > UINT32_MAX) {
+        status_ = !validPath(path_) ? WaterRecordFileStatus::InvalidPath : WaterRecordFileStatus::InvalidCapacity;
         return false;
     }
 
@@ -62,14 +65,17 @@ bool WaterRecordFileStore::begin() {
     }
 
     ready_ = true;
+    status_ = WaterRecordFileStatus::Ready;
     return true;
 }
 
 bool WaterRecordFileStore::append(const WaterRecord& record) {
     if (!ready_) {
+        status_ = WaterRecordFileStatus::Unavailable;
         return false;
     }
     if (!backend_.exists(path_) && !initializeNewFile()) {
+        status_ = WaterRecordFileStatus::BackendFailure;
         return false;
     }
 
@@ -85,6 +91,7 @@ bool WaterRecordFileStore::append(const WaterRecord& record) {
     }
 
     if (!appendRecord(writeIndex, record)) {
+        status_ = WaterRecordFileStatus::BackendFailure;
         return false;
     }
     const std::size_t oldCount = count_;
@@ -92,10 +99,12 @@ bool WaterRecordFileStore::append(const WaterRecord& record) {
     count_ = nextCount;
     oldestIndex_ = nextOldestIndex;
     if (saveHeader()) {
+        status_ = WaterRecordFileStatus::Ready;
         return true;
     }
     count_ = oldCount;
     oldestIndex_ = oldOldestIndex;
+    status_ = WaterRecordFileStatus::BackendFailure;
     return false;
 }
 
@@ -182,39 +191,58 @@ const char* WaterRecordFileStore::storageName() const {
     return ready() ? "file" : "unavailable";
 }
 
+WaterRecordFileStatus WaterRecordFileStore::status() const {
+    if (ready_ && !backend_.exists(path_)) {
+        return WaterRecordFileStatus::Missing;
+    }
+    return status_;
+}
+
 bool WaterRecordFileStore::initializeNewFile() {
     oldestIndex_ = 0;
     count_ = 0;
     ready_ = backend_.createSized(path_, sizeof(RecordHeader)) && saveHeader();
+    status_ = ready_ ? WaterRecordFileStatus::Ready : WaterRecordFileStatus::BackendFailure;
     return ready_;
 }
 
 bool WaterRecordFileStore::loadHeader() {
     const std::int64_t fileSize = backend_.fileSize(path_);
-    if (fileSize < static_cast<std::int64_t>(sizeof(RecordHeader)) ||
-        fileSize > static_cast<std::int64_t>(fileSizeBytes())) {
+    if (fileSize < static_cast<std::int64_t>(sizeof(RecordHeader))) {
+        status_ = WaterRecordFileStatus::Corrupt;
+        return false;
+    }
+    if (fileSize > static_cast<std::int64_t>(fileSizeBytes())) {
+        status_ = WaterRecordFileStatus::IncompatibleFormat;
         return false;
     }
 
     RecordHeader header{};
     if (!backend_.readAt(path_, 0, reinterpret_cast<std::uint8_t*>(&header), sizeof(header))) {
+        status_ = WaterRecordFileStatus::BackendFailure;
         return false;
     }
 
     if (header.magic != kRecordMagic || header.version != kRecordVersion ||
-        header.recordSize != sizeof(WaterRecord) || header.capacity == 0 || header.capacity != capacity_ ||
-        header.count > header.capacity || header.oldestIndex >= header.capacity) {
+        header.recordSize != sizeof(WaterRecord) || header.capacity == 0 || header.capacity != capacity_) {
+        status_ = WaterRecordFileStatus::IncompatibleFormat;
+        return false;
+    }
+    if (header.count > header.capacity || header.oldestIndex >= header.capacity) {
+        status_ = WaterRecordFileStatus::Corrupt;
         return false;
     }
 
     const std::size_t requiredSize = sizeof(RecordHeader) + static_cast<std::size_t>(header.count) * sizeof(WaterRecord);
     if (fileSize < static_cast<std::int64_t>(requiredSize)) {
+        status_ = WaterRecordFileStatus::Corrupt;
         return false;
     }
 
     capacity_ = header.capacity;
     count_ = header.count;
     oldestIndex_ = header.oldestIndex;
+    status_ = WaterRecordFileStatus::Ready;
     return true;
 }
 

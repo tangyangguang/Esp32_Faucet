@@ -102,7 +102,7 @@ WaterRecord makeRecord(std::uint32_t startTime, std::uint32_t volumeMl) {
         WaterResult::Completed,
         0,
         0,
-        1.0f,
+        1,
         {0, 0, 0, 0},
     };
 }
@@ -115,6 +115,8 @@ void test_file_record_initializes_empty_file() {
 
     TEST_ASSERT_TRUE(store.begin());
     TEST_ASSERT_TRUE(store.ready());
+    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(WaterRecordFileStatus::Ready),
+                            static_cast<std::uint8_t>(store.status()));
     TEST_ASSERT_EQUAL_size_t(0, store.count());
     TEST_ASSERT_EQUAL_size_t(10, store.capacity());
     TEST_ASSERT_TRUE(backend.exists("/water.bin"));
@@ -205,6 +207,8 @@ void test_file_record_capacity_mismatch_preserves_existing_file() {
     WaterRecordFileStore loaded(backend, "/water.bin", 4);
     TEST_ASSERT_FALSE(loaded.begin());
     TEST_ASSERT_FALSE(loaded.ready());
+    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(WaterRecordFileStatus::IncompatibleFormat),
+                            static_cast<std::uint8_t>(loaded.status()));
     TEST_ASSERT_EQUAL_size_t(0, loaded.count());
     TEST_ASSERT_EQUAL_size_t(4, loaded.capacity());
     TEST_ASSERT_EQUAL_size_t(createCalls, backend.createSizedCalls);
@@ -225,6 +229,8 @@ void test_file_record_corrupt_header_preserves_existing_file() {
     WaterRecordFileStore store(backend, "/water.bin", 3);
     TEST_ASSERT_FALSE(store.begin());
     TEST_ASSERT_FALSE(store.ready());
+    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(WaterRecordFileStatus::Corrupt),
+                            static_cast<std::uint8_t>(store.status()));
     TEST_ASSERT_EQUAL_size_t(0, store.count());
     TEST_ASSERT_EQUAL_size_t(3, store.capacity());
     TEST_ASSERT_EQUAL_size_t(createCalls, backend.createSizedCalls);
@@ -257,12 +263,16 @@ void test_file_record_reports_zero_after_external_remove_and_recovers_on_append(
 
     WaterRecord page[2]{};
     TEST_ASSERT_FALSE(store.ready());
+    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(WaterRecordFileStatus::Missing),
+                            static_cast<std::uint8_t>(store.status()));
     TEST_ASSERT_EQUAL_STRING("unavailable", store.storageName());
     TEST_ASSERT_EQUAL_size_t(0, store.count());
     TEST_ASSERT_EQUAL_size_t(0, store.readPage(0, 2, page, 2));
 
     TEST_ASSERT_TRUE(store.append(makeRecord(300, 3000)));
     TEST_ASSERT_TRUE(store.ready());
+    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(WaterRecordFileStatus::Ready),
+                            static_cast<std::uint8_t>(store.status()));
     TEST_ASSERT_EQUAL_STRING("file", store.storageName());
     TEST_ASSERT_EQUAL_size_t(1, store.count());
     TEST_ASSERT_EQUAL_size_t(1, store.readPage(0, 2, page, 2));

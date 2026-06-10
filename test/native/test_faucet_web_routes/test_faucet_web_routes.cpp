@@ -362,7 +362,9 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "计量状态"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "计量方案"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "启动脉冲数"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "findRecordMeteringSnapshot"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "record.meteringSchemeId"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "g_context.meteringSchemes->findById(record.meteringSchemeId"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "findRecordMeteringSnapshot"));
     TEST_ASSERT_NULL(std::strstr(buffer, "g_context.recordMeteringSnapshots->findAny"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "样本覆盖"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "生成计量参数"));
@@ -373,12 +375,12 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NULL(std::strstr(buffer, "明细存储"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "RAM 最近明细"));
     TEST_ASSERT_NULL(std::strstr(buffer, "临时缓存"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "已保存明细"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "设备明细"));
     TEST_ASSERT_NULL(std::strstr(buffer, "控制P/L"));
     TEST_ASSERT_NULL(std::strstr(buffer, "当前方案ID"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "当前启用方案</span>"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "ID <b>#%lu</b>"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "sendMeteringSnapshotLabel"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "sendMeteringSnapshotLabel"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "稳态P/L"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "启动脉冲数"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "启动水量"));
@@ -391,7 +393,7 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "metering-active-grid"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, ".diagnostic-metric strong{display:block;color:var(--text);font-size:14px;line-height:1.25;font-weight:650;font-variant-numeric:tabular-nums;white-space:normal;overflow-wrap:anywhere}"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "长期样本 <b>%u条</b>"));
-    TEST_ASSERT_NULL(std::strstr(buffer, "已保存明细 <b>%u条</b>"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "设备明细 <b>%u条</b>"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "已测容量 <b>%u条</b>"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "还需 <b>%s</b>"));
     TEST_ASSERT_NULL(std::strstr(buffer, "建议补偿"));
@@ -418,7 +420,7 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "单条上限 <b>%lu 点</b>"));
     TEST_ASSERT_NULL(std::strstr(buffer, "上限能力"));
     TEST_ASSERT_NULL(std::strstr(buffer, "设备存储上限"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "已保存脉冲明细已达上限"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "设备明细已达上限"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "设备存储明细文件异常"));
     TEST_ASSERT_NULL(std::strstr(buffer, "永久保存"));
     TEST_ASSERT_NULL(std::strstr(buffer, "name='action' value='delete_legacy'"));
@@ -480,7 +482,7 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NOT_NULL(handlerForSource);
     TEST_ASSERT_NOT_NULL(std::strstr(handlerForSource, "return handleCalibrationPost;"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "trace-badge"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "已存明细"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "设备明细"));
     TEST_ASSERT_NULL(std::strstr(buffer, "trace-head-meter"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "pulse-detail-chart"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "pulse-line"));
@@ -589,9 +591,9 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NULL(std::strstr(buffer, "action='/api/faucet/records/trace-delete'"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "name='action' value='save'"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "name='action' value='delete'"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "value='保存明细'"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "删除已保存明细"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "确认删除这条已保存的脉冲明细？"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "value='保存设备明细'"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "删除设备明细"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "确认删除这条设备明细？"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "saved=1&trace"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "实测"));
     TEST_ASSERT_NULL(std::strstr(buffer, "sendTargetDeltaHint(records[i])"));
@@ -836,7 +838,7 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "<span class='status-pill status-warn'>暂停后恢复</span>"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "稳态失败"));
     TEST_ASSERT_NULL(std::strstr(buffer, "可参与生成"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "已保存明细"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "设备明细"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "RAM 明细"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "明细已截断"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "不入库"));
@@ -1321,14 +1323,14 @@ void test_pulse_trace_and_calibration_pages_keep_saved_and_ram_sources_consisten
     TEST_ASSERT_TRUE(ramTraceBranch < recordsEnd);
     TEST_ASSERT_TRUE_MESSAGE(savedTraceBranch < ramTraceBranch,
                              "Records page must show saved trace state before RAM trace state when both exist");
-    TEST_ASSERT_NOT_NULL(std::strstr(recordsPage, "saved=1&trace=%lu&bucket=1'>已存明细"));
+    TEST_ASSERT_NOT_NULL(std::strstr(recordsPage, "saved=1&trace=%lu&bucket=1'>设备明细"));
     TEST_ASSERT_NOT_NULL(std::strstr(recordsPage, "trace=%lu&bucket=1'>明细"));
 
     const char* detailEnd = std::strstr(recordDetailPage, "void handleFiltersPage() {");
     TEST_ASSERT_NOT_NULL(detailEnd);
     const char* alreadySaved = std::strstr(recordDetailPage, "const bool alreadySaved");
-    const char* deleteSaved = std::strstr(recordDetailPage, "删除已保存明细");
-    const char* saveTrace = std::strstr(recordDetailPage, "保存明细");
+    const char* deleteSaved = std::strstr(recordDetailPage, "删除设备明细");
+    const char* saveTrace = std::strstr(recordDetailPage, "保存设备明细");
     TEST_ASSERT_NOT_NULL(alreadySaved);
     TEST_ASSERT_NOT_NULL(deleteSaved);
     TEST_ASSERT_NOT_NULL(saveTrace);
@@ -1336,7 +1338,7 @@ void test_pulse_trace_and_calibration_pages_keep_saved_and_ram_sources_consisten
     TEST_ASSERT_TRUE(deleteSaved < detailEnd);
     TEST_ASSERT_TRUE(saveTrace < detailEnd);
     TEST_ASSERT_NOT_NULL(std::strstr(recordDetailPage, "savedSource || alreadySaved"));
-    TEST_ASSERT_NOT_NULL(std::strstr(recordDetailPage, "计量方案生成只使用长期样本库，不直接扫描 RAM 或已保存明细"));
+    TEST_ASSERT_NOT_NULL(std::strstr(recordDetailPage, "计量方案生成只使用长期样本库，不直接扫描 RAM 或设备明细"));
 
     const char* samplesPanel = std::strstr(buffer, "void sendCalibrationSamplesPanel");
     const char* generationPanel = std::strstr(buffer, "void sendCalibrationGenerationPanel");
@@ -1526,8 +1528,9 @@ void test_main_source_renders_live_display_frame_for_web() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "Esp32BaseWeb::setDeviceName(\"首页\")"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "Esp32BaseWeb::setHomePath(\"/index\")"));
     TEST_ASSERT_NULL(std::strstr(buffer, "Esp32BaseWeb::setHomePath(\"/faucet\")"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "kSavedPulseTraceMaxCount = faucet::kSavedPulseTraceMaxCount"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "\"/faucet_pulse_traces_v4.bin\""));
+    TEST_ASSERT_NULL(std::strstr(buffer, "kSavedPulseTraceMaxCount = faucet::kSavedPulseTraceMaxCount"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "\"/faucet_pulse_traces_v4.bin\""));
+    TEST_ASSERT_NULL(std::strstr(buffer, "g_savedPulseTraceFile"));
     TEST_ASSERT_NULL(std::strstr(buffer, "\"/faucet_saved_traces_v1.bin\""));
     TEST_ASSERT_NULL(std::strstr(buffer, "\"/fpt_\""));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "feedStartupWatchdog()"));
@@ -1539,7 +1542,7 @@ void test_main_source_renders_live_display_frame_for_web() {
     TEST_ASSERT_NULL(std::strstr(buffer, "fileStore_ && fileStore_->ready() && fileStore_->upsert(calibration)"));
 }
 
-void test_main_source_wires_metering_scheme_and_snapshot_stores() {
+void test_main_source_wires_metering_scheme_store_without_snapshot_store() {
     FILE* file = std::fopen("src/main.cpp", "rb");
     TEST_ASSERT_NOT_NULL(file);
     static char buffer[64000]{};
@@ -1548,14 +1551,14 @@ void test_main_source_wires_metering_scheme_and_snapshot_stores() {
     TEST_ASSERT_GREATER_THAN_size_t(0, read);
 
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "#include \"app/MeteringSchemeStore.h\""));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "#include \"app/WaterRecordMeteringSnapshotStore.h\""));
+    TEST_ASSERT_NULL(std::strstr(buffer, "#include \"app/WaterRecordMeteringSnapshotStore.h\""));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "\"/faucet_metering_schemes_v1.bin\""));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "\"/faucet_record_metering_v1.bin\""));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "PersistentRecordMeteringSnapshotStore"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "\"/faucet_record_metering_v1.bin\""));
+    TEST_ASSERT_NULL(std::strstr(buffer, "PersistentRecordMeteringSnapshotStore"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "g_meteringSchemes.migrateLegacyFromConfig(g_configBackend, nowSeconds)"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "g_meteringSchemes.activeScheme(activeScheme)"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "g_config, activeScheme"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "g_recordMeteringSnapshots"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "g_recordMeteringSnapshots"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "g_meteringSchemes"));
 }
 
@@ -1806,7 +1809,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_metering_scheme_table_uses_compact_usage_status_layout);
     RUN_TEST(test_calibration_requested_ui_adjustments_are_enforced);
     RUN_TEST(test_main_source_renders_live_display_frame_for_web);
-    RUN_TEST(test_main_source_wires_metering_scheme_and_snapshot_stores);
+    RUN_TEST(test_main_source_wires_metering_scheme_store_without_snapshot_store);
     RUN_TEST(test_app_config_source_uses_clear_business_labels_and_help);
     RUN_TEST(test_app_config_save_migrates_before_marking_current_version);
     RUN_TEST(test_app_config_submit_rejects_read_only_business_config_before_field_writes);

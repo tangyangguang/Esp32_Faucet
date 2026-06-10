@@ -34,9 +34,6 @@ public:
     bool findById(std::uint32_t id, MeteringSchemeRecord& output) const;
     std::size_t list(MeteringSchemeRecord* output, std::size_t outputCapacity, bool includeDisabled) const;
 
-    bool loadCandidate(MeteringSchemeCandidate& output) const;
-    bool saveCandidate(const MeteringSchemeCandidate& candidate);
-    bool discardCandidate();
     bool saveCandidateAsNew(const MeteringSchemeCandidate& candidate,
                             const char* name,
                             std::uint32_t nowSeconds,
@@ -57,6 +54,7 @@ private:
     bool validPath() const;
     bool initializeNewFile();
     bool migrateV1File(const MeteringSchemeStoreHeader& loaded);
+    bool migrateV3CandidateFile(const MeteringSchemeStoreHeader& loaded);
     bool upgradeLegacyDefaultSchemeIfNeeded();
     bool loadHeader();
     bool saveHeader() const;
@@ -65,7 +63,6 @@ private:
     bool findSlotById(std::uint32_t id, MeteringSchemeRecord& output, std::size_t& slot) const;
     bool findFreeSlot(std::size_t& slot) const;
     bool writeOrAppendAt(std::size_t offset, const std::uint8_t* data, std::size_t len);
-    std::size_t candidateOffset() const;
     std::size_t recordOffset(std::size_t slot) const;
     std::size_t expectedFileSize() const;
 

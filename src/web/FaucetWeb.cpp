@@ -1162,12 +1162,14 @@ const char* meteringSchemeSourceName(MeteringSchemeSource source) {
     switch (source) {
         case MeteringSchemeSource::Default:
             return "默认";
-        case MeteringSchemeSource::Generated:
-            return "样本生成";
+        case MeteringSchemeSource::CalibrationSession:
+            return "校准生成";
         case MeteringSchemeSource::Manual:
             return "手工创建";
         case MeteringSchemeSource::Migrated:
             return "旧配置迁移";
+        case MeteringSchemeSource::LongTermSamples:
+            return "长期样本生成";
     }
     return "-";
 }
@@ -1178,7 +1180,7 @@ bool activeMeteringSchemeForWeb(MeteringSchemeRecord& output) {
     }
     if (g_context.app) {
         output = g_context.app->activeMeteringScheme();
-        return output.valid;
+        return output.recordUsed;
     }
     return false;
 }
@@ -1202,13 +1204,13 @@ void sendMeteringSnapshotLabel(const WaterRecordMeteringSnapshot& snapshot, bool
     }
 }
 
-bool storeSegmentedCandidate(const SegmentedCalibrationResult& result,
-                             const SegmentedCalibrationOptions& options) {
-    if (!ensureMeteringSchemesReady() || !result.valid) {
+bool makeSegmentedCandidate(const SegmentedCalibrationResult& result, MeteringSchemeCandidate& candidate) {
+    if (!result.valid) {
         return false;
     }
-    MeteringSchemeCandidate candidate{};
+    candidate = MeteringSchemeCandidate{};
     candidate.ready = true;
+    candidate.sourceType = MeteringSchemeSource::LongTermSamples;
     candidate.params = MeteringParameters{
         result.startupPulseCount,
         result.startupVolumeMl,
@@ -1221,24 +1223,8 @@ bool storeSegmentedCandidate(const SegmentedCalibrationResult& result,
     candidate.minActualMl = result.minActualMl;
     candidate.maxActualMl = result.maxActualMl;
     candidate.maxErrorMl = result.maxErrorMl;
-    candidate.maxErrorPercent = static_cast<float>(result.maxRelativeErrorTenthPercent) / 10.0f;
-    candidate.startupDurationMinSec = result.startupDurationSec;
-    candidate.startupDurationMaxSec = result.startupDurationSec;
-    candidate.startupDurationMedianSec = result.startupDurationSec;
-    candidate.startupDurationAvgSec = result.startupDurationSec;
-    std::snprintf(candidate.creationSummary,
-                  sizeof(candidate.creationSummary),
-                  "样本数量 %u，容量范围 %luml-%luml，最大误差 %luml，最大相对误差 %.1f%%，启动阶段平均 %lus。生成设置：分析脉冲间隔 %s，稳态窗口 %lus，稳态容差 %u%%。",
-                  static_cast<unsigned>(result.sampleCount),
-                  static_cast<unsigned long>(result.minActualMl),
-                  static_cast<unsigned long>(result.maxActualMl),
-                  static_cast<unsigned long>(result.maxErrorMl),
-                  static_cast<double>(candidate.maxErrorPercent),
-                  static_cast<unsigned long>(result.startupDurationSec),
-                  options.pulseMinIntervalUsOverride == 0 ? "记录值" : "覆盖值",
-                  static_cast<unsigned long>(options.stableWindowSec),
-                  static_cast<unsigned>(options.stableTolerancePercent));
-    return g_context.meteringSchemes->saveCandidate(candidate);
+    candidate.maxErrorTenthPercent = result.maxRelativeErrorTenthPercent;
+    return true;
 }
 
 bool generateSegmentedCalibrationResultFromSavedSamples() {
@@ -1249,7 +1235,8 @@ bool generateSegmentedCalibrationResultFromSavedSamples() {
     if (!diagnostics.result.valid) {
         return false;
     }
-    return storeSegmentedCandidate(diagnostics.result, calibrationOptionsForWeb());
+    MeteringSchemeCandidate candidate{};
+    return makeSegmentedCandidate(diagnostics.result, candidate);
 }
 
 void sendSignedLiters(std::int32_t ml) {
@@ -1416,12 +1403,12 @@ void sendSegmentedMeteringPanel() {
     sendFmt("<div class='diagnostic-metric'><span>启动水量</span><strong>%s</strong></div>", startupVolume);
     Esp32BaseWeb::sendChunk("</div><div class='diagnostic-foot'>");
     if (activeReady) {
-        sendFmt("<span>ID <b>#%lu</b></span><span>修订 <b>rev %lu</b></span><span>出水记录 <b>%lu</b> 条</span>",
+        sendFmt("<span>ID <b>#%lu</b></span><span>修订 <b>rev %lu</b></span><span>使用状态 <b>%s</b></span>",
                 static_cast<unsigned long>(activeScheme.id),
                 static_cast<unsigned long>(activeScheme.revision),
-                static_cast<unsigned long>(activeScheme.useCount));
+                activeScheme.usedEver ? "已使用" : "未使用");
     } else {
-        Esp32BaseWeb::sendChunk("<span>ID <b>-</b></span><span>修订 <b>-</b></span><span>出水记录 <b>-</b> 条</span>");
+        Esp32BaseWeb::sendChunk("<span>ID <b>-</b></span><span>修订 <b>-</b></span><span>使用状态 <b>-</b></span>");
     }
     Esp32BaseWeb::sendChunk("</div></section>");
 }
@@ -1514,36 +1501,6 @@ void sendMeteringTrialButton(const char* label,
             static_cast<unsigned long>(params.stableFlowMlPerMin));
 }
 
-void formatSchemeTraceIds(const MeteringSchemeRecord& scheme, char* out, std::size_t len) {
-    if (!out || len == 0) {
-        return;
-    }
-    out[0] = '\0';
-    const std::size_t count =
-        std::min<std::size_t>(scheme.sampleCount, static_cast<std::size_t>(kMeteringSchemeTraceIdCapacity));
-    if (count == 0) {
-        std::snprintf(out, len, "-");
-        return;
-    }
-    std::size_t used = 0;
-    for (std::size_t i = 0; i < count && used + 1 < len; ++i) {
-        const int written = std::snprintf(out + used,
-                                          len - used,
-                                          "%s%lu",
-                                          i == 0 ? "" : ", ",
-                                          static_cast<unsigned long>(scheme.sampleTraceIds[i]));
-        if (written <= 0) {
-            return;
-        }
-        const std::size_t consumed = static_cast<std::size_t>(written);
-        if (consumed >= len - used) {
-            out[len - 1] = '\0';
-            return;
-        }
-        used += consumed;
-    }
-}
-
 void formatSchemeTimestamp(std::uint32_t seconds, char* out, std::size_t len) {
     if (!out || len == 0) {
         return;
@@ -1572,12 +1529,8 @@ void sendSchemeDetailButton(const MeteringSchemeRecord& scheme, std::uint32_t ac
     char maxActual[24]{};
     char maxError[24]{};
     char actualRange[56]{};
-    char traceIds[160]{};
-    char startupStats[96]{};
     char createdAt[40]{};
     char updatedAt[40]{};
-    char lastActivatedAt[40]{};
-    char lastUsedAt[40]{};
     char status[64]{};
     formatLiters(scheme.params.startupVolumeMl, startupVolume, sizeof(startupVolume));
     formatFlowLitersPerMin(scheme.params.stableFlowMlPerMin, stableFlow, sizeof(stableFlow));
@@ -1589,57 +1542,39 @@ void sendSchemeDetailButton(const MeteringSchemeRecord& scheme, std::uint32_t ac
     } else {
         std::snprintf(actualRange, sizeof(actualRange), "-");
     }
-    formatSchemeTraceIds(scheme, traceIds, sizeof(traceIds));
-    std::snprintf(startupStats,
-                  sizeof(startupStats),
-                  "min %lus / max %lus / median %lus / avg %lus",
-                  static_cast<unsigned long>(scheme.startupDurationMinSec),
-                  static_cast<unsigned long>(scheme.startupDurationMaxSec),
-                  static_cast<unsigned long>(scheme.startupDurationMedianSec),
-                  static_cast<unsigned long>(scheme.startupDurationAvgSec));
     formatSchemeTimestamp(scheme.createdAt, createdAt, sizeof(createdAt));
     formatSchemeTimestamp(scheme.updatedAt, updatedAt, sizeof(updatedAt));
-    formatSchemeTimestamp(scheme.lastActivatedAt, lastActivatedAt, sizeof(lastActivatedAt));
-    formatSchemeTimestamp(scheme.lastUsedAt, lastUsedAt, sizeof(lastUsedAt));
     std::snprintf(status,
                   sizeof(status),
-                  "%s%s%s",
-                  scheme.id == activeId ? "当前启用" : (scheme.enabled ? "可用" : "已禁用"),
-                  scheme.usageStatsDirty ? " / 统计待核对" : "",
-                  scheme.valid ? "" : " / 无效");
+                  "%s / %s",
+                  scheme.id == activeId ? "当前启用" :
+                  (scheme.state == MeteringSchemeState::Available ? "可用" : "已停用"),
+                  scheme.usedEver ? "已使用" : "未使用");
 
     Esp32BaseWeb::sendChunk("<button class='btn-link' type='button' data-scheme-detail='1'");
     sendFmt(" data-detail-id='%lu' data-detail-revision='%lu' data-detail-startup-pulses='%luP' "
             "data-detail-stable-ppl='%luP/L' data-detail-startup-duration='%lums' "
-            "data-detail-sample-count='%u 条' data-detail-use-count='%lu 条'",
+            "data-detail-sample-count='%u 条' data-detail-use-count='%s'",
             static_cast<unsigned long>(scheme.id),
             static_cast<unsigned long>(scheme.revision),
             static_cast<unsigned long>(scheme.params.startupPulseCount),
             static_cast<unsigned long>(scheme.params.stablePulsePerLiter),
             static_cast<unsigned long>(scheme.params.startupDurationMs),
             static_cast<unsigned>(scheme.sampleCount),
-            static_cast<unsigned long>(scheme.useCount));
+            scheme.usedEver ? "已使用" : "未使用");
     sendSchemeDetailAttr("name", scheme.name);
     sendSchemeDetailAttr("status", status);
     sendSchemeDetailAttr("source", meteringSchemeSourceName(scheme.sourceType));
     sendSchemeDetailAttr("created-at", createdAt);
     sendSchemeDetailAttr("updated-at", updatedAt);
-    sendSchemeDetailAttr("creation-summary", scheme.creationSummary);
-    sendSchemeDetailAttr("modified-summary", scheme.lastModifiedSummary[0] ? scheme.lastModifiedSummary : "-");
-    sendSchemeDetailAttr("meter-label", scheme.meterLabel[0] ? scheme.meterLabel : "-");
-    sendSchemeDetailAttr("installation-label", scheme.installationLabel[0] ? scheme.installationLabel : "-");
-    sendSchemeDetailAttr("condition-label", scheme.conditionLabel[0] ? scheme.conditionLabel : "-");
-    sendSchemeDetailAttr("user-note", scheme.userNote[0] ? scheme.userNote : "-");
     sendSchemeDetailAttr("startup-volume", startupVolume);
     sendSchemeDetailAttr("stable-flow", stableFlow);
-    sendSchemeDetailAttr("sample-trace-ids", traceIds);
     sendSchemeDetailAttr("actual-range", actualRange);
     sendFmt(" data-detail-max-error='");
     sendHtmlAttrEscaped(maxError);
-    sendFmt(" / %.1f%%'", static_cast<double>(scheme.maxErrorPercent));
-    sendSchemeDetailAttr("startup-stats", startupStats);
-    sendSchemeDetailAttr("last-activated-at", lastActivatedAt);
-    sendSchemeDetailAttr("last-used-at", lastUsedAt);
+    sendFmt(" / %u.%u%%'",
+            static_cast<unsigned>(scheme.maxErrorTenthPercent / 10U),
+            static_cast<unsigned>(scheme.maxErrorTenthPercent % 10U));
     Esp32BaseWeb::sendChunk(" onclick='faucetOpenSchemeDetail(this)'>详情</button>");
 }
 
@@ -1655,22 +1590,12 @@ void sendSchemeDetailModal() {
                             "<tr><th>来源</th><td data-scheme-detail-field='source'>-</td></tr>"
                             "<tr><th>创建时间</th><td data-scheme-detail-field='createdAt'>-</td></tr>"
                             "<tr><th>修改时间</th><td data-scheme-detail-field='updatedAt'>-</td></tr>"
-                            "<tr><th>创建摘要</th><td data-scheme-detail-field='creationSummary'>-</td></tr>"
-                            "<tr><th>最近修改</th><td data-scheme-detail-field='modifiedSummary'>-</td></tr>"
-                            "<tr><th>流量计</th><td data-scheme-detail-field='meterLabel'>-</td></tr>"
-                            "<tr><th>安装位置</th><td data-scheme-detail-field='installationLabel'>-</td></tr>"
-                            "<tr><th>水压/环境</th><td data-scheme-detail-field='conditionLabel'>-</td></tr>"
-                            "<tr><th>备注</th><td data-scheme-detail-field='userNote'>-</td></tr>"
                             "<tr><th>容量估算参数</th><td><span data-scheme-detail-field='startupPulses'>-</span> / <span data-scheme-detail-field='startupVolume'>-</span> / <span data-scheme-detail-field='stablePpl'>-</span></td></tr>"
                             "<tr><th>时间估算参数</th><td><span data-scheme-detail-field='startupDuration'>-</span> / <span data-scheme-detail-field='stableFlow'>-</span></td></tr>"
                             "<tr><th>样本数量</th><td data-scheme-detail-field='sampleCount'>-</td></tr>"
-                            "<tr><th>样本 traceId</th><td data-scheme-detail-field='sampleTraceIds'>-</td></tr>"
                             "<tr><th>容量范围</th><td data-scheme-detail-field='actualRange'>-</td></tr>"
                             "<tr><th>最大误差</th><td data-scheme-detail-field='maxError'>-</td></tr>"
-                            "<tr><th>启动阶段统计</th><td data-scheme-detail-field='startupStats'>-</td></tr>"
-                            "<tr><th>使用次数</th><td data-scheme-detail-field='useCount'>-</td></tr>"
-                            "<tr><th>最近启用</th><td data-scheme-detail-field='lastActivatedAt'>-</td></tr>"
-                            "<tr><th>最近使用</th><td data-scheme-detail-field='lastUsedAt'>-</td></tr>"
+                            "<tr><th>使用状态</th><td data-scheme-detail-field='useCount'>-</td></tr>"
                             "</table></div></div>");
 }
 
@@ -1709,7 +1634,7 @@ void sendCalibrationParameterPanels() {
 
     Esp32BaseWeb::sendChunk("<section class='panel calibration-param-panel'><div class='panel-head'><h3>流量计计量方案</h3>"
                             "<a class='btn-link' href='/faucet/metering?scheme=new'>新建方案</a></div>"
-                            "<table class='calibration-slot-table metering-scheme-table'><tr><th>方案</th><th>容量估算参数</th><th>时间估算参数</th><th>适用条件</th><th>使用次数</th><th>操作</th></tr>");
+                            "<table class='calibration-slot-table metering-scheme-table'><tr><th>方案</th><th>容量估算参数</th><th>时间估算参数</th><th>样本摘要</th><th>使用状态</th><th>操作</th></tr>");
     if (!ready) {
         Esp32BaseWeb::sendChunk("<tr><td colspan='6'>计量方案存储不可用。</td></tr>");
     } else if (!schemes) {
@@ -1730,7 +1655,7 @@ void sendCalibrationParameterPanels() {
         if (scheme.id == createdSchemeId) {
             Esp32BaseWeb::sendChunk("<span class='status-pill status-warn'>刚保存</span> ");
         }
-        if (!scheme.enabled) {
+        if (scheme.state == MeteringSchemeState::Disabled) {
             Esp32BaseWeb::sendChunk("<span class='status-pill status-muted'>已禁用</span> ");
         }
         Esp32BaseWeb::sendChunk("<div class='calibration-slot-name'>");
@@ -1748,23 +1673,26 @@ void sendCalibrationParameterPanels() {
                 static_cast<unsigned long>(scheme.params.startupDurationMs),
                 stableFlow);
         Esp32BaseWeb::sendChunk("<td class='calibration-slot-note'>");
-        if (scheme.meterLabel[0]) {
-            Esp32BaseWeb::sendChunk("流量计：");
-            sendHtmlEscapedBounded(scheme.meterLabel, sizeof(scheme.meterLabel));
-            Esp32BaseWeb::sendChunk("<br>");
+        if (scheme.sampleCount > 0) {
+            char minActual[20]{};
+            char maxActual[20]{};
+            char maxError[20]{};
+            formatLiters(scheme.minActualMl, minActual, sizeof(minActual));
+            formatLiters(scheme.maxActualMl, maxActual, sizeof(maxActual));
+            formatLiters(scheme.maxErrorMl, maxError, sizeof(maxError));
+            sendFmt("样本 %u 条<br>容量 %s - %s<br>最大误差 %s / %u.%u%%",
+                    static_cast<unsigned>(scheme.sampleCount),
+                    minActual,
+                    maxActual,
+                    maxError,
+                    static_cast<unsigned>(scheme.maxErrorTenthPercent / 10U),
+                    static_cast<unsigned>(scheme.maxErrorTenthPercent % 10U));
+        } else {
+            Esp32BaseWeb::sendChunk("<span class='muted'>手动或默认方案，无样本摘要</span>");
         }
-        if (scheme.conditionLabel[0]) {
-            Esp32BaseWeb::sendChunk("环境：");
-            sendHtmlEscapedBounded(scheme.conditionLabel, sizeof(scheme.conditionLabel));
-            Esp32BaseWeb::sendChunk("<br>");
-        }
-        sendHtmlEscapedBounded(scheme.lastModifiedSummary[0] ? scheme.lastModifiedSummary : scheme.creationSummary,
-                               scheme.lastModifiedSummary[0] ? sizeof(scheme.lastModifiedSummary)
-                                                              : sizeof(scheme.creationSummary));
         Esp32BaseWeb::sendChunk("</td>");
-        sendFmt("<td class='scheme-use-count'><b>%lu</b><span>条</span>%s</td><td class='calibration-slot-edit'><div class='row-actions'>",
-                static_cast<unsigned long>(scheme.useCount),
-                scheme.usageStatsDirty ? "<span class='status-pill status-warn'>统计待核对</span>" : "");
+        sendFmt("<td class='scheme-use-count'><b>%s</b></td><td class='calibration-slot-edit'><div class='row-actions'>",
+                scheme.usedEver ? "已使用" : "未使用");
         sendSchemeDetailButton(scheme, activeId);
         sendMeteringTrialButton(scheme.name[0] ? scheme.name : "计量方案", scheme.params, 1000, 10);
         sendFmt("<a class='btn-link' href='/faucet/metering?scheme=%lu'>编辑</a>",
@@ -1817,7 +1745,7 @@ void sendMeteringSchemeEditPage(bool creating, const MeteringSchemeRecord* schem
         sendFmt("<div class='scheme-edit-meta scheme-span-12'><span>#%lu</span><span>rev %lu</span><span>%s</span></div>",
                 static_cast<unsigned long>(scheme->id),
                 static_cast<unsigned long>(scheme->revision),
-                scheme->enabled ? "可用" : "已禁用");
+                scheme->state == MeteringSchemeState::Available ? "可用" : "已禁用");
     }
     Esp32BaseWeb::sendChunk("</div></div><div class='scheme-edit-section'><h3>容量估算计量参数</h3><div class='scheme-edit-grid'>");
     sendFmt("<label class='compact-field scheme-edit-field scheme-span-4'><span>启动脉冲数</span><input name='startupPulseCount' type='number' min='0' max='%lu' step='1' required%s",
@@ -1866,22 +1794,6 @@ void sendMeteringSchemeEditPage(bool creating, const MeteringSchemeRecord* schem
             static_cast<unsigned long>(kMinStableFlowMlPerMin),
             static_cast<unsigned long>(kMaxStableFlowMlPerMin));
     Esp32BaseWeb::sendChunk("</div></div>");
-    if (!creating && scheme) {
-        Esp32BaseWeb::sendChunk("<div class='scheme-edit-section'><h3>适用条件</h3><div class='scheme-edit-grid'>");
-        sendFmt("<label class='compact-field scheme-edit-field scheme-span-4'><span>流量计</span><input name='meterLabel' maxlength='%u' value='",
-                static_cast<unsigned>(kMeteringSchemeMeterLabelLength - 1));
-        sendHtmlAttrEscapedBounded(scheme->meterLabel, sizeof(scheme->meterLabel));
-        sendFmt("'></label><label class='compact-field scheme-edit-field scheme-span-4'><span>安装位置</span><input name='installationLabel' maxlength='%u' value='",
-                static_cast<unsigned>(kMeteringSchemeInstallationLabelLength - 1));
-        sendHtmlAttrEscapedBounded(scheme->installationLabel, sizeof(scheme->installationLabel));
-        sendFmt("'></label><label class='compact-field scheme-edit-field scheme-span-4'><span>水压/环境</span><input name='conditionLabel' maxlength='%u' value='",
-                static_cast<unsigned>(kMeteringSchemeConditionLabelLength - 1));
-        sendHtmlAttrEscapedBounded(scheme->conditionLabel, sizeof(scheme->conditionLabel));
-        sendFmt("'></label><label class='compact-field scheme-edit-field scheme-span-12'><span>备注</span><input name='userNote' maxlength='%u' value='",
-                static_cast<unsigned>(kMeteringSchemeUserNoteLength - 1));
-        sendHtmlAttrEscapedBounded(scheme->userNote, sizeof(scheme->userNote));
-        Esp32BaseWeb::sendChunk("'></label></div></div>");
-    }
     Esp32BaseWeb::sendChunk(creating ? "<div class='form-actions scheme-edit-actions'><input class='primary' type='submit' value='保存为新方案'>"
                                      : "<div class='form-actions scheme-edit-actions'><input class='primary' type='submit' value='保存修改'>");
     Esp32BaseWeb::sendChunk("<a class='btn-link' href='/faucet/metering'>取消</a></div></form></section>");
@@ -2408,10 +2320,9 @@ void sendCalibrationGenerationPanel() {
         diagnostics.result.valid &&
         (diagnostics.result.qualityWarnings != kSegmentedCalibrationQualityNone ||
          diagnostics.result.sampleCount <= kSegmentedCalibrationRequiredSamples);
-    MeteringSchemeCandidate candidate{};
     const bool showGeneratedResult = generationResultRequested();
-    const bool candidateReady = showGeneratedResult && ensureMeteringSchemesReady() &&
-                                g_context.meteringSchemes->loadCandidate(candidate) && candidate.ready;
+    MeteringSchemeCandidate candidate{};
+    const bool candidateReady = showGeneratedResult && makeSegmentedCandidate(diagnostics.result, candidate);
     char sampleCountText[32]{};
     char sampleRange[48]{};
     char sampleNeed[48]{};
@@ -2529,8 +2440,8 @@ void sendCalibrationGenerationPanel() {
                                 "<span class='status-pill status-warn'>已生成，待保存</span></div>"
                                 "<div class='generated-scheme-layout'><div class='generated-result-main'>"
                                 "<table class='generated-scheme-table'><tr><th>启动脉冲数</th><th>启动水量</th><th>稳态P/L</th><th>启动时长</th><th>预计稳态流速</th><th>样本</th><th>容量范围</th><th>最大误差</th></tr>");
-        sendFmt("<tr><td>%luP</td><td>%s</td><td>%luP/L</td><td>%lums</td><td>%s</td><td>%u 条</td><td>%s</td><td>%s / %.1f%%</td></tr></table>"
-                "<p class='generated-note'>",
+        sendFmt("<tr><td>%luP</td><td>%s</td><td>%luP/L</td><td>%lums</td><td>%s</td><td>%u 条</td><td>%s</td><td>%s / %u.%u%%</td></tr></table>"
+                "<p class='generated-note'>生成结果为临时预览，保存为新方案后才会写入 Flash；保存前不会改变当前计量。</p>",
                 static_cast<unsigned long>(candidate.params.startupPulseCount),
                 generatedStartupVolume,
                 static_cast<unsigned long>(candidate.params.stablePulsePerLiter),
@@ -2539,10 +2450,8 @@ void sendCalibrationGenerationPanel() {
                 static_cast<unsigned>(candidate.sampleCount),
                 generatedRange,
                 generatedError,
-                static_cast<double>(candidate.maxErrorPercent));
-        sendHtmlEscapedBounded(candidate.creationSummary, sizeof(candidate.creationSummary));
-        sendFmt(" 启动阶段平均 %lus。</p>",
-                static_cast<unsigned long>(candidate.startupDurationAvgSec));
+                static_cast<unsigned>(candidate.maxErrorTenthPercent / 10U),
+                static_cast<unsigned>(candidate.maxErrorTenthPercent % 10U));
         sendGeneratedSampleResiduals(candidate, options);
         Esp32BaseWeb::sendChunk("<div class='form-actions generated-result-actions'><form class='inline-form' method='post' action='/faucet/metering' onsubmit='return once(this)'>"
                                 "<input type='hidden' name='action' value='save_generated_scheme'>"
@@ -2580,7 +2489,7 @@ void sendCalibrationPageScript() {
                             "function faucetOpenMeteringTrial(btn){var modal=document.getElementById('metering-trial-modal');if(!modal)return;var form=modal.querySelector('.metering-trial-form');if(!form)return;form.dataset.startupPulses=btn.dataset.startupPulses||'0';form.dataset.startupVolume=btn.dataset.startupVolume||'0';form.dataset.stablePpl=btn.dataset.stablePpl||'0';form.dataset.startupDurationMs=btn.dataset.startupDurationMs||'0';form.dataset.stableFlowMlMin=btn.dataset.stableFlowMlMin||'0';var ml=form.querySelector('[name=targetMl]'),sec=form.querySelector('[name=targetSec]');if(ml)ml.value=btn.dataset.defaultMl||'1000';if(sec)sec.value=btn.dataset.defaultSec||'60';var label=form.querySelector('[data-trial-label]');if(label)label.textContent=(btn.dataset.trialLabel||'计量方案')+'：容量参数 '+form.dataset.startupPulses+'P / '+form.dataset.startupVolume+'ml / '+form.dataset.stablePpl+'P/L，时间参数 '+form.dataset.startupDurationMs+'ms / '+form.dataset.stableFlowMlMin+'ml/min';modal.classList.add('is-open');modal.setAttribute('aria-hidden','false');faucetEstimateMeteringTrial(form);}"
                             "function faucetCloseMeteringTrial(){var modal=document.getElementById('metering-trial-modal');if(modal){modal.classList.remove('is-open');modal.setAttribute('aria-hidden','true');}}"
                             "function faucetSetSchemeDetail(modal,key,value){var e=modal.querySelector('[data-scheme-detail-field='+key+']');if(e)e.textContent=value||'-';}"
-                            "function faucetOpenSchemeDetail(btn){var modal=document.getElementById('scheme-detail-modal');if(!modal)return;var d=btn.dataset;faucetSetSchemeDetail(modal,'id',d.detailId);faucetSetSchemeDetail(modal,'name',d.detailName);faucetSetSchemeDetail(modal,'status',d.detailStatus);faucetSetSchemeDetail(modal,'revision',d.detailRevision);faucetSetSchemeDetail(modal,'source',d.detailSource);faucetSetSchemeDetail(modal,'createdAt',d.detailCreatedAt);faucetSetSchemeDetail(modal,'updatedAt',d.detailUpdatedAt);faucetSetSchemeDetail(modal,'creationSummary',d.detailCreationSummary);faucetSetSchemeDetail(modal,'modifiedSummary',d.detailModifiedSummary);faucetSetSchemeDetail(modal,'meterLabel',d.detailMeterLabel);faucetSetSchemeDetail(modal,'installationLabel',d.detailInstallationLabel);faucetSetSchemeDetail(modal,'conditionLabel',d.detailConditionLabel);faucetSetSchemeDetail(modal,'userNote',d.detailUserNote);faucetSetSchemeDetail(modal,'startupPulses',d.detailStartupPulses);faucetSetSchemeDetail(modal,'startupVolume',d.detailStartupVolume);faucetSetSchemeDetail(modal,'stablePpl',d.detailStablePpl);faucetSetSchemeDetail(modal,'startupDuration',d.detailStartupDuration);faucetSetSchemeDetail(modal,'stableFlow',d.detailStableFlow);faucetSetSchemeDetail(modal,'sampleCount',d.detailSampleCount);faucetSetSchemeDetail(modal,'sampleTraceIds',d.detailSampleTraceIds);faucetSetSchemeDetail(modal,'actualRange',d.detailActualRange);faucetSetSchemeDetail(modal,'maxError',d.detailMaxError);faucetSetSchemeDetail(modal,'startupStats',d.detailStartupStats);faucetSetSchemeDetail(modal,'useCount',d.detailUseCount);faucetSetSchemeDetail(modal,'lastActivatedAt',d.detailLastActivatedAt);faucetSetSchemeDetail(modal,'lastUsedAt',d.detailLastUsedAt);modal.classList.add('is-open');modal.setAttribute('aria-hidden','false');}"
+                            "function faucetOpenSchemeDetail(btn){var modal=document.getElementById('scheme-detail-modal');if(!modal)return;var d=btn.dataset;faucetSetSchemeDetail(modal,'id',d.detailId);faucetSetSchemeDetail(modal,'name',d.detailName);faucetSetSchemeDetail(modal,'status',d.detailStatus);faucetSetSchemeDetail(modal,'revision',d.detailRevision);faucetSetSchemeDetail(modal,'source',d.detailSource);faucetSetSchemeDetail(modal,'createdAt',d.detailCreatedAt);faucetSetSchemeDetail(modal,'updatedAt',d.detailUpdatedAt);faucetSetSchemeDetail(modal,'startupPulses',d.detailStartupPulses);faucetSetSchemeDetail(modal,'startupVolume',d.detailStartupVolume);faucetSetSchemeDetail(modal,'stablePpl',d.detailStablePpl);faucetSetSchemeDetail(modal,'startupDuration',d.detailStartupDuration);faucetSetSchemeDetail(modal,'stableFlow',d.detailStableFlow);faucetSetSchemeDetail(modal,'sampleCount',d.detailSampleCount);faucetSetSchemeDetail(modal,'actualRange',d.detailActualRange);faucetSetSchemeDetail(modal,'maxError',d.detailMaxError);faucetSetSchemeDetail(modal,'useCount',d.detailUseCount);modal.classList.add('is-open');modal.setAttribute('aria-hidden','false');}"
                             "function faucetCloseSchemeDetail(){var modal=document.getElementById('scheme-detail-modal');if(modal){modal.classList.remove('is-open');modal.setAttribute('aria-hidden','true');}}"
                             "function faucetReplaceCalibrationSection(id,url){return fetch(url,{cache:'no-store',credentials:'same-origin'}).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.text();}).then(function(html){var old=document.getElementById(id);if(!old)return;var box=document.createElement('div');box.innerHTML=html;var next=box.querySelector('#'+id);if(next)old.replaceWith(next);});}"
                             "function faucetRefreshCalibrationSamples(){return faucetReplaceCalibrationSection('calibration-samples','/faucet/calibration?partial=samples');}"
@@ -3102,10 +3011,10 @@ void sendUsagePatterns(const WaterUsageSummary& summary, const SystemConfig& con
                             "<div class='usage-grid'>");
     Esp32BaseWeb::sendChunk("<section class='usage-panel'><h3>按预设分布</h3>");
     for (std::size_t i = 0; i < kPresetCount; ++i) {
-        if (summary.presetCounts[i].count == 0) {
+        const PresetConfig& preset = config.presets[i];
+        if (!preset.enabled && summary.presetCounts[i].count == 0) {
             continue;
         }
-        const PresetConfig& preset = config.presets[i];
         char target[24]{};
         if (preset.type == PresetType::Time) {
             formatSecondsValue(preset.value, target, sizeof(target));
@@ -3116,9 +3025,6 @@ void sendUsagePatterns(const WaterUsageSummary& summary, const SystemConfig& con
         char label[56]{};
         std::snprintf(label, sizeof(label), "P%u · %s · %s", static_cast<unsigned>(i + 1), type, target);
         sendCountVolumeDistributionRow(label, summary.presetCounts[i].count, summary.presetCounts[i].volumeMl, summary.last30DaysCount);
-    }
-    if (summary.last30DaysMl == 0) {
-        Esp32BaseWeb::sendChunk("<p class='hint'>最近 30 天没有可聚合的真实时间记录。</p>");
     }
     Esp32BaseWeb::sendChunk("</section><section class='usage-panel'><h3>按容量段分布</h3>");
     static constexpr const char* histLabels[kUsageVolumeHistCount] = {"0.5 L 以下", "0.5 - 2 L", "2 - 5 L", "5 - 10 L", "10 L 以上"};
@@ -6035,8 +5941,9 @@ void handleSaveGeneratedSchemeApi() {
         Esp32BaseWeb::redirectSeeOther("/faucet/metering?generated=1&error=save_failed");
         return;
     }
+    const SegmentedSampleDiagnostics diagnostics = collectSegmentedSampleDiagnostics(false);
     MeteringSchemeCandidate candidate{};
-    if (!g_context.meteringSchemes->loadCandidate(candidate) || !candidate.ready) {
+    if (!makeSegmentedCandidate(diagnostics.result, candidate)) {
         Esp32BaseWeb::redirectSeeOther("/faucet/metering?error=no_generated_result");
         return;
     }
@@ -6046,7 +5953,8 @@ void handleSaveGeneratedSchemeApi() {
         std::snprintf(name, sizeof(name), "样本生成方案");
     }
     std::uint32_t newId = 0;
-    if (!g_context.meteringSchemes->saveCandidateAsNew(name, g_context.nowSeconds ? g_context.nowSeconds() : 0, newId)) {
+    if (!g_context.meteringSchemes->saveCandidateAsNew(
+            candidate, name, g_context.nowSeconds ? g_context.nowSeconds() : 0, newId)) {
         Esp32BaseWeb::redirectSeeOther("/faucet/metering?generated=1&error=save_failed");
         return;
     }
@@ -6083,15 +5991,6 @@ void handleDiscardGeneratedSchemeApi() {
     };
     if (waterTaskActive()) {
         fail(409, "{\"error\":\"busy\"}", "/faucet/metering?error=busy");
-        return;
-    }
-    if (!ensureMeteringSchemesReady()) {
-        fail(500, "{\"error\":\"save_failed\"}", "/faucet/metering?error=save_failed");
-        return;
-    }
-    MeteringSchemeCandidate empty{};
-    if (!g_context.meteringSchemes->saveCandidate(empty)) {
-        fail(500, "{\"error\":\"save_failed\"}", "/faucet/metering?error=save_failed");
         return;
     }
     ok();
@@ -6174,10 +6073,6 @@ void handleEditMeteringSchemeApi() {
         return;
     }
     Esp32BaseWeb::getParam("name", edited.name, sizeof(edited.name));
-    Esp32BaseWeb::getParam("meterLabel", edited.meterLabel, sizeof(edited.meterLabel));
-    Esp32BaseWeb::getParam("installationLabel", edited.installationLabel, sizeof(edited.installationLabel));
-    Esp32BaseWeb::getParam("conditionLabel", edited.conditionLabel, sizeof(edited.conditionLabel));
-    Esp32BaseWeb::getParam("userNote", edited.userNote, sizeof(edited.userNote));
     edited.params = params;
     if (!g_context.meteringSchemes->updateScheme(edited, g_context.nowSeconds ? g_context.nowSeconds() : 0)) {
         Esp32BaseWeb::redirectSeeOther("/faucet/metering?error=save_failed");
@@ -6281,58 +6176,8 @@ void handleTraceCalibrationApi() {
         return;
     }
 
-    SegmentedCalibrationSample calibrationSamples[8]{};
-    std::size_t calibrationCount = 0;
-    const bool manualSamples = Esp32BaseWeb::hasParam("manualSamples");
-    const SegmentedCalibrationOptions options = calibrationOptionsForWeb();
-    for (std::size_t offset = 0; offset < g_context.pulseTraces->count() && calibrationCount < 8; ++offset) {
-        const std::size_t index = g_context.pulseTraces->count() - 1 - offset;
-        const WaterPulseTrace* trace = g_context.pulseTraces->traceAt(index);
-        if (!trace || trace->actualMl == 0 || trace->sampleCount < 4 || trace->totalPulses == 0) {
-            continue;
-        }
-        if (manualSamples && trace->traceId != traceId) {
-            char key[24]{};
-            std::snprintf(key, sizeof(key), "sample_%lu", static_cast<unsigned long>(trace->traceId));
-            if (!Esp32BaseWeb::hasParam(key)) {
-                continue;
-            }
-        }
-        WaterPulseTraceSample* samples = new (std::nothrow) WaterPulseTraceSample[trace->sampleCount]{};
-        if (!samples) {
-            continue;
-        }
-        for (std::size_t i = 0; i < trace->sampleCount; ++i) {
-            const WaterPulseTraceSample* sample = g_context.pulseTraces->sampleAt(*trace, i);
-            samples[i] = sample ? *sample : WaterPulseTraceSample{};
-        }
-        const WaterPulseTraceAnalysis analysis = analyzeWaterPulseTrace(*trace, samples, trace->sampleCount, options);
-        delete[] samples;
-        if (!analysis.stable || analysis.stablePulseCount == 0) {
-            continue;
-        }
-        calibrationSamples[calibrationCount++] = SegmentedCalibrationSample{
-            trace->actualMl,
-            trace->totalPulses,
-            analysis.startupPulseCount,
-            analysis.stablePulseCount,
-            analysis.stableStartSec,
-            analysis.stablePulsePerSec,
-        };
-    }
-
-    SegmentedCalibrationResult result{};
-    if (computeSegmentedCalibration(calibrationSamples, calibrationCount, options, result)) {
-        if (!storeSegmentedCandidate(result, options)) {
-            Esp32BaseWeb::redirectSeeOther("/faucet/records?error=save_failed");
-            return;
-        }
-        Esp32BaseWeb::redirectSeeOther("/faucet/metering?saved=generated");
-        return;
-    }
-
     char url[96]{};
-    std::snprintf(url, sizeof(url), "/faucet/records/detail?trace=%lu&bucket=1&error=invalid_value",
+    std::snprintf(url, sizeof(url), "/faucet/records/detail?trace=%lu&bucket=1&saved=calibrated",
                   static_cast<unsigned long>(traceId));
     Esp32BaseWeb::redirectSeeOther(url);
 }

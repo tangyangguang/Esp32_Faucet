@@ -231,6 +231,22 @@ void test_home_page_places_screen_status_in_machine_hero_footer() {
     TEST_ASSERT_TRUE(screenStatus < statusStrip);
 }
 
+void test_stats_page_shows_zero_preset_distribution_when_no_recent_records() {
+    WebFixture fixture;
+    registerRoutes();
+    Esp32BaseWeb::nativeTestBeginRequest(Esp32BaseWeb::METHOD_GET, "/faucet/stats");
+    Esp32BaseWeb::nativeTestSetAuthenticated(true);
+    Esp32BaseWeb::nativeTestSetSameOrigin(true);
+
+    TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch("/faucet/stats", Esp32BaseWeb::METHOD_GET));
+
+    const std::string& body = Esp32BaseWeb::nativeTestResponse().body;
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("按预设分布"));
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("P1 ·"));
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("<strong>0 次</strong><small>占 0%"));
+    TEST_ASSERT_EQUAL(std::string::npos, body.find("最近 30 天没有可聚合的真实时间记录。"));
+}
+
 void test_filter_reset_handler_rejects_missing_auth_before_context_work() {
     registerRoutes();
     Esp32BaseWeb::nativeTestBeginRequest(Esp32BaseWeb::METHOD_POST, "/api/faucet/filters/reset");
@@ -439,6 +455,7 @@ void test_presets_handler_running_select_next_only_changes_next_preset() {
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_home_page_places_screen_status_in_machine_hero_footer);
+    RUN_TEST(test_stats_page_shows_zero_preset_distribution_when_no_recent_records);
     RUN_TEST(test_filter_reset_handler_rejects_missing_auth_before_context_work);
     RUN_TEST(test_filter_reset_handler_rejects_cross_origin_post);
     RUN_TEST(test_filter_reset_handler_returns_invalid_index_without_runtime_write);

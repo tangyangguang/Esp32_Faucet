@@ -110,6 +110,25 @@ MeteringSchemeStoreHeader currentHeader(std::uint32_t activeSchemeId,
                                    std::uint32_t slotCount) {
     MeteringSchemeStoreHeader header{
         kTestMeteringSchemeStoreMagic,
+        4,
+        static_cast<std::uint16_t>(sizeof(MeteringSchemeStoreHeader)),
+        static_cast<std::uint16_t>(sizeof(MeteringSchemeRecord)),
+        0,
+        activeSchemeId,
+        nextSchemeId,
+        slotCount,
+        0,
+        0,
+    };
+    header.checksum = testHeaderChecksum(header);
+    return header;
+}
+
+MeteringSchemeStoreHeader legacyCandidateHeader(std::uint32_t activeSchemeId,
+                                                std::uint32_t nextSchemeId,
+                                                std::uint32_t slotCount) {
+    MeteringSchemeStoreHeader header{
+        kTestMeteringSchemeStoreMagic,
         3,
         static_cast<std::uint16_t>(sizeof(MeteringSchemeStoreHeader)),
         static_cast<std::uint16_t>(sizeof(MeteringSchemeRecord)),
@@ -504,10 +523,6 @@ void test_migrates_legacy_config_slots_without_candidate() {
                             static_cast<unsigned>(list[0].sourceType));
     TEST_ASSERT_EQUAL_UINT32(1, list[0].revision);
 
-    MeteringSchemeCandidate migratedCandidate{};
-    TEST_ASSERT_TRUE(store.loadCandidate(migratedCandidate));
-    TEST_ASSERT_FALSE(migratedCandidate.ready);
-
     TEST_ASSERT_TRUE(store.migrateLegacyFromConfig(config, 1770000300));
     TEST_ASSERT_EQUAL_size_t(1, store.list(list, 4, true));
 }
@@ -560,9 +575,6 @@ void test_begin_migrates_v1_scheme_file_to_time_estimate_params() {
     TEST_ASSERT_EQUAL_UINT16(2, migrated.sampleCount);
     TEST_ASSERT_TRUE(migrated.usedEver);
 
-    MeteringSchemeCandidate migratedCandidate{};
-    TEST_ASSERT_TRUE(store.loadCandidate(migratedCandidate));
-    TEST_ASSERT_FALSE(migratedCandidate.ready);
 }
 
 void test_begin_recovers_v1_scheme_migration_from_completed_temp_file() {
@@ -604,6 +616,41 @@ void test_begin_recovers_v1_scheme_migration_from_completed_temp_file() {
     TEST_ASSERT_EQUAL_UINT32(480, migrated.params.stableFlowMlPerMin);
 }
 
+void test_begin_migrates_v3_candidate_file_to_compact_v4_layout() {
+    MemoryFileBackend backend;
+    const MeteringSchemeStoreHeader header = legacyCandidateHeader(7, 8, 1);
+    MeteringSchemeCandidate candidate{};
+    candidate.ready = true;
+    candidate.params = MeteringParameters{41, 520, 224, 5000, 480};
+    MeteringSchemeRecord record{};
+    initializeManualMeteringScheme(record, 7, "v3方案", MeteringParameters{40, 553, 222, 5000, 480}, 1770000000);
+    record.sourceType = MeteringSchemeSource::Manual;
+    record.revision = 3;
+
+    TEST_ASSERT_TRUE(backend.createSized("/schemes.bin",
+                                         sizeof(MeteringSchemeStoreHeader) + sizeof(MeteringSchemeCandidate) +
+                                             sizeof(MeteringSchemeRecord)));
+    TEST_ASSERT_TRUE(backend.writeAt("/schemes.bin", 0, reinterpret_cast<const std::uint8_t*>(&header), sizeof(header)));
+    TEST_ASSERT_TRUE(backend.writeAt("/schemes.bin",
+                                     sizeof(MeteringSchemeStoreHeader),
+                                     reinterpret_cast<const std::uint8_t*>(&candidate),
+                                     sizeof(candidate)));
+    TEST_ASSERT_TRUE(backend.writeAt("/schemes.bin",
+                                     sizeof(MeteringSchemeStoreHeader) + sizeof(MeteringSchemeCandidate),
+                                     reinterpret_cast<const std::uint8_t*>(&record),
+                                     sizeof(record)));
+
+    MeteringSchemeStore store(backend, "/schemes.bin");
+    TEST_ASSERT_TRUE(store.begin());
+    TEST_ASSERT_EQUAL_INT64(static_cast<std::int64_t>(sizeof(MeteringSchemeStoreHeader) + sizeof(MeteringSchemeRecord)),
+                            backend.fileSize("/schemes.bin"));
+    MeteringSchemeRecord active{};
+    TEST_ASSERT_TRUE(store.activeScheme(active));
+    TEST_ASSERT_EQUAL_STRING("v3方案", active.name);
+    TEST_ASSERT_EQUAL_UINT32(553, active.params.startupVolumeMl);
+    TEST_ASSERT_EQUAL_UINT32(7, store.activeSchemeId());
+}
+
 void test_begin_ignores_stale_scheme_migration_temp_when_current_file_is_valid() {
     MemoryFileBackend backend;
     {
@@ -615,22 +662,16 @@ void test_begin_ignores_stale_scheme_migration_temp_when_current_file_is_valid()
     }
 
     const MeteringSchemeStoreHeader header = currentHeader(99, 100, 1);
-    MeteringSchemeCandidate candidate{};
     MeteringSchemeRecord stale{};
     initializeManualMeteringScheme(stale, 99, "陈旧临时方案", MeteringParameters{13, 190, 370}, 1770000000);
     TEST_ASSERT_TRUE(backend.createSized("/schemes.bin.tmp",
-                                         sizeof(MeteringSchemeStoreHeader) + sizeof(MeteringSchemeCandidate) +
-                                             sizeof(MeteringSchemeRecord)));
+                                         sizeof(MeteringSchemeStoreHeader) + sizeof(MeteringSchemeRecord)));
     TEST_ASSERT_TRUE(backend.writeAt("/schemes.bin.tmp",
                                      0,
                                      reinterpret_cast<const std::uint8_t*>(&header),
                                      sizeof(header)));
     TEST_ASSERT_TRUE(backend.writeAt("/schemes.bin.tmp",
                                      sizeof(MeteringSchemeStoreHeader),
-                                     reinterpret_cast<const std::uint8_t*>(&candidate),
-                                     sizeof(candidate)));
-    TEST_ASSERT_TRUE(backend.writeAt("/schemes.bin.tmp",
-                                     sizeof(MeteringSchemeStoreHeader) + sizeof(MeteringSchemeCandidate),
                                      reinterpret_cast<const std::uint8_t*>(&stale),
                                      sizeof(stale)));
 
@@ -698,6 +739,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_migrates_legacy_config_slots_without_candidate);
     RUN_TEST(test_begin_migrates_v1_scheme_file_to_time_estimate_params);
     RUN_TEST(test_begin_recovers_v1_scheme_migration_from_completed_temp_file);
+    RUN_TEST(test_begin_migrates_v3_candidate_file_to_compact_v4_layout);
     RUN_TEST(test_begin_ignores_stale_scheme_migration_temp_when_current_file_is_valid);
     RUN_TEST(test_legacy_migration_avoids_large_metering_scheme_stack_arrays);
     RUN_TEST(test_begin_preserves_corrupt_scheme_file_without_reinitializing);

@@ -79,6 +79,12 @@ bool appendSessionCalibrationSample(const CalibrationStoredTrace& stored,
     return true;
 }
 
+bool calibrationStatusExpiresWhenIdle(CalibrationSessionStatus status) {
+    return status == CalibrationSessionStatus::Preparing ||
+           status == CalibrationSessionStatus::WaitingLocalRun ||
+           status == CalibrationSessionStatus::AwaitingActual;
+}
+
 void fillCandidateFromSegmentedResult(MeteringSchemeCandidate& candidate,
                                       const SegmentedCalibrationResult& result,
                                       const SegmentedCalibrationOptions& options,
@@ -237,6 +243,7 @@ void AppController::onFlowPulse(std::uint32_t nowUs) {
 
 void AppController::tick(const AppTickInput& input) {
     const ButtonEvent event = buttons_.update(input.buttons, input.nowMs);
+    expireIdleCalibrationSession(input.timeSynced ? input.nowSeconds : 0);
     handleButtonEvent(event, input.nowMs, input.nowUs, input.nowSeconds, input.timeSynced, input.bootId);
     if (localMode_ == LocalUiMode::Result && config_.resultDisplaySec > 0 &&
         elapsedAtLeast(input.nowMs, resultDisplayStartMs_, msFromSeconds(config_.resultDisplaySec))) {
@@ -673,6 +680,7 @@ void AppController::handleButtonEvent(ButtonEvent event,
         if (calibrationSession_.status == CalibrationSessionStatus::Preparing &&
             event.type == ButtonEventType::OkShort) {
             calibrationSession_.status = CalibrationSessionStatus::WaitingLocalRun;
+            calibrationSession_.updatedAt = nowSeconds;
             saveCalibrationSession();
             pendingBeep_ = BeepPattern::Click;
             return;
@@ -881,6 +889,7 @@ void AppController::restoreCalibrationSession() {
         calibrationSession_.status = CalibrationSessionStatus::WaitingLocalRun;
         saveCalibrationSession();
     }
+    invalidateAwaitingActualIfRamTraceMissing(0);
     if (calibrationSession_.status == CalibrationSessionStatus::Preparing ||
         calibrationSession_.status == CalibrationSessionStatus::WaitingLocalRun ||
         calibrationSession_.status == CalibrationSessionStatus::AwaitingActual ||
@@ -888,6 +897,44 @@ void AppController::restoreCalibrationSession() {
         calibrationSession_.status == CalibrationSessionStatus::Generated) {
         localMode_ = LocalUiMode::Calibration;
     }
+}
+
+void AppController::expireIdleCalibrationSession(std::uint32_t nowSeconds) {
+    if (nowSeconds == 0 || localMode_ != LocalUiMode::Calibration ||
+        !calibrationStatusExpiresWhenIdle(calibrationSession_.status) ||
+        calibrationSession_.updatedAt == 0 || nowSeconds < calibrationSession_.updatedAt ||
+        nowSeconds - calibrationSession_.updatedAt < kCalibrationIdleTimeoutSec) {
+        return;
+    }
+    calibrationSession_.status = CalibrationSessionStatus::Discarded;
+    calibrationCandidate_ = MeteringSchemeCandidate{};
+    calibrationSession_.updatedAt = nowSeconds;
+    saveCalibrationSession();
+    localMode_ = LocalUiMode::Normal;
+}
+
+bool AppController::invalidateAwaitingActualIfRamTraceMissing(std::uint32_t nowSeconds) {
+    if (calibrationSession_.status != CalibrationSessionStatus::AwaitingActual ||
+        calibrationSession_.attemptCount == 0) {
+        return false;
+    }
+    CalibrationAttempt& attempt = calibrationSession_.attempts[calibrationSession_.attemptCount - 1];
+    if (attempt.status != CalibrationAttemptStatus::PendingActual) {
+        return false;
+    }
+    const WaterPulseTrace* trace = pulseTraces_ ? pulseTraces_->findByRecord(attempt.record) : nullptr;
+    if (trace && trace->sampleCount > 0) {
+        return false;
+    }
+    attempt.status = CalibrationAttemptStatus::Invalid;
+    attempt.invalidReason = CalibrationInvalidReason::MissingActualMl;
+    calibrationSession_.status = calibrationCanStartAttempt(calibrationSession_) ? CalibrationSessionStatus::WaitingLocalRun
+                                                                                : CalibrationSessionStatus::Failed;
+    if (nowSeconds != 0) {
+        calibrationSession_.updatedAt = nowSeconds;
+    }
+    saveCalibrationSession();
+    return true;
 }
 
 bool AppController::saveCalibrationSession() {

@@ -2239,6 +2239,51 @@ void sendCalibrationSamplesPanel(std::uint32_t samplePulseWindowSec) {
     delete[] savedTraces;
 }
 
+void sendLongTermSampleLibraryPanel() {
+    Esp32BaseWeb::sendChunk("<section id='long-term-samples' class='panel'><div class='panel-head'><h3>长期样本库</h3>"
+                            "<span class='status-pill status-muted'>Flash</span></div>");
+    if (!g_context.calibrationLongTermSamples || !g_context.calibrationLongTermSamples->ready()) {
+        Esp32BaseWeb::sendChunk("<p class='hint'>长期样本库不可用；普通校准仍可使用本次会话样本生成并应用方案。</p></section>");
+        return;
+    }
+
+    CalibrationStoredTrace samples[kCalibrationLongTermSampleSlots]{};
+    const std::size_t count = g_context.calibrationLongTermSamples->list(samples, kCalibrationLongTermSampleSlots);
+    char maxBytes[24]{};
+    const std::size_t approximateBytes =
+        kCalibrationLongTermSampleSlots * static_cast<std::size_t>(kPulseTraceMaxRawEdgesPerTrace) *
+        sizeof(WaterPulseTraceSample);
+    formatKb(approximateBytes, maxBytes, sizeof(maxBytes));
+    sendFmt("<p class='hint'>已保存 %u / %u 条 · 单条最多 %lu 点 · 文件约 %s。长期样本只在用户显式保存时写入，不自动覆盖。</p>",
+            static_cast<unsigned>(count),
+            static_cast<unsigned>(kCalibrationLongTermSampleSlots),
+            static_cast<unsigned long>(kPulseTraceMaxRawEdgesPerTrace),
+            maxBytes);
+    if (count == 0) {
+        Esp32BaseWeb::sendChunk("<p class='hint'>还没有长期样本。完成校准会话后，可把优质样本存入这里用于专业生成和复核。</p></section>");
+        return;
+    }
+
+    Esp32BaseWeb::sendChunk("<table><tr><th>时间</th><th>实测容量</th><th>脉冲</th><th>数据点</th><th>状态</th></tr>");
+    for (std::size_t i = 0; i < count; ++i) {
+        char timeText[40]{};
+        char actualText[24]{};
+        formatWaterRecordListTime(samples[i].trace.record, timeText, sizeof(timeText));
+        formatLitersMl(samples[i].actualMl, actualText, sizeof(actualText));
+        const bool usable = samples[i].valid && !samples[i].pendingActual && samples[i].actualMl > 0 &&
+                            !samples[i].trace.truncated && !samples[i].trace.resumedAfterPause &&
+                            samples[i].trace.totalPulses > 0 && samples[i].trace.sampleCount > 0;
+        sendFmt("<tr><td>%s</td><td>%s</td><td>%luP</td><td>%lu</td><td><span class='status-pill %s'>%s</span></td></tr>",
+                timeText,
+                actualText,
+                static_cast<unsigned long>(samples[i].trace.totalPulses),
+                static_cast<unsigned long>(samples[i].trace.sampleCount),
+                usable ? "status-ok" : "status-muted",
+                usable ? "可用于生成" : "不可用于生成");
+    }
+    Esp32BaseWeb::sendChunk("</table></section>");
+}
+
 void sendGeneratedSampleResiduals(const MeteringSchemeCandidate& candidate,
                                   const SegmentedCalibrationOptions& options) {
     if (!ensureSavedPulseTracesReady()) {
@@ -4285,6 +4330,41 @@ void handleCalibrationPage() {
                              (snapshot.calibrationStatus == CalibrationSessionStatus::ReadyToGenerate ||
                               snapshot.calibrationStatus == CalibrationSessionStatus::AwaitingActual);
     const bool canApply = snapshot.calibrationStatus == CalibrationSessionStatus::Generated;
+    const char* stepTitle = "准备校准";
+    const char* stepHint = "准备量杯，到设备旁按 OK 继续。";
+    switch (snapshot.calibrationStatus) {
+        case CalibrationSessionStatus::Idle:
+        case CalibrationSessionStatus::Applied:
+        case CalibrationSessionStatus::Discarded:
+        case CalibrationSessionStatus::Failed:
+            stepTitle = "准备校准";
+            stepHint = "点击进入校准模式后，到设备旁用本地按键完成出水。";
+            break;
+        case CalibrationSessionStatus::Preparing:
+            stepTitle = "准备量杯";
+            stepHint = "确认量杯和水路准备好，到设备旁按 OK。";
+            break;
+        case CalibrationSessionStatus::WaitingLocalRun:
+            stepTitle = "等待本地出水";
+            stepHint = "到设备旁按 OK 开始本次校准出水；网页不会启动出水。";
+            break;
+        case CalibrationSessionStatus::Running:
+            stepTitle = "正在校准出水";
+            stepHint = "如需停止，请在设备旁按 CANCEL。";
+            break;
+        case CalibrationSessionStatus::AwaitingActual:
+            stepTitle = "填写实测容量";
+            stepHint = "按量杯读数填写 ml；保存后才会写入本次样本。";
+            break;
+        case CalibrationSessionStatus::ReadyToGenerate:
+            stepTitle = "可以生成方案";
+            stepHint = "2 条可生成，推荐 3 条；可继续补测或生成本次方案。";
+            break;
+        case CalibrationSessionStatus::Generated:
+            stepTitle = "确认应用";
+            stepHint = "确认后会创建并启用新计量方案，旧方案保留。";
+            break;
+    }
 
     Esp32BaseWeb::sendHeader("校准");
     Esp32BaseWeb::sendChunk("<h2>校准</h2>");
@@ -4293,17 +4373,20 @@ void handleCalibrationPage() {
     sendFmt("<span class='status-pill %s'>%s</span></div>",
             sessionActive ? "status-warn" : "status-muted",
             calibrationSessionStatusText(snapshot.calibrationStatus));
-    Esp32BaseWeb::sendChunk("<p class='muted'>网页可以进入/退出校准模式、填写实测容量、放弃本次和确认应用；出水与停水只允许在设备旁通过本地按键操作。</p>"
+    Esp32BaseWeb::sendChunk("<p class='muted'>网页只负责进入校准、填写容量和确认应用；出水与停水只允许在设备旁通过本地按键操作。30 分钟未操作会自动退出。</p>"
                             "<div class='stat-grid'>");
-    sendFmt("<div><span>已尝试</span><b>%u</b><small>最多 5 次</small></div>",
-            static_cast<unsigned>(snapshot.calibrationAttemptCount));
-    sendFmt("<div><span>有效样本</span><b>%u</b><small>至少 2 条，建议 3 条以上</small></div>",
-            static_cast<unsigned>(snapshot.calibrationValidSampleCount));
+    sendFmt("<div><span>当前步骤</span><b>%s</b><small>%s</small></div>", stepTitle, stepHint);
+    sendFmt("<div><span>本次样本</span><b>%u / %u</b><small>2 条可生成，推荐 3 条</small></div>",
+            static_cast<unsigned>(snapshot.calibrationValidSampleCount),
+            static_cast<unsigned>(kCalibrationMaxValidSamples));
+    sendFmt("<div><span>尝试次数</span><b>%u / %u</b><small>最多 6 次</small></div>",
+            static_cast<unsigned>(snapshot.calibrationAttemptCount),
+            static_cast<unsigned>(kCalibrationMaxAttempts));
     char minText[24]{};
     char maxText[24]{};
     formatLiters(snapshot.calibrationMinActualMl, minText, sizeof(minText));
     formatLiters(snapshot.calibrationMaxActualMl, maxText, sizeof(maxText));
-    sendFmt("<div><span>容量差距建议</span><b>%s - %s</b><small>优先覆盖小/中/大差异，不强制指定容器</small></div>",
+    sendFmt("<div><span>容量范围</span><b>%s - %s</b><small>优先覆盖小/中/大容量</small></div>",
             snapshot.calibrationValidSampleCount > 0 ? minText : "-",
             snapshot.calibrationValidSampleCount > 0 ? maxText : "-");
     Esp32BaseWeb::sendChunk("</div><div class='form-actions'>");
@@ -4399,6 +4482,7 @@ void handleMeteringPage() {
     sendSegmentedMeteringPanel();
     Esp32BaseWeb::sendChunk("</div>");
 
+    sendLongTermSampleLibraryPanel();
     Esp32BaseWeb::sendChunk("<p class='muted'>从样本库生成</p>");
     sendCalibrationGenerationPanel();
     Esp32BaseWeb::sendChunk("<div class='calibration-param-layout'>");

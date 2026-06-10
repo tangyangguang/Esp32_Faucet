@@ -589,6 +589,78 @@ void test_app_controller_starting_calibration_twice_is_rejected() {
                             static_cast<unsigned>(app.snapshot().calibrationStatus));
 }
 
+void test_app_controller_calibration_preparing_times_out_to_discarded() {
+    SystemConfig config = makeDefaultConfig();
+    StatisticsStore statistics;
+    statistics.reset({20260506, 202619, 202605});
+    FilterStore filters(config.filters);
+    MemoryRecordWriter records;
+    MemoryFileBackend backend;
+    CalibrationSessionFileStore sessionStore(backend, "/cal-session.bin");
+    CalibrationSessionTraceStore traceStore(backend, "/cal-traces.bin");
+    CalibrationLongTermSampleStore sampleStore(backend, "/cal-samples.bin");
+    TEST_ASSERT_TRUE(sessionStore.begin());
+    TEST_ASSERT_TRUE(traceStore.begin());
+    TEST_ASSERT_TRUE(sampleStore.begin());
+    AppController app(config, statistics, filters, records, nullptr, nullptr, &sessionStore, &traceStore, &sampleStore);
+    applyTestMeteringScheme(app);
+
+    TEST_ASSERT_TRUE(app.startCalibrationSessionForWeb(1714502400));
+
+    app.tick(input({false, false, false, false}, 1801000, 1801000000UL, 1714504201));
+
+    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(LocalUiMode::Normal),
+                            static_cast<std::uint8_t>(app.snapshot().localMode));
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationSessionStatus::Discarded),
+                            static_cast<unsigned>(app.snapshot().calibrationStatus));
+}
+
+void test_app_controller_reboot_drops_awaiting_actual_when_ram_trace_missing() {
+    SystemConfig config = makeDefaultConfig();
+    StatisticsStore statistics;
+    statistics.reset({20260506, 202619, 202605});
+    FilterStore filters(config.filters);
+    MemoryRecordWriter records;
+    MemoryCalibrationWriter calibrations;
+    WaterPulseTrace traces[1]{};
+    WaterPulseTraceSample samples[4096]{};
+    WaterPulseTraceStore pulseTraces(traces, 1, samples, 4096, 1);
+    MemoryFileBackend backend;
+    CalibrationSessionFileStore sessionStore(backend, "/cal-session.bin");
+    CalibrationSessionTraceStore traceStore(backend, "/cal-traces.bin");
+    CalibrationLongTermSampleStore sampleStore(backend, "/cal-samples.bin");
+    TEST_ASSERT_TRUE(sessionStore.begin());
+    TEST_ASSERT_TRUE(traceStore.begin());
+    TEST_ASSERT_TRUE(sampleStore.begin());
+
+    CalibrationSessionRecord session = makeCalibrationSession(77, 1714502400);
+    session.status = CalibrationSessionStatus::AwaitingActual;
+    session.attemptCount = 1;
+    session.attempts[0].attemptIndex = 0;
+    session.attempts[0].sessionTraceSlot = 0;
+    session.attempts[0].record = calibrationRecord(1714502410, 500, 500);
+    session.attempts[0].targetHintMl = 500;
+    session.attempts[0].status = CalibrationAttemptStatus::PendingActual;
+    TEST_ASSERT_TRUE(sessionStore.save(session));
+
+    AppController rebooted(config,
+                           statistics,
+                           filters,
+                           records,
+                           &pulseTraces,
+                           &calibrations,
+                           &sessionStore,
+                           &traceStore,
+                           &sampleStore);
+
+    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(LocalUiMode::Calibration),
+                            static_cast<std::uint8_t>(rebooted.snapshot().localMode));
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationSessionStatus::WaitingLocalRun),
+                            static_cast<unsigned>(rebooted.snapshot().calibrationStatus));
+    TEST_ASSERT_EQUAL_UINT8(1, rebooted.snapshot().calibrationAttemptCount);
+    TEST_ASSERT_EQUAL_UINT8(0, rebooted.snapshot().calibrationValidSampleCount);
+}
+
 void test_app_controller_local_ok_starts_calibration_run_and_completion_awaits_actual() {
     SystemConfig config = makeDefaultConfig();
     StatisticsStore statistics;
@@ -1362,6 +1434,8 @@ int main(int argc, char** argv) {
     RUN_TEST(test_app_controller_starting_calibration_from_idle_enters_preparing);
     RUN_TEST(test_app_controller_starting_calibration_while_running_is_rejected);
     RUN_TEST(test_app_controller_starting_calibration_twice_is_rejected);
+    RUN_TEST(test_app_controller_calibration_preparing_times_out_to_discarded);
+    RUN_TEST(test_app_controller_reboot_drops_awaiting_actual_when_ram_trace_missing);
     RUN_TEST(test_app_controller_local_ok_starts_calibration_run_and_completion_awaits_actual);
     RUN_TEST(test_app_controller_generates_calibration_session_candidate);
     RUN_TEST(test_app_controller_applies_generated_session_scheme_and_keeps_old_scheme);

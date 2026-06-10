@@ -462,6 +462,8 @@ void test_web_page_source_contains_expected_ui_improvements() {
     std::memcpy(meteringPageSource, meteringHandler, meteringPageLen);
     TEST_ASSERT_NOT_NULL(std::strstr(meteringPageSource, "records-diagnostic-strip"));
     TEST_ASSERT_NOT_NULL(std::strstr(meteringPageSource, "sendSegmentedMeteringPanel"));
+    TEST_ASSERT_NOT_NULL(std::strstr(meteringPageSource, "sendLongTermSampleLibraryPanel"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "长期样本库"));
     TEST_ASSERT_NULL(std::strstr(meteringPageSource, "sendPulseTraceCachePanel"));
     TEST_ASSERT_NULL(std::strstr(calibrationHandler, "<a class='btn-link' href='/faucet/records'>历史记录</a>"));
     const char* registerHandler = std::strstr(buffer, "bool registerFaucetWeb() {");
@@ -601,6 +603,11 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NULL(std::strstr(buffer, "确认/校准"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "校准容量"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "校准会话"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "当前步骤"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "本次样本"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "推荐 3 条"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "最多 6 次"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "最多 5 次"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "const bool canStartSession = calibrationSessionInactive(snapshot.calibrationStatus);"));
     TEST_ASSERT_NULL(std::strstr(buffer, "title='校准存储未就绪'"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "计量方案"));

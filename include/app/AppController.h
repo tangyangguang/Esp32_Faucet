@@ -160,6 +160,8 @@ private:
                                                               bool allowLocalCalibration,
                                                               std::uint32_t calibratedAt);
     void restoreCalibrationSession();
+    void expireIdleCalibrationSession(std::uint32_t nowSeconds);
+    bool invalidateAwaitingActualIfRamTraceMissing(std::uint32_t nowSeconds);
     bool saveCalibrationSession();
     bool beginCalibrationLocalRun(std::uint32_t nowMs,
                                   std::uint32_t nowUs,

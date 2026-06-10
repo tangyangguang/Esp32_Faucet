@@ -534,16 +534,8 @@ void initializeApplication() {
     const bool calibrationSessionReady = canInitializeFixedCalibrationFile(
                                              kCalibrationSessionPath, 120UL * 1024UL, "calibration session") &&
                                          g_calibrationSession.begin();
-    const bool calibrationSessionTracesReady = canInitializeFixedCalibrationFile(
-                                                   kCalibrationSessionTracePath,
-                                                   120UL * 1024UL,
-                                                   "calibration session traces") &&
-                                               g_calibrationSessionTraces.begin();
-    const bool calibrationLongTermSamplesReady = canInitializeFixedCalibrationFile(
-                                                     kCalibrationLongTermSamplesPath,
-                                                     200UL * 1024UL,
-                                                     "calibration long-term samples") &&
-                                                 g_calibrationLongTermSamples.begin();
+    const bool calibrationSessionTracesReady = g_calibrationSessionTraces.begin();
+    const bool calibrationLongTermSamplesReady = g_calibrationLongTermSamples.begin();
     if (!calibrationSessionReady || !calibrationSessionTracesReady) {
         ESP32BASE_LOG_W("app", "guided calibration session storage unavailable");
     }

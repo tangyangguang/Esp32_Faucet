@@ -1,6 +1,7 @@
 #include <unity.h>
 
 #include "app/AppConfig.h"
+#include "app/CalibrationSampleStore.h"
 
 #include <cmath>
 #include <cstdio>
@@ -253,6 +254,30 @@ void test_recent_pulse_trace_count_is_not_editable_in_app_config_page() {
     TEST_ASSERT_NULL(std::strstr(buffer, "kKeyRecentPulseTraceCount"));
 }
 
+void test_calibration_sample_stores_are_small_and_lazy_initialized() {
+    TEST_ASSERT_EQUAL_size_t(3, kCalibrationSessionTraceSlots);
+    TEST_ASSERT_EQUAL_size_t(5, kCalibrationLongTermSampleSlots);
+
+    FILE* file = std::fopen("src/main.cpp", "rb");
+    TEST_ASSERT_NOT_NULL(file);
+    char buffer[96000]{};
+    const std::size_t len = std::fread(buffer, 1, sizeof(buffer) - 1, file);
+    std::fclose(file);
+    TEST_ASSERT_GREATER_THAN_size_t(0, len);
+
+    const char* init = std::strstr(buffer, "void initializeApplication()");
+    TEST_ASSERT_NOT_NULL(init);
+    const char* end = std::strstr(init, "logStartupPhase(\"record_store_ready\")");
+    TEST_ASSERT_NOT_NULL(end);
+
+    const char* sessionTracePath = std::strstr(init, "kCalibrationSessionTracePath");
+    const char* longTermPath = std::strstr(init, "kCalibrationLongTermSamplesPath");
+    TEST_ASSERT_TRUE(sessionTracePath == nullptr || sessionTracePath > end);
+    TEST_ASSERT_TRUE(longTermPath == nullptr || longTermPath > end);
+    TEST_ASSERT_NOT_NULL(std::strstr(init, "g_calibrationSessionTraces.begin()"));
+    TEST_ASSERT_NOT_NULL(std::strstr(init, "g_calibrationLongTermSamples.begin()"));
+}
+
 int main(int argc, char** argv) {
     (void)argc;
     (void)argv;
@@ -265,5 +290,6 @@ int main(int argc, char** argv) {
     RUN_TEST(test_sanitize_config_clamps_preset_values_by_type);
     RUN_TEST(test_record_page_size_and_filter_life_helpers);
     RUN_TEST(test_recent_pulse_trace_count_is_not_editable_in_app_config_page);
+    RUN_TEST(test_calibration_sample_stores_are_small_and_lazy_initialized);
     return UNITY_END();
 }

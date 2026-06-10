@@ -17,7 +17,7 @@
 - Modify: `src/app/MeteringScheme.cpp`
 - Test: `test/native/test_metering_scheme/test_metering_scheme.cpp`
 
-- [ ] **Step 1: Write failing tests for the lightweight model**
+- [x] **Step 1: Write failing tests for the lightweight model**
 
 Update `test/native/test_metering_scheme/test_metering_scheme.cpp` so generated schemes assert only minimal metadata:
 
@@ -35,7 +35,7 @@ TEST_ASSERT_FALSE(saved->usedEver);
 
 Remove assertions for `meterLabel`, `installationLabel`, `conditionLabel`, `userNote`, `sampleTraceIds`, startup duration aggregate fields, `creationSummary`, `lastModifiedSummary`, `useCount`, `lastUsedAt`, and `usageStatsDirty`.
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run:
 
@@ -45,7 +45,7 @@ pio test -e native -f test_metering_scheme
 
 Expected: compile fails because `MeteringSchemeState`, `recordUsed`, and `maxErrorTenthPercent` are not implemented yet, or assertions fail while old fields still exist.
 
-- [ ] **Step 3: Implement minimal model changes**
+- [x] **Step 3: Implement minimal model changes**
 
 In `include/app/MeteringScheme.h`:
 
@@ -96,7 +96,7 @@ struct MeteringSchemeCandidate {
 
 In `src/app/MeteringScheme.cpp`, replace `valid` checks with `recordUsed`, `enabled` checks with `state == MeteringSchemeState::Available`, and copy only the candidate minimal summary into generated schemes.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run:
 
@@ -106,7 +106,7 @@ pio test -e native -f test_metering_scheme
 
 Expected: `test_metering_scheme` passes.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add include/app/MeteringScheme.h src/app/MeteringScheme.cpp test/native/test_metering_scheme/test_metering_scheme.cpp
@@ -120,7 +120,7 @@ git commit -m "refactor: shrink metering scheme model"
 - Modify: `src/app/MeteringSchemeStore.cpp`
 - Test: `test/native/test_metering_scheme_store/test_metering_scheme_store.cpp`
 
-- [ ] **Step 1: Write failing store tests**
+- [x] **Step 1: Write failing store tests**
 
 Update store tests to assert:
 
@@ -137,7 +137,7 @@ TEST_ASSERT_TRUE(scheme.usedEver);
 
 Remove tests that require persisted candidate round-trip, `incrementUsageAfterRecordWrite`, `markUsageStatsDirty`, `useCount`, `lastUsedAt`, `usageStatsDirty`, creation summaries, and migrated candidate persistence.
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run:
 
@@ -147,7 +147,7 @@ pio test -e native -f test_metering_scheme_store
 
 Expected: compile fails because store API still persists candidates and uses old usage methods.
 
-- [ ] **Step 3: Implement store changes**
+- [x] **Step 3: Implement store changes**
 
 Change `MeteringSchemeStoreHeader` to remove `candidateSize`, set store version to the next version, and compute layout as:
 
@@ -174,7 +174,7 @@ Migration rules:
 - Legacy generated candidate is ignored.
 - Long summaries, labels, trace ID arrays, startup aggregate stats, last activation, last used, and dirty flags are discarded.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run:
 
@@ -184,7 +184,7 @@ pio test -e native -f test_metering_scheme_store
 
 Expected: `test_metering_scheme_store` passes.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add include/app/MeteringSchemeStore.h src/app/MeteringSchemeStore.cpp test/native/test_metering_scheme_store/test_metering_scheme_store.cpp
@@ -201,7 +201,7 @@ git commit -m "refactor: store lightweight metering schemes"
 - Test: `test/native/test_calibration_sample_store/test_calibration_sample_store.cpp`
 - Test: `test/native/test_app_controller/test_app_controller.cpp`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 Update sample store tests:
 
@@ -225,7 +225,7 @@ TEST_ASSERT_TRUE(stored.valid);
 TEST_ASSERT_FALSE(stored.pendingActual);
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run:
 
@@ -235,7 +235,7 @@ pio test -e native -f test_calibration_sample_store -f test_app_controller
 
 Expected: tests fail because session capacity is 5, long-term capacity is 10, stores create files at `begin()`, and pending traces are written before actual volume is submitted.
 
-- [ ] **Step 3: Implement sample store and controller changes**
+- [x] **Step 3: Implement sample store and controller changes**
 
 Set:
 
@@ -252,7 +252,7 @@ Replace pending trace flow in `AppController`:
 - `submitCalibrationActualForWeb()` finds the RAM trace by record, validates it, writes the full trace directly to the session sample slot as valid, and updates session state.
 - `skipCalibrationAttemptForWeb()` and invalid attempts do not write full trace data.
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run:
 
@@ -262,7 +262,7 @@ pio test -e native -f test_calibration_sample_store -f test_app_controller
 
 Expected: both test suites pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add include/app/CalibrationSampleStore.h src/app/CalibrationSampleStore.cpp include/app/CalibrationSession.h src/app/AppController.cpp test/native/test_calibration_sample_store/test_calibration_sample_store.cpp test/native/test_app_controller/test_app_controller.cpp
@@ -276,7 +276,7 @@ git commit -m "refactor: write calibration traces only after actual volume"
 - Modify: `include/app/AppController.h`
 - Test: `test/native/test_app_controller/test_app_controller.cpp`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 Update tests so `generateCalibrationForWeb()` stores a transient candidate in controller/session state, not in `MeteringSchemeStore`, and `confirmCalibrationForWeb()` passes that candidate directly to `saveCandidateAsNew`.
 
@@ -289,7 +289,7 @@ TEST_ASSERT_EQUAL_UINT32(0, scheme.updatedAt - scheme.createdAt);
 
 and verify the second successful outflow does not rewrite the scheme record.
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run:
 
@@ -299,7 +299,7 @@ pio test -e native -f test_app_controller
 
 Expected: fails because current controller persists candidate through `MeteringSchemeStore` and increments usage every successful record.
 
-- [ ] **Step 3: Implement controller changes**
+- [x] **Step 3: Implement controller changes**
 
 Add a controller member:
 
@@ -331,7 +331,7 @@ if (!activeMeteringScheme_.usedEver && meteringSchemes_) {
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run:
 
@@ -341,7 +341,7 @@ pio test -e native -f test_app_controller
 
 Expected: `test_app_controller` passes.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add include/app/AppController.h src/app/AppController.cpp test/native/test_app_controller/test_app_controller.cpp
@@ -357,7 +357,7 @@ git commit -m "refactor: keep generated calibration candidate transient"
 - Test: `test/native/test_faucet_web_json/test_faucet_web_json.cpp`
 - Test: `test/native/test_faucet_web_routes/test_faucet_web_routes.cpp`
 
-- [ ] **Step 1: Write failing web tests**
+- [x] **Step 1: Write failing web tests**
 
 Update tests to assert:
 
@@ -372,7 +372,7 @@ TEST_ASSERT_NOT_NULL(std::strstr(buffer, "使用状态"));
 
 Update generation route tests so long-term sample generation renders from transient diagnostics, and saving generated scheme passes a posted/generated candidate or regenerates from current samples instead of loading a stored candidate.
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run:
 
@@ -382,7 +382,7 @@ pio test -e native -f test_faucet_web_json -f test_faucet_web_routes
 
 Expected: fails because Web still emits heavy fields and uses stored candidates.
 
-- [ ] **Step 3: Implement web changes**
+- [x] **Step 3: Implement web changes**
 
 Remove scheme detail fields for trace IDs, startup aggregate stats, summaries, exact usage counts, last activation, and last used. Render:
 
@@ -400,7 +400,7 @@ For `/faucet/metering` generation:
 - `save_generated_scheme` regenerates from current long-term samples and calls `saveCandidateAsNew(candidate, name, now, newId)`.
 - `discard_generated_scheme` only redirects; it does not write Flash.
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run:
 
@@ -410,7 +410,7 @@ pio test -e native -f test_faucet_web_json -f test_faucet_web_routes
 
 Expected: both web test suites pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/web/FaucetWebJson.cpp src/web/FaucetWeb.cpp src/web/FaucetWebRoutes.cpp test/native/test_faucet_web_json/test_faucet_web_json.cpp test/native/test_faucet_web_routes/test_faucet_web_routes.cpp
@@ -423,7 +423,7 @@ git commit -m "refactor: simplify metering scheme web surface"
 - Modify: `src/main.cpp`
 - Test: `test/native/test_app_config/test_app_config.cpp`
 
-- [ ] **Step 1: Write failing static/config test**
+- [x] **Step 1: Write failing static/config test**
 
 Add assertions that session and long-term sample capacities are 3 and 5:
 
@@ -434,7 +434,7 @@ TEST_ASSERT_EQUAL_size_t(5, kCalibrationLongTermSampleSlots);
 
 Add a source scan assertion if the existing test pattern supports it, checking `src/main.cpp` no longer calls `canInitializeFixedCalibrationFile()` for `kCalibrationSessionTracePath` or `kCalibrationLongTermSamplesPath`.
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run:
 
@@ -444,7 +444,7 @@ pio test -e native -f test_app_config
 
 Expected: fails while constants or source scan still reflect old boot preallocation.
 
-- [ ] **Step 3: Implement boot init changes**
+- [x] **Step 3: Implement boot init changes**
 
 In `initializeApplication()`:
 
@@ -453,7 +453,7 @@ In `initializeApplication()`:
 - Remove `canInitializeFixedCalibrationFile(..., kCalibrationLongTermSamplesPath, ...)`.
 - Call `g_calibrationSessionTraces.begin()` and `g_calibrationLongTermSamples.begin()` directly; missing files should now be ready and created lazily on first write.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run:
 
@@ -463,7 +463,7 @@ pio test -e native -f test_app_config
 
 Expected: `test_app_config` passes.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/main.cpp test/native/test_app_config/test_app_config.cpp
@@ -475,7 +475,7 @@ git commit -m "refactor: lazily create calibration sample stores"
 **Files:**
 - No code changes expected.
 
-- [ ] **Step 1: Run focused native suite**
+- [x] **Step 1: Run focused native suite**
 
 Run:
 
@@ -485,7 +485,7 @@ pio test -e native -f test_metering_scheme -f test_metering_scheme_store -f test
 
 Expected: all focused tests pass.
 
-- [ ] **Step 2: Run full native suite**
+- [x] **Step 2: Run full native suite**
 
 Run:
 
@@ -495,7 +495,7 @@ pio test -e native
 
 Expected: all native tests pass.
 
-- [ ] **Step 3: Run ESP32 build**
+- [x] **Step 3: Run ESP32 build**
 
 Run:
 
@@ -505,7 +505,7 @@ pio run -e esp32dev
 
 Expected: firmware builds successfully.
 
-- [ ] **Step 4: Commit any verification-only doc updates if needed**
+- [x] **Step 4: Commit any verification-only doc updates if needed**
 
 If implementation notes or docs need minor alignment, commit them separately:
 

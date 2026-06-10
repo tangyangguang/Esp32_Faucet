@@ -376,7 +376,7 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "已保存明细"));
     TEST_ASSERT_NULL(std::strstr(buffer, "控制P/L"));
     TEST_ASSERT_NULL(std::strstr(buffer, "当前方案ID"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "当前方案</span>"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "当前启用方案</span>"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "ID <b>#%lu</b>"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "sendMeteringSnapshotLabel"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "稳态P/L"));
@@ -384,7 +384,12 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "启动水量"));
     TEST_ASSERT_NULL(std::strstr(buffer, "启动等效"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "可生成样本"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, ".diagnostic-metric strong{display:block;color:var(--text);font-size:14px;line-height:1.2;font-weight:650;font-variant-numeric:tabular-nums;white-space:nowrap;overflow-wrap:normal}"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "calibration-session-layout"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "calibration-kpi-grid"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "calibration-kpi-main"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "metering-active-summary"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "metering-active-grid"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, ".diagnostic-metric strong{display:block;color:var(--text);font-size:14px;line-height:1.25;font-weight:650;font-variant-numeric:tabular-nums;white-space:normal;overflow-wrap:anywhere}"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "长期样本 <b>%u条</b>"));
     TEST_ASSERT_NULL(std::strstr(buffer, "已保存明细 <b>%u条</b>"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "已测容量 <b>%u条</b>"));
@@ -404,7 +409,7 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NULL(std::strstr(meteringStatusPanel, "可生成"));
     TEST_ASSERT_NULL(std::strstr(meteringStatusPanel, "loadCandidate"));
     TEST_ASSERT_NOT_NULL(std::strstr(meteringStatusPanel, "当前启用"));
-    TEST_ASSERT_NOT_NULL(std::strstr(meteringStatusPanel, "使用状态 <b>%s</b>"));
+    TEST_ASSERT_NOT_NULL(std::strstr(meteringStatusPanel, "<div><span>使用状态</span><strong>%s</strong><small>ID <b>#%lu</b> · 修订 <b>rev %lu</b></small></div>"));
     TEST_ASSERT_NULL(std::strstr(buffer, "最近校准"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "最近明细"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "RAM 数据点"));

@@ -615,6 +615,78 @@ void test_app_controller_calibration_preparing_times_out_to_discarded() {
                             static_cast<unsigned>(app.snapshot().calibrationStatus));
 }
 
+void test_app_controller_calibration_ready_and_generated_time_out_from_last_action() {
+    SystemConfig config = makeDefaultConfig();
+    StatisticsStore statistics;
+    statistics.reset({20260506, 202619, 202605});
+    FilterStore filters(config.filters);
+    MemoryRecordWriter records;
+    MemorySnapshotWriter snapshots;
+    MemoryCalibrationWriter calibrations;
+    MemoryFileBackend backend;
+    MeteringSchemeStore schemes(backend, "/schemes.bin");
+    MeteringSchemeRecord active{};
+    TEST_ASSERT_TRUE(prepareMeteringScheme(schemes, 225, active));
+    CalibrationSessionFileStore sessionStore(backend, "/cal-session.bin");
+    CalibrationSessionTraceStore traceStore(backend, "/cal-traces.bin");
+    CalibrationLongTermSampleStore sampleStore(backend, "/cal-samples.bin");
+    TEST_ASSERT_TRUE(sessionStore.begin());
+    TEST_ASSERT_TRUE(traceStore.begin());
+    TEST_ASSERT_TRUE(sampleStore.begin());
+
+    CalibrationSessionRecord session = makeCalibrationSession(79, 1714502400);
+    saveCalibrationSessionSample(traceStore, session, 0, 1714502401, 1500, 40, 210, 6);
+    saveCalibrationSessionSample(traceStore, session, 1, 1714502410, 7500, 40, 1540, 11);
+    session.status = CalibrationSessionStatus::ReadyToGenerate;
+    session.validSampleCount = countValidCalibrationSamples(session);
+    session.updatedAt = 1714502500;
+    TEST_ASSERT_TRUE(sessionStore.save(session));
+
+    AppController app(config,
+                      active,
+                      statistics,
+                      filters,
+                      records,
+                      snapshots,
+                      schemes,
+                      nullptr,
+                      &calibrations,
+                      &sessionStore,
+                      &traceStore,
+                      &sampleStore);
+    TEST_ASSERT_EQUAL_UINT32(1714502500 + kCalibrationIdleTimeoutSec,
+                             app.snapshot().calibrationIdleExpiresAt);
+
+    app.tick(input({false, false, false, false}, 1000, 1000000UL, 1714502500 + kCalibrationIdleTimeoutSec - 1));
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationSessionStatus::ReadyToGenerate),
+                            static_cast<unsigned>(app.snapshot().calibrationStatus));
+    app.tick(input({false, false, false, false}, 2000, 2000000UL, 1714502500 + kCalibrationIdleTimeoutSec));
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationSessionStatus::Discarded),
+                            static_cast<unsigned>(app.snapshot().calibrationStatus));
+
+    session.status = CalibrationSessionStatus::ReadyToGenerate;
+    session.updatedAt = 1714505000;
+    TEST_ASSERT_TRUE(sessionStore.save(session));
+    AppController generated(config,
+                            active,
+                            statistics,
+                            filters,
+                            records,
+                            snapshots,
+                            schemes,
+                            nullptr,
+                            &calibrations,
+                            &sessionStore,
+                            &traceStore,
+                            &sampleStore);
+    TEST_ASSERT_TRUE(generated.generateCalibrationForWeb(1714505100));
+    TEST_ASSERT_EQUAL_UINT32(1714505100 + kCalibrationIdleTimeoutSec,
+                             generated.snapshot().calibrationIdleExpiresAt);
+    generated.tick(input({false, false, false, false}, 3000, 3000000UL, 1714505100 + kCalibrationIdleTimeoutSec));
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationSessionStatus::Discarded),
+                            static_cast<unsigned>(generated.snapshot().calibrationStatus));
+}
+
 void test_app_controller_reboot_drops_awaiting_actual_when_ram_trace_missing() {
     SystemConfig config = makeDefaultConfig();
     StatisticsStore statistics;
@@ -1449,6 +1521,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_app_controller_starting_calibration_while_running_is_rejected);
     RUN_TEST(test_app_controller_starting_calibration_twice_is_rejected);
     RUN_TEST(test_app_controller_calibration_preparing_times_out_to_discarded);
+    RUN_TEST(test_app_controller_calibration_ready_and_generated_time_out_from_last_action);
     RUN_TEST(test_app_controller_reboot_drops_awaiting_actual_when_ram_trace_missing);
     RUN_TEST(test_app_controller_local_ok_starts_calibration_run_and_completion_awaits_actual);
     RUN_TEST(test_app_controller_generates_calibration_session_candidate);

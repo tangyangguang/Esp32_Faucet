@@ -52,6 +52,7 @@ struct AppSnapshot {
     std::uint32_t calibrationStepMl = 100;
     bool calibrationReady = false;
     CalibrationSessionStatus calibrationStatus = CalibrationSessionStatus::Idle;
+    std::uint32_t calibrationIdleExpiresAt = 0;
     std::uint8_t calibrationAttemptCount = 0;
     std::uint8_t calibrationValidSampleCount = 0;
     std::uint32_t calibrationMinActualMl = 0;

@@ -82,7 +82,9 @@ bool appendSessionCalibrationSample(const CalibrationStoredTrace& stored,
 bool calibrationStatusExpiresWhenIdle(CalibrationSessionStatus status) {
     return status == CalibrationSessionStatus::Preparing ||
            status == CalibrationSessionStatus::WaitingLocalRun ||
-           status == CalibrationSessionStatus::AwaitingActual;
+           status == CalibrationSessionStatus::AwaitingActual ||
+           status == CalibrationSessionStatus::ReadyToGenerate ||
+           status == CalibrationSessionStatus::Generated;
 }
 
 void fillCandidateFromSegmentedResult(MeteringSchemeCandidate& candidate,
@@ -308,6 +310,10 @@ AppSnapshot AppController::snapshot() const {
     snapshot.timeAdjustmentStepSec = timeAdjustmentStepSec_;
     snapshot.calibrationReady = lastResultRecordValid_;
     snapshot.calibrationStatus = calibrationSession_.status;
+    snapshot.calibrationIdleExpiresAt =
+        calibrationStatusExpiresWhenIdle(calibrationSession_.status) && calibrationSession_.updatedAt > 0
+            ? calibrationSession_.updatedAt + kCalibrationIdleTimeoutSec
+            : 0;
     snapshot.calibrationAttemptCount = calibrationSession_.attemptCount;
     snapshot.calibrationValidSampleCount = calibrationSession_.validSampleCount;
     snapshot.calibrationCanQuickGenerate = calibrationCanQuickGenerate(calibrationSession_);

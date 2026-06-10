@@ -13,6 +13,12 @@ using namespace faucet;
 namespace {
 
 constexpr std::uint32_t kTestMeteringSchemeStoreMagic = 0x314D5346UL;
+constexpr std::size_t kLegacyMeteringSchemeMeterLabelLength = 32;
+constexpr std::size_t kLegacyMeteringSchemeInstallationLabelLength = 32;
+constexpr std::size_t kLegacyMeteringSchemeConditionLabelLength = 48;
+constexpr std::size_t kLegacyMeteringSchemeUserNoteLength = 128;
+constexpr std::size_t kLegacyMeteringSchemeSummaryLength = 192;
+constexpr std::size_t kLegacyMeteringSchemeTraceIdCapacity = 12;
 
 struct LegacyMeteringParametersV1 {
     std::uint32_t startupPulseCount;
@@ -25,10 +31,10 @@ struct LegacyMeteringSchemeRecordV1 {
     bool valid = false;
     bool enabled = false;
     char name[kMeteringSchemeNameLength]{};
-    char meterLabel[kMeteringSchemeMeterLabelLength]{};
-    char installationLabel[kMeteringSchemeInstallationLabelLength]{};
-    char conditionLabel[kMeteringSchemeConditionLabelLength]{};
-    char userNote[kMeteringSchemeUserNoteLength]{};
+    char meterLabel[kLegacyMeteringSchemeMeterLabelLength]{};
+    char installationLabel[kLegacyMeteringSchemeInstallationLabelLength]{};
+    char conditionLabel[kLegacyMeteringSchemeConditionLabelLength]{};
+    char userNote[kLegacyMeteringSchemeUserNoteLength]{};
     LegacyMeteringParametersV1 params{};
     MeteringSchemeSource sourceType = MeteringSchemeSource::Default;
     std::uint32_t revision = 0;
@@ -39,7 +45,7 @@ struct LegacyMeteringSchemeRecordV1 {
     std::uint32_t lastUsedAt = 0;
     bool usageStatsDirty = false;
     std::uint16_t sampleCount = 0;
-    std::uint32_t sampleTraceIds[kMeteringSchemeTraceIdCapacity]{};
+    std::uint32_t sampleTraceIds[kLegacyMeteringSchemeTraceIdCapacity]{};
     std::uint32_t minActualMl = 0;
     std::uint32_t maxActualMl = 0;
     std::uint32_t maxErrorMl = 0;
@@ -48,8 +54,8 @@ struct LegacyMeteringSchemeRecordV1 {
     std::uint32_t startupDurationMaxSec = 0;
     std::uint32_t startupDurationMedianSec = 0;
     std::uint32_t startupDurationAvgSec = 0;
-    char creationSummary[kMeteringSchemeSummaryLength]{};
-    char lastModifiedSummary[kMeteringSchemeSummaryLength]{};
+    char creationSummary[kLegacyMeteringSchemeSummaryLength]{};
+    char lastModifiedSummary[kLegacyMeteringSchemeSummaryLength]{};
 };
 
 struct LegacyMeteringSchemeCandidateV1 {
@@ -57,7 +63,7 @@ struct LegacyMeteringSchemeCandidateV1 {
     LegacyMeteringParametersV1 params{};
     std::uint32_t generatedAt = 0;
     std::uint16_t sampleCount = 0;
-    std::uint32_t sampleTraceIds[kMeteringSchemeTraceIdCapacity]{};
+    std::uint32_t sampleTraceIds[kLegacyMeteringSchemeTraceIdCapacity]{};
     std::uint32_t minActualMl = 0;
     std::uint32_t maxActualMl = 0;
     std::uint32_t maxErrorMl = 0;
@@ -66,7 +72,7 @@ struct LegacyMeteringSchemeCandidateV1 {
     std::uint32_t startupDurationMaxSec = 0;
     std::uint32_t startupDurationMedianSec = 0;
     std::uint32_t startupDurationAvgSec = 0;
-    char creationSummary[kMeteringSchemeSummaryLength]{};
+    char creationSummary[kLegacyMeteringSchemeSummaryLength]{};
 };
 
 std::uint32_t testHeaderChecksum(MeteringSchemeStoreHeader header) {
@@ -273,22 +279,14 @@ private:
 MeteringSchemeCandidate candidate() {
     MeteringSchemeCandidate out{};
     out.ready = true;
-    out.generatedKind = MeteringSchemeGeneratedKind::CalibrationSession;
+    out.sourceType = MeteringSchemeSource::CalibrationSession;
     out.params = MeteringParameters{40, 553, 222};
     out.generatedAt = 1770000000;
     out.sampleCount = 3;
-    out.sampleTraceIds[0] = 101;
-    out.sampleTraceIds[1] = 102;
-    out.sampleTraceIds[2] = 103;
     out.minActualMl = 1500;
     out.maxActualMl = 7500;
     out.maxErrorMl = 28;
-    out.maxErrorPercent = 1.8f;
-    out.startupDurationMinSec = 4;
-    out.startupDurationMaxSec = 6;
-    out.startupDurationMedianSec = 5;
-    out.startupDurationAvgSec = 5;
-    std::strncpy(out.creationSummary, "样本数量 3，最大误差 28ml", sizeof(out.creationSummary) - 1);
+    out.maxErrorTenthPercent = 18;
     return out;
 }
 
@@ -306,15 +304,14 @@ void test_begin_initializes_default_scheme_file() {
     MeteringSchemeRecord active{};
     TEST_ASSERT_TRUE(store.activeScheme(active));
     TEST_ASSERT_EQUAL_STRING("YF-S201 默认计量方案", active.name);
-    TEST_ASSERT_EQUAL_STRING("YF-S201", active.meterLabel);
-    TEST_ASSERT_TRUE(active.enabled);
+    TEST_ASSERT_TRUE(active.recordUsed);
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(MeteringSchemeState::Available),
+                            static_cast<unsigned>(active.state));
     TEST_ASSERT_EQUAL_UINT32(8, active.params.startupPulseCount);
     TEST_ASSERT_EQUAL_UINT32(36, active.params.startupVolumeMl);
     TEST_ASSERT_EQUAL_UINT32(225, active.params.stablePulsePerLiter);
     TEST_ASSERT_EQUAL_UINT32(5000, active.params.startupDurationMs);
     TEST_ASSERT_EQUAL_UINT32(480, active.params.stableFlowMlPerMin);
-    TEST_ASSERT_NOT_NULL(std::strstr(active.creationSummary, "YF-S201"));
-    TEST_ASSERT_NOT_NULL(std::strstr(active.creationSummary, "启动约 5 秒"));
 }
 
 void test_begin_upgrades_single_legacy_default_scheme_to_yfs201_builtin_default() {
@@ -326,8 +323,6 @@ void test_begin_upgrades_single_legacy_default_scheme_to_yfs201_builtin_default(
         MeteringSchemeRecord legacy{};
         TEST_ASSERT_TRUE(store.activeScheme(legacy));
         std::strncpy(legacy.name, "默认计量方案", sizeof(legacy.name) - 1);
-        legacy.meterLabel[0] = '\0';
-        legacy.conditionLabel[0] = '\0';
         legacy.params = MeteringParameters{0, 0, 450};
         TEST_ASSERT_TRUE(store.updateScheme(legacy, 1770000000));
     }
@@ -340,7 +335,6 @@ void test_begin_upgrades_single_legacy_default_scheme_to_yfs201_builtin_default(
     TEST_ASSERT_EQUAL_UINT32(1, loaded.activeSchemeId());
     TEST_ASSERT_EQUAL_UINT32(1, active.id);
     TEST_ASSERT_EQUAL_STRING("YF-S201 默认计量方案", active.name);
-    TEST_ASSERT_EQUAL_STRING("YF-S201", active.meterLabel);
     TEST_ASSERT_EQUAL_UINT32(8, active.params.startupPulseCount);
     TEST_ASSERT_EQUAL_UINT32(36, active.params.startupVolumeMl);
     TEST_ASSERT_EQUAL_UINT32(225, active.params.stablePulsePerLiter);
@@ -348,18 +342,18 @@ void test_begin_upgrades_single_legacy_default_scheme_to_yfs201_builtin_default(
     TEST_ASSERT_EQUAL_UINT32(480, active.params.stableFlowMlPerMin);
     TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(MeteringSchemeSource::Default),
                             static_cast<unsigned>(active.sourceType));
-    TEST_ASSERT_TRUE(active.enabled);
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(MeteringSchemeState::Available),
+                            static_cast<unsigned>(active.state));
 }
 
-void test_save_candidate_reloads_after_restart() {
+void test_save_candidate_as_new_reloads_after_restart() {
     MemoryFileBackend backend;
     {
         MeteringSchemeStore store(backend, "/schemes.bin");
         TEST_ASSERT_TRUE(store.begin());
         MeteringSchemeCandidate generated = candidate();
-        TEST_ASSERT_TRUE(store.saveCandidate(generated));
         std::uint32_t newId = 0;
-        TEST_ASSERT_TRUE(store.saveCandidateAsNew("低压实验", 1770000100, newId));
+        TEST_ASSERT_TRUE(store.saveCandidateAsNew(generated, "低压实验", 1770000100, newId));
         TEST_ASSERT_EQUAL_UINT32(2, newId);
     }
 
@@ -371,33 +365,15 @@ void test_save_candidate_reloads_after_restart() {
     TEST_ASSERT_EQUAL_UINT32(2, list[1].id);
     TEST_ASSERT_EQUAL_STRING("低压实验", list[1].name);
     TEST_ASSERT_EQUAL_UINT32(553, list[1].params.startupVolumeMl);
-    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(MeteringSchemeSource::Generated),
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(MeteringSchemeSource::CalibrationSession),
                             static_cast<unsigned>(list[1].sourceType));
-    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(MeteringSchemeGeneratedKind::CalibrationSession),
-                            static_cast<unsigned>(list[1].generatedKind));
     TEST_ASSERT_EQUAL_UINT32(5000, list[1].params.startupDurationMs);
     TEST_ASSERT_EQUAL_UINT32(480, list[1].params.stableFlowMlPerMin);
-    TEST_ASSERT_EQUAL_UINT32(5, list[1].startupDurationAvgSec);
-}
-
-void test_candidate_generated_kind_round_trips_without_saving_scheme() {
-    MemoryFileBackend backend;
-    MeteringSchemeStore store(backend, "/schemes.bin");
-    TEST_ASSERT_TRUE(store.begin());
-    MeteringSchemeCandidate generated = candidate();
-    generated.generatedKind = MeteringSchemeGeneratedKind::LongTermSampleLibrary;
-    generated.sampleTraceIds[0] = 9101;
-    generated.sampleTraceIds[1] = 9102;
-    TEST_ASSERT_TRUE(store.saveCandidate(generated));
-
-    MeteringSchemeCandidate loaded{};
-    TEST_ASSERT_TRUE(store.loadCandidate(loaded));
-    TEST_ASSERT_TRUE(loaded.ready);
-    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(MeteringSchemeGeneratedKind::LongTermSampleLibrary),
-                            static_cast<unsigned>(loaded.generatedKind));
-    TEST_ASSERT_EQUAL_UINT16(3, loaded.sampleCount);
-    TEST_ASSERT_EQUAL_UINT32(9101, loaded.sampleTraceIds[0]);
-    TEST_ASSERT_EQUAL_UINT32(9102, loaded.sampleTraceIds[1]);
+    TEST_ASSERT_EQUAL_UINT16(3, list[1].sampleCount);
+    TEST_ASSERT_EQUAL_UINT32(1500, list[1].minActualMl);
+    TEST_ASSERT_EQUAL_UINT32(7500, list[1].maxActualMl);
+    TEST_ASSERT_EQUAL_UINT32(28, list[1].maxErrorMl);
+    TEST_ASSERT_EQUAL_UINT16(18, list[1].maxErrorTenthPercent);
 }
 
 void test_manual_create_reuses_deleted_unused_slot_with_new_id() {
@@ -433,23 +409,24 @@ void test_used_scheme_delete_is_rejected_and_disable_is_explicit() {
 
     std::uint32_t id = 0;
     TEST_ASSERT_TRUE(store.createManual("已使用", MeteringParameters{12, 180, 360}, 1770000000, id));
-    TEST_ASSERT_TRUE(store.incrementUsageAfterRecordWrite(id, 1770000010));
+    TEST_ASSERT_TRUE(store.markUsedAfterRecordWrite(id));
+    TEST_ASSERT_TRUE(store.markUsedAfterRecordWrite(id));
 
     TEST_ASSERT_FALSE(store.deleteScheme(id));
     TEST_ASSERT_TRUE(store.disableScheme(id, 1770000020));
 
     MeteringSchemeRecord scheme{};
     TEST_ASSERT_TRUE(store.findById(id, scheme));
-    TEST_ASSERT_TRUE(scheme.valid);
-    TEST_ASSERT_FALSE(scheme.enabled);
-    TEST_ASSERT_EQUAL_UINT32(1, scheme.useCount);
+    TEST_ASSERT_TRUE(scheme.recordUsed);
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(MeteringSchemeState::Disabled),
+                            static_cast<unsigned>(scheme.state));
+    TEST_ASSERT_TRUE(scheme.usedEver);
 
     TEST_ASSERT_TRUE(store.enableScheme(id, 1770000030));
     TEST_ASSERT_TRUE(store.findById(id, scheme));
-    TEST_ASSERT_TRUE(scheme.enabled);
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(MeteringSchemeState::Available),
+                            static_cast<unsigned>(scheme.state));
     TEST_ASSERT_EQUAL_UINT32(id, store.activeSchemeId());
-    TEST_ASSERT_EQUAL_UINT32(1770000030, scheme.updatedAt);
-    TEST_ASSERT_EQUAL_UINT32(1770000030, scheme.lastActivatedAt);
 }
 
 void test_delete_keeps_at_least_one_valid_scheme() {
@@ -468,11 +445,12 @@ void test_delete_keeps_at_least_one_valid_scheme() {
     TEST_ASSERT_EQUAL_size_t(1, store.list(list, 4, true));
     TEST_ASSERT_EQUAL_UINT32(id, store.activeSchemeId());
     TEST_ASSERT_EQUAL_UINT32(id, list[0].id);
-    TEST_ASSERT_TRUE(list[0].valid);
-    TEST_ASSERT_TRUE(list[0].enabled);
+    TEST_ASSERT_TRUE(list[0].recordUsed);
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(MeteringSchemeState::Available),
+                            static_cast<unsigned>(list[0].state));
 }
 
-void test_enable_updates_active_id_and_last_activated() {
+void test_enable_updates_active_id_only() {
     MemoryFileBackend backend;
     MeteringSchemeStore store(backend, "/schemes.bin");
     TEST_ASSERT_TRUE(store.begin());
@@ -485,29 +463,11 @@ void test_enable_updates_active_id_and_last_activated() {
     MeteringSchemeRecord active{};
     TEST_ASSERT_TRUE(store.activeScheme(active));
     TEST_ASSERT_EQUAL_UINT32(id, active.id);
-    TEST_ASSERT_EQUAL_UINT32(1770000030, active.lastActivatedAt);
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(MeteringSchemeState::Available),
+                            static_cast<unsigned>(active.state));
 }
 
-void test_increment_usage_marks_dirty_when_record_update_fails() {
-    MemoryFileBackend backend;
-    MeteringSchemeStore store(backend, "/schemes.bin");
-    TEST_ASSERT_TRUE(store.begin());
-
-    std::uint32_t id = 0;
-    TEST_ASSERT_TRUE(store.createManual("待统计", MeteringParameters{12, 180, 360}, 1770000000, id));
-    backend.failWriteAtCount = 1;
-
-    TEST_ASSERT_FALSE(store.incrementUsageAfterRecordWrite(id, 1770000040));
-
-    MeteringSchemeRecord scheme{};
-    TEST_ASSERT_TRUE(store.findById(id, scheme));
-    TEST_ASSERT_EQUAL_UINT32(0, scheme.useCount);
-    TEST_ASSERT_EQUAL_UINT32(0, scheme.lastUsedAt);
-    TEST_ASSERT_TRUE(scheme.usageStatsDirty);
-    TEST_ASSERT_FALSE(store.deleteScheme(id));
-}
-
-void test_migrates_legacy_config_slots_and_candidate_once() {
+void test_migrates_legacy_config_slots_without_candidate() {
     MemoryFileBackend files;
     FakeConfigBackend config;
     config.setInt("faucet_cfg", "active_ms", 1);
@@ -521,20 +481,12 @@ void test_migrates_legacy_config_slots_and_candidate_once() {
     config.setInt("faucet_cfg", "ms1_sp", 40);
     config.setInt("faucet_cfg", "ms1_sv", 553);
     config.setInt("faucet_cfg", "ms1_pl", 222);
-    config.setStr("faucet_cfg", "ms1_create", "旧参数槽样本说明");
     config.setInt("faucet_cfg", "ms1_mod_at", 1770000001);
     config.setBool("faucet_cfg", "ms2_valid", true);
     config.setStr("faucet_cfg", "ms2_name", "参数槽 3");
     config.setInt("faucet_cfg", "ms2_sp", 0);
     config.setInt("faucet_cfg", "ms2_sv", 0);
     config.setInt("faucet_cfg", "ms2_pl", kDefaultStablePulsePerLiter);
-    config.setBool("faucet_cfg", "mc_ready", true);
-    config.setInt("faucet_cfg", "mc_sp", 41);
-    config.setInt("faucet_cfg", "mc_sv", 520);
-    config.setInt("faucet_cfg", "mc_pl", 224);
-    config.setStr("faucet_cfg", "mc_note", "旧候选说明");
-    config.setInt("faucet_cfg", "mc_at", 1770000100);
-
     MeteringSchemeStore store(files, "/schemes.bin");
     TEST_ASSERT_TRUE(store.begin());
     TEST_ASSERT_TRUE(store.migrateLegacyFromConfig(config, 1770000200));
@@ -550,20 +502,11 @@ void test_migrates_legacy_config_slots_and_candidate_once() {
     TEST_ASSERT_EQUAL_UINT32(480, list[0].params.stableFlowMlPerMin);
     TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(MeteringSchemeSource::Migrated),
                             static_cast<unsigned>(list[0].sourceType));
-    TEST_ASSERT_EQUAL_UINT32(0, list[0].useCount);
     TEST_ASSERT_EQUAL_UINT32(1, list[0].revision);
-    TEST_ASSERT_NOT_NULL(std::strstr(list[0].creationSummary, "旧参数槽样本说明"));
 
     MeteringSchemeCandidate migratedCandidate{};
     TEST_ASSERT_TRUE(store.loadCandidate(migratedCandidate));
-    TEST_ASSERT_TRUE(migratedCandidate.ready);
-    TEST_ASSERT_EQUAL_UINT32(41, migratedCandidate.params.startupPulseCount);
-    TEST_ASSERT_EQUAL_UINT32(520, migratedCandidate.params.startupVolumeMl);
-    TEST_ASSERT_EQUAL_UINT32(224, migratedCandidate.params.stablePulsePerLiter);
-    TEST_ASSERT_EQUAL_UINT32(5000, migratedCandidate.params.startupDurationMs);
-    TEST_ASSERT_EQUAL_UINT32(480, migratedCandidate.params.stableFlowMlPerMin);
-    TEST_ASSERT_EQUAL_UINT32(1770000100, migratedCandidate.generatedAt);
-    TEST_ASSERT_NOT_NULL(std::strstr(migratedCandidate.creationSummary, "旧候选说明"));
+    TEST_ASSERT_FALSE(migratedCandidate.ready);
 
     TEST_ASSERT_TRUE(store.migrateLegacyFromConfig(config, 1770000300));
     TEST_ASSERT_EQUAL_size_t(1, store.list(list, 4, true));
@@ -576,7 +519,6 @@ void test_begin_migrates_v1_scheme_file_to_time_estimate_params() {
     candidate.ready = true;
     candidate.params = LegacyMeteringParametersV1{41, 520, 224};
     candidate.generatedAt = 1770000100;
-    std::strncpy(candidate.creationSummary, "旧候选", sizeof(candidate.creationSummary) - 1);
     LegacyMeteringSchemeRecordV1 record{};
     record.id = 7;
     record.valid = true;
@@ -587,9 +529,8 @@ void test_begin_migrates_v1_scheme_file_to_time_estimate_params() {
     record.revision = 3;
     record.createdAt = 1770000000;
     record.updatedAt = 1770000001;
-    record.lastActivatedAt = 1770000002;
+    record.useCount = 2;
     record.sampleCount = 2;
-    std::strncpy(record.creationSummary, "旧文件记录", sizeof(record.creationSummary) - 1);
 
     TEST_ASSERT_TRUE(backend.writeAt("/schemes.bin", 0, reinterpret_cast<const std::uint8_t*>(&header), sizeof(header)));
     TEST_ASSERT_TRUE(backend.writeAt("/schemes.bin",
@@ -617,15 +558,11 @@ void test_begin_migrates_v1_scheme_file_to_time_estimate_params() {
     TEST_ASSERT_EQUAL_UINT32(480, migrated.params.stableFlowMlPerMin);
     TEST_ASSERT_EQUAL_UINT32(3, migrated.revision);
     TEST_ASSERT_EQUAL_UINT16(2, migrated.sampleCount);
+    TEST_ASSERT_TRUE(migrated.usedEver);
 
     MeteringSchemeCandidate migratedCandidate{};
     TEST_ASSERT_TRUE(store.loadCandidate(migratedCandidate));
-    TEST_ASSERT_TRUE(migratedCandidate.ready);
-    TEST_ASSERT_EQUAL_UINT32(41, migratedCandidate.params.startupPulseCount);
-    TEST_ASSERT_EQUAL_UINT32(520, migratedCandidate.params.startupVolumeMl);
-    TEST_ASSERT_EQUAL_UINT32(224, migratedCandidate.params.stablePulsePerLiter);
-    TEST_ASSERT_EQUAL_UINT32(5000, migratedCandidate.params.startupDurationMs);
-    TEST_ASSERT_EQUAL_UINT32(480, migratedCandidate.params.stableFlowMlPerMin);
+    TEST_ASSERT_FALSE(migratedCandidate.ready);
 }
 
 void test_begin_recovers_v1_scheme_migration_from_completed_temp_file() {
@@ -753,14 +690,12 @@ int main(int argc, char** argv) {
     UNITY_BEGIN();
     RUN_TEST(test_begin_initializes_default_scheme_file);
     RUN_TEST(test_begin_upgrades_single_legacy_default_scheme_to_yfs201_builtin_default);
-    RUN_TEST(test_save_candidate_reloads_after_restart);
-    RUN_TEST(test_candidate_generated_kind_round_trips_without_saving_scheme);
+    RUN_TEST(test_save_candidate_as_new_reloads_after_restart);
     RUN_TEST(test_manual_create_reuses_deleted_unused_slot_with_new_id);
     RUN_TEST(test_used_scheme_delete_is_rejected_and_disable_is_explicit);
     RUN_TEST(test_delete_keeps_at_least_one_valid_scheme);
-    RUN_TEST(test_enable_updates_active_id_and_last_activated);
-    RUN_TEST(test_increment_usage_marks_dirty_when_record_update_fails);
-    RUN_TEST(test_migrates_legacy_config_slots_and_candidate_once);
+    RUN_TEST(test_enable_updates_active_id_only);
+    RUN_TEST(test_migrates_legacy_config_slots_without_candidate);
     RUN_TEST(test_begin_migrates_v1_scheme_file_to_time_estimate_params);
     RUN_TEST(test_begin_recovers_v1_scheme_migration_from_completed_temp_file);
     RUN_TEST(test_begin_ignores_stale_scheme_migration_temp_when_current_file_is_valid);

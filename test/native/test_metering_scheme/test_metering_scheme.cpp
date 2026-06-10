@@ -16,24 +16,14 @@ MeteringSchemeCollection collectionFor(MeteringSchemeRecord (&records)[N]) {
 MeteringSchemeCandidate sampleCandidate() {
     MeteringSchemeCandidate candidate{};
     candidate.ready = true;
-    candidate.generatedKind = MeteringSchemeGeneratedKind::CalibrationSession;
+    candidate.sourceType = MeteringSchemeSource::CalibrationSession;
     candidate.params = MeteringParameters{40, 553, 222};
     candidate.generatedAt = 1770000000;
     candidate.sampleCount = 3;
-    candidate.sampleTraceIds[0] = 101;
-    candidate.sampleTraceIds[1] = 102;
-    candidate.sampleTraceIds[2] = 103;
     candidate.minActualMl = 1500;
     candidate.maxActualMl = 7500;
     candidate.maxErrorMl = 28;
-    candidate.maxErrorPercent = 1.8f;
-    candidate.startupDurationMinSec = 4;
-    candidate.startupDurationMaxSec = 6;
-    candidate.startupDurationMedianSec = 5;
-    candidate.startupDurationAvgSec = 5;
-    std::strncpy(candidate.creationSummary,
-                 "样本数量 3，容量范围 1500ml-7500ml，最大误差 28ml。",
-                 sizeof(candidate.creationSummary) - 1);
+    candidate.maxErrorTenthPercent = 18;
     return candidate;
 }
 
@@ -51,22 +41,19 @@ void test_default_store_has_one_enabled_active_default_scheme() {
     const MeteringSchemeRecord* active = activeMeteringScheme(schemes);
     TEST_ASSERT_NOT_NULL(active);
     TEST_ASSERT_EQUAL_UINT32(1, active->id);
-    TEST_ASSERT_TRUE(active->valid);
-    TEST_ASSERT_TRUE(active->enabled);
+    TEST_ASSERT_TRUE(active->recordUsed);
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(MeteringSchemeState::Available),
+                            static_cast<unsigned>(active->state));
     TEST_ASSERT_EQUAL_UINT32(1, active->revision);
     TEST_ASSERT_EQUAL_STRING("YF-S201 默认计量方案", active->name);
-    TEST_ASSERT_EQUAL_STRING("YF-S201", active->meterLabel);
     TEST_ASSERT_EQUAL_UINT32(8, active->params.startupPulseCount);
     TEST_ASSERT_EQUAL_UINT32(36, active->params.startupVolumeMl);
     TEST_ASSERT_EQUAL_UINT32(225, active->params.stablePulsePerLiter);
     TEST_ASSERT_EQUAL_UINT32(5000, active->params.startupDurationMs);
     TEST_ASSERT_EQUAL_UINT32(480, active->params.stableFlowMlPerMin);
-    TEST_ASSERT_NOT_NULL(std::strstr(active->creationSummary, "YF-S201"));
-    TEST_ASSERT_NOT_NULL(std::strstr(active->creationSummary, "启动约 5 秒"));
     TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(MeteringSchemeSource::Default),
                             static_cast<unsigned>(active->sourceType));
-    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(MeteringSchemeGeneratedKind::None),
-                            static_cast<unsigned>(active->generatedKind));
+    TEST_ASSERT_FALSE(active->usedEver);
 }
 
 void test_candidate_saves_as_new_scheme_without_enabling() {
@@ -84,12 +71,11 @@ void test_candidate_saves_as_new_scheme_without_enabling() {
     TEST_ASSERT_FALSE(candidate.ready);
     const MeteringSchemeRecord* saved = findMeteringSchemeById(schemes, newId);
     TEST_ASSERT_NOT_NULL(saved);
-    TEST_ASSERT_TRUE(saved->valid);
-    TEST_ASSERT_TRUE(saved->enabled);
-    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(MeteringSchemeSource::Generated),
+    TEST_ASSERT_TRUE(saved->recordUsed);
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(MeteringSchemeState::Available),
+                            static_cast<unsigned>(saved->state));
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(MeteringSchemeSource::CalibrationSession),
                             static_cast<unsigned>(saved->sourceType));
-    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(MeteringSchemeGeneratedKind::CalibrationSession),
-                            static_cast<unsigned>(saved->generatedKind));
     TEST_ASSERT_EQUAL_STRING("低压实验", saved->name);
     TEST_ASSERT_EQUAL_UINT32(40, saved->params.startupPulseCount);
     TEST_ASSERT_EQUAL_UINT32(553, saved->params.startupVolumeMl);
@@ -98,14 +84,11 @@ void test_candidate_saves_as_new_scheme_without_enabling() {
     TEST_ASSERT_EQUAL_UINT32(480, saved->params.stableFlowMlPerMin);
     TEST_ASSERT_EQUAL_UINT32(1, saved->revision);
     TEST_ASSERT_EQUAL_UINT16(3, saved->sampleCount);
-    TEST_ASSERT_EQUAL_UINT32(101, saved->sampleTraceIds[0]);
-    TEST_ASSERT_EQUAL_UINT32(102, saved->sampleTraceIds[1]);
-    TEST_ASSERT_EQUAL_UINT32(103, saved->sampleTraceIds[2]);
     TEST_ASSERT_EQUAL_UINT32(1500, saved->minActualMl);
     TEST_ASSERT_EQUAL_UINT32(7500, saved->maxActualMl);
     TEST_ASSERT_EQUAL_UINT32(28, saved->maxErrorMl);
-    TEST_ASSERT_EQUAL_UINT32(5, saved->startupDurationAvgSec);
-    TEST_ASSERT_NOT_NULL(std::strstr(saved->creationSummary, "样本数量 3"));
+    TEST_ASSERT_EQUAL_UINT16(18, saved->maxErrorTenthPercent);
+    TEST_ASSERT_FALSE(saved->usedEver);
 }
 
 void test_long_term_candidate_saves_generated_kind_without_activation() {
@@ -113,10 +96,7 @@ void test_long_term_candidate_saves_generated_kind_without_activation() {
     MeteringSchemeCollection schemes = collectionFor(records);
     TEST_ASSERT_TRUE(initializeDefaultMeteringSchemes(schemes, 1770000000));
     MeteringSchemeCandidate candidate = sampleCandidate();
-    candidate.generatedKind = MeteringSchemeGeneratedKind::LongTermSampleLibrary;
-    candidate.sampleTraceIds[0] = 9001;
-    candidate.sampleTraceIds[1] = 9002;
-    candidate.sampleTraceIds[2] = 9003;
+    candidate.sourceType = MeteringSchemeSource::LongTermSamples;
 
     std::uint32_t newId = 0;
     TEST_ASSERT_TRUE(saveCandidateAsNewMeteringScheme(schemes, candidate, "长期样本生成", 1770000100, newId));
@@ -124,14 +104,11 @@ void test_long_term_candidate_saves_generated_kind_without_activation() {
     TEST_ASSERT_EQUAL_UINT32(1, schemes.activeSchemeId);
     const MeteringSchemeRecord* saved = findMeteringSchemeById(schemes, newId);
     TEST_ASSERT_NOT_NULL(saved);
-    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(MeteringSchemeSource::Generated),
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(MeteringSchemeSource::LongTermSamples),
                             static_cast<unsigned>(saved->sourceType));
-    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(MeteringSchemeGeneratedKind::LongTermSampleLibrary),
-                            static_cast<unsigned>(saved->generatedKind));
     TEST_ASSERT_EQUAL_UINT16(3, saved->sampleCount);
-    TEST_ASSERT_EQUAL_UINT32(9001, saved->sampleTraceIds[0]);
-    TEST_ASSERT_EQUAL_UINT32(9003, saved->sampleTraceIds[2]);
-    TEST_ASSERT_NOT_NULL(std::strstr(saved->creationSummary, "样本数量 3"));
+    TEST_ASSERT_EQUAL_UINT32(1500, saved->minActualMl);
+    TEST_ASSERT_EQUAL_UINT32(7500, saved->maxActualMl);
 }
 
 void test_manual_create_uses_source_manual_and_revision_one() {
@@ -147,16 +124,14 @@ void test_manual_create_uses_source_manual_and_revision_one() {
     TEST_ASSERT_NOT_NULL(saved);
     TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(MeteringSchemeSource::Manual),
                             static_cast<unsigned>(saved->sourceType));
-    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(MeteringSchemeGeneratedKind::None),
-                            static_cast<unsigned>(saved->generatedKind));
     TEST_ASSERT_EQUAL_UINT32(1, saved->revision);
     TEST_ASSERT_EQUAL_UINT16(0, saved->sampleCount);
-    TEST_ASSERT_EQUAL_UINT32(0, saved->sampleTraceIds[0]);
-    TEST_ASSERT_NOT_NULL(std::strstr(saved->creationSummary, "手工创建"));
+    TEST_ASSERT_EQUAL_UINT32(0, saved->minActualMl);
+    TEST_ASSERT_EQUAL_UINT32(0, saved->maxActualMl);
     TEST_ASSERT_EQUAL_UINT32(1, schemes.activeSchemeId);
 }
 
-void test_core_or_environment_edit_increments_revision() {
+void test_core_edit_increments_revision() {
     MeteringSchemeRecord scheme{};
     initializeManualMeteringScheme(
         scheme, 2, "待修改", MeteringParameters{12, 180, 360}, 1770000000);
@@ -168,12 +143,6 @@ void test_core_or_environment_edit_increments_revision() {
     TEST_ASSERT_TRUE(updateMeteringSchemeRecord(scheme, edit, 1770000300));
     TEST_ASSERT_EQUAL_UINT32(2, scheme.revision);
     TEST_ASSERT_EQUAL_UINT32(400, scheme.params.stablePulsePerLiter);
-
-    edit = makeMeteringSchemeEdit(scheme);
-    std::strncpy(edit.conditionLabel, "低水压", sizeof(edit.conditionLabel) - 1);
-    TEST_ASSERT_TRUE(updateMeteringSchemeRecord(scheme, edit, 1770000400));
-    TEST_ASSERT_EQUAL_UINT32(3, scheme.revision);
-    TEST_ASSERT_EQUAL_STRING("低水压", scheme.conditionLabel);
 }
 
 void test_name_only_edit_does_not_increment_revision() {
@@ -209,16 +178,12 @@ void test_last_valid_scheme_cannot_be_deleted_even_if_not_active() {
     TEST_ASSERT_FALSE(canPhysicallyDeleteMeteringScheme(scheme, 1, 1));
 }
 
-void test_used_or_dirty_scheme_cannot_be_physically_deleted() {
+void test_used_scheme_cannot_be_physically_deleted() {
     MeteringSchemeRecord scheme{};
     initializeManualMeteringScheme(
         scheme, 2, "已使用", MeteringParameters{12, 180, 360}, 1770000000);
 
-    scheme.useCount = 1;
-    TEST_ASSERT_FALSE(canPhysicallyDeleteMeteringScheme(scheme, 1, 2));
-
-    scheme.useCount = 0;
-    scheme.usageStatsDirty = true;
+    scheme.usedEver = true;
     TEST_ASSERT_FALSE(canPhysicallyDeleteMeteringScheme(scheme, 1, 2));
 }
 
@@ -290,11 +255,11 @@ int main(int argc, char** argv) {
     RUN_TEST(test_candidate_saves_as_new_scheme_without_enabling);
     RUN_TEST(test_long_term_candidate_saves_generated_kind_without_activation);
     RUN_TEST(test_manual_create_uses_source_manual_and_revision_one);
-    RUN_TEST(test_core_or_environment_edit_increments_revision);
+    RUN_TEST(test_core_edit_increments_revision);
     RUN_TEST(test_name_only_edit_does_not_increment_revision);
     RUN_TEST(test_current_scheme_cannot_be_disabled_or_deleted);
     RUN_TEST(test_last_valid_scheme_cannot_be_deleted_even_if_not_active);
-    RUN_TEST(test_used_or_dirty_scheme_cannot_be_physically_deleted);
+    RUN_TEST(test_used_scheme_cannot_be_physically_deleted);
     RUN_TEST(test_unused_non_current_scheme_can_be_physically_deleted);
     RUN_TEST(test_metering_estimate_uses_segmented_parameters_for_target_volume);
     RUN_TEST(test_metering_estimate_handles_no_startup_segment);

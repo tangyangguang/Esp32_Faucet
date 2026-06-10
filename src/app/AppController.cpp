@@ -86,10 +86,13 @@ void fillCandidateFromSegmentedResult(MeteringSchemeCandidate& candidate,
                                       const std::uint32_t* sourceIds,
                                       std::size_t sourceCount,
                                       std::uint32_t nowSeconds,
-                                      MeteringSchemeGeneratedKind generatedKind) {
+                                      MeteringSchemeSource sourceType) {
+    (void)options;
+    (void)sourceIds;
+    (void)sourceCount;
     candidate = MeteringSchemeCandidate{};
     candidate.ready = true;
-    candidate.generatedKind = generatedKind;
+    candidate.sourceType = sourceType;
     candidate.params = MeteringParameters{
         result.startupPulseCount,
         result.startupVolumeMl,
@@ -99,31 +102,10 @@ void fillCandidateFromSegmentedResult(MeteringSchemeCandidate& candidate,
     };
     candidate.generatedAt = nowSeconds;
     candidate.sampleCount = result.sampleCount;
-    const std::size_t idCount = std::min<std::size_t>(
-        std::min<std::size_t>(sourceCount, result.sampleCount), kMeteringSchemeTraceIdCapacity);
-    for (std::size_t i = 0; i < idCount; ++i) {
-        candidate.sampleTraceIds[i] = sourceIds[i];
-    }
     candidate.minActualMl = result.minActualMl;
     candidate.maxActualMl = result.maxActualMl;
     candidate.maxErrorMl = result.maxErrorMl;
-    candidate.maxErrorPercent = static_cast<float>(result.maxRelativeErrorTenthPercent) / 10.0f;
-    candidate.startupDurationMinSec = result.startupDurationSec;
-    candidate.startupDurationMaxSec = result.startupDurationSec;
-    candidate.startupDurationMedianSec = result.startupDurationSec;
-    candidate.startupDurationAvgSec = result.startupDurationSec;
-    std::snprintf(candidate.creationSummary,
-                  sizeof(candidate.creationSummary),
-                  "样本数量 %u，容量范围 %luml-%luml，最大误差 %luml，最大相对误差 %.1f%%，启动阶段平均 %lus。生成设置：分析脉冲间隔 %s，稳态窗口 %lus，稳态容差 %u%%。",
-                  static_cast<unsigned>(result.sampleCount),
-                  static_cast<unsigned long>(result.minActualMl),
-                  static_cast<unsigned long>(result.maxActualMl),
-                  static_cast<unsigned long>(result.maxErrorMl),
-                  static_cast<double>(candidate.maxErrorPercent),
-                  static_cast<unsigned long>(result.startupDurationSec),
-                  options.pulseMinIntervalUsOverride == 0 ? "记录值" : "覆盖值",
-                  static_cast<unsigned long>(options.stableWindowSec),
-                  static_cast<unsigned>(options.stableTolerancePercent));
+    candidate.maxErrorTenthPercent = result.maxRelativeErrorTenthPercent;
 }
 
 }  // namespace
@@ -236,7 +218,7 @@ AppController::AppController(const SystemConfig& config,
       lastResultRecordValid_(false),
       lastResultRecord_{} {
     sanitizeConfig(config_);
-    if (!activeMeteringScheme_.valid || !validMeteringSchemeParameters(activeMeteringScheme_.params)) {
+    if (!activeMeteringScheme_.recordUsed || !validMeteringSchemeParameters(activeMeteringScheme_.params)) {
         activeMeteringScheme_ = schemeFromLegacyConfig(config_);
         flow_.setMeteringParameters(activeMeteringScheme_.params);
     }
@@ -429,7 +411,8 @@ bool AppController::applyConfig(const SystemConfig& config) {
 }
 
 bool AppController::applyActiveMeteringScheme(const MeteringSchemeRecord& activeScheme) {
-    if (!canApplyConfig() || !activeScheme.valid || !activeScheme.enabled ||
+    if (!canApplyConfig() || !activeScheme.recordUsed ||
+        activeScheme.state != MeteringSchemeState::Available ||
         !validMeteringSchemeParameters(activeScheme.params)) {
         return false;
     }
@@ -578,7 +561,7 @@ bool AppController::generateCalibrationForWeb(std::uint32_t nowSeconds) {
                                      sourceIds,
                                      sampleCount,
                                      nowSeconds,
-                                     MeteringSchemeGeneratedKind::CalibrationSession);
+                                     MeteringSchemeSource::CalibrationSession);
     if (!meteringSchemes_->saveCandidate(candidate)) {
         return false;
     }
@@ -596,11 +579,11 @@ bool AppController::applyGeneratedCalibrationForWeb(std::uint32_t nowSeconds) {
     }
     MeteringSchemeCandidate candidate{};
     if (!meteringSchemes_->loadCandidate(candidate) || !candidate.ready ||
-        candidate.generatedKind != MeteringSchemeGeneratedKind::CalibrationSession) {
+        candidate.sourceType != MeteringSchemeSource::CalibrationSession) {
         return false;
     }
     std::uint32_t newId = 0;
-    if (!meteringSchemes_->saveCandidateAsNew("校准生成计量方案", nowSeconds, newId) ||
+    if (!meteringSchemes_->saveCandidateAsNew(candidate, "校准生成计量方案", nowSeconds, newId) ||
         !meteringSchemes_->enableScheme(newId, nowSeconds)) {
         return false;
     }
@@ -1071,12 +1054,10 @@ void AppController::processResult(std::uint32_t startTime,
         snapshot.params = activeMeteringScheme_.params;
         if (!meteringSnapshots_->upsert(snapshot)) {
             lastRecordWriteOk_ = false;
-            if (meteringSchemes_) {
-                meteringSchemes_->markUsageStatsDirty(activeMeteringScheme_.id);
+        } else if (meteringSchemes_ && !activeMeteringScheme_.usedEver) {
+            if (meteringSchemes_->markUsedAfterRecordWrite(activeMeteringScheme_.id)) {
+                activeMeteringScheme_.usedEver = true;
             }
-        } else if (meteringSchemes_ &&
-                   !meteringSchemes_->incrementUsageAfterRecordWrite(activeMeteringScheme_.id, nowSeconds)) {
-            lastRecordWriteOk_ = false;
         }
     }
     if (periodKeysValid) {

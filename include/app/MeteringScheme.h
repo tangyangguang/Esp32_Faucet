@@ -8,15 +8,8 @@
 namespace faucet {
 
 constexpr std::size_t kMeteringSchemeNameLength = 32;
-constexpr std::size_t kMeteringSchemeMeterLabelLength = 32;
-constexpr std::size_t kMeteringSchemeInstallationLabelLength = 32;
-constexpr std::size_t kMeteringSchemeConditionLabelLength = 48;
-constexpr std::size_t kMeteringSchemeUserNoteLength = 128;
-constexpr std::size_t kMeteringSchemeSummaryLength = 192;
-constexpr std::size_t kMeteringSchemeTraceIdCapacity = 12;
 constexpr std::size_t kLegacyMeteringSlotCount = 4;
 constexpr const char* kDefaultMeteringSchemeName = "YF-S201 默认计量方案";
-constexpr const char* kDefaultMeteringSchemeMeterLabel = "YF-S201";
 constexpr std::uint32_t kDefaultStartupPulseCount = 8;
 constexpr std::uint32_t kDefaultStartupVolumeMl = 36;
 constexpr std::uint32_t kDefaultStablePulsePerLiter = 225;
@@ -32,15 +25,15 @@ constexpr std::uint32_t kMaxStableFlowMlPerMin = 30000;
 
 enum class MeteringSchemeSource : std::uint8_t {
     Default = 0,
-    Generated = 1,
+    CalibrationSession = 1,
     Manual = 2,
     Migrated = 3,
+    LongTermSamples = 4,
 };
 
-enum class MeteringSchemeGeneratedKind : std::uint8_t {
-    None = 0,
-    CalibrationSession = 1,
-    LongTermSampleLibrary = 2,
+enum class MeteringSchemeState : std::uint8_t {
+    Available = 0,
+    Disabled = 1,
 };
 
 enum class MeteringSchemeEditKind : std::uint8_t {
@@ -51,53 +44,32 @@ enum class MeteringSchemeEditKind : std::uint8_t {
 
 struct MeteringSchemeRecord {
     std::uint32_t id = 0;
-    bool valid = false;
-    bool enabled = false;
+    bool recordUsed = false;
+    MeteringSchemeState state = MeteringSchemeState::Available;
     char name[kMeteringSchemeNameLength]{};
-    char meterLabel[kMeteringSchemeMeterLabelLength]{};
-    char installationLabel[kMeteringSchemeInstallationLabelLength]{};
-    char conditionLabel[kMeteringSchemeConditionLabelLength]{};
-    char userNote[kMeteringSchemeUserNoteLength]{};
     MeteringParameters params{};
     MeteringSchemeSource sourceType = MeteringSchemeSource::Default;
-    MeteringSchemeGeneratedKind generatedKind = MeteringSchemeGeneratedKind::None;
     std::uint32_t revision = 0;
     std::uint32_t createdAt = 0;
     std::uint32_t updatedAt = 0;
-    std::uint32_t lastActivatedAt = 0;
-    std::uint32_t useCount = 0;
-    std::uint32_t lastUsedAt = 0;
-    bool usageStatsDirty = false;
+    bool usedEver = false;
     std::uint16_t sampleCount = 0;
-    std::uint32_t sampleTraceIds[kMeteringSchemeTraceIdCapacity]{};
     std::uint32_t minActualMl = 0;
     std::uint32_t maxActualMl = 0;
     std::uint32_t maxErrorMl = 0;
-    float maxErrorPercent = 0.0f;
-    std::uint32_t startupDurationMinSec = 0;
-    std::uint32_t startupDurationMaxSec = 0;
-    std::uint32_t startupDurationMedianSec = 0;
-    std::uint32_t startupDurationAvgSec = 0;
-    char creationSummary[kMeteringSchemeSummaryLength]{};
-    char lastModifiedSummary[kMeteringSchemeSummaryLength]{};
+    std::uint16_t maxErrorTenthPercent = 0;
 };
 
 struct MeteringSchemeCandidate {
     bool ready = false;
-    MeteringSchemeGeneratedKind generatedKind = MeteringSchemeGeneratedKind::None;
+    MeteringSchemeSource sourceType = MeteringSchemeSource::CalibrationSession;
     MeteringParameters params{};
     std::uint32_t generatedAt = 0;
     std::uint16_t sampleCount = 0;
-    std::uint32_t sampleTraceIds[kMeteringSchemeTraceIdCapacity]{};
     std::uint32_t minActualMl = 0;
     std::uint32_t maxActualMl = 0;
     std::uint32_t maxErrorMl = 0;
-    float maxErrorPercent = 0.0f;
-    std::uint32_t startupDurationMinSec = 0;
-    std::uint32_t startupDurationMaxSec = 0;
-    std::uint32_t startupDurationMedianSec = 0;
-    std::uint32_t startupDurationAvgSec = 0;
-    char creationSummary[kMeteringSchemeSummaryLength]{};
+    std::uint16_t maxErrorTenthPercent = 0;
 };
 
 struct MeteringSchemeCollection {
@@ -119,10 +91,6 @@ struct MeteringSchemeCollection {
 
 struct MeteringSchemeEdit {
     char name[kMeteringSchemeNameLength]{};
-    char meterLabel[kMeteringSchemeMeterLabelLength]{};
-    char installationLabel[kMeteringSchemeInstallationLabelLength]{};
-    char conditionLabel[kMeteringSchemeConditionLabelLength]{};
-    char userNote[kMeteringSchemeUserNoteLength]{};
     MeteringParameters params{};
 };
 

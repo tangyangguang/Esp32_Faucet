@@ -14,6 +14,13 @@ constexpr std::uint32_t kMeteringSchemeStoreMagic = 0x314D5346UL;  // FSM1
 constexpr std::uint16_t kMeteringSchemeStoreVersion = 3;
 constexpr std::uint16_t kLegacyMeteringSchemeStoreVersion = 1;
 constexpr std::size_t kMigrationCopyChunkSize = 256;
+constexpr std::size_t kLegacyMeteringSchemeMeterLabelLength = 32;
+constexpr std::size_t kLegacyMeteringSchemeInstallationLabelLength = 32;
+constexpr std::size_t kLegacyMeteringSchemeConditionLabelLength = 48;
+constexpr std::size_t kLegacyMeteringSchemeUserNoteLength = 128;
+constexpr std::size_t kLegacyMeteringSchemeSummaryLength = 192;
+constexpr std::size_t kLegacyMeteringSchemeTraceIdCapacity = 12;
+constexpr const char* kLegacyDefaultMeteringSchemeMeterLabel = "YF-S201";
 
 struct LegacyMeteringParametersV1 {
     std::uint32_t startupPulseCount;
@@ -26,10 +33,10 @@ struct LegacyMeteringSchemeRecordV1 {
     bool valid = false;
     bool enabled = false;
     char name[kMeteringSchemeNameLength]{};
-    char meterLabel[kMeteringSchemeMeterLabelLength]{};
-    char installationLabel[kMeteringSchemeInstallationLabelLength]{};
-    char conditionLabel[kMeteringSchemeConditionLabelLength]{};
-    char userNote[kMeteringSchemeUserNoteLength]{};
+    char meterLabel[kLegacyMeteringSchemeMeterLabelLength]{};
+    char installationLabel[kLegacyMeteringSchemeInstallationLabelLength]{};
+    char conditionLabel[kLegacyMeteringSchemeConditionLabelLength]{};
+    char userNote[kLegacyMeteringSchemeUserNoteLength]{};
     LegacyMeteringParametersV1 params{};
     MeteringSchemeSource sourceType = MeteringSchemeSource::Default;
     std::uint32_t revision = 0;
@@ -40,7 +47,7 @@ struct LegacyMeteringSchemeRecordV1 {
     std::uint32_t lastUsedAt = 0;
     bool usageStatsDirty = false;
     std::uint16_t sampleCount = 0;
-    std::uint32_t sampleTraceIds[kMeteringSchemeTraceIdCapacity]{};
+    std::uint32_t sampleTraceIds[kLegacyMeteringSchemeTraceIdCapacity]{};
     std::uint32_t minActualMl = 0;
     std::uint32_t maxActualMl = 0;
     std::uint32_t maxErrorMl = 0;
@@ -49,8 +56,8 @@ struct LegacyMeteringSchemeRecordV1 {
     std::uint32_t startupDurationMaxSec = 0;
     std::uint32_t startupDurationMedianSec = 0;
     std::uint32_t startupDurationAvgSec = 0;
-    char creationSummary[kMeteringSchemeSummaryLength]{};
-    char lastModifiedSummary[kMeteringSchemeSummaryLength]{};
+    char creationSummary[kLegacyMeteringSchemeSummaryLength]{};
+    char lastModifiedSummary[kLegacyMeteringSchemeSummaryLength]{};
 };
 
 struct LegacyMeteringSchemeCandidateV1 {
@@ -58,7 +65,7 @@ struct LegacyMeteringSchemeCandidateV1 {
     LegacyMeteringParametersV1 params{};
     std::uint32_t generatedAt = 0;
     std::uint16_t sampleCount = 0;
-    std::uint32_t sampleTraceIds[kMeteringSchemeTraceIdCapacity]{};
+    std::uint32_t sampleTraceIds[kLegacyMeteringSchemeTraceIdCapacity]{};
     std::uint32_t minActualMl = 0;
     std::uint32_t maxActualMl = 0;
     std::uint32_t maxErrorMl = 0;
@@ -67,7 +74,7 @@ struct LegacyMeteringSchemeCandidateV1 {
     std::uint32_t startupDurationMaxSec = 0;
     std::uint32_t startupDurationMedianSec = 0;
     std::uint32_t startupDurationAvgSec = 0;
-    char creationSummary[kMeteringSchemeSummaryLength]{};
+    char creationSummary[kLegacyMeteringSchemeSummaryLength]{};
 };
 
 std::uint32_t headerChecksum(MeteringSchemeStoreHeader header) {
@@ -162,8 +169,7 @@ bool legacyEmptyDefaultParams(const MeteringParameters& params) {
 
 bool legacyDefaultText(const MeteringSchemeRecord& scheme) {
     return (scheme.name[0] == '\0' || std::strcmp(scheme.name, "默认计量方案") == 0 ||
-            std::strcmp(scheme.name, kDefaultMeteringSchemeName) == 0) &&
-           (scheme.meterLabel[0] == '\0' || std::strcmp(scheme.meterLabel, kDefaultMeteringSchemeMeterLabel) == 0);
+            std::strcmp(scheme.name, kDefaultMeteringSchemeName) == 0);
 }
 
 MeteringParameters expandLegacyParams(LegacyMeteringParametersV1 params) {
@@ -179,53 +185,36 @@ MeteringParameters expandLegacyParams(LegacyMeteringParametersV1 params) {
 MeteringSchemeRecord expandLegacyRecord(const LegacyMeteringSchemeRecordV1& legacy) {
     MeteringSchemeRecord record{};
     record.id = legacy.id;
-    record.valid = legacy.valid;
-    record.enabled = legacy.enabled;
+    record.recordUsed = legacy.valid;
+    record.state = legacy.enabled ? MeteringSchemeState::Available : MeteringSchemeState::Disabled;
     std::memcpy(record.name, legacy.name, sizeof(record.name));
-    std::memcpy(record.meterLabel, legacy.meterLabel, sizeof(record.meterLabel));
-    std::memcpy(record.installationLabel, legacy.installationLabel, sizeof(record.installationLabel));
-    std::memcpy(record.conditionLabel, legacy.conditionLabel, sizeof(record.conditionLabel));
-    std::memcpy(record.userNote, legacy.userNote, sizeof(record.userNote));
     record.params = expandLegacyParams(legacy.params);
     record.sourceType = legacy.sourceType;
     record.revision = legacy.revision;
     record.createdAt = legacy.createdAt;
     record.updatedAt = legacy.updatedAt;
-    record.lastActivatedAt = legacy.lastActivatedAt;
-    record.useCount = legacy.useCount;
-    record.lastUsedAt = legacy.lastUsedAt;
-    record.usageStatsDirty = legacy.usageStatsDirty;
+    record.usedEver = legacy.useCount > 0;
     record.sampleCount = legacy.sampleCount;
-    std::memcpy(record.sampleTraceIds, legacy.sampleTraceIds, sizeof(record.sampleTraceIds));
     record.minActualMl = legacy.minActualMl;
     record.maxActualMl = legacy.maxActualMl;
     record.maxErrorMl = legacy.maxErrorMl;
-    record.maxErrorPercent = legacy.maxErrorPercent;
-    record.startupDurationMinSec = legacy.startupDurationMinSec;
-    record.startupDurationMaxSec = legacy.startupDurationMaxSec;
-    record.startupDurationMedianSec = legacy.startupDurationMedianSec;
-    record.startupDurationAvgSec = legacy.startupDurationAvgSec;
-    std::memcpy(record.creationSummary, legacy.creationSummary, sizeof(record.creationSummary));
-    std::memcpy(record.lastModifiedSummary, legacy.lastModifiedSummary, sizeof(record.lastModifiedSummary));
+    record.maxErrorTenthPercent = static_cast<std::uint16_t>(
+        std::min<float>(65535.0f, std::max<float>(0.0f, legacy.maxErrorPercent * 10.0f)));
     return record;
 }
 
 MeteringSchemeCandidate expandLegacyCandidate(const LegacyMeteringSchemeCandidateV1& legacy) {
     MeteringSchemeCandidate candidate{};
     candidate.ready = legacy.ready;
+    candidate.sourceType = MeteringSchemeSource::CalibrationSession;
     candidate.params = expandLegacyParams(legacy.params);
     candidate.generatedAt = legacy.generatedAt;
     candidate.sampleCount = legacy.sampleCount;
-    std::memcpy(candidate.sampleTraceIds, legacy.sampleTraceIds, sizeof(candidate.sampleTraceIds));
     candidate.minActualMl = legacy.minActualMl;
     candidate.maxActualMl = legacy.maxActualMl;
     candidate.maxErrorMl = legacy.maxErrorMl;
-    candidate.maxErrorPercent = legacy.maxErrorPercent;
-    candidate.startupDurationMinSec = legacy.startupDurationMinSec;
-    candidate.startupDurationMaxSec = legacy.startupDurationMaxSec;
-    candidate.startupDurationMedianSec = legacy.startupDurationMedianSec;
-    candidate.startupDurationAvgSec = legacy.startupDurationAvgSec;
-    std::memcpy(candidate.creationSummary, legacy.creationSummary, sizeof(candidate.creationSummary));
+    candidate.maxErrorTenthPercent = static_cast<std::uint16_t>(
+        std::min<float>(65535.0f, std::max<float>(0.0f, legacy.maxErrorPercent * 10.0f)));
     if (candidate.ready && !validMeteringSchemeParameters(candidate.params)) {
         candidate = MeteringSchemeCandidate{};
     }
@@ -281,7 +270,7 @@ bool MeteringSchemeStore::begin() {
         return false;
     }
     MeteringSchemeRecord active{};
-    if (!activeScheme(active) || !active.enabled) {
+    if (!activeScheme(active) || active.state != MeteringSchemeState::Available) {
         ready_ = false;
         return false;
     }
@@ -317,7 +306,7 @@ std::size_t MeteringSchemeStore::list(MeteringSchemeRecord* output,
         if (!readRecord(slot, record)) {
             return copied;
         }
-        if (record.valid && (includeDisabled || record.enabled)) {
+        if (record.recordUsed && (includeDisabled || record.state == MeteringSchemeState::Available)) {
             output[copied++] = record;
         }
     }
@@ -349,20 +338,18 @@ bool MeteringSchemeStore::discardCandidate() {
     return saveCandidate(empty);
 }
 
-bool MeteringSchemeStore::saveCandidateAsNew(const char* name,
+bool MeteringSchemeStore::saveCandidateAsNew(const MeteringSchemeCandidate& candidate,
+                                             const char* name,
                                              std::uint32_t nowSeconds,
                                              std::uint32_t& newId) {
     newId = 0;
     if (!ready()) {
         return false;
     }
-    MeteringSchemeCandidate candidate{};
-    if (!loadCandidate(candidate)) {
-        return false;
-    }
+    MeteringSchemeCandidate working = candidate;
     MeteringSchemeRecord records[1]{};
     MeteringSchemeCollection collection{records, 1, header_.activeSchemeId, header_.nextSchemeId};
-    if (!saveCandidateAsNewMeteringScheme(collection, candidate, name, nowSeconds, newId)) {
+    if (!saveCandidateAsNewMeteringScheme(collection, working, name, nowSeconds, newId)) {
         return false;
     }
 
@@ -384,7 +371,7 @@ bool MeteringSchemeStore::saveCandidateAsNew(const char* name,
         header_ = previous;
         return false;
     }
-    return saveCandidate(candidate);
+    return true;
 }
 
 bool MeteringSchemeStore::createManual(const char* name,
@@ -444,12 +431,10 @@ bool MeteringSchemeStore::enableScheme(std::uint32_t schemeId, std::uint32_t now
     }
     MeteringSchemeRecord record{};
     std::size_t slot = 0;
-    if (!findSlotById(schemeId, record, slot) || !record.valid) {
+    if (!findSlotById(schemeId, record, slot) || !record.recordUsed) {
         return false;
     }
-    record.enabled = true;
-    record.updatedAt = nowSeconds;
-    record.lastActivatedAt = nowSeconds;
+    record.state = MeteringSchemeState::Available;
     MeteringSchemeStoreHeader previous = header_;
     header_.activeSchemeId = schemeId;
     header_.checksum = headerChecksum(header_);
@@ -476,7 +461,7 @@ bool MeteringSchemeStore::disableScheme(std::uint32_t schemeId, std::uint32_t no
         if (!readRecord(i, listed)) {
             return false;
         }
-        if (listed.valid && listed.enabled) {
+        if (listed.recordUsed && listed.state == MeteringSchemeState::Available) {
             ++enabledCount;
         }
     }
@@ -484,7 +469,7 @@ bool MeteringSchemeStore::disableScheme(std::uint32_t schemeId, std::uint32_t no
         !canDisableMeteringScheme(record, header_.activeSchemeId, enabledCount)) {
         return false;
     }
-    record.enabled = false;
+    record.state = MeteringSchemeState::Disabled;
     record.updatedAt = nowSeconds;
     return writeRecord(slot, record);
 }
@@ -495,10 +480,10 @@ bool MeteringSchemeStore::restoreScheme(std::uint32_t schemeId, std::uint32_t no
     }
     MeteringSchemeRecord record{};
     std::size_t slot = 0;
-    if (!findSlotById(schemeId, record, slot) || record.enabled) {
+    if (!findSlotById(schemeId, record, slot) || record.state == MeteringSchemeState::Available) {
         return false;
     }
-    record.enabled = true;
+    record.state = MeteringSchemeState::Available;
     record.updatedAt = nowSeconds;
     return writeRecord(slot, record);
 }
@@ -513,7 +498,7 @@ bool MeteringSchemeStore::deleteScheme(std::uint32_t schemeId) {
         if (!readRecord(i, listed)) {
             return false;
         }
-        if (listed.valid) {
+        if (listed.recordUsed) {
             ++validCount;
         }
     }
@@ -523,12 +508,12 @@ bool MeteringSchemeStore::deleteScheme(std::uint32_t schemeId) {
         !canPhysicallyDeleteMeteringScheme(record, header_.activeSchemeId, validCount)) {
         return false;
     }
-    record.valid = false;
-    record.enabled = false;
+    record.recordUsed = false;
+    record.state = MeteringSchemeState::Disabled;
     return writeRecord(slot, record);
 }
 
-bool MeteringSchemeStore::incrementUsageAfterRecordWrite(std::uint32_t schemeId, std::uint32_t nowSeconds) {
+bool MeteringSchemeStore::markUsedAfterRecordWrite(std::uint32_t schemeId) {
     if (!ready()) {
         return false;
     }
@@ -537,25 +522,10 @@ bool MeteringSchemeStore::incrementUsageAfterRecordWrite(std::uint32_t schemeId,
     if (!findSlotById(schemeId, record, slot)) {
         return false;
     }
-    record.useCount += 1;
-    record.lastUsedAt = nowSeconds;
-    if (writeRecord(slot, record)) {
+    if (record.usedEver) {
         return true;
     }
-    markUsageStatsDirty(schemeId);
-    return false;
-}
-
-bool MeteringSchemeStore::markUsageStatsDirty(std::uint32_t schemeId) {
-    if (!ready()) {
-        return false;
-    }
-    MeteringSchemeRecord record{};
-    std::size_t slot = 0;
-    if (!findSlotById(schemeId, record, slot)) {
-        return false;
-    }
-    record.usageStatsDirty = true;
+    record.usedEver = true;
     return writeRecord(slot, record);
 }
 
@@ -607,7 +577,13 @@ bool MeteringSchemeStore::migrateLegacyFromConfig(ConfigBackend& config, std::ui
         meteringSlotKey(key, sizeof(key), index, "pl");
         const std::uint32_t stable =
             static_cast<std::uint32_t>(config.getInt("faucet_cfg", key, kDefaultStablePulsePerLiter));
-        const MeteringParameters params{startupPulse, startupVolume, stable};
+        const MeteringParameters params{
+            startupPulse,
+            startupVolume,
+            stable,
+            kDefaultStartupDurationMs,
+            kDefaultStableFlowMlPerMin,
+        };
         if (!validMeteringSchemeParameters(params)) {
             return true;
         }
@@ -627,15 +603,6 @@ bool MeteringSchemeStore::migrateLegacyFromConfig(ConfigBackend& config, std::ui
                                        params,
                                        modifiedAt == 0 ? nowSeconds : modifiedAt);
         scheme.sourceType = MeteringSchemeSource::Migrated;
-        scheme.lastActivatedAt = active ? nowSeconds : 0;
-        meteringSlotKey(key, sizeof(key), index, "create");
-        readConfigText(config, key, scheme.creationSummary);
-        if (scheme.creationSummary[0] == '\0') {
-            std::snprintf(scheme.creationSummary,
-                          sizeof(scheme.creationSummary),
-                          "由旧参数槽 %u 迁移。",
-                          static_cast<unsigned>(index + 1));
-        }
         ++migratedCount;
         return true;
     };
@@ -655,23 +622,6 @@ bool MeteringSchemeStore::migrateLegacyFromConfig(ConfigBackend& config, std::ui
         return true;
     }
 
-    MeteringSchemeCandidate candidate{};
-    candidate.ready = config.getBool("faucet_cfg", "mc_ready", false);
-    if (candidate.ready) {
-        candidate.params.startupPulseCount =
-            static_cast<std::uint32_t>(config.getInt("faucet_cfg", "mc_sp", 0));
-        candidate.params.startupVolumeMl =
-            static_cast<std::uint32_t>(config.getInt("faucet_cfg", "mc_sv", 0));
-        candidate.params.stablePulsePerLiter =
-            static_cast<std::uint32_t>(config.getInt("faucet_cfg", "mc_pl", kDefaultStablePulsePerLiter));
-        candidate.generatedAt =
-            static_cast<std::uint32_t>(config.getInt("faucet_cfg", "mc_at", 0));
-        readConfigText(config, "mc_note", candidate.creationSummary);
-        if (!validMeteringSchemeParameters(candidate.params)) {
-            candidate = MeteringSchemeCandidate{};
-        }
-    }
-
     header_ = makeHeader(1, static_cast<std::uint32_t>(migratedCount + 1), static_cast<std::uint32_t>(migratedCount));
     const std::size_t size = expectedFileSize();
     if (!backend_.createSized(path_, size)) {
@@ -680,10 +630,11 @@ bool MeteringSchemeStore::migrateLegacyFromConfig(ConfigBackend& config, std::ui
     if (!saveHeader()) {
         return false;
     }
+    MeteringSchemeCandidate emptyCandidate{};
     if (!backend_.writeAt(path_,
                           candidateOffset(),
-                          reinterpret_cast<const std::uint8_t*>(&candidate),
-                          sizeof(candidate))) {
+                          reinterpret_cast<const std::uint8_t*>(&emptyCandidate),
+                          sizeof(emptyCandidate))) {
         return false;
     }
     for (std::size_t i = 0; i < migratedCount; ++i) {
@@ -750,7 +701,8 @@ bool MeteringSchemeStore::migrateV1File(const MeteringSchemeStoreHeader& loaded)
         }
         records[i] = expandLegacyRecord(legacyRecords[i]);
     }
-    MeteringSchemeCandidate candidate = expandLegacyCandidate(legacyCandidate);
+    (void)legacyCandidate;
+    MeteringSchemeCandidate candidate{};
     header_ = makeHeader(loaded.activeSchemeId, loaded.nextSchemeId, loaded.slotCount);
     char tempPath[96]{};
     if (!tempPathFor(path_, tempPath, sizeof(tempPath))) {
@@ -779,7 +731,7 @@ bool MeteringSchemeStore::upgradeLegacyDefaultSchemeIfNeeded() {
         if (!readRecord(i, record)) {
             return false;
         }
-        if (!record.valid) {
+        if (!record.recordUsed) {
             continue;
         }
         ++validCount;
@@ -787,7 +739,8 @@ bool MeteringSchemeStore::upgradeLegacyDefaultSchemeIfNeeded() {
         legacySlot = i;
     }
 
-    if (validCount != 1 || legacy.id != 1 || header_.activeSchemeId != 1 || !legacy.enabled ||
+    if (validCount != 1 || legacy.id != 1 || header_.activeSchemeId != 1 ||
+        legacy.state != MeteringSchemeState::Available ||
         legacy.sourceType != MeteringSchemeSource::Default || !legacyEmptyDefaultParams(legacy.params) ||
         !legacyDefaultText(legacy)) {
         return true;
@@ -800,7 +753,6 @@ bool MeteringSchemeStore::upgradeLegacyDefaultSchemeIfNeeded() {
     }
     upgraded.createdAt = legacy.createdAt;
     upgraded.updatedAt = legacy.updatedAt;
-    upgraded.lastActivatedAt = legacy.lastActivatedAt;
     return writeRecord(legacySlot, upgraded);
 }
 
@@ -898,7 +850,7 @@ bool MeteringSchemeStore::findSlotById(std::uint32_t id,
         if (!readRecord(i, record)) {
             return false;
         }
-        if (record.valid && record.id == id) {
+        if (record.recordUsed && record.id == id) {
             output = record;
             slot = i;
             return true;
@@ -916,7 +868,7 @@ bool MeteringSchemeStore::findFreeSlot(std::size_t& slot) const {
         if (!readRecord(i, record)) {
             return false;
         }
-        if (!record.valid) {
+        if (!record.recordUsed) {
             slot = i;
             return true;
         }

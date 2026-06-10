@@ -24,12 +24,16 @@ bool textEquals(const char* left, const char* right) {
     return std::strcmp(left ? left : "", right ? right : "") == 0;
 }
 
+bool schemeAvailable(const MeteringSchemeRecord& scheme) {
+    return scheme.recordUsed && scheme.state == MeteringSchemeState::Available;
+}
+
 MeteringSchemeRecord* findFreeSchemeSlot(MeteringSchemeCollection& schemes) {
     if (!schemes.records) {
         return nullptr;
     }
     for (std::size_t i = 0; i < schemes.capacity; ++i) {
-        if (!schemes.records[i].valid) {
+        if (!schemes.records[i].recordUsed) {
             return &schemes.records[i];
         }
     }
@@ -44,8 +48,8 @@ void initializeCommonScheme(MeteringSchemeRecord& scheme,
                             std::uint32_t nowSeconds) {
     scheme = MeteringSchemeRecord{};
     scheme.id = id;
-    scheme.valid = true;
-    scheme.enabled = true;
+    scheme.recordUsed = true;
+    scheme.state = MeteringSchemeState::Available;
     copyText(scheme.name, name && name[0] ? name : "未命名计量方案");
     scheme.params = params;
     scheme.sourceType = source;
@@ -55,33 +59,12 @@ void initializeCommonScheme(MeteringSchemeRecord& scheme,
 }
 
 void copyCandidateMetadata(MeteringSchemeRecord& scheme, const MeteringSchemeCandidate& candidate) {
-    scheme.generatedKind = candidate.generatedKind;
+    scheme.sourceType = candidate.sourceType;
     scheme.sampleCount = candidate.sampleCount;
-    const std::size_t traceCount =
-        std::min<std::size_t>(candidate.sampleCount, kMeteringSchemeTraceIdCapacity);
-    for (std::size_t i = 0; i < traceCount; ++i) {
-        scheme.sampleTraceIds[i] = candidate.sampleTraceIds[i];
-    }
     scheme.minActualMl = candidate.minActualMl;
     scheme.maxActualMl = candidate.maxActualMl;
     scheme.maxErrorMl = candidate.maxErrorMl;
-    scheme.maxErrorPercent = candidate.maxErrorPercent;
-    scheme.startupDurationMinSec = candidate.startupDurationMinSec;
-    scheme.startupDurationMaxSec = candidate.startupDurationMaxSec;
-    scheme.startupDurationMedianSec = candidate.startupDurationMedianSec;
-    scheme.startupDurationAvgSec = candidate.startupDurationAvgSec;
-    copyText(scheme.creationSummary, candidate.creationSummary);
-}
-
-void writeManualSummary(MeteringSchemeRecord& scheme) {
-    std::snprintf(scheme.creationSummary,
-                  sizeof(scheme.creationSummary),
-                  "手工创建：启动脉冲数 %lu，启动水量 %luml，稳态 %lu P/L，启动时长 %lums，预计稳态流速 %luml/min。",
-                  static_cast<unsigned long>(scheme.params.startupPulseCount),
-                  static_cast<unsigned long>(scheme.params.startupVolumeMl),
-                  static_cast<unsigned long>(scheme.params.stablePulsePerLiter),
-                  static_cast<unsigned long>(scheme.params.startupDurationMs),
-                  static_cast<unsigned long>(scheme.params.stableFlowMlPerMin));
+    scheme.maxErrorTenthPercent = candidate.maxErrorTenthPercent;
 }
 
 std::uint32_t saturatingU32(std::uint64_t value) {
@@ -201,12 +184,6 @@ bool initializeDefaultMeteringSchemes(MeteringSchemeCollection& schemes, std::ui
                            defaultMeteringParameters(),
                            MeteringSchemeSource::Default,
                            nowSeconds);
-    copyText(schemes.records[0].meterLabel, kDefaultMeteringSchemeMeterLabel);
-    copyText(schemes.records[0].conditionLabel, "系统内置默认参数");
-    std::snprintf(schemes.records[0].creationSummary,
-                  sizeof(schemes.records[0].creationSummary),
-                  "系统内置 YF-S201 默认计量方案：启动约 5 秒，启动阶段约 8P，启动水量按 225P/L 折算为 36ml，稳态 225P/L。");
-    schemes.records[0].lastActivatedAt = nowSeconds;
     schemes.activeSchemeId = 1;
     schemes.nextSchemeId = 2;
     return true;
@@ -216,9 +193,8 @@ void initializeManualMeteringScheme(MeteringSchemeRecord& scheme,
                                     std::uint32_t id,
                                     const char* name,
                                     const MeteringParameters& params,
-                                    std::uint32_t nowSeconds) {
+    std::uint32_t nowSeconds) {
     initializeCommonScheme(scheme, id, name, params, MeteringSchemeSource::Manual, nowSeconds);
-    writeManualSummary(scheme);
 }
 
 std::size_t meteringSchemeCount(const MeteringSchemeCollection& schemes, bool includeDisabled) {
@@ -228,7 +204,7 @@ std::size_t meteringSchemeCount(const MeteringSchemeCollection& schemes, bool in
     std::size_t count = 0;
     for (std::size_t i = 0; i < schemes.capacity; ++i) {
         const MeteringSchemeRecord& scheme = schemes.records[i];
-        if (scheme.valid && (includeDisabled || scheme.enabled)) {
+        if (scheme.recordUsed && (includeDisabled || scheme.state == MeteringSchemeState::Available)) {
             ++count;
         }
     }
@@ -240,7 +216,7 @@ MeteringSchemeRecord* findMeteringSchemeById(MeteringSchemeCollection& schemes, 
         return nullptr;
     }
     for (std::size_t i = 0; i < schemes.capacity; ++i) {
-        if (schemes.records[i].valid && schemes.records[i].id == id) {
+        if (schemes.records[i].recordUsed && schemes.records[i].id == id) {
             return &schemes.records[i];
         }
     }
@@ -252,7 +228,7 @@ const MeteringSchemeRecord* findMeteringSchemeById(const MeteringSchemeCollectio
         return nullptr;
     }
     for (std::size_t i = 0; i < schemes.capacity; ++i) {
-        if (schemes.records[i].valid && schemes.records[i].id == id) {
+        if (schemes.records[i].recordUsed && schemes.records[i].id == id) {
             return &schemes.records[i];
         }
     }
@@ -281,7 +257,7 @@ bool saveCandidateAsNewMeteringScheme(MeteringSchemeCollection& schemes,
         return false;
     }
     newSchemeId = schemes.nextSchemeId++;
-    initializeCommonScheme(*slot, newSchemeId, name, candidate.params, MeteringSchemeSource::Generated, nowSeconds);
+    initializeCommonScheme(*slot, newSchemeId, name, candidate.params, candidate.sourceType, nowSeconds);
     copyCandidateMetadata(*slot, candidate);
     candidate = MeteringSchemeCandidate{};
     return true;
@@ -308,10 +284,6 @@ bool createManualMeteringScheme(MeteringSchemeCollection& schemes,
 MeteringSchemeEdit makeMeteringSchemeEdit(const MeteringSchemeRecord& scheme) {
     MeteringSchemeEdit edit{};
     copyText(edit.name, scheme.name);
-    copyText(edit.meterLabel, scheme.meterLabel);
-    copyText(edit.installationLabel, scheme.installationLabel);
-    copyText(edit.conditionLabel, scheme.conditionLabel);
-    copyText(edit.userNote, scheme.userNote);
     edit.params = scheme.params;
     return edit;
 }
@@ -325,11 +297,7 @@ MeteringSchemeEditKind classifyMeteringSchemeEdit(const MeteringSchemeRecord& sc
         scheme.params.stablePulsePerLiter != edit.params.stablePulsePerLiter ||
         scheme.params.startupDurationMs != edit.params.startupDurationMs ||
         scheme.params.stableFlowMlPerMin != edit.params.stableFlowMlPerMin;
-    const bool applicabilityChanged = !textEquals(scheme.meterLabel, edit.meterLabel) ||
-                                      !textEquals(scheme.installationLabel, edit.installationLabel) ||
-                                      !textEquals(scheme.conditionLabel, edit.conditionLabel) ||
-                                      !textEquals(scheme.userNote, edit.userNote);
-    if (paramsChanged || applicabilityChanged) {
+    if (paramsChanged) {
         return MeteringSchemeEditKind::MeteringOrApplicability;
     }
     if (nameChanged) {
@@ -341,27 +309,15 @@ MeteringSchemeEditKind classifyMeteringSchemeEdit(const MeteringSchemeRecord& sc
 bool updateMeteringSchemeRecord(MeteringSchemeRecord& scheme,
                                 const MeteringSchemeEdit& edit,
                                 std::uint32_t nowSeconds) {
-    if (!scheme.valid || !validMeteringSchemeParameters(edit.params)) {
+    if (!scheme.recordUsed || !validMeteringSchemeParameters(edit.params)) {
         return false;
     }
     const MeteringSchemeEditKind kind = classifyMeteringSchemeEdit(scheme, edit);
     copyText(scheme.name, edit.name);
-    copyText(scheme.meterLabel, edit.meterLabel);
-    copyText(scheme.installationLabel, edit.installationLabel);
-    copyText(scheme.conditionLabel, edit.conditionLabel);
-    copyText(scheme.userNote, edit.userNote);
     scheme.params = edit.params;
     scheme.updatedAt = nowSeconds;
     if (kind == MeteringSchemeEditKind::MeteringOrApplicability) {
         ++scheme.revision;
-        std::snprintf(scheme.lastModifiedSummary,
-                      sizeof(scheme.lastModifiedSummary),
-                      "修改计量参数或适用条件，revision=%lu。",
-                      static_cast<unsigned long>(scheme.revision));
-    } else if (kind == MeteringSchemeEditKind::NameOnly) {
-        std::snprintf(scheme.lastModifiedSummary,
-                      sizeof(scheme.lastModifiedSummary),
-                      "修改方案名称，revision 不变。");
     }
     return true;
 }
@@ -369,14 +325,13 @@ bool updateMeteringSchemeRecord(MeteringSchemeRecord& scheme,
 bool canDisableMeteringScheme(const MeteringSchemeRecord& scheme,
                               std::uint32_t activeSchemeId,
                               std::size_t enabledSchemeCount) {
-    return scheme.valid && scheme.enabled && scheme.id != activeSchemeId && enabledSchemeCount > 1;
+    return schemeAvailable(scheme) && scheme.id != activeSchemeId && enabledSchemeCount > 1;
 }
 
 bool canPhysicallyDeleteMeteringScheme(const MeteringSchemeRecord& scheme,
                                        std::uint32_t activeSchemeId,
                                        std::size_t validSchemeCount) {
-    return scheme.valid && validSchemeCount > 1 && scheme.id != activeSchemeId && scheme.useCount == 0 &&
-           !scheme.usageStatsDirty;
+    return scheme.recordUsed && validSchemeCount > 1 && scheme.id != activeSchemeId && !scheme.usedEver;
 }
 
 }  // namespace faucet

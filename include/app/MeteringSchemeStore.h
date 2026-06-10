@@ -37,7 +37,10 @@ public:
     bool loadCandidate(MeteringSchemeCandidate& output) const;
     bool saveCandidate(const MeteringSchemeCandidate& candidate);
     bool discardCandidate();
-    bool saveCandidateAsNew(const char* name, std::uint32_t nowSeconds, std::uint32_t& newId);
+    bool saveCandidateAsNew(const MeteringSchemeCandidate& candidate,
+                            const char* name,
+                            std::uint32_t nowSeconds,
+                            std::uint32_t& newId);
     bool createManual(const char* name,
                       const MeteringParameters& params,
                       std::uint32_t nowSeconds,
@@ -47,8 +50,7 @@ public:
     bool disableScheme(std::uint32_t schemeId, std::uint32_t nowSeconds);
     bool restoreScheme(std::uint32_t schemeId, std::uint32_t nowSeconds);
     bool deleteScheme(std::uint32_t schemeId);
-    bool incrementUsageAfterRecordWrite(std::uint32_t schemeId, std::uint32_t nowSeconds);
-    bool markUsageStatsDirty(std::uint32_t schemeId);
+    bool markUsedAfterRecordWrite(std::uint32_t schemeId);
     bool migrateLegacyFromConfig(ConfigBackend& config, std::uint32_t nowSeconds);
 
 private:

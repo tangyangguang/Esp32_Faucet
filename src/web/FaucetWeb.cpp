@@ -4397,7 +4397,6 @@ void handleMeteringPage() {
     Esp32BaseWeb::sendChunk("<p class='muted'>集中管理当前启用的流量计计量参数、手工方案，以及从样本库生成的新方案；本页不提供远程出水或停水能力。</p>");
     Esp32BaseWeb::sendChunk("<div class='records-top-grid records-diagnostic-strip'>");
     sendSegmentedMeteringPanel();
-    sendPulseTraceCachePanel();
     Esp32BaseWeb::sendChunk("</div>");
 
     Esp32BaseWeb::sendChunk("<p class='muted'>从样本库生成</p>");

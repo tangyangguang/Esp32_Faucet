@@ -224,6 +224,20 @@ void test_long_term_sample_remove_clears_index_and_frees_slot() {
     TEST_ASSERT_TRUE(store.save(traceFor(21, 9, 3000), samples, 3, sampleId));
 }
 
+void test_long_term_sample_store_reads_samples_by_sample_id() {
+    MemoryFileBackend backend;
+    CalibrationLongTermSampleStore store(backend, "/samples.bin");
+    TEST_ASSERT_TRUE(store.begin());
+    WaterPulseTraceSample samples[3]{};
+    fillSamples(samples, 12000);
+    std::uint32_t sampleId = 0;
+    TEST_ASSERT_TRUE(store.save(traceFor(20, 1, 1800), samples, 3, sampleId));
+
+    WaterPulseTraceSample copied[3]{};
+    TEST_ASSERT_EQUAL_size_t(3, store.readSamples(sampleId, copied, 3));
+    TEST_ASSERT_EQUAL_UINT32(24000, copied[2].elapsedUs);
+}
+
 int main(int argc, char** argv) {
     (void)argc;
     (void)argv;
@@ -236,5 +250,6 @@ int main(int argc, char** argv) {
     RUN_TEST(test_long_term_sample_store_drops_invalid_existing_file_and_stays_lazy);
     RUN_TEST(test_long_term_sample_store_refuses_the_sixth_sample);
     RUN_TEST(test_long_term_sample_remove_clears_index_and_frees_slot);
+    RUN_TEST(test_long_term_sample_store_reads_samples_by_sample_id);
     return UNITY_END();
 }

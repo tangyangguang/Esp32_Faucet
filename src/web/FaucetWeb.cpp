@@ -72,7 +72,7 @@ struct TodayOverview {
 
 struct SegmentedSampleDiagnostics {
     SegmentedCalibrationResult result{};
-    std::uint16_t savedTraceCount = 0;
+    std::uint16_t longTermSampleCount = 0;
     std::uint16_t measuredSampleCount = 0;
     std::uint16_t validSampleCount = 0;
     std::uint32_t latestSampleTime = 0;
@@ -1062,6 +1062,65 @@ bool appendSegmentedSampleFromTrace(const WaterPulseTrace& trace,
     return true;
 }
 
+bool appendSegmentedSampleFromLongTermSample(const CalibrationStoredTrace& stored,
+                                             const SegmentedCalibrationOptions& options,
+                                             SegmentedCalibrationSample* samples,
+                                             WaterRecord* seenRecords,
+                                             std::size_t& seenCount,
+                                             std::size_t& sampleCount,
+                                             SegmentedSampleDiagnostics& diagnostics) {
+    const WaterPulseTrace& trace = stored.trace;
+    if (!samples || !seenRecords || seenCount >= kSegmentedCalibrationMaxSamples ||
+        segmentedSampleAlreadySeen(seenRecords, seenCount, trace.record)) {
+        return false;
+    }
+    seenRecords[seenCount] = trace.record;
+    ++seenCount;
+
+    if (stored.actualMl > 0) {
+        ++diagnostics.measuredSampleCount;
+    }
+    if (!stored.valid || stored.pendingActual || stored.actualMl == 0 ||
+        sampleCount >= kSegmentedCalibrationMaxSamples || trace.sampleCount < 6 || trace.totalPulses == 0 ||
+        trace.truncated || trace.resumedAfterPause || stored.sampleId == 0 || !g_context.calibrationLongTermSamples) {
+        return false;
+    }
+    WaterPulseTraceSample* traceSamples = new (std::nothrow) WaterPulseTraceSample[trace.sampleCount]{};
+    if (!traceSamples) {
+        return false;
+    }
+    const std::size_t copied =
+        g_context.calibrationLongTermSamples->readSamples(stored.sampleId, traceSamples, trace.sampleCount);
+    if (copied != trace.sampleCount) {
+        delete[] traceSamples;
+        return false;
+    }
+    const WaterPulseTraceAnalysis analysis = analyzeWaterPulseTrace(trace, traceSamples, trace.sampleCount, options);
+    delete[] traceSamples;
+    if (!analysis.stable || analysis.stablePulseCount == 0) {
+        return false;
+    }
+    samples[sampleCount] = SegmentedCalibrationSample{
+        stored.actualMl,
+        trace.totalPulses,
+        analysis.startupPulseCount,
+        analysis.stablePulseCount,
+        analysis.stableStartSec,
+        analysis.stablePulsePerSec,
+    };
+    if (trace.record.durationSec > 0) {
+        diagnostics.validActualMlTotal += stored.actualMl;
+        diagnostics.validDurationSecTotal += trace.record.durationSec;
+    }
+    ++sampleCount;
+    diagnostics.validSampleCount = static_cast<std::uint16_t>(sampleCount);
+    if (trace.startTime >= diagnostics.latestSampleTime) {
+        diagnostics.latestSampleTime = trace.startTime;
+        diagnostics.latestActualMl = stored.actualMl;
+    }
+    return true;
+}
+
 SegmentedSampleDiagnostics collectSegmentedSampleDiagnostics(bool includeRam) {
     SegmentedSampleDiagnostics diagnostics{};
     const SegmentedCalibrationOptions options = calibrationOptionsForWeb();
@@ -1076,18 +1135,15 @@ SegmentedSampleDiagnostics collectSegmentedSampleDiagnostics(bool includeRam) {
     std::size_t seenCount = 0;
     std::size_t sampleCount = 0;
 
-    if (ensureSavedPulseTracesReady()) {
-        WaterPulseTrace* savedTraces = new (std::nothrow) WaterPulseTrace[kSavedPulseTraceMaxCountLimit]{};
-        if (savedTraces) {
-            const std::size_t savedCount =
-                g_context.savedPulseTraces->list(savedTraces, kSavedPulseTraceMaxCountLimit);
-            diagnostics.savedTraceCount = static_cast<std::uint16_t>(
-                std::min<std::size_t>(savedCount, static_cast<std::size_t>(UINT16_MAX)));
-            for (std::size_t i = 0; i < savedCount && sampleCount < kSegmentedCalibrationMaxSamples; ++i) {
-                appendSegmentedSampleFromTrace(
-                    savedTraces[i], true, options, samples, seenRecords, seenCount, sampleCount, diagnostics);
-            }
-            delete[] savedTraces;
+    if (g_context.calibrationLongTermSamples && g_context.calibrationLongTermSamples->ready()) {
+        CalibrationStoredTrace longTermSamples[kCalibrationLongTermSampleSlots]{};
+        const std::size_t longTermCount =
+            g_context.calibrationLongTermSamples->list(longTermSamples, kCalibrationLongTermSampleSlots);
+        diagnostics.longTermSampleCount = static_cast<std::uint16_t>(
+            std::min<std::size_t>(longTermCount, static_cast<std::size_t>(UINT16_MAX)));
+        for (std::size_t i = 0; i < longTermCount && sampleCount < kSegmentedCalibrationMaxSamples; ++i) {
+            appendSegmentedSampleFromLongTermSample(
+                longTermSamples[i], options, samples, seenRecords, seenCount, sampleCount, diagnostics);
         }
     }
 
@@ -1806,7 +1862,7 @@ void sendCalibrationFormulaPanel() {
     Esp32BaseWeb::sendChunk("<details class='panel calibration-help-panel'><summary><span>查看计量说明</span><small>生成规则、估算公式和测算边界</small></summary>"
                             "<div class='calibration-help-content'><section class='calibration-formula-block'><h3>生成参数：样本与拟合</h3>"
                             "<table class='kv'>"
-                            "<tr><th>有效样本条件</th><td>有脉冲明细、已写入设备样本库、容量已校准、原始边沿未因超过单条上限而被截断、未发生暂停后恢复出水且稳态识别成功的样本，才参与生成计量参数。</td></tr>"
+                            "<tr><th>有效样本条件</th><td>已存入长期样本库、有脉冲明细、有实测容量、原始边沿未因超过单条上限而被截断、未发生暂停后恢复出水且稳态识别成功的样本，才参与生成计量参数。</td></tr>"
                             "<tr><th>稳态识别</th><td>每条样本先从脉冲分布中识别稳态起点，得到启动脉冲数 Ns 样本值和稳态脉冲数。</td></tr>"
                             "<tr><th>生成拟合</th><td><code>实测容量 = Vs + 稳态脉冲数 × 每脉冲毫升数</code>，多条样本拟合得到启动水量 Vs 和稳态P/L。</td></tr>"
                             "<tr><th>生成参数</th><td><code>Ns = 平均启动脉冲数</code>；<code>Vs = 拟合得到的启动水量</code>；<code>Ps = round(1000 / 每脉冲毫升数)</code>。</td></tr>"
@@ -1910,8 +1966,8 @@ void sendCalibrationSampleStatusPills(const CalibrationSampleState& state, bool 
         Esp32BaseWeb::sendChunk("</span>");
         return;
     }
-    Esp32BaseWeb::sendChunk(savedSource ? "<span class='status-pill status-ok'>可参与生成</span>"
-                                        : "<span class='status-pill status-warn'>可入库</span>");
+    Esp32BaseWeb::sendChunk(savedSource ? "<span class='status-pill status-muted'>已保存明细</span>"
+                                        : "<span class='status-pill status-muted'>RAM 明细</span>");
     Esp32BaseWeb::sendChunk("</span>");
 }
 
@@ -2108,7 +2164,7 @@ void sendCalibrationSampleRow(const WaterPulseTrace& trace, bool savedSource, st
     sendFmt("%lu", static_cast<unsigned long>(trace.traceId));
     Esp32BaseWeb::sendChunk("'><div class='sample-calibration-info'><strong>校准容量</strong>"
                             "<span>左侧样本来自本次脉冲明细，请按量杯读数填写右侧实测容量。</span>"
-                            "<span>保存后写入设备样本库，作为生成计量方案的样本真值。</span>"
+                            "<span>保存后只更新这条明细的实测容量；计量方案生成只使用长期样本库。</span>"
                             "<span>该操作只更新样本和校准记录，不会修改当前计量方案。</span>");
     if (calibrated) {
         char calibratedAt[40]{};
@@ -2152,8 +2208,8 @@ void sendCalibrationSampleRow(const WaterPulseTrace& trace, bool savedSource, st
 }
 
 void sendCalibrationSamplesPanel(std::uint32_t samplePulseWindowSec) {
-    Esp32BaseWeb::sendChunk("<section id='calibration-samples' class='panel'><div class='panel-head'><h3>样本</h3></div>"
-                            "<p class='hint'>这里展示有脉冲明细的数据。RAM 临时样本重启会丢失；校准容量会先写入设备样本库，只有已入库、已校准容量、未截断、未发生暂停后恢复出水且稳态识别成功的样本才参与方案生成。</p>");
+    Esp32BaseWeb::sendChunk("<section id='calibration-samples' class='panel'><div class='panel-head'><h3>脉冲明细</h3></div>"
+                            "<p class='hint'>这里用于查看和补录历史明细的实测容量。计量方案生成只使用长期样本库；RAM 临时明细重启会丢失，不会自动写入长期库。</p>");
     WaterPulseTrace* savedTraces = nullptr;
     std::size_t savedCount = 0;
     if (ensureSavedPulseTracesReady()) {
@@ -2237,6 +2293,79 @@ void sendCalibrationSamplesPanel(std::uint32_t samplePulseWindowSec) {
     delete[] savedTraces;
 }
 
+bool findLongTermSampleForAttempt(std::uint32_t sessionId,
+                                  std::uint8_t attemptIndex,
+                                  std::uint32_t& sampleId) {
+    sampleId = 0;
+    if (!g_context.calibrationLongTermSamples || !g_context.calibrationLongTermSamples->ready()) {
+        return false;
+    }
+    CalibrationStoredTrace samples[kCalibrationLongTermSampleSlots]{};
+    const std::size_t count = g_context.calibrationLongTermSamples->list(samples, kCalibrationLongTermSampleSlots);
+    for (std::size_t i = 0; i < count; ++i) {
+        if (samples[i].sessionId == sessionId && samples[i].attemptIndex == attemptIndex) {
+            sampleId = samples[i].sampleId;
+            return true;
+        }
+    }
+    return false;
+}
+
+void sendCalibrationSessionSamplesPanel() {
+    if (!g_context.calibrationSessions || !g_context.calibrationSessions->ready()) {
+        return;
+    }
+    CalibrationSessionRecord session{};
+    if (!g_context.calibrationSessions->load(session) || session.attemptCount == 0) {
+        return;
+    }
+    bool hasValidAttempt = false;
+    for (std::uint8_t i = 0; i < session.attemptCount && i < kCalibrationMaxAttempts; ++i) {
+        if (session.attempts[i].status == CalibrationAttemptStatus::Valid) {
+            hasValidAttempt = true;
+            break;
+        }
+    }
+    if (!hasValidAttempt) {
+        return;
+    }
+
+    Esp32BaseWeb::sendChunk("<section class='panel calibration-session-samples'><div class='panel-head'><h3>本次有效样本</h3>"
+                            "<span class='status-pill status-muted'>手动入库</span></div>"
+                            "<p class='hint'>这些样本来自当前校准会话。只有点击“存入长期库”才会写入 Flash 长期样本库；重复保存同一条不会新增占位。</p>"
+                            "<table><tr><th>序号</th><th>时间</th><th>实测容量</th><th>脉冲</th><th>状态</th><th>操作</th></tr>");
+    for (std::uint8_t i = 0; i < session.attemptCount && i < kCalibrationMaxAttempts; ++i) {
+        const CalibrationAttempt& attempt = session.attempts[i];
+        if (attempt.status != CalibrationAttemptStatus::Valid) {
+            continue;
+        }
+        char timeText[40]{};
+        char actualText[24]{};
+        formatWaterRecordListTime(attempt.record, timeText, sizeof(timeText));
+        formatLitersMl(attempt.actualMl, actualText, sizeof(actualText));
+        std::uint32_t sampleId = 0;
+        const bool saved = findLongTermSampleForAttempt(session.sessionId, attempt.attemptIndex, sampleId);
+        sendFmt("<tr><td>#%u</td><td>%s</td><td>%s</td><td>%luP</td><td><span class='status-pill %s'>%s</span></td><td>",
+                static_cast<unsigned>(attempt.attemptIndex + 1),
+                timeText,
+                actualText,
+                static_cast<unsigned long>(attempt.record.pulseCount),
+                saved ? "status-ok" : "status-muted",
+                saved ? "已入长期库" : "本次会话");
+        if (saved) {
+            sendFmt("<span class='hint'>长期样本 #%lu</span>", static_cast<unsigned long>(sampleId));
+        } else {
+            Esp32BaseWeb::sendChunk("<form method='post' action='/faucet/calibration' onsubmit='return once(this)'>"
+                                    "<input type='hidden' name='action' value='save_long_term_sample'>"
+                                    "<input type='hidden' name='attemptIndex' value='");
+            sendFmt("%u", static_cast<unsigned>(attempt.attemptIndex));
+            Esp32BaseWeb::sendChunk("'><input class='secondary' type='submit' value='存入长期库'></form>");
+        }
+        Esp32BaseWeb::sendChunk("</td></tr>");
+    }
+    Esp32BaseWeb::sendChunk("</table></section>");
+}
+
 void sendLongTermSampleLibraryPanel() {
     Esp32BaseWeb::sendChunk("<section id='long-term-samples' class='panel'><div class='panel-head'><h3>长期样本库</h3>"
                             "<span class='status-pill status-muted'>Flash</span></div>");
@@ -2284,26 +2413,28 @@ void sendLongTermSampleLibraryPanel() {
 
 void sendGeneratedSampleResiduals(const MeteringSchemeCandidate& candidate,
                                   const SegmentedCalibrationOptions& options) {
-    if (!ensureSavedPulseTracesReady()) {
+    if (!g_context.calibrationLongTermSamples || !g_context.calibrationLongTermSamples->ready()) {
         return;
     }
-    WaterPulseTrace* savedTraces = new (std::nothrow) WaterPulseTrace[kSavedPulseTraceMaxCountLimit]{};
-    if (!savedTraces) {
-        return;
-    }
-    const std::size_t savedCount = g_context.savedPulseTraces->list(savedTraces, kSavedPulseTraceMaxCountLimit);
+    CalibrationStoredTrace samples[kCalibrationLongTermSampleSlots]{};
+    const std::size_t sampleCount =
+        g_context.calibrationLongTermSamples->list(samples, kCalibrationLongTermSampleSlots);
     bool opened = false;
-    for (std::size_t i = 0; i < savedCount; ++i) {
-        const WaterPulseTrace& trace = savedTraces[i];
-        const std::uint32_t actualMl = actualMlForSegmentedSample(trace);
-        if (actualMl == 0 || trace.truncated || trace.sampleCount < 6 || trace.totalPulses == 0) {
+    for (std::size_t i = 0; i < sampleCount; ++i) {
+        const CalibrationStoredTrace& sample = samples[i];
+        const WaterPulseTrace& trace = sample.trace;
+        const std::uint32_t actualMl = sample.actualMl;
+        if (!sample.valid || sample.pendingActual || actualMl == 0 || trace.truncated ||
+            trace.resumedAfterPause || trace.sampleCount < 6 || trace.totalPulses == 0 || sample.sampleId == 0) {
             continue;
         }
         WaterPulseTraceSample* traceSamples = new (std::nothrow) WaterPulseTraceSample[trace.sampleCount]{};
         if (!traceSamples) {
             continue;
         }
-        const bool copied = copySavedTraceSamples(trace, traceSamples, trace.sampleCount);
+        const bool copied =
+            g_context.calibrationLongTermSamples->readSamples(sample.sampleId, traceSamples, trace.sampleCount) ==
+            trace.sampleCount;
         const WaterPulseTraceAnalysis analysis =
             copied ? analyzeWaterPulseTrace(trace, traceSamples, trace.sampleCount, options) : WaterPulseTraceAnalysis{};
         delete[] traceSamples;
@@ -2356,7 +2487,6 @@ void sendGeneratedSampleResiduals(const MeteringSchemeCandidate& candidate,
     if (opened) {
         Esp32BaseWeb::sendChunk("</table>");
     }
-    delete[] savedTraces;
 }
 
 void sendCalibrationGenerationPanel() {
@@ -2437,7 +2567,7 @@ void sendCalibrationGenerationPanel() {
     sendFmt("<div class='diagnostic-metric'><span>还需</span><strong>%s</strong></div>", sampleNeed);
     Esp32BaseWeb::sendChunk("</div><div class='coverage-foot'>");
     sendFmt("<span>长期样本 <b>%u条</b></span><span>已测容量 <b>%u条</b></span>",
-            static_cast<unsigned>(diagnostics.savedTraceCount),
+            static_cast<unsigned>(diagnostics.longTermSampleCount),
             static_cast<unsigned>(diagnostics.measuredSampleCount));
     sendFmt("<span>还需 <b>%s</b></span>", sampleNeed);
     Esp32BaseWeb::sendChunk("</div></section>");
@@ -2524,7 +2654,7 @@ void sendCalibrationPageScript() {
     Esp32BaseWeb::sendChunk("<script>"
                             "function faucetShowSampleCalibration(id){var rows=document.querySelectorAll('.sample-calibration-edit-row');for(var i=0;i<rows.length;i++)rows[i].classList.remove('is-open');var r=document.getElementById(id);if(r)r.classList.add('is-open');}"
                             "function faucetHideSampleCalibration(id){var r=document.getElementById(id);if(r)r.classList.remove('is-open');}"
-                            "function faucetCalibrationErrorMessage(code){var m={busy:'设备正在出水或确认中，请回到待机后再保存。',invalid_value:'实际出水量超出允许范围，请按量杯读数填写。',invalid_action:'操作无效，请刷新页面后重试。',invalid_state:'现在不允许执行这个操作，请刷新页面后按当前步骤继续。',calibration_storage_unavailable:'校准存储未就绪，请检查设备存储空间或重启后再试。',sample_not_enough:'可生成样本不足，至少需要两条已入库、已校准容量且稳态识别成功的样本。',no_calibration_record:'这条样本不可校准：没有可用脉冲明细或结束状态不适合校准。',calibration_mark_failed:'实测容量写入失败，可能是校准记录存储不可用或 Flash 写入失败。',save_failed:'样本入库失败，请检查设备样本库容量或存储状态。','HTTP 401':'认证已失效，请刷新页面重新登录。','HTTP 403':'认证被拒绝，请检查 Web 登录状态。','HTTP 404':'保存接口路径不存在，请刷新页面后重试。','HTTP 500':'设备端保存接口异常，请查看日志。','HTTP 503':'设备尚未就绪，请稍后重试。'};return m[code]||(code?'操作失败：'+code:'操作失败，请检查页面状态后重试。');}"
+                            "function faucetCalibrationErrorMessage(code){var m={busy:'设备正在出水或确认中，请回到待机后再保存。',invalid_value:'实际出水量超出允许范围，请按量杯读数填写。',invalid_action:'操作无效，请刷新页面后重试。',invalid_state:'现在不允许执行这个操作，请刷新页面后按当前步骤继续。',calibration_storage_unavailable:'校准存储未就绪，请检查设备存储空间或重启后再试。',sample_not_enough:'可生成样本不足，至少需要两条长期样本库中有实测容量且稳态识别成功的样本。',no_calibration_record:'这条样本不可校准：没有可用脉冲明细或结束状态不适合校准。',calibration_mark_failed:'实测容量写入失败，可能是校准记录存储不可用或 Flash 写入失败。',save_failed:'样本入库失败，请检查长期样本库容量或存储状态。','HTTP 401':'认证已失效，请刷新页面重新登录。','HTTP 403':'认证被拒绝，请检查 Web 登录状态。','HTTP 404':'保存接口路径不存在，请刷新页面后重试。','HTTP 500':'设备端保存接口异常，请查看日志。','HTTP 503':'设备尚未就绪，请稍后重试。'};return m[code]||(code?'操作失败：'+code:'操作失败，请检查页面状态后重试。');}"
                             "function faucetReadCalibrationError(r){return r.text().then(function(t){try{return (JSON.parse(t)||{}).error||('HTTP '+r.status);}catch(e){return 'HTTP '+r.status;}});}"
                             "function faucetResetSampleCalibrationForm(f){f.dataset.busy='';var b=f.querySelector('[type=submit]');if(b)b.disabled=false;}"
                             "function faucetFormatEstimateSeconds(s){if(!isFinite(s)||s<=0)return '-';s=Math.max(1,Math.round(s));var m=Math.floor(s/60),r=s%60;return m>0?(m+'分'+r+'秒'):(r+'秒');}"
@@ -2796,12 +2926,14 @@ void sendNoticeFromQuery() {
         const bool traceSaved = std::strcmp(text, "trace") == 0;
         const bool traceDeleted = std::strcmp(text, "trace_deleted") == 0;
         Esp32BaseWeb::sendChunk("<p class='ok'>");
+        const bool longTermSample = std::strcmp(text, "long_term_sample") == 0;
         Esp32BaseWeb::sendChunk(actualOnly   ? "校准已保存。"
                                 : generated  ? "计量参数生成结果已生成。"
                                 : generatedDiscarded ? "生成结果已放弃。"
                                 : restored           ? "已恢复上一套参数。"
                                 : traceSaved         ? "明细已保存到设备。"
                                 : traceDeleted       ? "已保存明细已删除。"
+                                : longTermSample     ? "样本已存入长期样本库。"
                                                      : "已保存。");
         Esp32BaseWeb::sendChunk("</p>");
         return;
@@ -2845,7 +2977,7 @@ void sendNoticeFromQuery() {
     } else if (std::strcmp(text, "calibration_drift") == 0) {
         message = "新系数和旧系数偏差过大，请重新接水测量。";
     } else if (std::strcmp(text, "sample_not_enough") == 0) {
-        message = "可生成样本不足，至少需要两条已入库、已校准容量且稳态识别成功的样本。";
+        message = "可生成样本不足，至少需要两条长期样本库中有实测容量且稳态识别成功的样本。";
     } else if (std::strcmp(text, "no_generated_result") == 0) {
         message = "还没有可保存的生成结果，请先生成参数。";
     } else if (std::strcmp(text, "no_previous") == 0) {
@@ -4432,6 +4564,7 @@ void handleCalibrationPage() {
     sendFmt("<input class='primary' type='submit' value='确认应用'%s></form></div>",
             canApply ? "" : " disabled");
     Esp32BaseWeb::sendChunk("</section>");
+    sendCalibrationSessionSamplesPanel();
     sendCalibrationSamplesPanel(selectedSamplePulseWindowSec());
     sendCalibrationPageScript();
     sendPageEnd();
@@ -4733,17 +4866,17 @@ void handleRecordDetailPage() {
     } else if (trace->truncated) {
         Esp32BaseWeb::sendChunk("<tr><th>可用性</th><td>明细已截断，不入库，不参与生成校准参数。</td></tr>");
     } else if (traceActualMl > 0 && analysis.stable) {
-        sendFmt("<tr><th>可用性</th><td>可用于拟合，稳态从第 %lu 秒开始。</td></tr>",
+        sendFmt("<tr><th>可用性</th><td>已记录实测容量，稳态从第 %lu 秒开始；计量方案生成只使用长期样本库。</td></tr>",
                 static_cast<unsigned long>(analysis.stableStartSec));
     } else if (analysis.stable) {
-        sendFmt("<tr><th>可用性</th><td>脉冲稳定，输入实测容量后可用于拟合；稳态从第 %lu 秒开始。</td></tr>",
+        sendFmt("<tr><th>可用性</th><td>脉冲稳定，输入实测容量后可作为明细参考；稳态从第 %lu 秒开始。</td></tr>",
                 static_cast<unsigned long>(analysis.stableStartSec));
     } else if (traceActualMl > 0) {
-        Esp32BaseWeb::sendChunk("<tr><th>可用性</th><td>实测容量已记录，但稳态识别失败，暂不能用于拟合。</td></tr>");
+        Esp32BaseWeb::sendChunk("<tr><th>可用性</th><td>实测容量已记录，但稳态识别失败。</td></tr>");
     } else {
-        Esp32BaseWeb::sendChunk("<tr><th>可用性</th><td>缺少实测容量且稳态识别失败，暂不能用于拟合。</td></tr>");
+        Esp32BaseWeb::sendChunk("<tr><th>可用性</th><td>缺少实测容量且稳态识别失败。</td></tr>");
     }
-    Esp32BaseWeb::sendChunk("</table><p class='hint'>校准容量统一从校准页样本列表保存；RAM 样本校准成功后会写入设备样本库。只有已入库、已校准容量、未截断、未发生暂停后恢复出水且稳态识别成功的样本才参与方案生成。</p></section>");
+    Esp32BaseWeb::sendChunk("</table><p class='hint'>校准容量统一从校准页脉冲明细保存；计量方案生成只使用长期样本库，不直接扫描 RAM 或已保存明细。</p></section>");
 
     Esp32BaseWeb::sendChunk("<section class='panel'><h3>明细概况</h3><table class='kv'>");
     sendFmt("<tr><th>开始时间</th><td>%s</td></tr>"
@@ -5492,6 +5625,24 @@ void handleCalibrationPost() {
                                                    g_context.nowSeconds ? g_context.nowSeconds() : 0),
                                   "attempt_skipped",
                                   "invalid_state");
+        return;
+    }
+    if (std::strcmp(text, "save_long_term_sample") == 0) {
+        std::uint32_t attemptIndex = 0;
+        if (!getParam("attemptIndex", text, sizeof(text)) || !parseU32(text, attemptIndex) ||
+            attemptIndex >= kCalibrationMaxAttempts) {
+            redirectCalibrationFailure("invalid_value");
+            return;
+        }
+        std::uint32_t sampleId = 0;
+        redirectCalibrationResult(
+            g_context.app &&
+                g_context.app->saveCalibrationSessionSampleToLongTermForWeb(
+                    static_cast<std::uint8_t>(attemptIndex),
+                    g_context.nowSeconds ? g_context.nowSeconds() : 0,
+                    sampleId),
+            "long_term_sample",
+            "save_failed");
         return;
     }
     if (std::strcmp(text, "generate_session") == 0) {

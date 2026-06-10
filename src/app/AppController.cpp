@@ -535,6 +535,70 @@ bool AppController::submitCalibrationActualForWeb(std::uint32_t actualMl, std::u
     return saveCalibrationSession();
 }
 
+bool AppController::saveCalibrationSessionSampleToLongTermForWeb(std::uint8_t attemptIndex,
+                                                                 std::uint32_t nowSeconds,
+                                                                 std::uint32_t& sampleId) {
+    sampleId = 0;
+    if (!calibrationLongTermSamples_ || !calibrationLongTermSamples_->ready() || !calibrationSessionTraces_ ||
+        !calibrationSessionTraces_->ready() || water_.snapshot().state != WaterState::Idle) {
+        return false;
+    }
+
+    const CalibrationAttempt* selected = nullptr;
+    for (std::uint8_t i = 0; i < calibrationSession_.attemptCount && i < kCalibrationMaxAttempts; ++i) {
+        const CalibrationAttempt& attempt = calibrationSession_.attempts[i];
+        if (attempt.attemptIndex == attemptIndex) {
+            selected = &attempt;
+            break;
+        }
+    }
+    if (!selected || selected->status != CalibrationAttemptStatus::Valid ||
+        selected->sessionTraceSlot >= kCalibrationSessionTraceSlots) {
+        return false;
+    }
+
+    CalibrationStoredTrace existing[kCalibrationLongTermSampleSlots]{};
+    const std::size_t existingCount =
+        calibrationLongTermSamples_->list(existing, kCalibrationLongTermSampleSlots);
+    for (std::size_t i = 0; i < existingCount; ++i) {
+        if (existing[i].sessionId == calibrationSession_.sessionId &&
+            existing[i].attemptIndex == selected->attemptIndex) {
+            sampleId = existing[i].sampleId;
+            calibrationSession_.updatedAt = nowSeconds;
+            return saveCalibrationSession();
+        }
+    }
+
+    CalibrationStoredTrace stored{};
+    if (!calibrationSessionTraces_->load(selected->sessionTraceSlot, stored) || !stored.valid ||
+        stored.pendingActual || stored.actualMl == 0 || stored.trace.sampleCount == 0 ||
+        stored.trace.sampleCount > kPulseTraceMaxRawEdgesPerTrace) {
+        return false;
+    }
+
+    WaterPulseTraceSample* samples = new (std::nothrow) WaterPulseTraceSample[stored.trace.sampleCount]{};
+    if (!samples) {
+        return false;
+    }
+    const std::size_t copied =
+        calibrationSessionTraces_->readSamples(selected->sessionTraceSlot, samples, stored.trace.sampleCount);
+    if (copied != stored.trace.sampleCount) {
+        delete[] samples;
+        return false;
+    }
+    stored.sessionId = calibrationSession_.sessionId;
+    stored.attemptIndex = selected->attemptIndex;
+    stored.savedAt = nowSeconds;
+    const bool saved = calibrationLongTermSamples_->save(stored, samples, copied, sampleId);
+    delete[] samples;
+    if (!saved) {
+        return false;
+    }
+    calibrationSession_.updatedAt = nowSeconds;
+    pendingBeep_ = BeepPattern::Done;
+    return saveCalibrationSession();
+}
+
 bool AppController::skipCalibrationAttemptForWeb(CalibrationSkipReason reason, std::uint32_t nowSeconds) {
     if (calibrationSession_.status != CalibrationSessionStatus::AwaitingActual ||
         calibrationSession_.attemptCount == 0) {

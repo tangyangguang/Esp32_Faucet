@@ -136,6 +136,9 @@ public:
     bool startCalibrationSessionForWeb(std::uint32_t nowSeconds);
     bool discardCalibrationSessionForWeb(std::uint32_t nowSeconds);
     bool submitCalibrationActualForWeb(std::uint32_t actualMl, std::uint32_t nowSeconds);
+    bool saveCalibrationSessionSampleToLongTermForWeb(std::uint8_t attemptIndex,
+                                                      std::uint32_t nowSeconds,
+                                                      std::uint32_t& sampleId);
     bool skipCalibrationAttemptForWeb(CalibrationSkipReason reason, std::uint32_t nowSeconds);
     bool generateCalibrationForWeb(std::uint32_t nowSeconds);
     bool applyGeneratedCalibrationForWeb(std::uint32_t nowSeconds);

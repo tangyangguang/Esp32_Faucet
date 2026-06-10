@@ -661,7 +661,7 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "sample-volume-input-row"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "' step='1' value='"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "<span class='unit-label'>ml</span></span>"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "保存后写入设备样本库"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "保存后只更新这条明细的实测容量；计量方案生成只使用长期样本库"));
     TEST_ASSERT_NULL(std::strstr(buffer, "确认最后一条记录容量后会自动入库"));
     TEST_ASSERT_NULL(std::strstr(buffer, "name='saveTrace'"));
     const char* latestPanelSource = std::strstr(buffer, "void sendLatestCalibrationRecordPanel");
@@ -820,17 +820,20 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NULL(std::strstr(buffer, "有临时样本未保存"));
     TEST_ASSERT_NULL(std::strstr(buffer, "请进入明细页保存后再生成"));
     TEST_ASSERT_NULL(std::strstr(buffer, "仍然生成候选"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "<h3>样本</h3>"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "<h3>脉冲明细</h3>"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "<h3>本次有效样本</h3>"));
     TEST_ASSERT_NULL(std::strstr(buffer, "<h3>有效样本</h3>"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "这里展示有脉冲明细的数据。RAM 临时样本重启会丢失；校准容量会先写入设备样本库"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "计量方案生成只使用长期样本库"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "存入长期库"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "RAM 临时"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "待校准容量"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "容量已校准"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "state.resumedAfterPause = trace.resumedAfterPause"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "<span class='status-pill status-warn'>暂停后恢复</span>"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "稳态失败"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "可参与生成"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "可入库"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "可参与生成"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "已保存明细"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "RAM 明细"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "明细已截断"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "不入库"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "不可入库"));
@@ -1175,6 +1178,31 @@ void test_record_calibration_api_saves_actual_without_segmented_generation() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "校准已保存。"));
 }
 
+void test_metering_generation_uses_long_term_sample_library() {
+    FILE* file = std::fopen("src/web/FaucetWeb.cpp", "rb");
+    TEST_ASSERT_NOT_NULL(file);
+    static char buffer[420000]{};
+    const std::size_t read = std::fread(buffer, 1, sizeof(buffer) - 1, file);
+    std::fclose(file);
+    TEST_ASSERT_GREATER_THAN_size_t(0, read);
+
+    const char* helper = std::strstr(buffer, "bool appendSegmentedSampleFromLongTermSample");
+    TEST_ASSERT_NOT_NULL(helper);
+    const char* collect = std::strstr(helper, "SegmentedSampleDiagnostics collectSegmentedSampleDiagnostics");
+    TEST_ASSERT_NOT_NULL(collect);
+    const char* collectEnd = std::strstr(collect, "bool saveRamTraceToDevice");
+    TEST_ASSERT_NOT_NULL(collectEnd);
+    TEST_ASSERT_NOT_NULL(findWithin(helper, collectEnd, "g_context.calibrationLongTermSamples->list"));
+    TEST_ASSERT_NOT_NULL(findWithin(helper, collectEnd, "readSamples(stored.sampleId"));
+    TEST_ASSERT_NULL(findWithin(collect, collectEnd, "g_context.savedPulseTraces->list"));
+
+    const char* handleSaveGenerated = std::strstr(buffer, "void handleSaveGeneratedSchemeApi() {");
+    TEST_ASSERT_NOT_NULL(handleSaveGenerated);
+    const char* handleSaveGeneratedEnd = std::strstr(handleSaveGenerated, "void handleCreateMeteringSchemeApi() {");
+    TEST_ASSERT_NOT_NULL(handleSaveGeneratedEnd);
+    TEST_ASSERT_NOT_NULL(findWithin(handleSaveGenerated, handleSaveGeneratedEnd, "collectSegmentedSampleDiagnostics(false)"));
+}
+
 void test_calibration_page_avoids_large_metering_scheme_stack_arrays() {
     FILE* file = std::fopen("src/web/FaucetWeb.cpp", "rb");
     TEST_ASSERT_NOT_NULL(file);
@@ -1304,8 +1332,7 @@ void test_pulse_trace_and_calibration_pages_keep_saved_and_ram_sources_consisten
     TEST_ASSERT_TRUE(deleteSaved < detailEnd);
     TEST_ASSERT_TRUE(saveTrace < detailEnd);
     TEST_ASSERT_NOT_NULL(std::strstr(recordDetailPage, "savedSource || alreadySaved"));
-    TEST_ASSERT_NOT_NULL(std::strstr(recordDetailPage, "RAM 样本校准成功后会写入设备样本库"));
-    TEST_ASSERT_NOT_NULL(std::strstr(recordDetailPage, "未发生暂停后恢复出水且稳态识别成功"));
+    TEST_ASSERT_NOT_NULL(std::strstr(recordDetailPage, "计量方案生成只使用长期样本库，不直接扫描 RAM 或已保存明细"));
 
     const char* samplesPanel = std::strstr(buffer, "void sendCalibrationSamplesPanel");
     const char* generationPanel = std::strstr(buffer, "void sendCalibrationGenerationPanel");
@@ -1766,6 +1793,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_web_page_source_links_cacheable_app_css);
     RUN_TEST(test_web_page_source_contains_expected_ui_improvements);
     RUN_TEST(test_record_calibration_api_saves_actual_without_segmented_generation);
+    RUN_TEST(test_metering_generation_uses_long_term_sample_library);
     RUN_TEST(test_calibration_page_avoids_large_metering_scheme_stack_arrays);
     RUN_TEST(test_calibration_page_reports_specific_errors_and_hides_stale_generated_result);
     RUN_TEST(test_pulse_trace_and_calibration_pages_keep_saved_and_ram_sources_consistent);

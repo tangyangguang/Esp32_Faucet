@@ -58,6 +58,7 @@ public:
               std::uint32_t& sampleId);
     bool remove(std::uint32_t sampleId);
     bool load(std::uint32_t sampleId, CalibrationStoredTrace& trace) const;
+    std::size_t readSamples(std::uint32_t sampleId, WaterPulseTraceSample* output, std::size_t outputCapacity) const;
     std::size_t list(CalibrationStoredTrace* output, std::size_t outputCapacity) const;
     std::size_t capacity() const;
     bool ready() const;

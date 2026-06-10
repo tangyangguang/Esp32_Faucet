@@ -384,8 +384,11 @@ bool CalibrationLongTermSampleStore::save(const CalibrationStoredTrace& trace,
     stored.valid = true;
     stored.pendingActual = false;
     stored.sampleId = header.nextSampleId++;
+    if (!writeHeader(backend_, path_, header)) {
+        return false;
+    }
     const SampleIndexEntry entry = makeEntry(stored, sampleCount);
-    if (!writeEntry(backend_, path_, freeSlot, entry) || !writeHeader(backend_, path_, header)) {
+    if (!writeEntry(backend_, path_, freeSlot, entry)) {
         return false;
     }
     sampleId = stored.sampleId;
@@ -423,6 +426,24 @@ bool CalibrationLongTermSampleStore::load(std::uint32_t sampleId, CalibrationSto
         }
     }
     return false;
+}
+
+std::size_t CalibrationLongTermSampleStore::readSamples(std::uint32_t sampleId,
+                                                        WaterPulseTraceSample* output,
+                                                        std::size_t outputCapacity) const {
+    if (!ready() || sampleId == 0 || !backend_.exists(path_)) {
+        return 0;
+    }
+    for (std::uint8_t i = 0; i < kCalibrationLongTermSampleSlots; ++i) {
+        SampleIndexEntry entry{};
+        if (!readEntry(backend_, path_, i, entry)) {
+            return 0;
+        }
+        if (entryUsable(entry) && entry.valid != 0 && entry.sampleId == sampleId) {
+            return readStoredSamples(backend_, path_, kCalibrationLongTermSampleSlots, i, output, outputCapacity);
+        }
+    }
+    return 0;
 }
 
 std::size_t CalibrationLongTermSampleStore::list(CalibrationStoredTrace* output, std::size_t outputCapacity) const {

@@ -722,6 +722,20 @@ void test_app_controller_local_ok_starts_calibration_run_and_completion_awaits_a
     TEST_ASSERT_TRUE(traceStore.load(0, valid));
     TEST_ASSERT_TRUE(valid.valid);
     TEST_ASSERT_FALSE(valid.pendingActual);
+    CalibrationStoredTrace longTermSamples[kCalibrationLongTermSampleSlots]{};
+    TEST_ASSERT_EQUAL_size_t(0, sampleStore.list(longTermSamples, kCalibrationLongTermSampleSlots));
+
+    std::uint32_t sampleId = 0;
+    TEST_ASSERT_TRUE(app.saveCalibrationSessionSampleToLongTermForWeb(0, 1714502403, sampleId));
+    TEST_ASSERT_NOT_EQUAL_UINT32(0, sampleId);
+    TEST_ASSERT_EQUAL_size_t(1, sampleStore.list(longTermSamples, kCalibrationLongTermSampleSlots));
+    TEST_ASSERT_EQUAL_UINT32(sampleId, longTermSamples[0].sampleId);
+    TEST_ASSERT_EQUAL_UINT32(520, longTermSamples[0].actualMl);
+
+    WaterPulseTraceSample copied[4096]{};
+    TEST_ASSERT_EQUAL_size_t(valid.trace.sampleCount, sampleStore.readSamples(sampleId, copied, 4096));
+    TEST_ASSERT_TRUE(app.saveCalibrationSessionSampleToLongTermForWeb(0, 1714502404, sampleId));
+    TEST_ASSERT_EQUAL_size_t(1, sampleStore.list(longTermSamples, kCalibrationLongTermSampleSlots));
 }
 
 void test_app_controller_generates_calibration_session_candidate() {

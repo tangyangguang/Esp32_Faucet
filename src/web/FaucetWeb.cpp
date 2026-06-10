@@ -5200,6 +5200,8 @@ const char* configLoadStatusName(ConfigStore::LoadStatus status) {
             return "future_version_read_only";
         case ConfigStore::LoadStatus::UnsupportedVersionDefault:
             return "unsupported_version_default";
+        case ConfigStore::LoadStatus::LoadedUnsupportedVersionReadOnly:
+            return "unsupported_version_read_only";
     }
     return "unknown";
 }

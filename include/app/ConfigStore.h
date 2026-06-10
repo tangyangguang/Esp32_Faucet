@@ -29,6 +29,7 @@ public:
         MigratedLegacy = 2,
         LoadedFutureVersionReadOnly = 3,
         UnsupportedVersionDefault = 4,
+        LoadedUnsupportedVersionReadOnly = 5,
     };
 
     explicit ConfigStore(ConfigBackend& backend);

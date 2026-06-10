@@ -258,6 +258,31 @@ void test_config_future_version_loads_current_fields_read_only_without_overwrite
     TEST_ASSERT_EQUAL_INT32(99, backend.getInt("faucet_cfg", "ver", 0));
 }
 
+void test_config_unsupported_version_loads_recognized_fields_read_only_without_overwrite() {
+    FakeConfigBackend backend;
+    backend.setInt("faucet_cfg", "ver", -1);
+    backend.setInt("faucet_cfg", "confirm_s", 25);
+    backend.setBool("faucet_cfg", "p3_en", true);
+    backend.setInt("faucet_cfg", "p3_type", 0);
+    backend.setInt("faucet_cfg", "p3_val", 4200);
+    backend.setStr("faucet_cfg", "p3_name", "Test ML");
+    ConfigStore store(backend);
+
+    const SystemConfig loaded = store.loadSystemConfig();
+
+    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(ConfigStore::LoadStatus::LoadedUnsupportedVersionReadOnly),
+                            static_cast<std::uint8_t>(store.lastSystemConfigLoadStatus()));
+    TEST_ASSERT_TRUE(store.systemConfigReadOnly());
+    TEST_ASSERT_EQUAL_INT32(-1, backend.getInt("faucet_cfg", "ver", 0));
+    TEST_ASSERT_EQUAL_UINT32(25, loaded.confirmTimeoutSec);
+    TEST_ASSERT_TRUE(loaded.presets[3].enabled);
+    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(PresetType::Volume), static_cast<std::uint8_t>(loaded.presets[3].type));
+    TEST_ASSERT_EQUAL_UINT32(4200, loaded.presets[3].value);
+    TEST_ASSERT_EQUAL_STRING("Test ML", loaded.presets[3].name);
+    TEST_ASSERT_FALSE(store.saveSystemConfig(makeDefaultConfig()));
+    TEST_ASSERT_EQUAL_INT32(-1, backend.getInt("faucet_cfg", "ver", 0));
+}
+
 void test_config_save_and_load_round_trips_system_config() {
     FakeConfigBackend backend;
     ConfigStore store(backend);
@@ -507,6 +532,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_config_migrates_v2_filter_ranges_and_single_calibration_target);
     RUN_TEST(test_config_migration_failure_preserves_legacy_storage_without_current_version);
     RUN_TEST(test_config_future_version_loads_current_fields_read_only_without_overwrite);
+    RUN_TEST(test_config_unsupported_version_loads_recognized_fields_read_only_without_overwrite);
     RUN_TEST(test_config_save_and_load_round_trips_system_config);
     RUN_TEST(test_config_load_sanitizes_stored_values);
     RUN_TEST(test_config_reset_restores_defaults);

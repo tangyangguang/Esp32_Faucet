@@ -316,16 +316,26 @@ SystemConfig ConfigStore::loadSystemConfig() {
         }
     }
     if (version < 0) {
-        lastSystemStatus_ = LoadStatus::UnsupportedVersionDefault;
-        return config;
+        if (!hasRecognizedLegacySystemConfig(backend_)) {
+            lastSystemStatus_ = LoadStatus::UnsupportedVersionDefault;
+            return config;
+        }
+        systemConfigReadOnly_ = true;
+        lastSystemStatus_ = LoadStatus::LoadedUnsupportedVersionReadOnly;
+        version = kConfigVersion;
     }
     if (version > kConfigVersion) {
         systemConfigReadOnly_ = true;
         lastSystemStatus_ = LoadStatus::LoadedFutureVersionReadOnly;
     } else if (!isKnownSystemConfigVersion(version)) {
-        lastSystemStatus_ = LoadStatus::UnsupportedVersionDefault;
-        return config;
-    } else {
+        if (!hasRecognizedLegacySystemConfig(backend_)) {
+            lastSystemStatus_ = LoadStatus::UnsupportedVersionDefault;
+            return config;
+        }
+        systemConfigReadOnly_ = true;
+        lastSystemStatus_ = LoadStatus::LoadedUnsupportedVersionReadOnly;
+        version = kConfigVersion;
+    } else if (!systemConfigReadOnly_) {
         lastSystemStatus_ = version == kConfigVersion ? LoadStatus::LoadedCurrent : LoadStatus::MigratedLegacy;
     }
 

@@ -311,6 +311,8 @@ const char* configLoadStatusName(faucet::ConfigStore::LoadStatus status) {
             return "future_version_read_only";
         case faucet::ConfigStore::LoadStatus::UnsupportedVersionDefault:
             return "unsupported_version_default";
+        case faucet::ConfigStore::LoadStatus::LoadedUnsupportedVersionReadOnly:
+            return "unsupported_version_read_only";
     }
     return "unknown";
 }
@@ -326,6 +328,8 @@ void logSystemConfigStatus() {
                     g_configStore.systemConfigReadOnly() ? "yes" : "no");
     if (status == faucet::ConfigStore::LoadStatus::LoadedFutureVersionReadOnly) {
         ESP32BASE_LOG_W("app", "system config loaded from future version in read-only mode");
+    } else if (status == faucet::ConfigStore::LoadStatus::LoadedUnsupportedVersionReadOnly) {
+        ESP32BASE_LOG_W("app", "system config loaded from unsupported version in read-only mode");
     } else if (status == faucet::ConfigStore::LoadStatus::UnsupportedVersionDefault) {
         ESP32BASE_LOG_W("app", "system config version unsupported, defaults used");
     }

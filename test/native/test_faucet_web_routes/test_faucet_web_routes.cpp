@@ -780,6 +780,9 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "action='/faucet/metering'"));
     TEST_ASSERT_NULL(std::strstr(buffer, "<span class='status-pill status-muted'>手动执行</span>"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "手动执行：只扫描满足有效样本条件的数据"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "<details class='panel calibration-help-panel'><summary>"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "查看计量说明"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "calibration-help-panel' open"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "生成参数：样本与拟合"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "出水估算：计量方案如何使用"));
     TEST_ASSERT_NULL(std::strstr(buffer, "参数说明与计算公式"));

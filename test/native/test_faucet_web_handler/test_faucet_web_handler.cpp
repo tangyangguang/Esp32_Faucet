@@ -107,6 +107,73 @@ public:
     std::vector<WaterRecord> records;
 };
 
+class MemoryFileBackend : public WaterRecordFileBackend {
+public:
+    bool exists(const char* path) override {
+        return files.find(path ? path : "") != files.end();
+    }
+
+    std::int64_t fileSize(const char* path) override {
+        const auto it = files.find(path ? path : "");
+        return it == files.end() ? -1 : static_cast<std::int64_t>(it->second.size());
+    }
+
+    bool createSized(const char* path, std::size_t size) override {
+        if (!path) {
+            return false;
+        }
+        files[path] = std::vector<std::uint8_t>(size, 0);
+        return true;
+    }
+
+    bool appendBytes(const char* path, const std::uint8_t* data, std::size_t len) override {
+        if (!path || (!data && len > 0)) {
+            return false;
+        }
+        std::vector<std::uint8_t>& file = files[path];
+        const std::size_t oldSize = file.size();
+        file.resize(oldSize + len, 0);
+        if (len > 0) {
+            std::memcpy(file.data() + oldSize, data, len);
+        }
+        return true;
+    }
+
+    bool readAt(const char* path, std::size_t offset, std::uint8_t* out, std::size_t len) override {
+        if (!path || !out) {
+            return false;
+        }
+        const auto it = files.find(path);
+        if (it == files.end() || offset + len > it->second.size()) {
+            return false;
+        }
+        std::memcpy(out, it->second.data() + offset, len);
+        return true;
+    }
+
+    bool writeAt(const char* path, std::size_t offset, const std::uint8_t* data, std::size_t len) override {
+        if (!path || (!data && len > 0)) {
+            return false;
+        }
+        std::vector<std::uint8_t>& file = files[path];
+        if (offset + len > file.size()) {
+            file.resize(offset + len, 0);
+        }
+        if (len > 0) {
+            std::memcpy(file.data() + offset, data, len);
+        }
+        return true;
+    }
+
+    bool removeFile(const char* path) override {
+        files.erase(path ? path : "");
+        return true;
+    }
+
+private:
+    std::map<std::string, std::vector<std::uint8_t>> files;
+};
+
 AppTickInput appInput(ButtonLevels levels, std::uint32_t nowMs, std::uint32_t nowUs) {
     return AppTickInput{
         levels,
@@ -163,9 +230,24 @@ struct WebFixture {
     WaterRecordMeteringSnapshot snapshotsStorage[4]{};
     WaterRecordMeteringSnapshotStore snapshots{snapshotsStorage, 4};
     MemoryRecordWriter recordWriter;
-    AppController app{config, statistics, filters, recordWriter};
+    MemoryFileBackend calibrationFiles;
+    CalibrationSessionFileStore sessionStore{calibrationFiles, "/cal-session.bin"};
+    CalibrationSessionTraceStore traceStore{calibrationFiles, "/cal-traces.bin"};
+    CalibrationLongTermSampleStore sampleStore{calibrationFiles, "/cal-samples.bin"};
+    AppController app{config,
+                      statistics,
+                      filters,
+                      recordWriter,
+                      nullptr,
+                      &calibrations,
+                      &sessionStore,
+                      &traceStore,
+                      &sampleStore};
 
     WebFixture() {
+        TEST_ASSERT_TRUE(sessionStore.begin());
+        TEST_ASSERT_TRUE(traceStore.begin());
+        TEST_ASSERT_TRUE(sampleStore.begin());
         applyTestMeteringScheme(app);
         FaucetWebContext context{};
         context.config = &config;
@@ -177,6 +259,9 @@ struct WebFixture {
         context.recordCalibrationWriter = &calibrations;
         context.recordMeteringSnapshots = &snapshots;
         context.recordMeteringSnapshotWriter = &snapshots;
+        context.calibrationSessions = &sessionStore;
+        context.calibrationSessionTraces = &traceStore;
+        context.calibrationLongTermSamples = &sampleStore;
         context.nowSeconds = testNowSeconds;
         context.bootId = testBootId;
         setFaucetWebContext(context);
@@ -351,6 +436,55 @@ void test_calibration_session_start_redirects_busy_to_calibration_page() {
     TEST_ASSERT_EQUAL_STRING("/faucet/calibration?error=busy", Esp32BaseWeb::nativeTestResponseHeader("Location"));
 }
 
+void test_calibration_session_start_redirects_success_from_idle() {
+    WebFixture fixture;
+    registerRoutes();
+    Esp32BaseWeb::nativeTestBeginRequest(Esp32BaseWeb::METHOD_POST, "/faucet/calibration");
+    Esp32BaseWeb::nativeTestSetAuthenticated(true);
+    Esp32BaseWeb::nativeTestSetSameOrigin(true);
+    Esp32BaseWeb::nativeTestSetParam("action", "start_session");
+
+    TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch("/faucet/calibration", Esp32BaseWeb::METHOD_POST));
+
+    TEST_ASSERT_EQUAL(303, Esp32BaseWeb::nativeTestResponse().code);
+    TEST_ASSERT_EQUAL_STRING("/faucet/calibration?saved=session_started",
+                             Esp32BaseWeb::nativeTestResponseHeader("Location"));
+    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(LocalUiMode::Calibration),
+                            static_cast<std::uint8_t>(fixture.app.snapshot().localMode));
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationSessionStatus::Preparing),
+                            static_cast<unsigned>(fixture.app.snapshot().calibrationStatus));
+}
+
+void test_calibration_session_start_rejects_duplicate_start_as_invalid_state() {
+    WebFixture fixture;
+    TEST_ASSERT_TRUE(fixture.app.startCalibrationSessionForWeb(testNowSeconds()));
+    registerRoutes();
+    Esp32BaseWeb::nativeTestBeginRequest(Esp32BaseWeb::METHOD_POST, "/faucet/calibration");
+    Esp32BaseWeb::nativeTestSetAuthenticated(true);
+    Esp32BaseWeb::nativeTestSetSameOrigin(true);
+    Esp32BaseWeb::nativeTestSetParam("action", "start_session");
+
+    TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch("/faucet/calibration", Esp32BaseWeb::METHOD_POST));
+
+    TEST_ASSERT_EQUAL(303, Esp32BaseWeb::nativeTestResponse().code);
+    TEST_ASSERT_EQUAL_STRING("/faucet/calibration?error=invalid_state",
+                             Esp32BaseWeb::nativeTestResponseHeader("Location"));
+}
+
+void test_calibration_post_rejects_missing_action_as_invalid_action() {
+    WebFixture fixture;
+    registerRoutes();
+    Esp32BaseWeb::nativeTestBeginRequest(Esp32BaseWeb::METHOD_POST, "/faucet/calibration");
+    Esp32BaseWeb::nativeTestSetAuthenticated(true);
+    Esp32BaseWeb::nativeTestSetSameOrigin(true);
+
+    TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch("/faucet/calibration", Esp32BaseWeb::METHOD_POST));
+
+    TEST_ASSERT_EQUAL(303, Esp32BaseWeb::nativeTestResponse().code);
+    TEST_ASSERT_EQUAL_STRING("/faucet/calibration?error=invalid_action",
+                             Esp32BaseWeb::nativeTestResponseHeader("Location"));
+}
+
 void test_metering_scheme_write_redirects_busy_to_metering_page() {
     WebFixture fixture;
     setRunning(fixture.app);
@@ -463,6 +597,9 @@ int main(int, char**) {
     RUN_TEST(test_records_handler_redirects_trace_save_busy_before_trace_store_work);
     RUN_TEST(test_records_handler_redirects_trace_delete_busy_to_calibration_context);
     RUN_TEST(test_calibration_session_start_redirects_busy_to_calibration_page);
+    RUN_TEST(test_calibration_session_start_redirects_success_from_idle);
+    RUN_TEST(test_calibration_session_start_rejects_duplicate_start_as_invalid_state);
+    RUN_TEST(test_calibration_post_rejects_missing_action_as_invalid_action);
     RUN_TEST(test_metering_scheme_write_redirects_busy_to_metering_page);
     RUN_TEST(test_presets_handler_rejects_missing_auth_before_context_work);
     RUN_TEST(test_presets_handler_rejects_cross_origin_post);

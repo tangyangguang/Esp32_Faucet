@@ -348,32 +348,6 @@ void checkFileSystemCapacity() {
 #endif
 }
 
-bool canInitializeFixedCalibrationFile(const char* path, std::size_t requiredFreeBytes, const char* label) {
-#if ESP32BASE_ENABLE_FS
-    if (!Esp32BaseFs::isReady()) {
-        return true;
-    }
-    if (g_waterRecordBackend.exists(path)) {
-        return true;
-    }
-    const std::size_t freeBytes = Esp32BaseFs::freeBytes();
-    if (freeBytes >= requiredFreeBytes) {
-        return true;
-    }
-    ESP32BASE_LOG_W("app",
-                    "skip %s init, LittleFS free space below gate: free=%lu required=%lu",
-                    label ? label : "calibration file",
-                    static_cast<unsigned long>(freeBytes),
-                    static_cast<unsigned long>(requiredFreeBytes));
-    return false;
-#else
-    (void)path;
-    (void)requiredFreeBytes;
-    (void)label;
-    return true;
-#endif
-}
-
 bool isLeapYear(std::uint16_t year) {
     return (year % 4U == 0 && year % 100U != 0) || year % 400U == 0;
 }
@@ -531,9 +505,7 @@ void initializeApplication() {
     } else if (!g_meteringSchemes.migrateLegacyFromConfig(g_configBackend, nowSeconds)) {
         ESP32BASE_LOG_W("app", "legacy metering scheme migration failed");
     }
-    const bool calibrationSessionReady = canInitializeFixedCalibrationFile(
-                                             kCalibrationSessionPath, 120UL * 1024UL, "calibration session") &&
-                                         g_calibrationSession.begin();
+    const bool calibrationSessionReady = g_calibrationSession.begin();
     const bool calibrationSessionTracesReady = g_calibrationSessionTraces.begin();
     const bool calibrationLongTermSamplesReady = g_calibrationLongTermSamples.begin();
     if (!calibrationSessionReady || !calibrationSessionTracesReady) {

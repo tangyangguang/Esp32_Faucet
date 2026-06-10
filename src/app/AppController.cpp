@@ -10,7 +10,6 @@
 namespace faucet {
 namespace {
 
-constexpr std::uint32_t kCalibrationMinActualMl = 100;
 std::uint32_t msFromSeconds(std::uint32_t seconds) {
     constexpr std::uint32_t maxMs = std::numeric_limits<std::uint32_t>::max();
     return seconds > maxMs / 1000UL ? maxMs : seconds * 1000UL;
@@ -423,7 +422,11 @@ bool AppController::applyActiveMeteringScheme(const MeteringSchemeRecord& active
 
 bool AppController::startCalibrationSessionForWeb(std::uint32_t nowSeconds) {
     if (water_.snapshot().state != WaterState::Idle || !calibrationSessions_ || !calibrationSessions_->ready() ||
-        !calibrationSessionTraces_ || !calibrationSessionTraces_->ready()) {
+        !calibrationSessionTraces_ || !calibrationSessionTraces_->ready() ||
+        (calibrationSession_.status != CalibrationSessionStatus::Idle &&
+         calibrationSession_.status != CalibrationSessionStatus::Applied &&
+         calibrationSession_.status != CalibrationSessionStatus::Discarded &&
+         calibrationSession_.status != CalibrationSessionStatus::Failed)) {
         return false;
     }
     const std::uint32_t sessionId = nowSeconds == 0 ? 1 : nowSeconds;

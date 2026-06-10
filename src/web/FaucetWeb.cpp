@@ -111,7 +111,10 @@ void handleTraceCalibrationApi();
 void handleTraceSaveApi();
 void handleTraceDeleteApi();
 const char* calibrationSessionStatusText(CalibrationSessionStatus status);
-void redirectCalibrationResult(bool ok, const char* success);
+bool calibrationSessionInactive(CalibrationSessionStatus status);
+bool calibrationSessionStorageReady();
+void redirectCalibrationFailure(const char* error);
+void redirectCalibrationResult(bool ok, const char* success, const char* failure);
 void formatWaterRecordTime(const WaterRecord& record, char* out, std::size_t len);
 void formatWaterRecordListTime(const WaterRecord& record, char* out, std::size_t len);
 void formatRecordTime(std::uint32_t seconds, char* out, std::size_t len);
@@ -2478,7 +2481,7 @@ void sendCalibrationPageScript() {
     Esp32BaseWeb::sendChunk("<script>"
                             "function faucetShowSampleCalibration(id){var rows=document.querySelectorAll('.sample-calibration-edit-row');for(var i=0;i<rows.length;i++)rows[i].classList.remove('is-open');var r=document.getElementById(id);if(r)r.classList.add('is-open');}"
                             "function faucetHideSampleCalibration(id){var r=document.getElementById(id);if(r)r.classList.remove('is-open');}"
-                            "function faucetCalibrationErrorMessage(code){var m={busy:'设备正在出水或确认中，请回到待机后再保存。',invalid_value:'实际出水量超出允许范围，请按量杯读数填写。',sample_not_enough:'可生成样本不足，至少需要两条已入库、已校准容量且稳态识别成功的样本。',no_calibration_record:'这条样本不可校准：没有可用脉冲明细或结束状态不适合校准。',calibration_mark_failed:'实测容量写入失败，可能是校准记录存储不可用或 Flash 写入失败。',save_failed:'样本入库失败，请检查设备样本库容量或存储状态。','HTTP 401':'认证已失效，请刷新页面重新登录。','HTTP 403':'认证被拒绝，请检查 Web 登录状态。','HTTP 404':'保存接口路径不存在，请刷新页面后重试。','HTTP 500':'设备端保存接口异常，请查看日志。','HTTP 503':'设备尚未就绪，请稍后重试。'};return m[code]||(code?'操作失败：'+code:'操作失败，请检查页面状态后重试。');}"
+                            "function faucetCalibrationErrorMessage(code){var m={busy:'设备正在出水或确认中，请回到待机后再保存。',invalid_value:'实际出水量超出允许范围，请按量杯读数填写。',invalid_action:'操作无效，请刷新页面后重试。',invalid_state:'现在不允许执行这个操作，请刷新页面后按当前步骤继续。',calibration_storage_unavailable:'校准存储未就绪，请检查设备存储空间或重启后再试。',sample_not_enough:'可生成样本不足，至少需要两条已入库、已校准容量且稳态识别成功的样本。',no_calibration_record:'这条样本不可校准：没有可用脉冲明细或结束状态不适合校准。',calibration_mark_failed:'实测容量写入失败，可能是校准记录存储不可用或 Flash 写入失败。',save_failed:'样本入库失败，请检查设备样本库容量或存储状态。','HTTP 401':'认证已失效，请刷新页面重新登录。','HTTP 403':'认证被拒绝，请检查 Web 登录状态。','HTTP 404':'保存接口路径不存在，请刷新页面后重试。','HTTP 500':'设备端保存接口异常，请查看日志。','HTTP 503':'设备尚未就绪，请稍后重试。'};return m[code]||(code?'操作失败：'+code:'操作失败，请检查页面状态后重试。');}"
                             "function faucetReadCalibrationError(r){return r.text().then(function(t){try{return (JSON.parse(t)||{}).error||('HTTP '+r.status);}catch(e){return 'HTTP '+r.status;}});}"
                             "function faucetResetSampleCalibrationForm(f){f.dataset.busy='';var b=f.querySelector('[type=submit]');if(b)b.disabled=false;}"
                             "function faucetFormatEstimateSeconds(s){if(!isFinite(s)||s<=0)return '-';s=Math.max(1,Math.round(s));var m=Math.floor(s/60),r=s%60;return m>0?(m+'分'+r+'秒'):(r+'秒');}"
@@ -2774,6 +2777,12 @@ void sendNoticeFromQuery() {
         message = "编号无效，请返回列表重新选择。";
     } else if (std::strcmp(text, "invalid_value") == 0) {
         message = "数值超出允许范围，请按页面提示填写。";
+    } else if (std::strcmp(text, "invalid_action") == 0) {
+        message = "操作无效，请刷新页面后重试。";
+    } else if (std::strcmp(text, "invalid_state") == 0) {
+        message = "现在不允许执行这个操作，请刷新页面后按当前步骤继续。";
+    } else if (std::strcmp(text, "calibration_storage_unavailable") == 0) {
+        message = "校准存储未就绪，请检查设备存储空间或重启后再试。";
     } else if (std::strcmp(text, "invalid_date") == 0) {
         message = "日期格式无效，请重新选择日期。";
     } else if (std::strcmp(text, "save_failed") == 0) {
@@ -4269,6 +4278,8 @@ void handleCalibrationPage() {
                                snapshot.calibrationStatus != CalibrationSessionStatus::Applied &&
                                snapshot.calibrationStatus != CalibrationSessionStatus::Discarded &&
                                snapshot.calibrationStatus != CalibrationSessionStatus::Failed;
+    const bool canStartSession = calibrationSessionInactive(snapshot.calibrationStatus) && calibrationSessionStorageReady();
+    const bool canDiscardSession = sessionActive && snapshot.calibrationStatus != CalibrationSessionStatus::Running;
     const bool canEnterActual = snapshot.calibrationStatus == CalibrationSessionStatus::AwaitingActual;
     const bool canGenerate = snapshot.calibrationCanQuickGenerate &&
                              (snapshot.calibrationStatus == CalibrationSessionStatus::ReadyToGenerate ||
@@ -4295,18 +4306,28 @@ void handleCalibrationPage() {
     sendFmt("<div><span>容量差距建议</span><b>%s - %s</b><small>优先覆盖小/中/大差异，不强制指定容器</small></div>",
             snapshot.calibrationValidSampleCount > 0 ? minText : "-",
             snapshot.calibrationValidSampleCount > 0 ? maxText : "-");
-    Esp32BaseWeb::sendChunk("</div><div class='form-actions'>"
-                            "<form method='post' action='/faucet/calibration' onsubmit='return once(this)'>"
-                            "<input type='hidden' name='action' value='start_session'>"
-                            "<input class='primary' type='submit' value='进入校准模式'></form>"
-                            "<form method='post' action='/faucet/calibration' onsubmit=\"return confirm('确认退出并丢弃本次校准会话？')&&once(this)\">"
-                            "<input type='hidden' name='action' value='discard_session'>"
-                            "<input class='secondary' type='submit' value='退出校准模式'></form></div>");
+    Esp32BaseWeb::sendChunk("</div><div class='form-actions'>");
+    if (!sessionActive) {
+        Esp32BaseWeb::sendChunk("<form method='post' action='/faucet/calibration' onsubmit='return once(this)'>"
+                                "<input type='hidden' name='action' value='start_session'>");
+        sendFmt("<input class='primary' type='submit' value='进入校准模式'%s%s></form>",
+                canStartSession ? "" : " disabled",
+                canStartSession ? "" : " title='校准存储未就绪'");
+    } else {
+        Esp32BaseWeb::sendChunk("<form method='post' action='/faucet/calibration' onsubmit=\"return confirm('确认退出并丢弃本次校准会话？')&&once(this)\">"
+                                "<input type='hidden' name='action' value='discard_session'>");
+        sendFmt("<input class='secondary' type='submit' value='退出校准模式'%s%s></form>",
+                canDiscardSession ? "" : " disabled",
+                canDiscardSession ? "" : " title='正在出水时不能退出校准模式'");
+    }
+    Esp32BaseWeb::sendChunk("</div>");
     if (canEnterActual) {
         Esp32BaseWeb::sendChunk("<form class='sample-calibration-form' method='post' action='/faucet/calibration' onsubmit='return once(this)'>"
                                 "<input type='hidden' name='action' value='save_actual'>"
                                 "<label class='compact-field'><span>本次实测容量</span><span class='estimator-input-row'>"
-                                "<input name='actualMl' type='number' min='1' max='");
+                                "<input name='actualMl' type='number' min='");
+        sendFmt("%lu", static_cast<unsigned long>(kCalibrationMinActualMl));
+        Esp32BaseWeb::sendChunk("' max='");
         sendFmt("%lu", static_cast<unsigned long>(kMaxVolumePresetMl));
         Esp32BaseWeb::sendChunk("' step='1' required><span class='unit-label'>ml</span></span></label>"
                                 "<div class='form-actions'><input class='primary' type='submit' value='保存为有效样本'></form>"
@@ -5338,53 +5359,64 @@ void handleCalibrationPost() {
     }
     char text[32]{};
     if (!getParam("action", text, sizeof(text))) {
-        Esp32BaseWeb::redirectSeeOther("/faucet/calibration?error=invalid_value");
+        redirectCalibrationFailure("invalid_action");
         return;
     }
     if (std::strcmp(text, "start_session") == 0) {
         if (waterTaskActive()) {
-            Esp32BaseWeb::redirectSeeOther("/faucet/calibration?error=busy");
+            redirectCalibrationFailure("busy");
+            return;
+        }
+        if (!calibrationSessionStorageReady()) {
+            redirectCalibrationFailure("calibration_storage_unavailable");
             return;
         }
         redirectCalibrationResult(g_context.app && g_context.app->startCalibrationSessionForWeb(
                                                    g_context.nowSeconds ? g_context.nowSeconds() : 0),
-                                  "session_started");
+                                  "session_started",
+                                  "invalid_state");
         return;
     }
     if (std::strcmp(text, "discard_session") == 0) {
         redirectCalibrationResult(g_context.app && g_context.app->discardCalibrationSessionForWeb(
                                                    g_context.nowSeconds ? g_context.nowSeconds() : 0),
-                                  "session_discarded");
+                                  "session_discarded",
+                                  "invalid_state");
         return;
     }
     if (std::strcmp(text, "save_actual") == 0) {
         std::uint32_t actualMl = 0;
-        if (!getParam("actualMl", text, sizeof(text)) || !parseU32(text, actualMl)) {
-            Esp32BaseWeb::redirectSeeOther("/faucet/calibration?error=invalid_value");
+        if (!getParam("actualMl", text, sizeof(text)) || !parseU32(text, actualMl) ||
+            actualMl < kCalibrationMinActualMl || actualMl > kMaxVolumePresetMl) {
+            redirectCalibrationFailure("invalid_value");
             return;
         }
         redirectCalibrationResult(g_context.app && g_context.app->submitCalibrationActualForWeb(
                                                    actualMl, g_context.nowSeconds ? g_context.nowSeconds() : 0),
-                                  "actual");
+                                  "actual",
+                                  "save_failed");
         return;
     }
     if (std::strcmp(text, "skip_attempt") == 0) {
         redirectCalibrationResult(g_context.app && g_context.app->skipCalibrationAttemptForWeb(
                                                    CalibrationSkipReason::Mistake,
                                                    g_context.nowSeconds ? g_context.nowSeconds() : 0),
-                                  "attempt_skipped");
+                                  "attempt_skipped",
+                                  "invalid_state");
         return;
     }
     if (std::strcmp(text, "generate_session") == 0) {
         redirectCalibrationResult(g_context.app && g_context.app->generateCalibrationForWeb(
                                                    g_context.nowSeconds ? g_context.nowSeconds() : 0),
-                                  "generated");
+                                  "generated",
+                                  "sample_not_enough");
         return;
     }
     if (std::strcmp(text, "apply_session") == 0) {
         redirectCalibrationResult(g_context.app && g_context.app->applyGeneratedCalibrationForWeb(
                                                    g_context.nowSeconds ? g_context.nowSeconds() : 0),
-                                  "applied");
+                                  "applied",
+                                  "no_generated_result");
         return;
     }
     if (std::strcmp(text, "calibrate") == 0) {
@@ -5399,7 +5431,7 @@ void handleCalibrationPost() {
         Esp32BaseWeb::redirectSeeOther("/faucet/metering?error=invalid_action");
         return;
     }
-    Esp32BaseWeb::redirectSeeOther("/faucet/calibration?error=invalid_value");
+    redirectCalibrationFailure("invalid_action");
 }
 
 void handleMeteringPost() {
@@ -5537,13 +5569,29 @@ const char* calibrationSessionStatusText(CalibrationSessionStatus status) {
     return "未知";
 }
 
-void redirectCalibrationResult(bool ok, const char* success) {
+bool calibrationSessionInactive(CalibrationSessionStatus status) {
+    return status == CalibrationSessionStatus::Idle || status == CalibrationSessionStatus::Applied ||
+           status == CalibrationSessionStatus::Discarded || status == CalibrationSessionStatus::Failed;
+}
+
+bool calibrationSessionStorageReady() {
+    return g_context.calibrationSessions && g_context.calibrationSessions->ready() &&
+           g_context.calibrationSessionTraces && g_context.calibrationSessionTraces->ready();
+}
+
+void redirectCalibrationFailure(const char* error) {
+    char url[96]{};
+    std::snprintf(url, sizeof(url), "/faucet/calibration?error=%s", error ? error : "save_failed");
+    Esp32BaseWeb::redirectSeeOther(url);
+}
+
+void redirectCalibrationResult(bool ok, const char* success, const char* failure) {
     if (ok) {
         char url[96]{};
         std::snprintf(url, sizeof(url), "/faucet/calibration?saved=%s", success ? success : "1");
         Esp32BaseWeb::redirectSeeOther(url);
     } else {
-        Esp32BaseWeb::redirectSeeOther("/faucet/calibration?error=invalid_value");
+        redirectCalibrationFailure(failure);
     }
 }
 

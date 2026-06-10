@@ -515,7 +515,15 @@ void test_app_controller_starting_calibration_from_idle_enters_preparing() {
     TEST_ASSERT_TRUE(sessionStore.begin());
     TEST_ASSERT_TRUE(traceStore.begin());
     TEST_ASSERT_TRUE(sampleStore.begin());
-    AppController app(config, statistics, filters, records, nullptr, nullptr, &sessionStore, &traceStore, &sampleStore);
+    AppController app(config,
+                      statistics,
+                      filters,
+                      records,
+                      nullptr,
+                      nullptr,
+                      &sessionStore,
+                      &traceStore,
+                      &sampleStore);
     applyTestMeteringScheme(app);
 
     TEST_ASSERT_TRUE(app.startCalibrationSessionForWeb(1714502400));
@@ -553,6 +561,31 @@ void test_app_controller_starting_calibration_while_running_is_rejected() {
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(LocalUiMode::Normal),
                             static_cast<std::uint8_t>(app.snapshot().localMode));
     TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationSessionStatus::Idle),
+                            static_cast<unsigned>(app.snapshot().calibrationStatus));
+}
+
+void test_app_controller_starting_calibration_twice_is_rejected() {
+    SystemConfig config = makeDefaultConfig();
+    StatisticsStore statistics;
+    statistics.reset({20260506, 202619, 202605});
+    FilterStore filters(config.filters);
+    MemoryRecordWriter records;
+    MemoryFileBackend backend;
+    CalibrationSessionFileStore sessionStore(backend, "/cal-session.bin");
+    CalibrationSessionTraceStore traceStore(backend, "/cal-traces.bin");
+    CalibrationLongTermSampleStore sampleStore(backend, "/cal-samples.bin");
+    TEST_ASSERT_TRUE(sessionStore.begin());
+    TEST_ASSERT_TRUE(traceStore.begin());
+    TEST_ASSERT_TRUE(sampleStore.begin());
+    AppController app(config, statistics, filters, records, nullptr, nullptr, &sessionStore, &traceStore, &sampleStore);
+    applyTestMeteringScheme(app);
+
+    TEST_ASSERT_TRUE(app.startCalibrationSessionForWeb(1714502400));
+    TEST_ASSERT_FALSE(app.startCalibrationSessionForWeb(1714502401));
+
+    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(LocalUiMode::Calibration),
+                            static_cast<std::uint8_t>(app.snapshot().localMode));
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationSessionStatus::Preparing),
                             static_cast<unsigned>(app.snapshot().calibrationStatus));
 }
 
@@ -1328,6 +1361,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_app_controller_stopped_volume_does_not_clamp_next_confirm_adjustment);
     RUN_TEST(test_app_controller_starting_calibration_from_idle_enters_preparing);
     RUN_TEST(test_app_controller_starting_calibration_while_running_is_rejected);
+    RUN_TEST(test_app_controller_starting_calibration_twice_is_rejected);
     RUN_TEST(test_app_controller_local_ok_starts_calibration_run_and_completion_awaits_actual);
     RUN_TEST(test_app_controller_generates_calibration_session_candidate);
     RUN_TEST(test_app_controller_applies_generated_session_scheme_and_keeps_old_scheme);

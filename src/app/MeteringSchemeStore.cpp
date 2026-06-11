@@ -266,6 +266,10 @@ bool MeteringSchemeStore::begin() {
         ready_ = false;
         return backend_.removeFile(path_) && initializeNewFile();
     }
+    if (!repairNextSchemeId()) {
+        ready_ = false;
+        return backend_.removeFile(path_) && initializeNewFile();
+    }
     if (!upgradeLegacyDefaultSchemeIfNeeded()) {
         ready_ = false;
         return backend_.removeFile(path_) && initializeNewFile();
@@ -334,6 +338,10 @@ bool MeteringSchemeStore::saveCandidateAsNew(const MeteringSchemeCandidate& cand
     if (!reuseSlot) {
         return false;
     }
+    MeteringSchemeRecord previousRecord{};
+    if (!readRecord(slot, previousRecord)) {
+        return false;
+    }
     if (!writeRecord(slot, records[0])) {
         return false;
     }
@@ -342,6 +350,7 @@ bool MeteringSchemeStore::saveCandidateAsNew(const MeteringSchemeCandidate& cand
     header_.checksum = headerChecksum(header_);
     if (!saveHeader()) {
         header_ = previous;
+        writeRecord(slot, previousRecord);
         return false;
     }
     return true;
@@ -366,6 +375,10 @@ bool MeteringSchemeStore::createManual(const char* name,
     if (!reuseSlot) {
         return false;
     }
+    MeteringSchemeRecord previousRecord{};
+    if (!readRecord(slot, previousRecord)) {
+        return false;
+    }
     if (!writeRecord(slot, records[0])) {
         return false;
     }
@@ -374,6 +387,7 @@ bool MeteringSchemeStore::createManual(const char* name,
     header_.checksum = headerChecksum(header_);
     if (!saveHeader()) {
         header_ = previous;
+        writeRecord(slot, previousRecord);
         return false;
     }
     return true;
@@ -678,6 +692,40 @@ bool MeteringSchemeStore::normalizeSlotCount() {
                          nextId == 0 ? 1 : nextId,
                          static_cast<std::uint32_t>(kMeteringSchemeStoreSlotCount));
     return writeCurrentSchemeFile(backend_, path_, header_, records.get());
+}
+
+bool MeteringSchemeStore::repairNextSchemeId() {
+    if (!ready()) {
+        return false;
+    }
+    std::uint32_t maxId = 0;
+    bool activeFound = false;
+    for (std::size_t i = 0; i < header_.slotCount; ++i) {
+        MeteringSchemeRecord record{};
+        if (!readRecord(i, record)) {
+            return false;
+        }
+        if (!record.recordUsed) {
+            continue;
+        }
+        maxId = std::max(maxId, record.id);
+        if (record.id == header_.activeSchemeId) {
+            activeFound = true;
+        }
+    }
+    if (!activeFound || maxId == UINT32_MAX) {
+        return false;
+    }
+    const std::uint32_t repairedNextId = std::max<std::uint32_t>(header_.nextSchemeId, maxId + 1U);
+    if (repairedNextId == header_.nextSchemeId) {
+        return true;
+    }
+    header_.nextSchemeId = repairedNextId;
+    header_.checksum = headerChecksum(header_);
+    if (!saveHeader()) {
+        return true;
+    }
+    return true;
 }
 
 bool MeteringSchemeStore::migrateV1File(const MeteringSchemeStoreHeader& loaded) {

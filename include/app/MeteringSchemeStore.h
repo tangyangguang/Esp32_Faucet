@@ -56,6 +56,7 @@ private:
     bool migrateV1File(const MeteringSchemeStoreHeader& loaded);
     bool migrateV3CandidateFile(const MeteringSchemeStoreHeader& loaded);
     bool normalizeSlotCount();
+    bool repairNextSchemeId();
     bool upgradeLegacyDefaultSchemeIfNeeded();
     bool loadHeader();
     bool saveHeader() const;

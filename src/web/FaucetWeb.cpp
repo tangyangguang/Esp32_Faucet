@@ -1689,9 +1689,10 @@ void sendMeteringTrialModal() {
 }
 
 void sendCalibrationParameterPanels() {
-    MeteringSchemeRecord* schemes = new (std::nothrow) MeteringSchemeRecord[10]{};
+    MeteringSchemeRecord* schemes = new (std::nothrow) MeteringSchemeRecord[kMeteringSchemeStoreSlotCount]{};
     const bool ready = ensureMeteringSchemesReady();
-    const std::size_t count = ready && schemes ? g_context.meteringSchemes->list(schemes, 10, true) : 0;
+    const std::size_t count =
+        ready && schemes ? g_context.meteringSchemes->list(schemes, kMeteringSchemeStoreSlotCount, true) : 0;
     const std::uint32_t activeId = ready ? g_context.meteringSchemes->activeSchemeId() : 0;
     char createdText[24]{};
     std::uint32_t createdSchemeId = 0;
@@ -1776,8 +1777,8 @@ void sendCalibrationParameterPanels() {
         Esp32BaseWeb::sendChunk("</div></td></tr>");
     }
     Esp32BaseWeb::sendChunk("</table>");
-    if (ready && count == 10) {
-        Esp32BaseWeb::sendChunk("<p class='muted'>页面最多显示最近 10 套可见方案；历史记录仍按方案 ID 和版本保存。</p>");
+    if (ready && count == kMeteringSchemeStoreSlotCount) {
+        Esp32BaseWeb::sendChunk("<p class='muted'>方案槽位已满；新方案会按覆盖策略复用最早的非当前槽位。</p>");
     }
     sendSchemeDetailModal();
     Esp32BaseWeb::sendChunk("</section>");
@@ -4336,7 +4337,7 @@ void handleRecordsPage() {
                 resultStatusClass(records[i].result),
                 resultText(records[i].result));
         Esp32BaseWeb::sendChunk("</td><td><div class='row-actions'>");
-        sendFmt("<a class='btn-link' href='/faucet/records/detail?info=1&start=%lu&volume=%lu&target=%lu&pulses=%lu&rejected=%lu&duration=%lu&mode=%u&result=%u&preset=%u'>详情</a>",
+        sendFmt("<a class='btn-link' href='/faucet/records/detail?info=1&start=%lu&volume=%lu&target=%lu&pulses=%lu&rejected=%lu&duration=%lu&mode=%u&result=%u&preset=%u&scheme=%lu'>详情</a>",
                 static_cast<unsigned long>(records[i].startTime),
                 static_cast<unsigned long>(records[i].volumeMl),
                 static_cast<unsigned long>(records[i].targetValue),
@@ -4345,7 +4346,8 @@ void handleRecordsPage() {
                 static_cast<unsigned long>(records[i].durationSec),
                 static_cast<unsigned>(records[i].mode),
                 static_cast<unsigned>(records[i].result),
-                static_cast<unsigned>(records[i].selectedPreset));
+                static_cast<unsigned>(records[i].selectedPreset),
+                static_cast<unsigned long>(records[i].meteringSchemeId));
         Esp32BaseWeb::sendChunk("</div></td></tr>");
     }
     Esp32BaseWeb::sendChunk("</table>");
@@ -4391,6 +4393,9 @@ void handleRecordInfoPage() {
     }
     if (getParam("preset", text, sizeof(text)) && parseU32(text, parsed)) {
         record.selectedPreset = static_cast<std::uint8_t>(parsed);
+    }
+    if (getParam("scheme", text, sizeof(text)) && parseU32(text, parsed)) {
+        record.meteringSchemeId = parsed;
     }
     char startTime[40]{};
     formatWaterRecordListTime(record, startTime, sizeof(startTime));

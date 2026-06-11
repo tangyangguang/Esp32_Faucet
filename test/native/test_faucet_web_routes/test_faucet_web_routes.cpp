@@ -364,6 +364,8 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "启动脉冲数"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "record.meteringSchemeId"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "g_context.meteringSchemes->findById(record.meteringSchemeId"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "&scheme=%lu'>详情</a>"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "record.meteringSchemeId = parsed"));
     TEST_ASSERT_NULL(std::strstr(buffer, "findRecordMeteringSnapshot"));
     TEST_ASSERT_NULL(std::strstr(buffer, "g_context.recordMeteringSnapshots->findAny"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "样本覆盖"));
@@ -1223,7 +1225,7 @@ void test_calibration_page_avoids_large_metering_scheme_stack_arrays() {
     TEST_ASSERT_NOT_NULL(nextFunction);
 
     const char* schemePointer = std::strstr(panel, "MeteringSchemeRecord* schemes");
-    const char* schemeAllocation = std::strstr(panel, "new (std::nothrow) MeteringSchemeRecord[10]");
+    const char* schemeAllocation = std::strstr(panel, "new (std::nothrow) MeteringSchemeRecord[kMeteringSchemeStoreSlotCount]");
     const char* schemeRelease = std::strstr(panel, "delete[] schemes");
     const char* stackArray = std::strstr(panel, "MeteringSchemeRecord schemes[10]");
     TEST_ASSERT_NOT_NULL(schemePointer);
@@ -1233,6 +1235,9 @@ void test_calibration_page_avoids_large_metering_scheme_stack_arrays() {
     TEST_ASSERT_TRUE(schemeAllocation < nextFunction);
     TEST_ASSERT_TRUE(schemeRelease < nextFunction);
     TEST_ASSERT_TRUE(stackArray == nullptr || stackArray > nextFunction);
+    TEST_ASSERT_NOT_NULL(findWithin(panel, nextFunction, "g_context.meteringSchemes->list(schemes, kMeteringSchemeStoreSlotCount, true)"));
+    TEST_ASSERT_NULL(findWithin(panel, nextFunction, "new (std::nothrow) MeteringSchemeRecord[10]"));
+    TEST_ASSERT_NULL(findWithin(panel, nextFunction, "list(schemes, 10, true)"));
 
     const char* diagnostics = std::strstr(buffer, "SegmentedSampleDiagnostics collectSegmentedSampleDiagnostics");
     TEST_ASSERT_NOT_NULL(diagnostics);

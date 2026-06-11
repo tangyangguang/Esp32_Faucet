@@ -21,12 +21,12 @@ void test_default_constructor_uses_builtin_yfs201_startup_parameters() {
     FlowMeter meter;
 
     TEST_ASSERT_TRUE(meter.onPulse(1000));
-    TEST_ASSERT_EQUAL_UINT32(5, meter.snapshot(1000).volumeMl);
+    TEST_ASSERT_EQUAL_UINT32(16, meter.snapshot(1000).volumeMl);
 
     for (std::uint32_t i = 1; i < 8; ++i) {
         TEST_ASSERT_TRUE(meter.onPulse(1000 + i * 2000));
     }
-    TEST_ASSERT_EQUAL_UINT32(36, meter.snapshot(15000).volumeMl);
+    TEST_ASSERT_EQUAL_UINT32(130, meter.snapshot(15000).volumeMl);
 }
 
 void test_segmented_startup_volume_is_spread_across_startup_pulses() {

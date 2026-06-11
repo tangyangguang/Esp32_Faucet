@@ -60,13 +60,13 @@ struct MeteringParameters {
           startupVolumeMl(0),
           stablePulsePerLiter(0),
           startupDurationMs(5000),
-          stableFlowMlPerMin(480) {}
+          stableFlowMlPerMin(1950) {}
 
     constexpr MeteringParameters(std::uint32_t startupPulseCountValue,
                                  std::uint32_t startupVolumeMlValue,
                                  std::uint32_t stablePulsePerLiterValue,
                                  std::uint32_t startupDurationMsValue = 5000,
-                                 std::uint32_t stableFlowMlPerMinValue = 480)
+                                 std::uint32_t stableFlowMlPerMinValue = 1950)
         : startupPulseCount(startupPulseCountValue),
           startupVolumeMl(startupVolumeMlValue),
           stablePulsePerLiter(stablePulsePerLiterValue),

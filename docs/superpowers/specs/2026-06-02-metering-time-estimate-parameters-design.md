@@ -40,10 +40,10 @@
 
 ```text
 startupPulseCount = 8
-startupVolumeMl = 36
-stablePulsePerLiter = 225
+startupVolumeMl = 130
+stablePulsePerLiter = 248
 startupDurationMs = 5000
-stableFlowMlPerMin = 480
+stableFlowMlPerMin = 1950
 ```
 
 ## 运行边界
@@ -129,7 +129,7 @@ T > Ts:
 
 ```text
 startupDurationMs = 5000
-stableFlowMlPerMin = 480
+stableFlowMlPerMin = 1950
 ```
 
 迁移说明中应标明时间估算计量参数来自迁移默认值，不是样本生成。

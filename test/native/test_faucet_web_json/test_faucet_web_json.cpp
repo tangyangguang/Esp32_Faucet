@@ -26,7 +26,7 @@ AppSnapshot makeSnapshot() {
     snapshot.displayFlowMlPerMin = 1870;
     snapshot.runAverageFlowMlPerMin = 1660;
     snapshot.recentAverageFlowMlPerMin = 1810;
-    snapshot.meteringParams = MeteringParameters{8, 36, 225};
+    snapshot.meteringParams = MeteringParameters{8, 130, 248};
     return snapshot;
 }
 
@@ -47,13 +47,13 @@ void test_status_json_contains_no_remote_control_capability() {
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"selectedPreset\":1"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"activePreset\":0"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"pulsePerLiter\":0"));
-    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"metering\":{\"startupPulseCount\":8,\"startupVolumeMl\":36,\"stablePulsePerLiter\":225,\"startupDurationMs\":5000,\"stableFlowMlPerMin\":480}"));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"metering\":{\"startupPulseCount\":8,\"startupVolumeMl\":130,\"stablePulsePerLiter\":248,\"startupDurationMs\":5000,\"stableFlowMlPerMin\":1950}"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"calibration\":{\"status\":\"idle\",\"attemptCount\":0,\"validSampleCount\":0"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"canQuickGenerate\":false,\"recommended\":false"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"targetEstimate\":{\"available\":true"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"targetMl\":1500"));
-    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"pulseCount\":338"));
-    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"fullRunPulsePerLiter\":225"));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"pulseCount\":348"));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"fullRunPulsePerLiter\":232"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"currentFlowMlPerMin\":1870"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"instantFlowMlPerMin\":1910"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"windowFlowMlPerMin\":1840"));
@@ -129,7 +129,7 @@ void test_status_json_contains_next_preset_summary() {
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"name\":\"7.5L\""));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"targetValue\":7500"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"targetEstimate\":{\"available\":true"));
-    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"pulseCount\":1688"));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"pulseCount\":1836"));
 }
 
 void test_status_json_reports_time_target_estimate_from_stable_pulses() {

@@ -47,10 +47,10 @@ void test_default_store_has_one_enabled_active_default_scheme() {
     TEST_ASSERT_EQUAL_UINT32(1, active->revision);
     TEST_ASSERT_EQUAL_STRING("YF-S201 默认计量方案", active->name);
     TEST_ASSERT_EQUAL_UINT32(8, active->params.startupPulseCount);
-    TEST_ASSERT_EQUAL_UINT32(36, active->params.startupVolumeMl);
-    TEST_ASSERT_EQUAL_UINT32(225, active->params.stablePulsePerLiter);
+    TEST_ASSERT_EQUAL_UINT32(130, active->params.startupVolumeMl);
+    TEST_ASSERT_EQUAL_UINT32(248, active->params.stablePulsePerLiter);
     TEST_ASSERT_EQUAL_UINT32(5000, active->params.startupDurationMs);
-    TEST_ASSERT_EQUAL_UINT32(480, active->params.stableFlowMlPerMin);
+    TEST_ASSERT_EQUAL_UINT32(1950, active->params.stableFlowMlPerMin);
     TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(MeteringSchemeSource::Default),
                             static_cast<unsigned>(active->sourceType));
     TEST_ASSERT_FALSE(active->usedEver);
@@ -81,7 +81,7 @@ void test_candidate_saves_as_new_scheme_without_enabling() {
     TEST_ASSERT_EQUAL_UINT32(553, saved->params.startupVolumeMl);
     TEST_ASSERT_EQUAL_UINT32(222, saved->params.stablePulsePerLiter);
     TEST_ASSERT_EQUAL_UINT32(5000, saved->params.startupDurationMs);
-    TEST_ASSERT_EQUAL_UINT32(480, saved->params.stableFlowMlPerMin);
+    TEST_ASSERT_EQUAL_UINT32(1950, saved->params.stableFlowMlPerMin);
     TEST_ASSERT_EQUAL_UINT32(1, saved->revision);
     TEST_ASSERT_EQUAL_UINT16(3, saved->sampleCount);
     TEST_ASSERT_EQUAL_UINT32(1500, saved->minActualMl);

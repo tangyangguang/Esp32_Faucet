@@ -332,10 +332,10 @@ void test_begin_initializes_default_scheme_file() {
     TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(MeteringSchemeState::Available),
                             static_cast<unsigned>(active.state));
     TEST_ASSERT_EQUAL_UINT32(8, active.params.startupPulseCount);
-    TEST_ASSERT_EQUAL_UINT32(36, active.params.startupVolumeMl);
-    TEST_ASSERT_EQUAL_UINT32(225, active.params.stablePulsePerLiter);
+    TEST_ASSERT_EQUAL_UINT32(130, active.params.startupVolumeMl);
+    TEST_ASSERT_EQUAL_UINT32(248, active.params.stablePulsePerLiter);
     TEST_ASSERT_EQUAL_UINT32(5000, active.params.startupDurationMs);
-    TEST_ASSERT_EQUAL_UINT32(480, active.params.stableFlowMlPerMin);
+    TEST_ASSERT_EQUAL_UINT32(1950, active.params.stableFlowMlPerMin);
 }
 
 void test_begin_upgrades_single_legacy_default_scheme_to_yfs201_builtin_default() {
@@ -360,10 +360,10 @@ void test_begin_upgrades_single_legacy_default_scheme_to_yfs201_builtin_default(
     TEST_ASSERT_EQUAL_UINT32(1, active.id);
     TEST_ASSERT_EQUAL_STRING("YF-S201 默认计量方案", active.name);
     TEST_ASSERT_EQUAL_UINT32(8, active.params.startupPulseCount);
-    TEST_ASSERT_EQUAL_UINT32(36, active.params.startupVolumeMl);
-    TEST_ASSERT_EQUAL_UINT32(225, active.params.stablePulsePerLiter);
+    TEST_ASSERT_EQUAL_UINT32(130, active.params.startupVolumeMl);
+    TEST_ASSERT_EQUAL_UINT32(248, active.params.stablePulsePerLiter);
     TEST_ASSERT_EQUAL_UINT32(5000, active.params.startupDurationMs);
-    TEST_ASSERT_EQUAL_UINT32(480, active.params.stableFlowMlPerMin);
+    TEST_ASSERT_EQUAL_UINT32(1950, active.params.stableFlowMlPerMin);
     TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(MeteringSchemeSource::Default),
                             static_cast<unsigned>(active.sourceType));
     TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(MeteringSchemeState::Available),
@@ -392,7 +392,7 @@ void test_save_candidate_as_new_reloads_after_restart() {
     TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(MeteringSchemeSource::CalibrationSession),
                             static_cast<unsigned>(list[1].sourceType));
     TEST_ASSERT_EQUAL_UINT32(5000, list[1].params.startupDurationMs);
-    TEST_ASSERT_EQUAL_UINT32(480, list[1].params.stableFlowMlPerMin);
+    TEST_ASSERT_EQUAL_UINT32(1950, list[1].params.stableFlowMlPerMin);
     TEST_ASSERT_EQUAL_UINT16(3, list[1].sampleCount);
     TEST_ASSERT_EQUAL_UINT32(1500, list[1].minActualMl);
     TEST_ASSERT_EQUAL_UINT32(7500, list[1].maxActualMl);
@@ -423,7 +423,7 @@ void test_manual_create_reuses_deleted_unused_slot_with_new_id() {
     TEST_ASSERT_TRUE(store.findById(thirdId, created));
     TEST_ASSERT_EQUAL_STRING("实验三", created.name);
     TEST_ASSERT_EQUAL_UINT32(5000, created.params.startupDurationMs);
-    TEST_ASSERT_EQUAL_UINT32(480, created.params.stableFlowMlPerMin);
+    TEST_ASSERT_EQUAL_UINT32(1950, created.params.stableFlowMlPerMin);
 }
 
 void test_manual_create_overwrites_oldest_non_current_when_fixed_slots_are_full() {
@@ -643,7 +643,7 @@ void test_migrates_legacy_config_slots_without_candidate() {
     TEST_ASSERT_EQUAL_UINT32(553, list[0].params.startupVolumeMl);
     TEST_ASSERT_EQUAL_UINT32(222, list[0].params.stablePulsePerLiter);
     TEST_ASSERT_EQUAL_UINT32(5000, list[0].params.startupDurationMs);
-    TEST_ASSERT_EQUAL_UINT32(480, list[0].params.stableFlowMlPerMin);
+    TEST_ASSERT_EQUAL_UINT32(1950, list[0].params.stableFlowMlPerMin);
     TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(MeteringSchemeSource::Migrated),
                             static_cast<unsigned>(list[0].sourceType));
     TEST_ASSERT_EQUAL_UINT32(1, list[0].revision);
@@ -695,7 +695,7 @@ void test_begin_migrates_v1_scheme_file_to_time_estimate_params() {
     TEST_ASSERT_EQUAL_UINT32(553, migrated.params.startupVolumeMl);
     TEST_ASSERT_EQUAL_UINT32(222, migrated.params.stablePulsePerLiter);
     TEST_ASSERT_EQUAL_UINT32(5000, migrated.params.startupDurationMs);
-    TEST_ASSERT_EQUAL_UINT32(480, migrated.params.stableFlowMlPerMin);
+    TEST_ASSERT_EQUAL_UINT32(1950, migrated.params.stableFlowMlPerMin);
     TEST_ASSERT_EQUAL_UINT32(3, migrated.revision);
     TEST_ASSERT_EQUAL_UINT16(2, migrated.sampleCount);
     TEST_ASSERT_TRUE(migrated.usedEver);
@@ -738,7 +738,7 @@ void test_begin_recovers_v1_scheme_migration_from_completed_temp_file() {
     TEST_ASSERT_TRUE(recovered.activeScheme(migrated));
     TEST_ASSERT_EQUAL_STRING("旧文件方案", migrated.name);
     TEST_ASSERT_EQUAL_UINT32(5000, migrated.params.startupDurationMs);
-    TEST_ASSERT_EQUAL_UINT32(480, migrated.params.stableFlowMlPerMin);
+    TEST_ASSERT_EQUAL_UINT32(1950, migrated.params.stableFlowMlPerMin);
 }
 
 void test_begin_migrates_v3_candidate_file_to_compact_v4_layout() {

@@ -835,22 +835,23 @@ void test_legacy_migration_avoids_large_metering_scheme_stack_arrays() {
     TEST_ASSERT_TRUE(migratedStackArray == nullptr || migratedStackArray > nextFunction);
 }
 
-void test_begin_rebuilds_corrupt_scheme_file_with_default_scheme() {
+void test_begin_preserves_corrupt_scheme_file() {
     MemoryFileBackend backend;
     {
         MeteringSchemeStore store(backend, "/schemes.bin");
         TEST_ASSERT_TRUE(store.begin());
     }
+    const std::int64_t originalSize = backend.fileSize("/schemes.bin");
     backend.overwriteByte("/schemes.bin", 0, 0x00);
 
     MeteringSchemeStore loaded(backend, "/schemes.bin");
-    TEST_ASSERT_TRUE(loaded.begin());
-    TEST_ASSERT_TRUE(loaded.ready());
-    TEST_ASSERT_EQUAL_size_t(1, backend.removeCalls);
-    MeteringSchemeRecord active{};
-    TEST_ASSERT_TRUE(loaded.activeScheme(active));
-    TEST_ASSERT_TRUE(active.recordUsed);
-    TEST_ASSERT_EQUAL_UINT32(loaded.activeSchemeId(), active.id);
+    TEST_ASSERT_FALSE(loaded.begin());
+    TEST_ASSERT_FALSE(loaded.ready());
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(AppStorageStatus::IncompatibleFormat),
+                            static_cast<unsigned>(loaded.status()));
+    TEST_ASSERT_EQUAL_size_t(0, backend.removeCalls);
+    TEST_ASSERT_TRUE(backend.exists("/schemes.bin"));
+    TEST_ASSERT_EQUAL_INT64(originalSize, backend.fileSize("/schemes.bin"));
 }
 
 int main(int argc, char** argv) {
@@ -874,6 +875,6 @@ int main(int argc, char** argv) {
     RUN_TEST(test_begin_migrates_v3_candidate_file_to_compact_v4_layout);
     RUN_TEST(test_begin_ignores_stale_scheme_migration_temp_when_current_file_is_valid);
     RUN_TEST(test_legacy_migration_avoids_large_metering_scheme_stack_arrays);
-    RUN_TEST(test_begin_rebuilds_corrupt_scheme_file_with_default_scheme);
+    RUN_TEST(test_begin_preserves_corrupt_scheme_file);
     return UNITY_END();
 }

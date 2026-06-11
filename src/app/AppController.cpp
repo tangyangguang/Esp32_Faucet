@@ -351,6 +351,10 @@ bool AppController::consumePersistenceDirty() {
     return dirty;
 }
 
+void AppController::markPersistenceDirtyForRetry() {
+    persistenceDirty_ = true;
+}
+
 bool AppController::consumeConfigDirty() {
     const bool dirty = configDirty_;
     configDirty_ = false;

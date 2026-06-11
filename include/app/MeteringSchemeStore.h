@@ -1,5 +1,6 @@
 #pragma once
 
+#include "app/AppStorageStatus.h"
 #include "app/MeteringScheme.h"
 #include "app/WaterRecordFileStore.h"
 
@@ -29,6 +30,7 @@ public:
 
     bool begin();
     bool ready() const;
+    AppStorageStatus status() const;
     std::uint32_t activeSchemeId() const;
     bool activeScheme(MeteringSchemeRecord& output) const;
     bool findById(std::uint32_t id, MeteringSchemeRecord& output) const;
@@ -73,6 +75,7 @@ private:
     const char* path_;
     MeteringSchemeStoreHeader header_;
     bool ready_;
+    AppStorageStatus status_;
 };
 
 }  // namespace faucet

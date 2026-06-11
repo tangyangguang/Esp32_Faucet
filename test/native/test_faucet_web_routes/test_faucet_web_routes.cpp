@@ -1786,6 +1786,32 @@ void test_incomplete_factory_reset_path_is_not_kept_as_dead_code() {
     TEST_ASSERT_NULL(std::strstr(headerBuffer, "consumeFactoryResetRequest"));
 }
 
+void test_storage_status_and_persistence_retry_are_explicit() {
+    FILE* webFile = std::fopen("src/web/FaucetWeb.cpp", "rb");
+    TEST_ASSERT_NOT_NULL(webFile);
+    static char webBuffer[420000]{};
+    const std::size_t webRead = std::fread(webBuffer, 1, sizeof(webBuffer) - 1, webFile);
+    std::fclose(webFile);
+    TEST_ASSERT_GREATER_THAN_size_t(0, webRead);
+
+    TEST_ASSERT_NOT_NULL(std::strstr(webBuffer, "appStorageStatusCode"));
+    TEST_ASSERT_NOT_NULL(std::strstr(webBuffer, "文件损坏"));
+    TEST_ASSERT_NOT_NULL(std::strstr(webBuffer, "格式不兼容"));
+    TEST_ASSERT_NOT_NULL(std::strstr(webBuffer, "长期样本库已满，请先手动删除不需要的样本"));
+    TEST_ASSERT_NOT_NULL(std::strstr(webBuffer, "metering_storage_unavailable"));
+
+    FILE* mainFile = std::fopen("src/main.cpp", "rb");
+    TEST_ASSERT_NOT_NULL(mainFile);
+    static char mainBuffer[90000]{};
+    const std::size_t mainRead = std::fread(mainBuffer, 1, sizeof(mainBuffer) - 1, mainFile);
+    std::fclose(mainFile);
+    TEST_ASSERT_GREATER_THAN_size_t(0, mainRead);
+
+    TEST_ASSERT_NOT_NULL(std::strstr(mainBuffer, "kRuntimePersistenceRetryIntervalMs"));
+    TEST_ASSERT_NOT_NULL(std::strstr(mainBuffer, "markPersistenceDirtyForRetry"));
+    TEST_ASSERT_NOT_NULL(std::strstr(mainBuffer, "g_runtimePersistenceRetryActive"));
+}
+
 int main(int argc, char** argv) {
     (void)argc;
     (void)argv;
@@ -1824,5 +1850,6 @@ int main(int argc, char** argv) {
     RUN_TEST(test_heavy_web_handlers_return_busy_while_water_task_active);
     RUN_TEST(test_web_write_handlers_return_busy_before_trace_or_filter_runtime_writes);
     RUN_TEST(test_incomplete_factory_reset_path_is_not_kept_as_dead_code);
+    RUN_TEST(test_storage_status_and_persistence_retry_are_explicit);
     return UNITY_END();
 }

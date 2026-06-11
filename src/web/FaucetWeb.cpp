@@ -1259,6 +1259,46 @@ const char* waterRecordFileStatusMessage(WaterRecordFileStatus status) {
     }
 }
 
+const char* appStorageStatusCode(AppStorageStatus status) {
+    switch (status) {
+        case AppStorageStatus::Ready:
+            return "ready";
+        case AppStorageStatus::Unavailable:
+            return "unavailable";
+        case AppStorageStatus::Missing:
+            return "missing";
+        case AppStorageStatus::InvalidPath:
+            return "invalid_path";
+        case AppStorageStatus::BackendFailure:
+            return "backend_failure";
+        case AppStorageStatus::Corrupt:
+            return "corrupt";
+        case AppStorageStatus::IncompatibleFormat:
+            return "incompatible_format";
+    }
+    return "unknown";
+}
+
+const char* appStorageStatusMessage(AppStorageStatus status) {
+    switch (status) {
+        case AppStorageStatus::Ready:
+            return "存储正常。";
+        case AppStorageStatus::Missing:
+            return "文件缺失；系统会在下次需要写入时尝试重新创建。";
+        case AppStorageStatus::InvalidPath:
+            return "文件路径配置无效。";
+        case AppStorageStatus::BackendFailure:
+            return "文件系统读写失败，请检查 Flash/LittleFS 状态。";
+        case AppStorageStatus::Corrupt:
+            return "文件损坏或未写完整；为保护已有数据，系统不会自动删除。";
+        case AppStorageStatus::IncompatibleFormat:
+            return "文件格式不兼容；为保护可识别数据，系统不会自动删除。";
+        case AppStorageStatus::Unavailable:
+        default:
+            return "存储尚未就绪。";
+    }
+}
+
 bool activeMeteringSchemeForWeb(MeteringSchemeRecord& output) {
     if (ensureMeteringSchemesReady() && g_context.meteringSchemes->activeScheme(output)) {
         return true;
@@ -1704,7 +1744,11 @@ void sendCalibrationParameterPanels() {
                             "<a class='btn-link' href='/faucet/metering?scheme=new'>新建方案</a></div>"
                             "<table class='calibration-slot-table metering-scheme-table'><tr><th>方案</th><th>容量估算参数</th><th>时间估算参数</th><th>样本摘要</th><th>使用状态</th><th>操作</th></tr>");
     if (!ready) {
-        Esp32BaseWeb::sendChunk("<tr><td colspan='6'>计量方案存储不可用。</td></tr>");
+        const AppStorageStatus status =
+            g_context.meteringSchemes ? g_context.meteringSchemes->status() : AppStorageStatus::Unavailable;
+        sendFmt("<tr><td colspan='6'>计量方案存储不可用：%s（%s）。</td></tr>",
+                appStorageStatusMessage(status),
+                appStorageStatusCode(status));
     } else if (!schemes) {
         Esp32BaseWeb::sendChunk("<tr><td colspan='6'>内存不足，无法加载方案列表。</td></tr>");
     }
@@ -2381,7 +2425,12 @@ void sendLongTermSampleLibraryPanel() {
     Esp32BaseWeb::sendChunk("<section id='long-term-samples' class='panel'><div class='panel-head'><h3>长期样本库</h3>"
                             "<span class='status-pill status-muted'>Flash</span></div>");
     if (!g_context.calibrationLongTermSamples || !g_context.calibrationLongTermSamples->ready()) {
-        Esp32BaseWeb::sendChunk("<p class='hint'>长期样本库不可用；普通校准仍可使用本次会话样本生成并应用方案。</p></section>");
+        const AppStorageStatus status =
+            g_context.calibrationLongTermSamples ? g_context.calibrationLongTermSamples->status()
+                                                 : AppStorageStatus::Unavailable;
+        sendFmt("<p class='hint'>长期样本库不可用：%s（%s）。普通校准仍可使用本次会话样本生成并应用方案。</p></section>",
+                appStorageStatusMessage(status),
+                appStorageStatusCode(status));
         return;
     }
 
@@ -2397,6 +2446,9 @@ void sendLongTermSampleLibraryPanel() {
             static_cast<unsigned>(kCalibrationLongTermSampleSlots),
             static_cast<unsigned long>(kPulseTraceMaxRawEdgesPerTrace),
             maxBytes);
+    if (count >= kCalibrationLongTermSampleSlots) {
+        Esp32BaseWeb::sendChunk("<p class='warn'>长期样本库已满，请先手动删除不需要的样本，再保存新的长期样本。</p>");
+    }
     if (count == 0) {
         Esp32BaseWeb::sendChunk("<p class='hint'>还没有长期样本。完成校准会话后，可把优质样本存入这里用于专业生成和复核。</p></section>");
         return;
@@ -2665,7 +2717,7 @@ void sendCalibrationPageScript() {
     Esp32BaseWeb::sendChunk("<script>"
                             "function faucetShowSampleCalibration(id){var rows=document.querySelectorAll('.sample-calibration-edit-row');for(var i=0;i<rows.length;i++)rows[i].classList.remove('is-open');var r=document.getElementById(id);if(r)r.classList.add('is-open');}"
                             "function faucetHideSampleCalibration(id){var r=document.getElementById(id);if(r)r.classList.remove('is-open');}"
-                            "function faucetCalibrationErrorMessage(code){var m={busy:'设备正在出水或确认中，请回到待机后再保存。',invalid_value:'实际出水量超出允许范围，请按量杯读数填写。',invalid_action:'操作无效，请刷新页面后重试。',invalid_state:'现在不允许执行这个操作，请刷新页面后按当前步骤继续。',calibration_storage_unavailable:'校准存储未就绪，请检查设备存储空间或重启后再试。',sample_not_enough:'可生成样本不足，至少需要两条长期样本库中有实测容量且稳态识别成功的样本。',no_calibration_record:'这条样本不可校准：没有可用脉冲明细或结束状态不适合校准。',calibration_mark_failed:'实测容量写入失败，可能是校准记录存储不可用或 Flash 写入失败。',save_failed:'样本入库失败，请检查长期样本库容量或存储状态。','HTTP 401':'认证已失效，请刷新页面重新登录。','HTTP 403':'认证被拒绝，请检查 Web 登录状态。','HTTP 404':'保存接口路径不存在，请刷新页面后重试。','HTTP 500':'设备端保存接口异常，请查看日志。','HTTP 503':'设备尚未就绪，请稍后重试。'};return m[code]||(code?'操作失败：'+code:'操作失败，请检查页面状态后重试。');}"
+                            "function faucetCalibrationErrorMessage(code){var m={busy:'设备正在出水或确认中，请回到待机后再保存。',invalid_value:'实际出水量超出允许范围，请按量杯读数填写。',invalid_action:'操作无效，请刷新页面后重试。',invalid_state:'现在不允许执行这个操作，请刷新页面后按当前步骤继续。',calibration_storage_unavailable:'校准存储未就绪，请检查设备存储空间或重启后再试。',long_term_sample_full:'长期样本库已满，请先手动删除不需要的样本。',sample_not_enough:'可生成样本不足，至少需要两条长期样本库中有实测容量且稳态识别成功的样本。',no_calibration_record:'这条样本不可校准：没有可用脉冲明细或结束状态不适合校准。',calibration_mark_failed:'实测容量写入失败，可能是校准记录存储不可用或 Flash 写入失败。',save_failed:'样本入库失败，请检查长期样本库容量或存储状态。','HTTP 401':'认证已失效，请刷新页面重新登录。','HTTP 403':'认证被拒绝，请检查 Web 登录状态。','HTTP 404':'保存接口路径不存在，请刷新页面后重试。','HTTP 500':'设备端保存接口异常，请查看日志。','HTTP 503':'设备尚未就绪，请稍后重试。'};return m[code]||(code?'操作失败：'+code:'操作失败，请检查页面状态后重试。');}"
                             "function faucetReadCalibrationError(r){return r.text().then(function(t){try{return (JSON.parse(t)||{}).error||('HTTP '+r.status);}catch(e){return 'HTTP '+r.status;}});}"
                             "function faucetResetSampleCalibrationForm(f){f.dataset.busy='';var b=f.querySelector('[type=submit]');if(b)b.disabled=false;}"
                             "function faucetFormatEstimateSeconds(s){if(!isFinite(s)||s<=0)return '-';s=Math.max(1,Math.round(s));var m=Math.floor(s/60),r=s%60;return m>0?(m+'分'+r+'秒'):(r+'秒');}"
@@ -2975,6 +3027,10 @@ void sendNoticeFromQuery() {
         message = "日期格式无效，请重新选择日期。";
     } else if (std::strcmp(text, "save_failed") == 0) {
         message = "保存失败，请稍后重试。";
+    } else if (std::strcmp(text, "long_term_sample_full") == 0) {
+        message = "长期样本库已满，请先手动删除不需要的样本。";
+    } else if (std::strcmp(text, "metering_storage_unavailable") == 0) {
+        message = "计量方案存储不可用；请检查存储状态，系统不会自动删除原文件。";
     } else if (std::strcmp(text, "used_scheme_locked") == 0) {
         message = "已使用方案不能直接覆盖计量参数，请另存为新方案。";
     } else if (std::strcmp(text, "saved_trace_full") == 0) {
@@ -6276,7 +6332,7 @@ void handleSaveGeneratedSchemeApi() {
         return;
     }
     if (!ensureMeteringSchemesReady()) {
-        Esp32BaseWeb::redirectSeeOther("/faucet/metering?generated=1&error=save_failed");
+        Esp32BaseWeb::redirectSeeOther("/faucet/metering?generated=1&error=metering_storage_unavailable");
         return;
     }
     const SegmentedSampleDiagnostics diagnostics = collectSegmentedSampleDiagnostics(false);
@@ -6362,7 +6418,7 @@ void handleCreateMeteringSchemeApi() {
         return;
     }
     if (!ensureMeteringSchemesReady()) {
-        Esp32BaseWeb::redirectSeeOther("/faucet/metering?error=save_failed");
+        Esp32BaseWeb::redirectSeeOther("/faucet/metering?error=metering_storage_unavailable");
         return;
     }
     MeteringParameters params{};
@@ -6396,7 +6452,7 @@ void handleEditMeteringSchemeApi() {
         return;
     }
     if (!ensureMeteringSchemesReady()) {
-        Esp32BaseWeb::redirectSeeOther("/faucet/metering?error=save_failed");
+        Esp32BaseWeb::redirectSeeOther("/faucet/metering?error=metering_storage_unavailable");
         return;
     }
     std::uint32_t id = 0;
@@ -6444,7 +6500,7 @@ void handleEnableMeteringSchemeApi() {
         return;
     }
     if (!ensureMeteringSchemesReady()) {
-        Esp32BaseWeb::redirectSeeOther("/faucet/metering?error=save_failed");
+        Esp32BaseWeb::redirectSeeOther("/faucet/metering?error=metering_storage_unavailable");
         return;
     }
     std::uint32_t id = 0;
@@ -6477,7 +6533,7 @@ void handleDeleteMeteringSchemeApi() {
         return;
     }
     if (!ensureMeteringSchemesReady()) {
-        Esp32BaseWeb::redirectSeeOther("/faucet/metering?error=save_failed");
+        Esp32BaseWeb::redirectSeeOther("/faucet/metering?error=metering_storage_unavailable");
         return;
     }
     std::uint32_t id = 0;

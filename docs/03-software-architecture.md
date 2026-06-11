@@ -113,7 +113,7 @@
 - Web records 页支持最近记录分页，不提供按时间范围筛选；按时间范围查询只保留在 `/api/faucet/records`。列表保持紧凑，显示目标、出水量、持续时间、模式、结束原因、脉冲/P-L、计量方案、校准状态和操作。过滤脉冲只在有值时作为脉冲单元格内的辅助诊断信息展示。有 RAM 明细的记录显示“明细”，有设备明细的记录显示“设备明细”；不允许远程打开电磁阀。
 - Web 默认认证通过 Esp32Base `setDefaultAuth()` 设置为 `admin/admin`；用户可通过 `/esp32base/auth` 修改认证，已保存认证优先于应用默认值。
 - WebOTA 目标地址和凭据不写入仓库；本地复制 `platformio.example.ini` 为 `platformio.local.ini` 后填写 `custom_esp32base_webota_*`。
-- 当前构建将 Esp32Base 串口日志等级设为 DEBUG，文件日志等级设为 INFO，用于保留更完整的启动和现场诊断信息。文件日志等级在启动后显式应用为 INFO，避免设备 NVS 中旧的 `eb_log.level` 覆盖当前项目策略。注意：基础库 INFO 日志会输出 WiFi/Web 认证明文凭据，调试日志和文件日志需要按敏感信息管理。
+- 当前构建将 Esp32Base 串口日志等级设为 DEBUG，文件日志默认等级设为 WARN。生产和常规调试都保持文件日志 WARN，避免长期 INFO 日志反复写 Flash；需要详细过程日志时优先查看串口日志。若设备 NVS 中已有 FileLog 模式配置，应通过 Esp32Base 系统日志页面人工调整，不在固件启动时静默覆盖用户配置。
 
 ### Web 页面
 
@@ -140,7 +140,7 @@
 | GET | `/api/faucet/presets` | 查询预设 |
 | POST | `/api/faucet/presets` | 保存预设配置；`select_previous`、`select_next`、`select` 只切换“下次预设”并返回最新状态，不启动或改变当前出水任务 |
 | GET | `/api/faucet/records` | 按时间范围筛选并分页查询出水记录；出水确认、运行和暂停期间返回 busy |
-| POST | `/api/faucet/records` | 通过 `action` 执行记录校准、脉冲明细保存/删除；危险 POST 必须通过同源校验；出水确认、运行和暂停期间返回 busy |
+| POST | `/api/faucet/records` | 通过 `action` 执行记录校准；旧设备明细保存/删除入口仅在独立明细 store 接入时可用，当前生产不接入；危险 POST 必须通过同源校验；出水确认、运行和暂停期间返回 busy |
 | POST | `/faucet/calibration` | 校准会话动作：进入/退出校准模式、保存本次实测容量、放弃本次样本、生成会话方案、确认应用；不提供远程出水/停水 |
 | GET | `/faucet/calibration/samples` | 校准样本库片段；隐藏路由，不进入导航 |
 | POST | `/faucet/metering` | 计量方案动作：从长期样本库生成、保存/放弃生成结果、create/edit/enable/delete 方案；不提供远程出水/停水 |

@@ -402,6 +402,8 @@ void test_app_controller_completion_writes_record_statistics_and_filters() {
     TEST_ASSERT_EQUAL_UINT32(1500, filters.record(0).usedMl);
     TEST_ASSERT_TRUE(app.consumePersistenceDirty());
     TEST_ASSERT_FALSE(app.consumePersistenceDirty());
+    app.markPersistenceDirtyForRetry();
+    TEST_ASSERT_TRUE(app.consumePersistenceDirty());
 }
 
 void test_app_controller_web_preset_switch_during_run_updates_next_preset_only() {

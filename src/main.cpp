@@ -44,6 +44,7 @@ constexpr std::size_t kWaterRecordCalibrationCapacity = 512;
 constexpr std::size_t kPulseTraceCapacity = faucet::kMaxRecentPulseTraceCount;
 constexpr std::size_t kPulseTraceMaxSamples =
     static_cast<std::size_t>(faucet::kMaxRecentPulseTraceCount) * faucet::kPulseTraceMaxRawEdgesPerTrace;
+constexpr std::uint32_t kRuntimePersistenceRetryIntervalMs = 30000UL;
 constexpr const char* kWaterRecordPath = "/faucet_records_v2.bin";
 constexpr const char* kWaterRecordCalibrationPath = "/faucet_record_cal_v1.bin";
 constexpr const char* kMeteringSchemePath = "/faucet_metering_schemes_v1.bin";
@@ -198,6 +199,8 @@ faucet::Lcd1602Display g_lcd(faucet::kPinI2cSda, faucet::kPinI2cScl);
 faucet::DisplayPresenter* g_display = nullptr;
 faucet::DisplayFrame g_lastDisplayFrame{faucet::DisplayPage::Sleep, false, {}, {}};
 bool g_persistenceFailureLogged = false;
+bool g_runtimePersistenceRetryActive = false;
+std::uint32_t g_lastRuntimePersistenceFailureMs = 0;
 std::uint32_t g_lastDisplayMs = 0;
 std::uint32_t g_lastDroppedPulsesLogged = 0;
 std::uint32_t g_lastDroppedPulsesLogMs = 0;
@@ -675,14 +678,23 @@ void runApplicationTick() {
         }
     }
 
-    if (g_app->consumePersistenceDirty() && g_filters) {
+    const bool runtimePersistenceRetryDue =
+        !g_runtimePersistenceRetryActive ||
+        faucet::elapsedAtLeast(nowMs, g_lastRuntimePersistenceFailureMs, kRuntimePersistenceRetryIntervalMs);
+    if (runtimePersistenceRetryDue && g_app->consumePersistenceDirty() && g_filters) {
         const bool ok = g_configStore.saveStatistics(g_statistics.record()) &&
                         g_configStore.saveFilterRuntime(g_filters->records());
         if (!ok && !g_persistenceFailureLogged) {
             ESP32BASE_LOG_E("app", "runtime persistence failed");
             g_persistenceFailureLogged = true;
-        } else if (ok) {
+        }
+        if (!ok) {
+            g_app->markPersistenceDirtyForRetry();
+            g_runtimePersistenceRetryActive = true;
+            g_lastRuntimePersistenceFailureMs = nowMs;
+        } else {
             g_persistenceFailureLogged = false;
+            g_runtimePersistenceRetryActive = false;
         }
     }
 

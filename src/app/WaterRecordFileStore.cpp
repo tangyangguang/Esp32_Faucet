@@ -8,6 +8,7 @@ namespace {
 
 constexpr std::uint32_t kRecordMagic = 0x46575244UL;  // FWRD
 constexpr std::uint16_t kRecordVersion = 1;
+constexpr std::size_t kFileExtendChunkSize = 64;
 
 struct RecordHeader {
     std::uint32_t magic;
@@ -25,8 +26,19 @@ bool validPath(const char* path) {
     return path && path[0] == '/';
 }
 
+std::uint32_t headerChecksum(RecordHeader header) {
+    header.reserved = 0;
+    const std::uint8_t* bytes = reinterpret_cast<const std::uint8_t*>(&header);
+    std::uint32_t hash = 2166136261UL;
+    for (std::size_t i = 0; i < sizeof(RecordHeader); ++i) {
+        hash ^= bytes[i];
+        hash *= 16777619UL;
+    }
+    return hash == 0 ? 1 : hash;
+}
+
 RecordHeader makeHeader(std::size_t capacity, std::size_t count, std::size_t oldestIndex) {
-    return RecordHeader{
+    RecordHeader header{
         kRecordMagic,
         kRecordVersion,
         static_cast<std::uint16_t>(sizeof(WaterRecord)),
@@ -35,6 +47,25 @@ RecordHeader makeHeader(std::size_t capacity, std::size_t count, std::size_t old
         static_cast<std::uint32_t>(oldestIndex),
         0,
     };
+    header.reserved = headerChecksum(header);
+    return header;
+}
+
+bool validHeaderFields(const RecordHeader& header, std::size_t expectedCapacity) {
+    return header.magic == kRecordMagic && header.version == kRecordVersion &&
+           header.recordSize == sizeof(WaterRecord) && header.capacity != 0 &&
+           header.capacity == expectedCapacity && header.count <= header.capacity &&
+           header.oldestIndex < header.capacity;
+}
+
+bool validHeader(const RecordHeader& header, std::size_t expectedCapacity, bool allowLegacyChecksum) {
+    if (!validHeaderFields(header, expectedCapacity)) {
+        return false;
+    }
+    if (header.reserved == headerChecksum(header)) {
+        return true;
+    }
+    return allowLegacyChecksum && header.reserved == 0;
 }
 
 }  // namespace
@@ -201,7 +232,7 @@ WaterRecordFileStatus WaterRecordFileStore::status() const {
 bool WaterRecordFileStore::initializeNewFile() {
     oldestIndex_ = 0;
     count_ = 0;
-    ready_ = backend_.createSized(path_, sizeof(RecordHeader)) && saveHeader();
+    ready_ = backend_.createSized(path_, fileSizeBytes()) && saveHeader();
     status_ = ready_ ? WaterRecordFileStatus::Ready : WaterRecordFileStatus::BackendFailure;
     return ready_;
 }
@@ -223,32 +254,70 @@ bool WaterRecordFileStore::loadHeader() {
         return false;
     }
 
-    if (header.magic != kRecordMagic || header.version != kRecordVersion ||
-        header.recordSize != sizeof(WaterRecord) || header.capacity == 0 || header.capacity != capacity_) {
-        status_ = WaterRecordFileStatus::IncompatibleFormat;
-        return false;
+    RecordHeader selected = header;
+    const bool primaryValid = validHeader(header, capacity_, true);
+    bool backupValid = false;
+    if (fileSize >= static_cast<std::int64_t>(backupHeaderOffset() + sizeof(RecordHeader))) {
+        RecordHeader backup{};
+        if (!backend_.readAt(path_, backupHeaderOffset(), reinterpret_cast<std::uint8_t*>(&backup), sizeof(backup))) {
+            status_ = WaterRecordFileStatus::BackendFailure;
+            return false;
+        }
+        backupValid = validHeader(backup, capacity_, false);
+        if (backupValid) {
+            selected = backup;
+        }
     }
-    if (header.count > header.capacity || header.oldestIndex >= header.capacity) {
-        status_ = WaterRecordFileStatus::Corrupt;
+
+    if (!primaryValid && !backupValid) {
+        status_ = (header.magic != kRecordMagic || header.version != kRecordVersion ||
+                   header.recordSize != sizeof(WaterRecord) || header.capacity != capacity_)
+                      ? WaterRecordFileStatus::IncompatibleFormat
+                      : WaterRecordFileStatus::Corrupt;
         return false;
     }
 
-    const std::size_t requiredSize = sizeof(RecordHeader) + static_cast<std::size_t>(header.count) * sizeof(WaterRecord);
+    const std::size_t requiredSize =
+        sizeof(RecordHeader) + static_cast<std::size_t>(selected.count) * sizeof(WaterRecord);
     if (fileSize < static_cast<std::int64_t>(requiredSize)) {
         status_ = WaterRecordFileStatus::Corrupt;
         return false;
     }
 
-    capacity_ = header.capacity;
-    count_ = header.count;
-    oldestIndex_ = header.oldestIndex;
+    capacity_ = selected.capacity;
+    count_ = selected.count;
+    oldestIndex_ = selected.oldestIndex;
     status_ = WaterRecordFileStatus::Ready;
     return true;
 }
 
-bool WaterRecordFileStore::saveHeader() const {
+bool WaterRecordFileStore::saveHeader() {
+    if (!ensureFileSizeForHeaders()) {
+        return false;
+    }
     const RecordHeader header = makeHeader(capacity_, count_, oldestIndex_);
-    return backend_.writeAt(path_, 0, reinterpret_cast<const std::uint8_t*>(&header), sizeof(header));
+    if (!backend_.writeAt(path_, backupHeaderOffset(), reinterpret_cast<const std::uint8_t*>(&header), sizeof(header))) {
+        return false;
+    }
+    backend_.writeAt(path_, 0, reinterpret_cast<const std::uint8_t*>(&header), sizeof(header));
+    return true;
+}
+
+bool WaterRecordFileStore::ensureFileSizeForHeaders() {
+    std::int64_t size = backend_.fileSize(path_);
+    if (size < 0 || size > static_cast<std::int64_t>(fileSizeBytes())) {
+        return false;
+    }
+    static const std::uint8_t zeros[kFileExtendChunkSize]{};
+    while (size < static_cast<std::int64_t>(fileSizeBytes())) {
+        const std::size_t remaining = fileSizeBytes() - static_cast<std::size_t>(size);
+        const std::size_t chunk = std::min<std::size_t>(remaining, sizeof(zeros));
+        if (!backend_.appendBytes(path_, zeros, chunk)) {
+            return false;
+        }
+        size += static_cast<std::int64_t>(chunk);
+    }
+    return true;
 }
 
 bool WaterRecordFileStore::appendRecord(std::size_t index, const WaterRecord& record) {
@@ -276,6 +345,10 @@ bool WaterRecordFileStore::readRecordSpan(std::size_t firstIndex, WaterRecord* o
 }
 
 std::size_t WaterRecordFileStore::fileSizeBytes() const {
+    return backupHeaderOffset() + sizeof(RecordHeader);
+}
+
+std::size_t WaterRecordFileStore::backupHeaderOffset() const {
     return sizeof(RecordHeader) + capacity_ * sizeof(WaterRecord);
 }
 

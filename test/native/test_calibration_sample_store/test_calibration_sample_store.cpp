@@ -14,6 +14,7 @@ namespace {
 class MemoryFileBackend : public WaterRecordFileBackend {
 public:
     std::map<std::string, std::vector<std::uint8_t>> files;
+    std::size_t removeCalls = 0;
 
     bool exists(const char* path) override {
         return files.find(path ? path : "") != files.end();
@@ -72,6 +73,7 @@ public:
     }
 
     bool removeFile(const char* path) override {
+        ++removeCalls;
         files.erase(path ? path : "");
         return true;
     }
@@ -112,14 +114,17 @@ void test_session_trace_store_has_exactly_three_slots_and_lazy_file() {
     TEST_ASSERT_EQUAL_size_t(3, store.capacity());
 }
 
-void test_session_trace_store_recovers_invalid_existing_file() {
+void test_session_trace_store_preserves_invalid_existing_file() {
     MemoryFileBackend backend;
     backend.files["/session-traces.bin"] = std::vector<std::uint8_t>(7, 0x55);
     CalibrationSessionTraceStore store(backend, "/session-traces.bin");
 
-    TEST_ASSERT_TRUE(store.begin());
-    TEST_ASSERT_TRUE(store.ready());
-    TEST_ASSERT_FALSE(backend.exists("/session-traces.bin"));
+    TEST_ASSERT_FALSE(store.begin());
+    TEST_ASSERT_FALSE(store.ready());
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(AppStorageStatus::Corrupt),
+                            static_cast<unsigned>(store.status()));
+    TEST_ASSERT_TRUE(backend.exists("/session-traces.bin"));
+    TEST_ASSERT_EQUAL_size_t(0, backend.removeCalls);
 }
 
 void test_session_trace_pending_then_valid_round_trips_samples() {
@@ -175,14 +180,17 @@ void test_long_term_sample_store_has_exactly_five_slots_and_lazy_file() {
     TEST_ASSERT_EQUAL_size_t(5, store.capacity());
 }
 
-void test_long_term_sample_store_drops_invalid_existing_file_and_stays_lazy() {
+void test_long_term_sample_store_preserves_invalid_existing_file() {
     MemoryFileBackend backend;
     backend.files["/samples.bin"] = std::vector<std::uint8_t>(7, 0x55);
     CalibrationLongTermSampleStore store(backend, "/samples.bin");
 
-    TEST_ASSERT_TRUE(store.begin());
-    TEST_ASSERT_TRUE(store.ready());
-    TEST_ASSERT_FALSE(backend.exists("/samples.bin"));
+    TEST_ASSERT_FALSE(store.begin());
+    TEST_ASSERT_FALSE(store.ready());
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(AppStorageStatus::Corrupt),
+                            static_cast<unsigned>(store.status()));
+    TEST_ASSERT_TRUE(backend.exists("/samples.bin"));
+    TEST_ASSERT_EQUAL_size_t(0, backend.removeCalls);
     CalibrationStoredTrace samples[kCalibrationLongTermSampleSlots]{};
     TEST_ASSERT_EQUAL_size_t(0, store.list(samples, kCalibrationLongTermSampleSlots));
 }
@@ -243,11 +251,11 @@ int main(int argc, char** argv) {
     (void)argv;
     UNITY_BEGIN();
     RUN_TEST(test_session_trace_store_has_exactly_three_slots_and_lazy_file);
-    RUN_TEST(test_session_trace_store_recovers_invalid_existing_file);
+    RUN_TEST(test_session_trace_store_preserves_invalid_existing_file);
     RUN_TEST(test_session_trace_pending_then_valid_round_trips_samples);
     RUN_TEST(test_starting_new_session_clears_the_three_session_slots);
     RUN_TEST(test_long_term_sample_store_has_exactly_five_slots_and_lazy_file);
-    RUN_TEST(test_long_term_sample_store_drops_invalid_existing_file_and_stays_lazy);
+    RUN_TEST(test_long_term_sample_store_preserves_invalid_existing_file);
     RUN_TEST(test_long_term_sample_store_refuses_the_sixth_sample);
     RUN_TEST(test_long_term_sample_remove_clears_index_and_frees_slot);
     RUN_TEST(test_long_term_sample_store_reads_samples_by_sample_id);

@@ -248,42 +248,62 @@ bool writeCurrentSchemeFile(WaterRecordFileBackend& backend,
 }  // namespace
 
 MeteringSchemeStore::MeteringSchemeStore(WaterRecordFileBackend& backend, const char* path)
-    : backend_(backend), path_(path), header_(makeHeader(0, 0, 0)), ready_(false) {}
+    : backend_(backend),
+      path_(path),
+      header_(makeHeader(0, 0, 0)),
+      ready_(false),
+      status_(AppStorageStatus::Unavailable) {}
 
 bool MeteringSchemeStore::begin() {
     ready_ = false;
+    status_ = AppStorageStatus::Unavailable;
     if (!validPath()) {
+        status_ = AppStorageStatus::InvalidPath;
         return false;
     }
     if (!backend_.exists(path_)) {
-        return initializeNewFile();
+        const bool ok = initializeNewFile();
+        status_ = ok ? AppStorageStatus::Ready : AppStorageStatus::BackendFailure;
+        return ok;
     }
     if (!loadHeader()) {
-        return backend_.removeFile(path_) && initializeNewFile();
+        return false;
     }
     ready_ = true;
     if (!normalizeSlotCount()) {
         ready_ = false;
-        return backend_.removeFile(path_) && initializeNewFile();
+        status_ = AppStorageStatus::BackendFailure;
+        return false;
     }
     if (!repairNextSchemeId()) {
         ready_ = false;
-        return backend_.removeFile(path_) && initializeNewFile();
+        status_ = AppStorageStatus::BackendFailure;
+        return false;
     }
     if (!upgradeLegacyDefaultSchemeIfNeeded()) {
         ready_ = false;
-        return backend_.removeFile(path_) && initializeNewFile();
+        status_ = AppStorageStatus::BackendFailure;
+        return false;
     }
     MeteringSchemeRecord active{};
     if (!activeScheme(active) || active.state != MeteringSchemeState::Available) {
         ready_ = false;
-        return backend_.removeFile(path_) && initializeNewFile();
+        status_ = AppStorageStatus::Corrupt;
+        return false;
     }
+    status_ = AppStorageStatus::Ready;
     return true;
 }
 
 bool MeteringSchemeStore::ready() const {
     return ready_ && backend_.exists(path_);
+}
+
+AppStorageStatus MeteringSchemeStore::status() const {
+    if (ready_ && !backend_.exists(path_)) {
+        return AppStorageStatus::Missing;
+    }
+    return status_;
 }
 
 std::uint32_t MeteringSchemeStore::activeSchemeId() const {
@@ -864,18 +884,36 @@ bool MeteringSchemeStore::loadHeader() {
     };
     const std::int64_t fileSize = backend_.fileSize(path_);
     if (fileSize < static_cast<std::int64_t>(sizeof(MeteringSchemeStoreHeader))) {
-        return recoverFromTemp();
+        if (recoverFromTemp()) {
+            status_ = AppStorageStatus::Ready;
+            return true;
+        }
+        status_ = AppStorageStatus::Corrupt;
+        return false;
     }
     MeteringSchemeStoreHeader loaded{};
     if (!backend_.readAt(path_, 0, reinterpret_cast<std::uint8_t*>(&loaded), sizeof(loaded))) {
-        return recoverFromTemp();
+        if (recoverFromTemp()) {
+            status_ = AppStorageStatus::Ready;
+            return true;
+        }
+        status_ = AppStorageStatus::BackendFailure;
+        return false;
     }
     if (loaded.magic != kMeteringSchemeStoreMagic ||
         loaded.headerSize != sizeof(MeteringSchemeStoreHeader) ||
         loaded.nextSchemeId == 0 ||
         loaded.activeSchemeId == 0 ||
         loaded.checksum != headerChecksum(loaded)) {
-        return recoverFromTemp();
+        if (recoverFromTemp()) {
+            status_ = AppStorageStatus::Ready;
+            return true;
+        }
+        status_ = (loaded.magic != kMeteringSchemeStoreMagic ||
+                   loaded.headerSize != sizeof(MeteringSchemeStoreHeader))
+                      ? AppStorageStatus::IncompatibleFormat
+                      : AppStorageStatus::Corrupt;
+        return false;
     }
     if (validCurrentHeaderForFile(loaded, fileSize)) {
         if (hasTempPath && backend_.exists(tempPath)) {
@@ -900,11 +938,17 @@ bool MeteringSchemeStore::loadHeader() {
             sizeof(MeteringSchemeStoreHeader) + sizeof(LegacyMeteringSchemeCandidateV1) +
             static_cast<std::size_t>(loaded.slotCount) * sizeof(LegacyMeteringSchemeRecordV1);
         if (fileSize < static_cast<std::int64_t>(minimumV1Size)) {
+            status_ = AppStorageStatus::Corrupt;
             return false;
         }
         return migrateV1File(loaded);
     }
-    return recoverFromTemp();
+    if (recoverFromTemp()) {
+        status_ = AppStorageStatus::Ready;
+        return true;
+    }
+    status_ = AppStorageStatus::IncompatibleFormat;
+    return false;
 }
 
 bool MeteringSchemeStore::saveHeader() const {

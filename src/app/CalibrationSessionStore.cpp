@@ -48,11 +48,13 @@ bool validFile(const SessionFile& file) {
 }  // namespace
 
 CalibrationSessionFileStore::CalibrationSessionFileStore(WaterRecordFileBackend& backend, const char* path)
-    : backend_(backend), path_(path), ready_(false) {}
+    : backend_(backend), path_(path), ready_(false), status_(AppStorageStatus::Unavailable) {}
 
 bool CalibrationSessionFileStore::begin() {
     ready_ = false;
+    status_ = AppStorageStatus::Unavailable;
     if (!validPath(path_)) {
+        status_ = AppStorageStatus::InvalidPath;
         return false;
     }
     const auto initializeEmpty = [this]() {
@@ -62,23 +64,39 @@ bool CalibrationSessionFileStore::begin() {
     };
     if (!backend_.exists(path_)) {
         ready_ = initializeEmpty();
+        status_ = ready_ ? AppStorageStatus::Ready : AppStorageStatus::BackendFailure;
         return ready_;
     }
     SessionFile file{};
-    if (backend_.fileSize(path_) != static_cast<std::int64_t>(sizeof(SessionFile)) ||
-        !backend_.readAt(path_, 0, reinterpret_cast<std::uint8_t*>(&file), sizeof(file)) || !validFile(file)) {
-        if (!backend_.removeFile(path_)) {
-            return false;
-        }
-        ready_ = initializeEmpty();
-        return ready_;
+    if (backend_.fileSize(path_) != static_cast<std::int64_t>(sizeof(SessionFile))) {
+        status_ = AppStorageStatus::Corrupt;
+        return false;
+    }
+    if (!backend_.readAt(path_, 0, reinterpret_cast<std::uint8_t*>(&file), sizeof(file))) {
+        status_ = AppStorageStatus::BackendFailure;
+        return false;
+    }
+    if (!validFile(file)) {
+        status_ = (file.magic != kSessionMagic || file.version != kSessionVersion ||
+                   file.recordSize != sizeof(CalibrationSessionRecord))
+                      ? AppStorageStatus::IncompatibleFormat
+                      : AppStorageStatus::Corrupt;
+        return false;
     }
     ready_ = true;
+    status_ = AppStorageStatus::Ready;
     return true;
 }
 
 bool CalibrationSessionFileStore::ready() const {
     return ready_ && backend_.exists(path_);
+}
+
+AppStorageStatus CalibrationSessionFileStore::status() const {
+    if (ready_ && !backend_.exists(path_)) {
+        return AppStorageStatus::Missing;
+    }
+    return status_;
 }
 
 bool CalibrationSessionFileStore::load(CalibrationSessionRecord& output) const {

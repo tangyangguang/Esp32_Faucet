@@ -44,10 +44,12 @@ public:
 private:
     bool initializeNewFile();
     bool loadHeader();
-    bool saveHeader() const;
+    bool saveHeader();
+    bool ensureFileSizeForHeaders();
     bool appendRecord(std::size_t index, const WaterRecord& record);
     bool readRecordSpan(std::size_t firstIndex, WaterRecord* output, std::size_t count) const;
     std::size_t fileSizeBytes() const;
+    std::size_t backupHeaderOffset() const;
     std::size_t physicalIndexFromNewestOffset(std::size_t offset) const;
     std::size_t recordOffset(std::size_t index) const;
 

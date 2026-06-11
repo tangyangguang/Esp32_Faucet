@@ -121,6 +121,7 @@ public:
     AppSnapshot snapshot() const;
     bool lastRecordWriteOk() const;
     bool consumePersistenceDirty();
+    void markPersistenceDirtyForRetry();
     bool consumeConfigDirty();
     BeepPattern consumeBeepPattern();
     bool emergencyStop(std::uint32_t nowMs);

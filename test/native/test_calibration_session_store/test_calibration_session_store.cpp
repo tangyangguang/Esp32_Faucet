@@ -14,6 +14,7 @@ namespace {
 class MemoryFileBackend : public WaterRecordFileBackend {
 public:
     std::map<std::string, std::vector<std::uint8_t>> files;
+    std::size_t removeCalls = 0;
 
     bool exists(const char* path) override {
         return files.find(path ? path : "") != files.end();
@@ -72,6 +73,7 @@ public:
     }
 
     bool removeFile(const char* path) override {
+        ++removeCalls;
         files.erase(path ? path : "");
         return true;
     }
@@ -99,22 +101,23 @@ void test_session_store_writes_and_reads_one_current_session() {
     TEST_ASSERT_EQUAL_UINT8(2, output.validSampleCount);
 }
 
-void test_session_store_recovers_corrupt_checksum_to_empty_session() {
+void test_session_store_preserves_corrupt_checksum_file() {
     MemoryFileBackend backend;
     CalibrationSessionFileStore store(backend, "/session.bin");
     TEST_ASSERT_TRUE(store.begin());
     TEST_ASSERT_TRUE(store.save(makeCalibrationSession(9, 1770000000)));
 
-    backend.files["/session.bin"][sizeof(std::uint32_t)] ^= 0x7f;
+    backend.files["/session.bin"][sizeof(std::uint32_t) + sizeof(std::uint16_t) + sizeof(std::uint16_t)] ^= 0x7f;
 
     CalibrationSessionFileStore loaded(backend, "/session.bin");
-    TEST_ASSERT_TRUE(loaded.begin());
-    TEST_ASSERT_TRUE(loaded.ready());
+    TEST_ASSERT_FALSE(loaded.begin());
+    TEST_ASSERT_FALSE(loaded.ready());
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(AppStorageStatus::Corrupt),
+                            static_cast<unsigned>(loaded.status()));
+    TEST_ASSERT_TRUE(backend.exists("/session.bin"));
+    TEST_ASSERT_EQUAL_size_t(0, backend.removeCalls);
     CalibrationSessionRecord output{};
-    TEST_ASSERT_TRUE(loaded.load(output));
-    TEST_ASSERT_EQUAL_UINT32(0, output.sessionId);
-    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationSessionStatus::Idle),
-                            static_cast<unsigned>(output.status));
+    TEST_ASSERT_FALSE(loaded.load(output));
 }
 
 int main(int argc, char** argv) {
@@ -122,6 +125,6 @@ int main(int argc, char** argv) {
     (void)argv;
     UNITY_BEGIN();
     RUN_TEST(test_session_store_writes_and_reads_one_current_session);
-    RUN_TEST(test_session_store_recovers_corrupt_checksum_to_empty_session);
+    RUN_TEST(test_session_store_preserves_corrupt_checksum_file);
     return UNITY_END();
 }

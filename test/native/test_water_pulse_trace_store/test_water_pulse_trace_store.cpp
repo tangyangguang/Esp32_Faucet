@@ -124,7 +124,7 @@ WaterRecord makeRecord(std::uint32_t startTime, std::uint32_t pulses, std::uint3
         WaterResult::Completed,
         0,
         0,
-        0.221f,
+        1,
         {0, 0, 0, 0},
     };
 }

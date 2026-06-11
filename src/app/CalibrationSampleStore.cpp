@@ -137,6 +137,32 @@ bool beginFixedStore(WaterRecordFileBackend& backend, const char* path, std::uin
     return readHeader(backend, path, header) && validHeader(header, kind, slots);
 }
 
+AppStorageStatus statusForFixedStore(WaterRecordFileBackend& backend,
+                                     const char* path,
+                                     std::uint8_t kind,
+                                     std::size_t slots) {
+    if (!validPath(path)) {
+        return AppStorageStatus::InvalidPath;
+    }
+    if (!backend.exists(path)) {
+        return AppStorageStatus::Ready;
+    }
+    if (backend.fileSize(path) != static_cast<std::int64_t>(fileSizeFor(slots))) {
+        return AppStorageStatus::Corrupt;
+    }
+    SampleHeader header{};
+    if (!readHeader(backend, path, header)) {
+        return AppStorageStatus::BackendFailure;
+    }
+    if (validHeader(header, kind, slots)) {
+        return AppStorageStatus::Ready;
+    }
+    return (header.magic != kSampleMagic || header.version != kSampleVersion || header.kind != kind ||
+            header.slotCount != slots || header.maxSamples != kMaxTraceSamples)
+               ? AppStorageStatus::IncompatibleFormat
+               : AppStorageStatus::Corrupt;
+}
+
 bool ensureFileForWrite(WaterRecordFileBackend& backend, const char* path, std::uint8_t kind, std::size_t slots) {
     if (!validPath(path)) {
         return false;
@@ -227,13 +253,11 @@ std::size_t readStoredSamples(WaterRecordFileBackend& backend,
 }  // namespace
 
 CalibrationSessionTraceStore::CalibrationSessionTraceStore(WaterRecordFileBackend& backend, const char* path)
-    : backend_(backend), path_(path), ready_(false) {}
+    : backend_(backend), path_(path), ready_(false), status_(AppStorageStatus::Unavailable) {}
 
 bool CalibrationSessionTraceStore::begin() {
     ready_ = beginFixedStore(backend_, path_, kStoreKindSession, kCalibrationSessionTraceSlots);
-    if (!ready_ && validPath(path_) && backend_.exists(path_) && backend_.removeFile(path_)) {
-        ready_ = beginFixedStore(backend_, path_, kStoreKindSession, kCalibrationSessionTraceSlots);
-    }
+    status_ = statusForFixedStore(backend_, path_, kStoreKindSession, kCalibrationSessionTraceSlots);
     return ready_;
 }
 
@@ -264,6 +288,7 @@ bool CalibrationSessionTraceStore::savePending(std::uint8_t slot,
     if (!ready() || slot >= kCalibrationSessionTraceSlots ||
         !ensureFileForWrite(backend_, path_, kStoreKindSession, kCalibrationSessionTraceSlots) ||
         !writeSamples(backend_, path_, kCalibrationSessionTraceSlots, slot, samples, sampleCount)) {
+        status_ = ready_ ? AppStorageStatus::BackendFailure : status_;
         return false;
     }
     CalibrationStoredTrace pending = trace;
@@ -323,18 +348,20 @@ bool CalibrationSessionTraceStore::ready() const {
     return ready_;
 }
 
+AppStorageStatus CalibrationSessionTraceStore::status() const {
+    return ready_ ? AppStorageStatus::Ready : status_;
+}
+
 const char* CalibrationSessionTraceStore::storageName() const {
     return "calibration-session-trace-file";
 }
 
 CalibrationLongTermSampleStore::CalibrationLongTermSampleStore(WaterRecordFileBackend& backend, const char* path)
-    : backend_(backend), path_(path), ready_(false) {}
+    : backend_(backend), path_(path), ready_(false), status_(AppStorageStatus::Unavailable) {}
 
 bool CalibrationLongTermSampleStore::begin() {
     ready_ = beginFixedStore(backend_, path_, kStoreKindLongTerm, kCalibrationLongTermSampleSlots);
-    if (!ready_ && validPath(path_) && backend_.exists(path_) && backend_.removeFile(path_)) {
-        ready_ = beginFixedStore(backend_, path_, kStoreKindLongTerm, kCalibrationLongTermSampleSlots);
-    }
+    status_ = statusForFixedStore(backend_, path_, kStoreKindLongTerm, kCalibrationLongTermSampleSlots);
     return ready_;
 }
 
@@ -472,6 +499,10 @@ std::size_t CalibrationLongTermSampleStore::capacity() const {
 
 bool CalibrationLongTermSampleStore::ready() const {
     return ready_;
+}
+
+AppStorageStatus CalibrationLongTermSampleStore::status() const {
+    return ready_ ? AppStorageStatus::Ready : status_;
 }
 
 const char* CalibrationLongTermSampleStore::storageName() const {

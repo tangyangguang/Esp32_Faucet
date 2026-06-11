@@ -286,13 +286,14 @@ void test_filters_json_contains_runtime_fields() {
 
 void test_water_records_json_is_paged_and_read_only() {
     WaterRecord records[2]{
-        {100, 1500, 1500, 675, 2, 30, WaterMode::Volume, WaterResult::Completed, 0, 0, 0.45f, {0, 0, 0, 0}},
-        {200, 300, 60, 135, 1, 10, WaterMode::Time, WaterResult::StoppedByUser, 1, 0, 0.45f, {0, 0, 0, 0}},
+        {100, 1500, 1500, 675, 2, 30, WaterMode::Volume, WaterResult::Completed, 0, 0, 7, {0, 0, 0, 0}},
+        {200, 300, 60, 135, 1, 10, WaterMode::Time, WaterResult::StoppedByUser, 1, 0, 8, {0, 0, 0, 0}},
     };
     char json[1024]{};
 
-    TEST_ASSERT_TRUE(writeWaterRecordsJson(records, 2, 1, 50, 60, "file", json, sizeof(json)));
+    TEST_ASSERT_TRUE(writeWaterRecordsJson(records, 2, 1, 50, 60, "file", "ready", json, sizeof(json)));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"storage\":\"file\""));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"storageStatus\":\"ready\""));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"records\""));
     TEST_ASSERT_NULL(std::strstr(json, "\"logs\""));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"page\":1"));
@@ -302,9 +303,11 @@ void test_water_records_json_is_paged_and_read_only() {
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"targetValue\":60"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"pulseCount\":675"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"rejectedPulseCount\":1"));
-    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"stablePulsePerLiterAtRun\":450"));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"meteringSchemeId\":7"));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"meteringSchemeId\":8"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"averageFlowMlPerMin\":3000"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"averageFlowMlPerMin\":1800"));
+    TEST_ASSERT_NULL(std::strstr(json, "\"stablePulsePerLiterAtRun\""));
     TEST_ASSERT_NULL(std::strstr(json, "\"pulsePerMlAtRun\""));
     TEST_ASSERT_NULL(std::strstr(json, "startWater"));
 }

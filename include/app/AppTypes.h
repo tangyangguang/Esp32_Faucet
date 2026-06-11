@@ -91,7 +91,7 @@ struct WaterRecord {
     WaterResult result;
     std::uint8_t selectedPreset;
     std::uint8_t reserved0;
-    float pulsePerMlAtRun;
+    std::uint32_t meteringSchemeId;
     std::uint8_t reserved[4];
 };
 

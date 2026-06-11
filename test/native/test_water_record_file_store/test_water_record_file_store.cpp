@@ -86,6 +86,14 @@ public:
         return true;
     }
 
+    void overwriteByte(const char* path, std::size_t offset, std::uint8_t value) {
+        std::vector<std::uint8_t>& file = files[path ? path : ""];
+        if (offset >= file.size()) {
+            file.resize(offset + 1, 0);
+        }
+        file[offset] = value;
+    }
+
 private:
     std::map<std::string, std::vector<std::uint8_t>> files;
 };
@@ -102,7 +110,7 @@ WaterRecord makeRecord(std::uint32_t startTime, std::uint32_t volumeMl) {
         WaterResult::Completed,
         0,
         0,
-        1.0f,
+        1,
         {0, 0, 0, 0},
     };
 }
@@ -115,10 +123,13 @@ void test_file_record_initializes_empty_file() {
 
     TEST_ASSERT_TRUE(store.begin());
     TEST_ASSERT_TRUE(store.ready());
+    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(WaterRecordFileStatus::Ready),
+                            static_cast<std::uint8_t>(store.status()));
     TEST_ASSERT_EQUAL_size_t(0, store.count());
     TEST_ASSERT_EQUAL_size_t(10, store.capacity());
     TEST_ASSERT_TRUE(backend.exists("/water.bin"));
-    TEST_ASSERT_EQUAL_INT64(24, backend.fileSize("/water.bin"));
+    TEST_ASSERT_EQUAL_INT64(24 + static_cast<int>(sizeof(WaterRecord) * 10) + 24,
+                            backend.fileSize("/water.bin"));
 }
 
 void test_file_record_appends_and_reads_newest_first() {
@@ -205,6 +216,8 @@ void test_file_record_capacity_mismatch_preserves_existing_file() {
     WaterRecordFileStore loaded(backend, "/water.bin", 4);
     TEST_ASSERT_FALSE(loaded.begin());
     TEST_ASSERT_FALSE(loaded.ready());
+    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(WaterRecordFileStatus::IncompatibleFormat),
+                            static_cast<std::uint8_t>(loaded.status()));
     TEST_ASSERT_EQUAL_size_t(0, loaded.count());
     TEST_ASSERT_EQUAL_size_t(4, loaded.capacity());
     TEST_ASSERT_EQUAL_size_t(createCalls, backend.createSizedCalls);
@@ -225,6 +238,8 @@ void test_file_record_corrupt_header_preserves_existing_file() {
     WaterRecordFileStore store(backend, "/water.bin", 3);
     TEST_ASSERT_FALSE(store.begin());
     TEST_ASSERT_FALSE(store.ready());
+    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(WaterRecordFileStatus::Corrupt),
+                            static_cast<std::uint8_t>(store.status()));
     TEST_ASSERT_EQUAL_size_t(0, store.count());
     TEST_ASSERT_EQUAL_size_t(3, store.capacity());
     TEST_ASSERT_EQUAL_size_t(createCalls, backend.createSizedCalls);
@@ -257,28 +272,34 @@ void test_file_record_reports_zero_after_external_remove_and_recovers_on_append(
 
     WaterRecord page[2]{};
     TEST_ASSERT_FALSE(store.ready());
+    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(WaterRecordFileStatus::Missing),
+                            static_cast<std::uint8_t>(store.status()));
     TEST_ASSERT_EQUAL_STRING("unavailable", store.storageName());
     TEST_ASSERT_EQUAL_size_t(0, store.count());
     TEST_ASSERT_EQUAL_size_t(0, store.readPage(0, 2, page, 2));
 
     TEST_ASSERT_TRUE(store.append(makeRecord(300, 3000)));
     TEST_ASSERT_TRUE(store.ready());
+    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(WaterRecordFileStatus::Ready),
+                            static_cast<std::uint8_t>(store.status()));
     TEST_ASSERT_EQUAL_STRING("file", store.storageName());
     TEST_ASSERT_EQUAL_size_t(1, store.count());
     TEST_ASSERT_EQUAL_size_t(1, store.readPage(0, 2, page, 2));
     TEST_ASSERT_EQUAL_UINT32(300, page[0].startTime);
 }
 
-void test_file_record_grows_records_on_demand() {
+void test_file_record_preallocates_record_slots_and_backup_header() {
     MemoryFileBackend backend;
     WaterRecordFileStore store(backend, "/water.bin", 3);
     TEST_ASSERT_TRUE(store.begin());
 
     TEST_ASSERT_TRUE(store.append(makeRecord(100, 1000)));
-    TEST_ASSERT_EQUAL_INT64(24 + static_cast<int>(sizeof(WaterRecord)), backend.fileSize("/water.bin"));
+    TEST_ASSERT_EQUAL_INT64(24 + static_cast<int>(sizeof(WaterRecord) * 3) + 24,
+                            backend.fileSize("/water.bin"));
 
     TEST_ASSERT_TRUE(store.append(makeRecord(200, 2000)));
-    TEST_ASSERT_EQUAL_INT64(24 + static_cast<int>(sizeof(WaterRecord) * 2), backend.fileSize("/water.bin"));
+    TEST_ASSERT_EQUAL_INT64(24 + static_cast<int>(sizeof(WaterRecord) * 3) + 24,
+                            backend.fileSize("/water.bin"));
 }
 
 void test_file_record_reports_backend_failures() {
@@ -296,7 +317,7 @@ void test_file_record_append_failure_keeps_runtime_state() {
     TEST_ASSERT_TRUE(store.begin());
     TEST_ASSERT_TRUE(store.append(makeRecord(100, 1000)));
 
-    backend.failAppend = true;
+    backend.failWriteAt = true;
     TEST_ASSERT_FALSE(store.append(makeRecord(200, 2000)));
     TEST_ASSERT_EQUAL_size_t(1, store.count());
 
@@ -319,6 +340,27 @@ void test_file_record_header_failure_rolls_back_runtime_state() {
     WaterRecord page[1]{};
     TEST_ASSERT_EQUAL_size_t(1, store.readPage(0, 1, page, 1));
     TEST_ASSERT_EQUAL_UINT32(100, page[0].startTime);
+}
+
+void test_file_record_recovers_from_corrupt_primary_header_using_backup() {
+    MemoryFileBackend backend;
+    {
+        WaterRecordFileStore store(backend, "/water.bin", 3);
+        TEST_ASSERT_TRUE(store.begin());
+        TEST_ASSERT_TRUE(store.append(makeRecord(100, 1000)));
+        TEST_ASSERT_TRUE(store.append(makeRecord(200, 2000)));
+    }
+
+    backend.overwriteByte("/water.bin", 0, 0x00);
+
+    WaterRecordFileStore loaded(backend, "/water.bin", 3);
+    TEST_ASSERT_TRUE(loaded.begin());
+    TEST_ASSERT_TRUE(loaded.ready());
+    TEST_ASSERT_EQUAL_size_t(2, loaded.count());
+    WaterRecord page[2]{};
+    TEST_ASSERT_EQUAL_size_t(2, loaded.readPage(0, 2, page, 2));
+    TEST_ASSERT_EQUAL_UINT32(200, page[0].startTime);
+    TEST_ASSERT_EQUAL_UINT32(100, page[1].startTime);
 }
 
 void test_file_record_rewrites_current_boot_relative_times() {
@@ -356,10 +398,11 @@ int main(int argc, char** argv) {
     RUN_TEST(test_file_record_corrupt_header_preserves_existing_file);
     RUN_TEST(test_file_record_clear_keeps_file_ready);
     RUN_TEST(test_file_record_reports_zero_after_external_remove_and_recovers_on_append);
-    RUN_TEST(test_file_record_grows_records_on_demand);
+    RUN_TEST(test_file_record_preallocates_record_slots_and_backup_header);
     RUN_TEST(test_file_record_reports_backend_failures);
     RUN_TEST(test_file_record_append_failure_keeps_runtime_state);
     RUN_TEST(test_file_record_header_failure_rolls_back_runtime_state);
+    RUN_TEST(test_file_record_recovers_from_corrupt_primary_header_using_backup);
     RUN_TEST(test_file_record_rewrites_current_boot_relative_times);
     return UNITY_END();
 }

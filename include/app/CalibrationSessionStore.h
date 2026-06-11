@@ -1,5 +1,6 @@
 #pragma once
 
+#include "app/AppStorageStatus.h"
 #include "app/CalibrationSession.h"
 #include "app/WaterRecordFileStore.h"
 
@@ -11,6 +12,7 @@ public:
 
     bool begin();
     bool ready() const;
+    AppStorageStatus status() const;
     bool load(CalibrationSessionRecord& output) const;
     bool save(const CalibrationSessionRecord& session);
     bool clear();
@@ -20,6 +22,7 @@ private:
     WaterRecordFileBackend& backend_;
     const char* path_;
     bool ready_;
+    AppStorageStatus status_;
 };
 
 }  // namespace faucet

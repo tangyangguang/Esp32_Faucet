@@ -42,7 +42,7 @@ public:
             WaterResult::Completed,
             0,
             0,
-            1.0f,
+            1,
             {0, 0, 0, 0},
         };
     }
@@ -72,7 +72,7 @@ WaterRecord makeRecord(std::uint32_t startTime, std::uint32_t volumeMl) {
         WaterResult::Completed,
         0,
         0,
-        1.0f,
+        1,
         {0, 0, 0, 0},
     };
 }

@@ -47,7 +47,7 @@ WaterRecordCalibration makeWaterRecordCalibration(const WaterRecord& record) {
     calibration.mode = record.mode;
     calibration.result = record.result;
     calibration.selectedPreset = record.selectedPreset;
-    calibration.pulsePerMlAtRun = record.pulsePerMlAtRun;
+    calibration.pulsePerMlAtRun = 0.0f;
     return calibration;
 }
 
@@ -99,7 +99,7 @@ bool WaterRecordCalibrationStore::upsert(const WaterRecordCalibration& calibrati
         calibration.result,
         calibration.selectedPreset,
         0,
-        calibration.pulsePerMlAtRun,
+        0,
         {0, 0, 0, 0},
     };
     for (std::size_t i = 0; i < count_; ++i) {
@@ -236,7 +236,7 @@ bool WaterRecordCalibrationFileStore::upsert(const WaterRecordCalibration& calib
         calibration.result,
         calibration.selectedPreset,
         0,
-        calibration.pulsePerMlAtRun,
+        0,
         {0, 0, 0, 0},
     };
     for (std::size_t i = 0; i < count_; ++i) {

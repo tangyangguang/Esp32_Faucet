@@ -161,6 +161,25 @@ void test_name_only_edit_does_not_increment_revision() {
     TEST_ASSERT_EQUAL_UINT32(1770000500, scheme.updatedAt);
 }
 
+void test_used_scheme_rejects_metering_parameter_edit_but_allows_name_edit() {
+    MeteringSchemeRecord scheme{};
+    initializeManualMeteringScheme(
+        scheme, 2, "已使用", MeteringParameters{12, 180, 360}, 1770000000);
+    scheme.usedEver = true;
+
+    MeteringSchemeEdit meteringEdit = makeMeteringSchemeEdit(scheme);
+    meteringEdit.params.stablePulsePerLiter = 400;
+    TEST_ASSERT_FALSE(updateMeteringSchemeRecord(scheme, meteringEdit, 1770000300));
+    TEST_ASSERT_EQUAL_UINT32(360, scheme.params.stablePulsePerLiter);
+    TEST_ASSERT_EQUAL_UINT32(1, scheme.revision);
+
+    MeteringSchemeEdit nameEdit = makeMeteringSchemeEdit(scheme);
+    std::strncpy(nameEdit.name, "只改名称", sizeof(nameEdit.name) - 1);
+    TEST_ASSERT_TRUE(updateMeteringSchemeRecord(scheme, nameEdit, 1770000400));
+    TEST_ASSERT_EQUAL_STRING("只改名称", scheme.name);
+    TEST_ASSERT_EQUAL_UINT32(1, scheme.revision);
+}
+
 void test_current_scheme_cannot_be_disabled_or_deleted() {
     MeteringSchemeRecord scheme{};
     initializeManualMeteringScheme(
@@ -257,6 +276,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_manual_create_uses_source_manual_and_revision_one);
     RUN_TEST(test_core_edit_increments_revision);
     RUN_TEST(test_name_only_edit_does_not_increment_revision);
+    RUN_TEST(test_used_scheme_rejects_metering_parameter_edit_but_allows_name_edit);
     RUN_TEST(test_current_scheme_cannot_be_disabled_or_deleted);
     RUN_TEST(test_last_valid_scheme_cannot_be_deleted_even_if_not_active);
     RUN_TEST(test_used_scheme_cannot_be_physically_deleted);

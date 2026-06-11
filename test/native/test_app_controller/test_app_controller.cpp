@@ -5,7 +5,6 @@
 #include "app/CalibrationSessionStore.h"
 #include "app/MeteringSchemeStore.h"
 #include "app/WaterRecordCalibrationStore.h"
-#include "app/WaterRecordMeteringSnapshotStore.h"
 
 #include <cstring>
 #include <map>
@@ -26,20 +25,6 @@ public:
             return false;
         }
         records.push_back(record);
-        return true;
-    }
-};
-
-class MemorySnapshotWriter : public WaterRecordMeteringSnapshotWriter {
-public:
-    bool ok = true;
-    std::vector<WaterRecordMeteringSnapshot> snapshots;
-
-    bool upsert(const WaterRecordMeteringSnapshot& snapshot) override {
-        if (!ok) {
-            return false;
-        }
-        snapshots.push_back(snapshot);
         return true;
     }
 };
@@ -228,7 +213,7 @@ WaterRecord calibrationRecord(std::uint32_t startTime, std::uint32_t totalPulses
         WaterResult::Completed,
         0,
         0,
-        1.0f,
+        1,
         {0, 0, 0, 0},
     };
 }
@@ -308,84 +293,54 @@ void test_app_controller_uses_active_scheme_parameters_for_flow_meter() {
     statistics.reset({20260506, 202619, 202605});
     FilterStore filters(config.filters);
     MemoryRecordWriter records;
-    MemorySnapshotWriter snapshots;
     MemoryFileBackend backend;
     MeteringSchemeStore schemes(backend, "/schemes.bin");
     MeteringSchemeRecord active{};
     TEST_ASSERT_TRUE(prepareMeteringScheme(schemes, 1000, active));
 
-    AppController app(config, active, statistics, filters, records, snapshots, schemes);
+    AppController app(config, active, statistics, filters, records, schemes);
 
     TEST_ASSERT_EQUAL_UINT32(1000, app.snapshot().pulsePerLiter);
 }
 
-void test_app_controller_successful_record_writes_metering_snapshot_and_used_flag() {
+void test_app_controller_successful_record_writes_scheme_id_and_used_flag() {
     SystemConfig config = makeDefaultConfig();
     StatisticsStore statistics;
     statistics.reset({20260506, 202619, 202605});
     FilterStore filters(config.filters);
     MemoryRecordWriter records;
-    MemorySnapshotWriter snapshots;
     MemoryFileBackend backend;
     MeteringSchemeStore schemes(backend, "/schemes.bin");
     MeteringSchemeRecord active{};
     TEST_ASSERT_TRUE(prepareMeteringScheme(schemes, 1000, active));
-    AppController app(config, active, statistics, filters, records, snapshots, schemes);
+    AppController app(config, active, statistics, filters, records, schemes);
 
     finishVolumeRun(app);
 
     TEST_ASSERT_TRUE(app.lastRecordWriteOk());
     TEST_ASSERT_EQUAL_size_t(1, records.records.size());
-    TEST_ASSERT_EQUAL_size_t(1, snapshots.snapshots.size());
-    TEST_ASSERT_EQUAL_UINT32(active.id, snapshots.snapshots[0].meteringSchemeId);
-    TEST_ASSERT_EQUAL_UINT32(active.revision, snapshots.snapshots[0].meteringSchemeRevision);
-    TEST_ASSERT_EQUAL_UINT32(1000, snapshots.snapshots[0].params.stablePulsePerLiter);
+    TEST_ASSERT_EQUAL_UINT32(active.id, records.records[0].meteringSchemeId);
     MeteringSchemeRecord updated{};
     TEST_ASSERT_TRUE(schemes.findById(active.id, updated));
     TEST_ASSERT_TRUE(updated.usedEver);
 }
 
-void test_app_controller_record_write_failure_does_not_write_snapshot_or_usage() {
+void test_app_controller_record_write_failure_does_not_mark_scheme_used() {
     SystemConfig config = makeDefaultConfig();
     StatisticsStore statistics;
     statistics.reset({20260506, 202619, 202605});
     FilterStore filters(config.filters);
     MemoryRecordWriter records;
     records.ok = false;
-    MemorySnapshotWriter snapshots;
     MemoryFileBackend backend;
     MeteringSchemeStore schemes(backend, "/schemes.bin");
     MeteringSchemeRecord active{};
     TEST_ASSERT_TRUE(prepareMeteringScheme(schemes, 1000, active));
-    AppController app(config, active, statistics, filters, records, snapshots, schemes);
+    AppController app(config, active, statistics, filters, records, schemes);
 
     finishVolumeRun(app);
 
     TEST_ASSERT_FALSE(app.lastRecordWriteOk());
-    TEST_ASSERT_EQUAL_size_t(0, snapshots.snapshots.size());
-    MeteringSchemeRecord updated{};
-    TEST_ASSERT_TRUE(schemes.findById(active.id, updated));
-    TEST_ASSERT_FALSE(updated.usedEver);
-}
-
-void test_app_controller_snapshot_write_failure_does_not_mark_used() {
-    SystemConfig config = makeDefaultConfig();
-    StatisticsStore statistics;
-    statistics.reset({20260506, 202619, 202605});
-    FilterStore filters(config.filters);
-    MemoryRecordWriter records;
-    MemorySnapshotWriter snapshots;
-    snapshots.ok = false;
-    MemoryFileBackend backend;
-    MeteringSchemeStore schemes(backend, "/schemes.bin");
-    MeteringSchemeRecord active{};
-    TEST_ASSERT_TRUE(prepareMeteringScheme(schemes, 1000, active));
-    AppController app(config, active, statistics, filters, records, snapshots, schemes);
-
-    finishVolumeRun(app);
-
-    TEST_ASSERT_FALSE(app.lastRecordWriteOk());
-    TEST_ASSERT_EQUAL_size_t(1, records.records.size());
     MeteringSchemeRecord updated{};
     TEST_ASSERT_TRUE(schemes.findById(active.id, updated));
     TEST_ASSERT_FALSE(updated.usedEver);
@@ -439,7 +394,7 @@ void test_app_controller_completion_writes_record_statistics_and_filters() {
     TEST_ASSERT_EQUAL_UINT32(1500, records.records[0].targetValue);
     TEST_ASSERT_EQUAL_UINT32(1500, records.records[0].pulseCount);
     TEST_ASSERT_EQUAL_UINT32(0, records.records[0].rejectedPulseCount);
-    TEST_ASSERT_FLOAT_WITHIN(0.001f, 1.0f, records.records[0].pulsePerMlAtRun);
+    TEST_ASSERT_EQUAL_UINT32(99, records.records[0].meteringSchemeId);
     TEST_ASSERT_EQUAL_UINT8(0, records.records[0].selectedPreset);
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(WaterResult::Completed),
                             static_cast<std::uint8_t>(records.records[0].result));
@@ -447,6 +402,8 @@ void test_app_controller_completion_writes_record_statistics_and_filters() {
     TEST_ASSERT_EQUAL_UINT32(1500, filters.record(0).usedMl);
     TEST_ASSERT_TRUE(app.consumePersistenceDirty());
     TEST_ASSERT_FALSE(app.consumePersistenceDirty());
+    app.markPersistenceDirtyForRetry();
+    TEST_ASSERT_TRUE(app.consumePersistenceDirty());
 }
 
 void test_app_controller_web_preset_switch_during_run_updates_next_preset_only() {
@@ -621,7 +578,6 @@ void test_app_controller_calibration_ready_and_generated_time_out_from_last_acti
     statistics.reset({20260506, 202619, 202605});
     FilterStore filters(config.filters);
     MemoryRecordWriter records;
-    MemorySnapshotWriter snapshots;
     MemoryCalibrationWriter calibrations;
     MemoryFileBackend backend;
     MeteringSchemeStore schemes(backend, "/schemes.bin");
@@ -647,7 +603,6 @@ void test_app_controller_calibration_ready_and_generated_time_out_from_last_acti
                       statistics,
                       filters,
                       records,
-                      snapshots,
                       schemes,
                       nullptr,
                       &calibrations,
@@ -672,7 +627,6 @@ void test_app_controller_calibration_ready_and_generated_time_out_from_last_acti
                             statistics,
                             filters,
                             records,
-                            snapshots,
                             schemes,
                             nullptr,
                             &calibrations,
@@ -815,7 +769,6 @@ void test_app_controller_generates_calibration_session_candidate() {
     StatisticsStore statistics;
     FilterStore filters(config.filters);
     MemoryRecordWriter records;
-    MemorySnapshotWriter snapshots;
     MemoryCalibrationWriter calibrations;
     MemoryFileBackend backend;
     MeteringSchemeStore schemes(backend, "/schemes.bin");
@@ -840,7 +793,6 @@ void test_app_controller_generates_calibration_session_candidate() {
                       statistics,
                       filters,
                       records,
-                      snapshots,
                       schemes,
                       nullptr,
                       &calibrations,
@@ -863,7 +815,6 @@ void test_app_controller_applies_generated_session_scheme_and_keeps_old_scheme()
     StatisticsStore statistics;
     FilterStore filters(config.filters);
     MemoryRecordWriter records;
-    MemorySnapshotWriter snapshots;
     MemoryCalibrationWriter calibrations;
     MemoryFileBackend backend;
     MeteringSchemeStore schemes(backend, "/schemes.bin");
@@ -889,7 +840,6 @@ void test_app_controller_applies_generated_session_scheme_and_keeps_old_scheme()
                       statistics,
                       filters,
                       records,
-                      snapshots,
                       schemes,
                       nullptr,
                       &calibrations,
@@ -932,7 +882,7 @@ void test_app_controller_applies_calibration_from_raw_record() {
         WaterResult::StoppedByUser,
         0,
         0,
-        1.0f,
+        1,
         {0, 0, 0, 0},
     };
 
@@ -963,7 +913,7 @@ void test_app_controller_small_record_calibration_keeps_metering_parameters() {
         WaterResult::Completed,
         0,
         0,
-        1.0f,
+        1,
         {0, 0, 0, 0},
     };
 
@@ -1039,7 +989,7 @@ void test_app_controller_applies_calibration_from_pause_timeout_record() {
         WaterResult::PauseTimeout,
         0,
         0,
-        1.0f,
+        1,
         {0, 0, 0, 0},
     };
 
@@ -1498,9 +1448,8 @@ int main(int argc, char** argv) {
 
     UNITY_BEGIN();
     RUN_TEST(test_app_controller_uses_active_scheme_parameters_for_flow_meter);
-    RUN_TEST(test_app_controller_successful_record_writes_metering_snapshot_and_used_flag);
-    RUN_TEST(test_app_controller_record_write_failure_does_not_write_snapshot_or_usage);
-    RUN_TEST(test_app_controller_snapshot_write_failure_does_not_mark_used);
+    RUN_TEST(test_app_controller_successful_record_writes_scheme_id_and_used_flag);
+    RUN_TEST(test_app_controller_record_write_failure_does_not_mark_scheme_used);
     RUN_TEST(test_app_controller_starts_after_double_ok_and_opens_valve);
     RUN_TEST(test_app_controller_completion_writes_record_statistics_and_filters);
     RUN_TEST(test_app_controller_web_preset_switch_during_run_updates_next_preset_only);

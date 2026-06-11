@@ -148,6 +148,7 @@ public:
     bool failWrite = false;
     std::string failWritePath;
     std::string failWriteAtPath;
+    bool failHeaderWriteOnce = false;
     int failWriteAtCount = 0;
     std::size_t createSizedCalls = 0;
     std::size_t removeCalls = 0;
@@ -196,6 +197,10 @@ public:
     }
 
     bool writeAt(const char* path, std::size_t offset, const std::uint8_t* data, std::size_t len) override {
+        if (failHeaderWriteOnce && offset == 0) {
+            failHeaderWriteOnce = false;
+            return false;
+        }
         if (failWrite || !path || shouldFailAnyWrite(path) || shouldFailWriteAt(path)) {
             return false;
         }
@@ -421,6 +426,126 @@ void test_manual_create_reuses_deleted_unused_slot_with_new_id() {
     TEST_ASSERT_EQUAL_UINT32(480, created.params.stableFlowMlPerMin);
 }
 
+void test_manual_create_overwrites_oldest_non_current_when_fixed_slots_are_full() {
+    MemoryFileBackend backend;
+    MeteringSchemeStore store(backend, "/schemes.bin");
+    TEST_ASSERT_TRUE(store.begin());
+
+    std::uint32_t lastId = 0;
+    for (std::size_t i = 1; i < kMeteringSchemeStoreSlotCount; ++i) {
+        TEST_ASSERT_TRUE(store.createManual("填充方案", MeteringParameters{12, 180, 360}, 1770000000 + i, lastId));
+    }
+    TEST_ASSERT_EQUAL_UINT32(100, lastId);
+
+    std::uint32_t overflowId = 0;
+    TEST_ASSERT_TRUE(store.createManual("覆盖方案", MeteringParameters{14, 200, 380}, 1770000200, overflowId));
+    TEST_ASSERT_EQUAL_UINT32(101, overflowId);
+
+    MeteringSchemeRecord overwritten{};
+    TEST_ASSERT_FALSE(store.findById(2, overwritten));
+    MeteringSchemeRecord created{};
+    TEST_ASSERT_TRUE(store.findById(overflowId, created));
+    TEST_ASSERT_EQUAL_STRING("覆盖方案", created.name);
+    TEST_ASSERT_EQUAL_UINT32(1, store.activeSchemeId());
+}
+
+void test_manual_create_prefers_disabled_non_current_slot_when_fixed_slots_are_full() {
+    MemoryFileBackend backend;
+    MeteringSchemeStore store(backend, "/schemes.bin");
+    TEST_ASSERT_TRUE(store.begin());
+
+    std::uint32_t ids[kMeteringSchemeStoreSlotCount]{};
+    for (std::size_t i = 1; i < kMeteringSchemeStoreSlotCount; ++i) {
+        TEST_ASSERT_TRUE(store.createManual("填充方案", MeteringParameters{12, 180, 360}, 1770000000 + i, ids[i]));
+    }
+    TEST_ASSERT_TRUE(store.disableScheme(ids[50], 1770000200));
+
+    std::uint32_t overflowId = 0;
+    TEST_ASSERT_TRUE(store.createManual("覆盖停用方案", MeteringParameters{14, 200, 380}, 1770000300, overflowId));
+
+    MeteringSchemeRecord disabledVictim{};
+    TEST_ASSERT_FALSE(store.findById(ids[50], disabledVictim));
+    MeteringSchemeRecord smallerAvailable{};
+    TEST_ASSERT_TRUE(store.findById(ids[1], smallerAvailable));
+    MeteringSchemeRecord created{};
+    TEST_ASSERT_TRUE(store.findById(overflowId, created));
+    TEST_ASSERT_EQUAL_STRING("覆盖停用方案", created.name);
+}
+
+void test_manual_create_header_failure_rolls_back_written_record() {
+    MemoryFileBackend backend;
+    {
+        MeteringSchemeStore store(backend, "/schemes.bin");
+        TEST_ASSERT_TRUE(store.begin());
+        std::uint32_t failedId = 0;
+        backend.failHeaderWriteOnce = true;
+        TEST_ASSERT_FALSE(store.createManual("header fail",
+                                             MeteringParameters{12, 180, 360},
+                                             1770000000,
+                                             failedId));
+        TEST_ASSERT_EQUAL_UINT32(2, failedId);
+    }
+
+    MeteringSchemeStore loaded(backend, "/schemes.bin");
+    TEST_ASSERT_TRUE(loaded.begin());
+    MeteringSchemeRecord rolledBack{};
+    TEST_ASSERT_FALSE(loaded.findById(2, rolledBack));
+
+    std::uint32_t nextId = 0;
+    TEST_ASSERT_TRUE(loaded.createManual("after restart",
+                                         MeteringParameters{14, 200, 380},
+                                         1770000001,
+                                         nextId));
+    TEST_ASSERT_EQUAL_UINT32(2, nextId);
+}
+
+void test_begin_repairs_next_scheme_id_from_existing_records() {
+    MemoryFileBackend backend;
+    {
+        MeteringSchemeStore store(backend, "/schemes.bin");
+        TEST_ASSERT_TRUE(store.begin());
+        std::uint32_t id = 0;
+        TEST_ASSERT_TRUE(store.createManual("existing",
+                                            MeteringParameters{12, 180, 360},
+                                            1770000000,
+                                            id));
+        TEST_ASSERT_EQUAL_UINT32(2, id);
+    }
+    const MeteringSchemeStoreHeader staleHeader =
+        currentHeader(1, 2, static_cast<std::uint32_t>(kMeteringSchemeStoreSlotCount));
+    TEST_ASSERT_TRUE(backend.writeAt("/schemes.bin",
+                                     0,
+                                     reinterpret_cast<const std::uint8_t*>(&staleHeader),
+                                     sizeof(staleHeader)));
+
+    backend.failHeaderWriteOnce = true;
+    MeteringSchemeStore loaded(backend, "/schemes.bin");
+    TEST_ASSERT_TRUE(loaded.begin());
+    MeteringSchemeRecord existing{};
+    TEST_ASSERT_TRUE(loaded.findById(2, existing));
+
+    std::uint32_t nextId = 0;
+    TEST_ASSERT_TRUE(loaded.createManual("after repair",
+                                         MeteringParameters{14, 200, 380},
+                                         1770000001,
+                                         nextId));
+    TEST_ASSERT_EQUAL_UINT32(3, nextId);
+    MeteringSchemeRecord schemes[kMeteringSchemeStoreSlotCount]{};
+    const std::size_t count = loaded.list(schemes, kMeteringSchemeStoreSlotCount, true);
+    std::size_t id2Count = 0;
+    std::size_t id3Count = 0;
+    for (std::size_t i = 0; i < count; ++i) {
+        if (schemes[i].id == 2) {
+            ++id2Count;
+        }
+        if (schemes[i].id == 3) {
+            ++id3Count;
+        }
+    }
+    TEST_ASSERT_EQUAL_size_t(1, id2Count);
+    TEST_ASSERT_EQUAL_size_t(1, id3Count);
+}
+
 void test_used_scheme_delete_is_rejected_and_disable_is_explicit() {
     MemoryFileBackend backend;
     MeteringSchemeStore store(backend, "/schemes.bin");
@@ -642,7 +767,8 @@ void test_begin_migrates_v3_candidate_file_to_compact_v4_layout() {
 
     MeteringSchemeStore store(backend, "/schemes.bin");
     TEST_ASSERT_TRUE(store.begin());
-    TEST_ASSERT_EQUAL_INT64(static_cast<std::int64_t>(sizeof(MeteringSchemeStoreHeader) + sizeof(MeteringSchemeRecord)),
+    TEST_ASSERT_EQUAL_INT64(static_cast<std::int64_t>(sizeof(MeteringSchemeStoreHeader) +
+                                                     kMeteringSchemeStoreSlotCount * sizeof(MeteringSchemeRecord)),
                             backend.fileSize("/schemes.bin"));
     MeteringSchemeRecord active{};
     TEST_ASSERT_TRUE(store.activeScheme(active));
@@ -709,22 +835,23 @@ void test_legacy_migration_avoids_large_metering_scheme_stack_arrays() {
     TEST_ASSERT_TRUE(migratedStackArray == nullptr || migratedStackArray > nextFunction);
 }
 
-void test_begin_rebuilds_corrupt_scheme_file_with_default_scheme() {
+void test_begin_preserves_corrupt_scheme_file() {
     MemoryFileBackend backend;
     {
         MeteringSchemeStore store(backend, "/schemes.bin");
         TEST_ASSERT_TRUE(store.begin());
     }
+    const std::int64_t originalSize = backend.fileSize("/schemes.bin");
     backend.overwriteByte("/schemes.bin", 0, 0x00);
 
     MeteringSchemeStore loaded(backend, "/schemes.bin");
-    TEST_ASSERT_TRUE(loaded.begin());
-    TEST_ASSERT_TRUE(loaded.ready());
-    TEST_ASSERT_EQUAL_size_t(1, backend.removeCalls);
-    MeteringSchemeRecord active{};
-    TEST_ASSERT_TRUE(loaded.activeScheme(active));
-    TEST_ASSERT_TRUE(active.recordUsed);
-    TEST_ASSERT_EQUAL_UINT32(loaded.activeSchemeId(), active.id);
+    TEST_ASSERT_FALSE(loaded.begin());
+    TEST_ASSERT_FALSE(loaded.ready());
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(AppStorageStatus::IncompatibleFormat),
+                            static_cast<unsigned>(loaded.status()));
+    TEST_ASSERT_EQUAL_size_t(0, backend.removeCalls);
+    TEST_ASSERT_TRUE(backend.exists("/schemes.bin"));
+    TEST_ASSERT_EQUAL_INT64(originalSize, backend.fileSize("/schemes.bin"));
 }
 
 int main(int argc, char** argv) {
@@ -735,6 +862,10 @@ int main(int argc, char** argv) {
     RUN_TEST(test_begin_upgrades_single_legacy_default_scheme_to_yfs201_builtin_default);
     RUN_TEST(test_save_candidate_as_new_reloads_after_restart);
     RUN_TEST(test_manual_create_reuses_deleted_unused_slot_with_new_id);
+    RUN_TEST(test_manual_create_overwrites_oldest_non_current_when_fixed_slots_are_full);
+    RUN_TEST(test_manual_create_prefers_disabled_non_current_slot_when_fixed_slots_are_full);
+    RUN_TEST(test_manual_create_header_failure_rolls_back_written_record);
+    RUN_TEST(test_begin_repairs_next_scheme_id_from_existing_records);
     RUN_TEST(test_used_scheme_delete_is_rejected_and_disable_is_explicit);
     RUN_TEST(test_delete_keeps_at_least_one_valid_scheme);
     RUN_TEST(test_enable_updates_active_id_only);
@@ -744,6 +875,6 @@ int main(int argc, char** argv) {
     RUN_TEST(test_begin_migrates_v3_candidate_file_to_compact_v4_layout);
     RUN_TEST(test_begin_ignores_stale_scheme_migration_temp_when_current_file_is_valid);
     RUN_TEST(test_legacy_migration_avoids_large_metering_scheme_stack_arrays);
-    RUN_TEST(test_begin_rebuilds_corrupt_scheme_file_with_default_scheme);
+    RUN_TEST(test_begin_preserves_corrupt_scheme_file);
     return UNITY_END();
 }

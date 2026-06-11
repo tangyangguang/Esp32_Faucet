@@ -514,21 +514,19 @@ bool writeWaterRecordsJson(const WaterRecord* records,
                         std::uint16_t pageSize,
                         std::size_t totalCount,
                         const char* storageName,
+                        const char* storageStatus,
                         char* out,
                         std::size_t len) {
     JsonWriter writer(out, len);
-    writer.append("{\"storage\":\"%s\",\"page\":%u,\"pageSize\":%u,\"total\":%u,\"count\":%u,\"records\":[",
+    writer.append("{\"storage\":\"%s\",\"storageStatus\":\"%s\",\"page\":%u,\"pageSize\":%u,\"total\":%u,\"count\":%u,\"records\":[",
                   storageName ? storageName : "unavailable",
+                  storageStatus ? storageStatus : "unavailable",
                   static_cast<unsigned>(pageIndex),
                   static_cast<unsigned>(pageSize),
                   static_cast<unsigned>(totalCount),
                   static_cast<unsigned>(recordCount));
     for (std::size_t i = 0; i < recordCount; ++i) {
         const WaterRecord& record = records[i];
-        const std::uint32_t stablePulsePerLiterAtRun =
-            record.pulsePerMlAtRun <= 0.0f
-                ? 0
-                : static_cast<std::uint32_t>(record.pulsePerMlAtRun * 1000.0f + 0.5f);
         const std::uint32_t averageFlowMlPerMin =
             record.durationSec == 0
                 ? 0
@@ -537,7 +535,7 @@ bool writeWaterRecordsJson(const WaterRecord* records,
                       record.durationSec);
         writer.append("%s{\"startTime\":%lu,\"volumeMl\":%lu,\"durationSec\":%u,"
                       "\"mode\":\"%s\",\"result\":\"%s\",\"targetValue\":%lu,\"selectedPreset\":%u,"
-                      "\"pulseCount\":%lu,\"rejectedPulseCount\":%lu,\"stablePulsePerLiterAtRun\":%lu,"
+                      "\"pulseCount\":%lu,\"rejectedPulseCount\":%lu,\"meteringSchemeId\":%lu,"
                       "\"averageFlowMlPerMin\":%lu}",
                       i == 0 ? "" : ",",
                       static_cast<unsigned long>(record.startTime),
@@ -549,7 +547,7 @@ bool writeWaterRecordsJson(const WaterRecord* records,
                       static_cast<unsigned>(record.selectedPreset),
                       static_cast<unsigned long>(record.pulseCount),
                       static_cast<unsigned long>(record.rejectedPulseCount),
-                      static_cast<unsigned long>(stablePulsePerLiterAtRun),
+                      static_cast<unsigned long>(record.meteringSchemeId),
                       static_cast<unsigned long>(averageFlowMlPerMin));
     }
     writer.append("]}");

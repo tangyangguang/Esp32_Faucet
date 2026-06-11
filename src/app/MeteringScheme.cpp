@@ -313,6 +313,9 @@ bool updateMeteringSchemeRecord(MeteringSchemeRecord& scheme,
         return false;
     }
     const MeteringSchemeEditKind kind = classifyMeteringSchemeEdit(scheme, edit);
+    if (scheme.usedEver && kind == MeteringSchemeEditKind::MeteringOrApplicability) {
+        return false;
+    }
     copyText(scheme.name, edit.name);
     scheme.params = edit.params;
     scheme.updatedAt = nowSeconds;

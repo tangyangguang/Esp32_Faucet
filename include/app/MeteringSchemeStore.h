@@ -1,5 +1,6 @@
 #pragma once
 
+#include "app/AppStorageStatus.h"
 #include "app/MeteringScheme.h"
 #include "app/WaterRecordFileStore.h"
 
@@ -29,6 +30,7 @@ public:
 
     bool begin();
     bool ready() const;
+    AppStorageStatus status() const;
     std::uint32_t activeSchemeId() const;
     bool activeScheme(MeteringSchemeRecord& output) const;
     bool findById(std::uint32_t id, MeteringSchemeRecord& output) const;
@@ -55,6 +57,8 @@ private:
     bool initializeNewFile();
     bool migrateV1File(const MeteringSchemeStoreHeader& loaded);
     bool migrateV3CandidateFile(const MeteringSchemeStoreHeader& loaded);
+    bool normalizeSlotCount();
+    bool repairNextSchemeId();
     bool upgradeLegacyDefaultSchemeIfNeeded();
     bool loadHeader();
     bool saveHeader() const;
@@ -62,6 +66,7 @@ private:
     bool writeRecord(std::size_t slot, const MeteringSchemeRecord& record);
     bool findSlotById(std::uint32_t id, MeteringSchemeRecord& output, std::size_t& slot) const;
     bool findFreeSlot(std::size_t& slot) const;
+    bool findReusableSlot(std::size_t& slot) const;
     bool writeOrAppendAt(std::size_t offset, const std::uint8_t* data, std::size_t len);
     std::size_t recordOffset(std::size_t slot) const;
     std::size_t expectedFileSize() const;
@@ -70,6 +75,7 @@ private:
     const char* path_;
     MeteringSchemeStoreHeader header_;
     bool ready_;
+    AppStorageStatus status_;
 };
 
 }  // namespace faucet

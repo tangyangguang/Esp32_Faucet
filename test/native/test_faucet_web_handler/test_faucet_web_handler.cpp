@@ -550,6 +550,7 @@ void test_metering_page_initial_render_shows_scheme_list_and_sample_library() {
     WebFixture fixture;
     saveLongTermWebSample(fixture.sampleStore, 1200, 45, 360, 12);
     fixture.calibrationFiles.longTermSampleBulkReads = 0;
+    fixture.calibrationFiles.meteringSchemeRecordReads = 0;
     registerRoutes();
     Esp32BaseWeb::nativeTestBeginRequest(Esp32BaseWeb::METHOD_GET, "/faucet/metering");
     Esp32BaseWeb::nativeTestSetAuthenticated(true);
@@ -562,7 +563,10 @@ void test_metering_page_initial_render_shows_scheme_list_and_sample_library() {
     TEST_ASSERT_NOT_EQUAL(std::string::npos, Esp32BaseWeb::nativeTestResponse().body.find("长期样本库"));
     TEST_ASSERT_EQUAL(std::string::npos, Esp32BaseWeb::nativeTestResponse().body.find("打开方案列表"));
     TEST_ASSERT_EQUAL(std::string::npos, Esp32BaseWeb::nativeTestResponse().body.find("打开生成面板"));
+    TEST_ASSERT_EQUAL(std::string::npos, Esp32BaseWeb::nativeTestResponse().body.find("加载方案列表"));
+    TEST_ASSERT_EQUAL(std::string::npos, Esp32BaseWeb::nativeTestResponse().body.find("加载样本库"));
     TEST_ASSERT_EQUAL_UINT32(0, fixture.calibrationFiles.longTermSampleBulkReads);
+    TEST_ASSERT_LESS_OR_EQUAL_UINT32(3, fixture.calibrationFiles.meteringSchemeRecordReads);
 }
 
 void test_metering_page_keeps_only_metering_description_collapsed() {

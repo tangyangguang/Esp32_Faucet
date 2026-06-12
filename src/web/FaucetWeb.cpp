@@ -1959,6 +1959,13 @@ void sendCalibrationParameterPanels() {
     delete[] schemes;
 }
 
+void sendMeteringSchemeListAutoLoadPanel() {
+    Esp32BaseWeb::sendChunk("<section id='metering-scheme-list' class='panel calibration-param-panel' data-autoload='schemes'>"
+                            "<div class='panel-head'><h3>计量方案列表</h3>"
+                            "<a class='btn-link' href='/faucet/metering?scheme=new'>新建方案</a></div>"
+                            "<p class='hint'>正在读取计量方案列表。</p></section>");
+}
+
 void sendMeteringSchemeEditPage(bool creating, const MeteringSchemeRecord* scheme) {
     const char* title = creating ? "新建计量方案" : "修改计量方案";
     Esp32BaseWeb::sendHeader(title);
@@ -2694,6 +2701,13 @@ void sendCalibrationGenerationSummaryPanel() {
     Esp32BaseWeb::sendChunk("</section>");
 }
 
+void sendCalibrationGenerationSummaryAutoLoadPanel() {
+    Esp32BaseWeb::sendChunk("<section id='scheme-generation' class='panel' data-autoload='generation-summary'>"
+                            "<div class='panel-head'><div><h3>长期样本库与参数生成</h3>"
+                            "<p class='hint'>正在读取长期样本库；点击生成参数时才分析原始脉冲。</p></div></div>"
+                            "</section>");
+}
+
 void sendCalibrationGenerationPanel() {
     const SegmentedSampleDiagnostics diagnostics = collectSegmentedSampleDiagnostics(false);
     const SegmentedCalibrationOptions options = calibrationOptionsForWeb();
@@ -2884,10 +2898,12 @@ void sendCalibrationPageScript() {
                             "function faucetReplaceCalibrationSection(id,url){return fetch(url,{cache:'no-store',credentials:'same-origin'}).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.text();}).then(function(html){var old=document.getElementById(id);if(!old)return;var box=document.createElement('div');box.innerHTML=html;var next=box.querySelector('#'+id);if(next)old.replaceWith(next);});}"
                             "function faucetRefreshCalibrationSamples(){return faucetReplaceCalibrationSection('calibration-samples','/faucet/calibration?partial=samples');}"
                             "function faucetAutoLoadCalibrationSamples(){var e=document.getElementById('calibration-samples');if(e&&e.dataset.autoload==='1')setTimeout(function(){faucetRefreshCalibrationSamples().catch(function(){var old=document.getElementById('calibration-samples');if(old)old.innerHTML=\"<div class='panel-head'><h3>本次校准接水记录</h3></div><p class='err'>接水记录加载失败，请稍后刷新。</p>\";});},0);}"
+                            "function faucetAutoLoadMeteringPanels(){var list=document.getElementById('metering-scheme-list');if(list&&list.dataset.autoload==='schemes')setTimeout(function(){faucetReplaceCalibrationSection('metering-scheme-list','/faucet/metering?partial=schemes').catch(function(){var old=document.getElementById('metering-scheme-list');if(old)old.innerHTML=\"<div class='panel-head'><h3>计量方案列表</h3><a class='btn-link' href='/faucet/metering?scheme=new'>新建方案</a></div><p class='err'>方案列表读取失败，请稍后刷新。</p>\";});},0);var gen=document.getElementById('scheme-generation');if(gen&&gen.dataset.autoload==='generation-summary')setTimeout(function(){faucetReplaceCalibrationSection('scheme-generation','/faucet/metering?partial=generation-summary').catch(function(){var old=document.getElementById('scheme-generation');if(old)old.innerHTML=\"<div class='panel-head'><div><h3>长期样本库与参数生成</h3></div></div><p class='err'>长期样本库读取失败，请稍后刷新。</p>\";});},0);}"
                             "function faucetSubmitSampleCalibration(f){if(typeof once==='function'&&!once(f))return false;fetch('/faucet/calibration',{method:'POST',body:new FormData(f),cache:'no-store',credentials:'same-origin'}).then(function(r){if(!r.ok)return faucetReadCalibrationError(r).then(function(code){throw new Error(code);});return r.json();}).then(function(){return faucetRefreshCalibrationSamples().catch(function(){faucetResetSampleCalibrationForm(f);alert('校准已保存，但页面刷新失败，请手动刷新查看最新状态。');});}).catch(function(e){faucetResetSampleCalibrationForm(f);alert('保存失败：'+faucetCalibrationErrorMessage(e.message));});return false;}"
                             "function faucetSubmitGenerationAction(f){if(typeof once==='function'&&!once(f))return false;var fd=new FormData(f),action=String(fd.get('action')||'');fetch('/faucet/metering',{method:'POST',body:fd,cache:'no-store',credentials:'same-origin'}).then(function(r){if(!r.ok)return faucetReadCalibrationError(r).then(function(code){throw new Error(code);});return r.json();}).then(function(){var url='/faucet/metering?partial=generation'+(action==='generate_segmented'?'&generated=1':'');return faucetReplaceCalibrationSection('scheme-generation',url).catch(function(){alert('生成操作已完成，但页面刷新失败，请手动刷新查看最新状态。');});}).catch(function(e){f.dataset.busy='';var b=f.querySelector('[type=submit]');if(b)b.disabled=false;alert('操作失败：'+faucetCalibrationErrorMessage(e.message));});return false;}"
                             "faucetStartCalibrationCountdown();"
                             "faucetAutoLoadCalibrationSamples();"
+                            "faucetAutoLoadMeteringPanels();"
                             "</script>");
 }
 
@@ -4895,6 +4911,8 @@ void handleMeteringPage() {
         }
         if (std::strcmp(text, "schemes") == 0) {
             sendCalibrationParameterPanels();
+        } else if (std::strcmp(text, "generation-summary") == 0) {
+            sendCalibrationGenerationSummaryPanel();
         } else if (std::strcmp(text, "generation") == 0) {
             sendCalibrationGenerationPanel();
         }
@@ -4922,12 +4940,12 @@ void handleMeteringPage() {
     Esp32BaseWeb::sendChunk("<p class='muted'>集中管理当前启用的流量计计量参数、手工方案，以及从样本库生成的新方案；本页不提供远程出水或停水能力。</p>");
     Esp32BaseWeb::sendChunk("<div class='calibration-param-layout'>");
     sendActiveMeteringSchemeSummaryPanel();
-    sendCalibrationParameterPanels();
+    sendMeteringSchemeListAutoLoadPanel();
     Esp32BaseWeb::sendChunk("</div>");
     if (generationResultRequested()) {
         sendCalibrationGenerationPanel();
     } else {
-        sendCalibrationGenerationSummaryPanel();
+        sendCalibrationGenerationSummaryAutoLoadPanel();
     }
     sendCalibrationFormulaPanel();
     sendMeteringTrialModal();

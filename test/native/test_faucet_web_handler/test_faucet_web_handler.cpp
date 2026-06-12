@@ -452,6 +452,25 @@ void test_calibration_session_start_redirects_success_from_idle() {
                             static_cast<unsigned>(fixture.app.snapshot().calibrationStatus));
 }
 
+void test_calibration_session_start_recovers_missing_session_file_after_format() {
+    WebFixture fixture;
+    TEST_ASSERT_TRUE(fixture.calibrationFiles.removeFile("/cal-session.bin"));
+    registerRoutes();
+    Esp32BaseWeb::nativeTestBeginRequest(Esp32BaseWeb::METHOD_POST, "/faucet/calibration");
+    Esp32BaseWeb::nativeTestSetAuthenticated(true);
+    Esp32BaseWeb::nativeTestSetSameOrigin(true);
+    Esp32BaseWeb::nativeTestSetParam("action", "start_session");
+
+    TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch("/faucet/calibration", Esp32BaseWeb::METHOD_POST));
+
+    TEST_ASSERT_EQUAL(303, Esp32BaseWeb::nativeTestResponse().code);
+    TEST_ASSERT_EQUAL_STRING("/faucet/calibration?saved=session_started",
+                             Esp32BaseWeb::nativeTestResponseHeader("Location"));
+    TEST_ASSERT_TRUE(fixture.calibrationFiles.exists("/cal-session.bin"));
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationSessionStatus::Preparing),
+                            static_cast<unsigned>(fixture.app.snapshot().calibrationStatus));
+}
+
 void test_calibration_session_start_rejects_duplicate_start_as_invalid_state() {
     WebFixture fixture;
     TEST_ASSERT_TRUE(fixture.app.startCalibrationSessionForWeb(testNowSeconds()));
@@ -595,6 +614,7 @@ int main(int, char**) {
     RUN_TEST(test_records_handler_redirects_trace_delete_busy_to_calibration_context);
     RUN_TEST(test_calibration_session_start_redirects_busy_to_calibration_page);
     RUN_TEST(test_calibration_session_start_redirects_success_from_idle);
+    RUN_TEST(test_calibration_session_start_recovers_missing_session_file_after_format);
     RUN_TEST(test_calibration_session_start_rejects_duplicate_start_as_invalid_state);
     RUN_TEST(test_calibration_post_rejects_missing_action_as_invalid_action);
     RUN_TEST(test_metering_scheme_write_redirects_busy_to_metering_page);

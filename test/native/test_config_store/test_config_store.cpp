@@ -131,7 +131,9 @@ void test_config_migrates_v1_without_losing_user_values() {
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(ConfigStore::LoadStatus::MigratedLegacy),
                             static_cast<std::uint8_t>(store.lastSystemConfigLoadStatus()));
     TEST_ASSERT_FALSE(store.systemConfigReadOnly());
-    TEST_ASSERT_EQUAL_INT32(14, backend.getInt("faucet_cfg", "ver", 0));
+    TEST_ASSERT_EQUAL_INT32(15, backend.getInt("faucet_cfg", "ver", 0));
+    TEST_ASSERT_EQUAL_INT32(static_cast<std::int32_t>(kDefaultPulseObservationWindowSec),
+                            backend.getInt("faucet_cfg", "pulse_win_s", 0));
     TEST_ASSERT_EQUAL_INT32(90, backend.getInt("faucet_cfg", "f0_life_min", 0));
     TEST_ASSERT_EQUAL_INT32(90, backend.getInt("faucet_cfg", "f0_life_max", 0));
     TEST_ASSERT_EQUAL_UINT32(22, loaded.confirmTimeoutSec);
@@ -178,7 +180,9 @@ void test_config_migrates_legacy_fields_when_version_is_missing() {
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(ConfigStore::LoadStatus::MigratedLegacy),
                             static_cast<std::uint8_t>(store.lastSystemConfigLoadStatus()));
     TEST_ASSERT_FALSE(store.systemConfigReadOnly());
-    TEST_ASSERT_EQUAL_INT32(14, backend.getInt("faucet_cfg", "ver", 0));
+    TEST_ASSERT_EQUAL_INT32(15, backend.getInt("faucet_cfg", "ver", 0));
+    TEST_ASSERT_EQUAL_INT32(static_cast<std::int32_t>(kDefaultPulseObservationWindowSec),
+                            backend.getInt("faucet_cfg", "pulse_win_s", 0));
     TEST_ASSERT_EQUAL_UINT32(23, loaded.confirmTimeoutSec);
     TEST_ASSERT_EQUAL_STRING("Carbon", loaded.filters[0].name);
     TEST_ASSERT_EQUAL_UINT32(120, loaded.filters[0].recommendDays);
@@ -202,7 +206,9 @@ void test_config_migrates_v2_filter_ranges_and_single_calibration_target() {
 
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(ConfigStore::LoadStatus::MigratedLegacy),
                             static_cast<std::uint8_t>(store.lastSystemConfigLoadStatus()));
-    TEST_ASSERT_EQUAL_INT32(14, backend.getInt("faucet_cfg", "ver", 0));
+    TEST_ASSERT_EQUAL_INT32(15, backend.getInt("faucet_cfg", "ver", 0));
+    TEST_ASSERT_EQUAL_INT32(static_cast<std::int32_t>(kDefaultPulseObservationWindowSec),
+                            backend.getInt("faucet_cfg", "pulse_win_s", 0));
     TEST_ASSERT_TRUE(loaded.filters[1].enabled);
     TEST_ASSERT_EQUAL_STRING("RO", loaded.filters[1].name);
     TEST_ASSERT_EQUAL_UINT32(360, loaded.filters[1].recommendDays);
@@ -296,6 +302,7 @@ void test_config_save_and_load_round_trips_system_config() {
     config.timeAdjustStepSec = 15;
     config.pulseMinIntervalUs = 2500;
     config.recentPulseTraceCount = 2;
+    config.pulseObservationWindowSec = 24;
     config.calibrationAnalysisPulseMinIntervalUs = 1500;
     config.calibrationStableWindowSec = 5;
     config.calibrationStableTolerancePercent = 30;
@@ -325,6 +332,7 @@ void test_config_save_and_load_round_trips_system_config() {
     TEST_ASSERT_EQUAL_UINT32(15, loaded.timeAdjustStepSec);
     TEST_ASSERT_EQUAL_UINT32(2500, loaded.pulseMinIntervalUs);
     TEST_ASSERT_EQUAL_UINT32(kMaxRecentPulseTraceCount, loaded.recentPulseTraceCount);
+    TEST_ASSERT_EQUAL_UINT32(24, loaded.pulseObservationWindowSec);
     TEST_ASSERT_EQUAL_UINT32(1500, loaded.calibrationAnalysisPulseMinIntervalUs);
     TEST_ASSERT_EQUAL_UINT32(5, loaded.calibrationStableWindowSec);
     TEST_ASSERT_EQUAL_UINT8(30, loaded.calibrationStableTolerancePercent);
@@ -355,6 +363,7 @@ void test_config_load_sanitizes_stored_values() {
     config.timeAdjustStepSec = 999999;
     config.pulseMinIntervalUs = 1;
     config.recentPulseTraceCount = 999999;
+    config.pulseObservationWindowSec = 999999;
     config.calibrationAnalysisPulseMinIntervalUs = 999999;
     config.calibrationStableWindowSec = 1;
     config.calibrationStableTolerancePercent = 99;
@@ -371,6 +380,7 @@ void test_config_load_sanitizes_stored_values() {
     TEST_ASSERT_EQUAL_UINT32(kMaxTimeAdjustStepSec, loaded.timeAdjustStepSec);
     TEST_ASSERT_EQUAL_UINT32(kMinPulseMinIntervalUs, loaded.pulseMinIntervalUs);
     TEST_ASSERT_EQUAL_UINT32(kMaxRecentPulseTraceCount, loaded.recentPulseTraceCount);
+    TEST_ASSERT_EQUAL_UINT32(kMaxPulseObservationWindowSec, loaded.pulseObservationWindowSec);
     TEST_ASSERT_EQUAL_UINT32(kMaxPulseMinIntervalUs, loaded.calibrationAnalysisPulseMinIntervalUs);
     TEST_ASSERT_EQUAL_UINT32(kMinCalibrationStableWindowSec, loaded.calibrationStableWindowSec);
     TEST_ASSERT_EQUAL_UINT8(kMaxCalibrationStableTolerancePercent, loaded.calibrationStableTolerancePercent);
@@ -379,6 +389,24 @@ void test_config_load_sanitizes_stored_values() {
     TEST_ASSERT_EQUAL_UINT16(kMinCalibrationMaxRelativeErrorTenthPercent,
                              loaded.calibrationMaxRelativeErrorTenthPercent);
     TEST_ASSERT_EQUAL_UINT32(kMinVolumePresetMl, loaded.presets[0].value);
+}
+
+void test_config_migrates_missing_pulse_observation_window_to_default() {
+    FakeConfigBackend backend;
+    backend.setInt("faucet_cfg", "ver", 14);
+    backend.setInt("faucet_cfg", "confirm_s", 22);
+    ConfigStore store(backend);
+
+    const SystemConfig loaded = store.loadSystemConfig();
+
+    TEST_ASSERT_EQUAL_UINT32(22, loaded.confirmTimeoutSec);
+    TEST_ASSERT_EQUAL_UINT32(kDefaultPulseObservationWindowSec, loaded.pulseObservationWindowSec);
+    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(ConfigStore::LoadStatus::MigratedLegacy),
+                            static_cast<std::uint8_t>(store.lastSystemConfigLoadStatus()));
+    TEST_ASSERT_TRUE(store.lastSystemConfigMigrationWriteBack());
+    TEST_ASSERT_EQUAL_INT32(15, backend.getInt("faucet_cfg", "ver", 0));
+    TEST_ASSERT_EQUAL_INT32(static_cast<std::int32_t>(kDefaultPulseObservationWindowSec),
+                            backend.getInt("faucet_cfg", "pulse_win_s", 0));
 }
 
 void test_config_reset_restores_defaults() {
@@ -535,6 +563,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_config_unsupported_version_loads_recognized_fields_read_only_without_overwrite);
     RUN_TEST(test_config_save_and_load_round_trips_system_config);
     RUN_TEST(test_config_load_sanitizes_stored_values);
+    RUN_TEST(test_config_migrates_missing_pulse_observation_window_to_default);
     RUN_TEST(test_config_reset_restores_defaults);
     RUN_TEST(test_config_save_reports_backend_failures);
     RUN_TEST(test_config_save_does_not_mark_current_version_after_partial_write_failure);

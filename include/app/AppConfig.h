@@ -31,6 +31,9 @@ constexpr std::uint32_t kMaxPulseMinIntervalUs = 100000;
 constexpr std::uint32_t kDefaultRecentPulseTraceCount = 1;
 constexpr std::uint32_t kMinRecentPulseTraceCount = 1;
 constexpr std::uint32_t kMaxRecentPulseTraceCount = 1;
+constexpr std::uint32_t kDefaultPulseObservationWindowSec = 10;
+constexpr std::uint32_t kMinPulseObservationWindowSec = 1;
+constexpr std::uint32_t kMaxPulseObservationWindowSec = 60;
 constexpr std::uint32_t kDefaultCalibrationAnalysisPulseMinIntervalUs = 0;
 constexpr std::uint32_t kMinCalibrationStableWindowSec = 2;
 constexpr std::uint32_t kDefaultCalibrationStableWindowSec = 4;
@@ -84,6 +87,7 @@ struct SystemConfig {
     std::uint32_t timeAdjustStepSec;
     std::uint32_t pulseMinIntervalUs;
     std::uint32_t recentPulseTraceCount;
+    std::uint32_t pulseObservationWindowSec;
     std::uint32_t calibrationAnalysisPulseMinIntervalUs;
     std::uint32_t calibrationStableWindowSec;
     std::uint8_t calibrationStableTolerancePercent;

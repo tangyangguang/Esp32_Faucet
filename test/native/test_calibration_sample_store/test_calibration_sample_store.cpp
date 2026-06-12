@@ -169,6 +169,19 @@ void test_starting_new_session_clears_the_three_session_slots() {
     TEST_ASSERT_EQUAL_size_t(0, store.readSamples(0, samples, 3));
 }
 
+void test_starting_new_session_creates_missing_trace_file() {
+    MemoryFileBackend backend;
+    CalibrationSessionTraceStore store(backend, "/session-traces.bin");
+    TEST_ASSERT_TRUE(store.begin());
+    TEST_ASSERT_FALSE(backend.exists("/session-traces.bin"));
+
+    TEST_ASSERT_TRUE(store.clearForNewSession(12));
+
+    TEST_ASSERT_TRUE(backend.exists("/session-traces.bin"));
+    CalibrationStoredTrace loaded{};
+    TEST_ASSERT_FALSE(store.load(0, loaded));
+}
+
 void test_long_term_sample_store_has_exactly_five_slots_and_lazy_file() {
     MemoryFileBackend backend;
     CalibrationLongTermSampleStore store(backend, "/samples.bin");
@@ -254,6 +267,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_session_trace_store_preserves_invalid_existing_file);
     RUN_TEST(test_session_trace_pending_then_valid_round_trips_samples);
     RUN_TEST(test_starting_new_session_clears_the_three_session_slots);
+    RUN_TEST(test_starting_new_session_creates_missing_trace_file);
     RUN_TEST(test_long_term_sample_store_has_exactly_five_slots_and_lazy_file);
     RUN_TEST(test_long_term_sample_store_preserves_invalid_existing_file);
     RUN_TEST(test_long_term_sample_store_refuses_the_sixth_sample);

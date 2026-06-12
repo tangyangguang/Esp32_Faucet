@@ -52,6 +52,7 @@ SystemConfig makeDefaultConfig() {
     config.timeAdjustStepSec = kDefaultTimeAdjustStepSec;
     config.pulseMinIntervalUs = kDefaultPulseMinIntervalUs;
     config.recentPulseTraceCount = kDefaultRecentPulseTraceCount;
+    config.pulseObservationWindowSec = kDefaultPulseObservationWindowSec;
     config.calibrationAnalysisPulseMinIntervalUs = kDefaultCalibrationAnalysisPulseMinIntervalUs;
     config.calibrationStableWindowSec = kDefaultCalibrationStableWindowSec;
     config.calibrationStableTolerancePercent = kDefaultCalibrationStableTolerancePercent;
@@ -97,6 +98,8 @@ void sanitizeConfig(SystemConfig& config) {
         clampValue<std::uint32_t>(config.pulseMinIntervalUs, kMinPulseMinIntervalUs, kMaxPulseMinIntervalUs);
     config.recentPulseTraceCount =
         clampValue<std::uint32_t>(config.recentPulseTraceCount, kMinRecentPulseTraceCount, kMaxRecentPulseTraceCount);
+    config.pulseObservationWindowSec = clampValue<std::uint32_t>(
+        config.pulseObservationWindowSec, kMinPulseObservationWindowSec, kMaxPulseObservationWindowSec);
     if (config.calibrationAnalysisPulseMinIntervalUs != 0) {
         config.calibrationAnalysisPulseMinIntervalUs = clampValue<std::uint32_t>(
             config.calibrationAnalysisPulseMinIntervalUs, kMinPulseMinIntervalUs, kMaxPulseMinIntervalUs);

@@ -266,13 +266,17 @@ bool CalibrationSessionTraceStore::clear() {
         return false;
     }
     if (!backend_.exists(path_)) {
-        return true;
+        const bool initialized = initializeFile(backend_, path_, kStoreKindSession, kCalibrationSessionTraceSlots);
+        status_ = initialized ? AppStorageStatus::Ready : AppStorageStatus::BackendFailure;
+        return initialized;
     }
     for (std::uint8_t i = 0; i < kCalibrationSessionTraceSlots; ++i) {
         if (!writeBlankEntry(backend_, path_, i)) {
+            status_ = AppStorageStatus::BackendFailure;
             return false;
         }
     }
+    status_ = AppStorageStatus::Ready;
     return true;
 }
 

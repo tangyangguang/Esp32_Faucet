@@ -1455,13 +1455,13 @@ void test_metering_scheme_page_uses_active_card_and_table_layout() {
     const char* summaryPanel = std::strstr(buffer, "void sendActiveMeteringSchemeSummaryPanel()");
     TEST_ASSERT_NOT_NULL(summaryPanel);
     const char* placeholderPanel = std::strstr(buffer, "void sendMeteringSchemeListPlaceholder()");
-    TEST_ASSERT_NOT_NULL(placeholderPanel);
+    TEST_ASSERT_NULL(placeholderPanel);
     const char* panel = std::strstr(buffer, "void sendCalibrationParameterPanels()");
     TEST_ASSERT_NOT_NULL(panel);
     const char* nextFunction = std::strstr(panel, "void sendMeteringSchemeEditPage");
     TEST_ASSERT_NOT_NULL(nextFunction);
 
-    TEST_ASSERT_NOT_NULL(findWithin(summaryPanel, placeholderPanel, "active-metering-card"));
+    TEST_ASSERT_NOT_NULL(findWithin(summaryPanel, panel, "active-metering-card"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "active-metering-metrics"));
     TEST_ASSERT_NOT_NULL(std::strstr(panel, "计量方案列表"));
     TEST_ASSERT_NOT_NULL(std::strstr(panel, "metering-scheme-table"));
@@ -1471,7 +1471,7 @@ void test_metering_scheme_page_uses_active_card_and_table_layout() {
     TEST_ASSERT_NOT_NULL(std::strstr(panel, "formatStartupDurationSeconds"));
     TEST_ASSERT_NOT_NULL(std::strstr(panel, "历史使用："));
     TEST_ASSERT_NULL(std::strstr(panel, "scheme-meta-lines"));
-    TEST_ASSERT_NOT_NULL(findWithin(summaryPanel, placeholderPanel, "sendActiveMeteringSchemeCard"));
+    TEST_ASSERT_NOT_NULL(findWithin(summaryPanel, panel, "sendActiveMeteringSchemeCard"));
     TEST_ASSERT_NULL(std::strstr(panel, "scheme.usedEver ? \"已使用\" : \"未使用\""));
     TEST_ASSERT_NULL(std::strstr(panel, "meteringSchemeSourceName(scheme.sourceType)"));
     TEST_ASSERT_NULL(findWithin(panel, nextFunction, "scheme-param-table"));

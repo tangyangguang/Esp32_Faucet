@@ -15,6 +15,7 @@ class MemoryFileBackend : public WaterRecordFileBackend {
 public:
     std::map<std::string, std::vector<std::uint8_t>> files;
     std::size_t removeCalls = 0;
+    std::size_t writeCalls = 0;
 
     bool exists(const char* path) override {
         return files.find(path ? path : "") != files.end();
@@ -62,6 +63,7 @@ public:
         if (!path) {
             return false;
         }
+        ++writeCalls;
         std::vector<std::uint8_t>& file = files[path];
         if (offset + len > file.size()) {
             file.resize(offset + len, 0);
@@ -153,7 +155,7 @@ void test_session_trace_pending_then_valid_round_trips_samples() {
     TEST_ASSERT_EQUAL_UINT32(20000, copied[2].elapsedUs);
 }
 
-void test_starting_new_session_clears_the_three_session_slots() {
+void test_starting_new_session_reuses_existing_trace_file_without_clearing_slots() {
     MemoryFileBackend backend;
     CalibrationSessionTraceStore store(backend, "/session-traces.bin");
     TEST_ASSERT_TRUE(store.begin());
@@ -161,12 +163,15 @@ void test_starting_new_session_clears_the_three_session_slots() {
     fillSamples(samples, 10000);
     TEST_ASSERT_TRUE(store.savePending(0, traceFor(11, 0, 0), samples, 3));
     TEST_ASSERT_TRUE(store.commitValid(0, 1000, 1770000100));
+    backend.writeCalls = 0;
 
     TEST_ASSERT_TRUE(store.clearForNewSession(12));
 
     CalibrationStoredTrace loaded{};
-    TEST_ASSERT_FALSE(store.load(0, loaded));
-    TEST_ASSERT_EQUAL_size_t(0, store.readSamples(0, samples, 3));
+    TEST_ASSERT_TRUE(store.load(0, loaded));
+    TEST_ASSERT_EQUAL_UINT32(11, loaded.sessionId);
+    TEST_ASSERT_EQUAL_size_t(3, store.readSamples(0, samples, 3));
+    TEST_ASSERT_EQUAL_size_t(0, backend.writeCalls);
 }
 
 void test_starting_new_session_creates_missing_trace_file() {
@@ -266,7 +271,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_session_trace_store_has_exactly_three_slots_and_lazy_file);
     RUN_TEST(test_session_trace_store_preserves_invalid_existing_file);
     RUN_TEST(test_session_trace_pending_then_valid_round_trips_samples);
-    RUN_TEST(test_starting_new_session_clears_the_three_session_slots);
+    RUN_TEST(test_starting_new_session_reuses_existing_trace_file_without_clearing_slots);
     RUN_TEST(test_starting_new_session_creates_missing_trace_file);
     RUN_TEST(test_long_term_sample_store_has_exactly_five_slots_and_lazy_file);
     RUN_TEST(test_long_term_sample_store_preserves_invalid_existing_file);

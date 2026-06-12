@@ -106,10 +106,52 @@ public:
     std::vector<WaterRecord> records;
 };
 
+class CountingWaterRecordReader : public WaterRecordReader {
+public:
+    std::size_t readPage(std::size_t pageIndex,
+                         std::uint16_t pageSize,
+                         WaterRecord* output,
+                         std::size_t outputCapacity) const override {
+        ++readPageCalls;
+        if (!output || outputCapacity == 0 || pageSize == 0) {
+            return 0;
+        }
+        const std::size_t offset = pageIndex * static_cast<std::size_t>(pageSize);
+        if (offset >= records.size()) {
+            return 0;
+        }
+        const std::size_t count = std::min<std::size_t>(pageSize, std::min(outputCapacity, records.size() - offset));
+        for (std::size_t i = 0; i < count; ++i) {
+            output[i] = records[offset + i];
+        }
+        return count;
+    }
+
+    std::size_t count() const override {
+        ++countCalls;
+        return records.size();
+    }
+
+    bool ready() const override {
+        return readyFlag;
+    }
+
+    const char* storageName() const override {
+        return "counting-records";
+    }
+
+    std::vector<WaterRecord> records;
+    mutable std::uint32_t readPageCalls = 0;
+    mutable std::uint32_t countCalls = 0;
+    bool readyFlag = true;
+};
+
 class MemoryFileBackend : public WaterRecordFileBackend {
 public:
     std::uint32_t longTermSampleBulkReads = 0;
     std::uint32_t meteringSchemeRecordReads = 0;
+    std::uint32_t calibrationSessionReads = 0;
+    std::uint32_t calibrationSessionTraceReads = 0;
 
     bool exists(const char* path) override {
         return files.find(path ? path : "") != files.end();
@@ -150,6 +192,12 @@ public:
         }
         if (std::strcmp(path, "/metering-schemes.bin") == 0 && offset >= 32 && len > 32) {
             ++meteringSchemeRecordReads;
+        }
+        if (std::strcmp(path, "/cal-session.bin") == 0) {
+            ++calibrationSessionReads;
+        }
+        if (std::strcmp(path, "/cal-traces.bin") == 0) {
+            ++calibrationSessionTraceReads;
         }
         const auto it = files.find(path);
         if (it == files.end() || offset + len > it->second.size()) {
@@ -293,6 +341,30 @@ std::uint32_t testBootId() {
     return 7UL;
 }
 
+WaterRecord makeWebRecord(std::uint32_t startTime, std::uint32_t volumeMl = 1000) {
+    return WaterRecord{
+        startTime,
+        volumeMl,
+        volumeMl,
+        volumeMl / 10,
+        0,
+        30,
+        WaterMode::Volume,
+        WaterResult::Completed,
+        0,
+        1,
+        7,
+        {0, 0, 0, 0},
+    };
+}
+
+void fillCountingRecords(CountingWaterRecordReader& reader) {
+    const std::uint32_t today = testNowSeconds();
+    for (std::uint32_t i = 0; i < 40; ++i) {
+        reader.records.push_back(makeWebRecord(today - i * 3600UL, 500 + i));
+    }
+}
+
 struct WebFixture {
     SystemConfig config = makeDefaultConfig();
     FakeConfigBackend backend;
@@ -324,12 +396,16 @@ struct WebFixture {
         TEST_ASSERT_TRUE(traceStore.begin());
         TEST_ASSERT_TRUE(sampleStore.begin());
         applyTestMeteringScheme(app);
+        installContext(records);
+    }
+
+    void installContext(const WaterRecordReader& recordReader) {
         FaucetWebContext context{};
         context.config = &config;
         context.configStore = &configStore;
         context.app = &app;
         context.filters = &filters;
-        context.records = &records;
+        context.records = &recordReader;
         context.recordCalibrations = &calibrations;
         context.recordCalibrationWriter = &calibrations;
         context.meteringSchemes = &meteringSchemes;
@@ -390,10 +466,28 @@ void test_home_page_places_screen_status_in_machine_hero_footer() {
     TEST_ASSERT_TRUE(screenStatus < statusStrip);
 }
 
+void test_home_page_initial_render_does_not_read_record_pages() {
+    WebFixture fixture;
+    CountingWaterRecordReader reader;
+    fillCountingRecords(reader);
+    fixture.installContext(reader);
+    registerRoutes();
+    Esp32BaseWeb::nativeTestBeginRequest(Esp32BaseWeb::METHOD_GET, "/index");
+    Esp32BaseWeb::nativeTestSetAuthenticated(true);
+    Esp32BaseWeb::nativeTestSetSameOrigin(true);
+
+    TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch("/index", Esp32BaseWeb::METHOD_GET));
+
+    TEST_ASSERT_EQUAL(200, Esp32BaseWeb::nativeTestResponse().code);
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, Esp32BaseWeb::nativeTestResponse().body.find("今日概览"));
+    TEST_ASSERT_EQUAL_UINT32(0, reader.readPageCalls);
+}
+
 void test_stats_page_shows_zero_preset_distribution_when_no_recent_records() {
     WebFixture fixture;
     registerRoutes();
-    Esp32BaseWeb::nativeTestBeginRequest(Esp32BaseWeb::METHOD_GET, "/faucet/stats");
+    Esp32BaseWeb::nativeTestBeginRequest(Esp32BaseWeb::METHOD_GET, "/faucet/stats?partial=report");
+    Esp32BaseWeb::nativeTestSetParam("partial", "report");
     Esp32BaseWeb::nativeTestSetAuthenticated(true);
     Esp32BaseWeb::nativeTestSetSameOrigin(true);
 
@@ -406,7 +500,53 @@ void test_stats_page_shows_zero_preset_distribution_when_no_recent_records() {
     TEST_ASSERT_EQUAL(std::string::npos, body.find("最近 30 天没有可聚合的真实时间记录。"));
 }
 
-void test_metering_page_initial_render_does_not_analyze_long_term_samples() {
+void test_stats_page_initial_render_does_not_read_record_pages() {
+    WebFixture fixture;
+    CountingWaterRecordReader reader;
+    fillCountingRecords(reader);
+    fixture.installContext(reader);
+    registerRoutes();
+    Esp32BaseWeb::nativeTestBeginRequest(Esp32BaseWeb::METHOD_GET, "/faucet/stats");
+    Esp32BaseWeb::nativeTestSetAuthenticated(true);
+    Esp32BaseWeb::nativeTestSetSameOrigin(true);
+
+    TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch("/faucet/stats", Esp32BaseWeb::METHOD_GET));
+
+    TEST_ASSERT_EQUAL(200, Esp32BaseWeb::nativeTestResponse().code);
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, Esp32BaseWeb::nativeTestResponse().body.find("统计报表"));
+    TEST_ASSERT_EQUAL(std::string::npos, Esp32BaseWeb::nativeTestResponse().body.find("加载统计报表"));
+    TEST_ASSERT_EQUAL_UINT32(0, reader.readPageCalls);
+}
+
+void test_calibration_page_initial_render_does_not_read_session_records() {
+    WebFixture fixture;
+    CalibrationSessionRecord session = makeCalibrationSession(88, testNowSeconds());
+    CalibrationAttempt attempt{};
+    attempt.attemptIndex = 0;
+    attempt.sessionTraceSlot = 0;
+    attempt.record = makeWebRecord(testNowSeconds(), 1200);
+    attempt.targetHintMl = 1200;
+    attempt.actualMl = 1190;
+    attempt.status = CalibrationAttemptStatus::Valid;
+    TEST_ASSERT_TRUE(appendCalibrationAttempt(session, attempt));
+    TEST_ASSERT_TRUE(fixture.sessionStore.save(session));
+    fixture.calibrationFiles.calibrationSessionReads = 0;
+    fixture.calibrationFiles.calibrationSessionTraceReads = 0;
+    registerRoutes();
+    Esp32BaseWeb::nativeTestBeginRequest(Esp32BaseWeb::METHOD_GET, "/faucet/calibration");
+    Esp32BaseWeb::nativeTestSetAuthenticated(true);
+    Esp32BaseWeb::nativeTestSetSameOrigin(true);
+
+    TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch("/faucet/calibration", Esp32BaseWeb::METHOD_GET));
+
+    TEST_ASSERT_EQUAL(200, Esp32BaseWeb::nativeTestResponse().code);
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, Esp32BaseWeb::nativeTestResponse().body.find("本次校准接水记录"));
+    TEST_ASSERT_EQUAL(std::string::npos, Esp32BaseWeb::nativeTestResponse().body.find("加载接水记录"));
+    TEST_ASSERT_EQUAL_UINT32(0, fixture.calibrationFiles.calibrationSessionReads);
+    TEST_ASSERT_EQUAL_UINT32(0, fixture.calibrationFiles.calibrationSessionTraceReads);
+}
+
+void test_metering_page_initial_render_shows_scheme_list_and_sample_library() {
     WebFixture fixture;
     saveLongTermWebSample(fixture.sampleStore, 1200, 45, 360, 12);
     fixture.calibrationFiles.longTermSampleBulkReads = 0;
@@ -419,12 +559,14 @@ void test_metering_page_initial_render_does_not_analyze_long_term_samples() {
 
     TEST_ASSERT_EQUAL(200, Esp32BaseWeb::nativeTestResponse().code);
     TEST_ASSERT_NOT_EQUAL(std::string::npos, Esp32BaseWeb::nativeTestResponse().body.find("计量方案列表"));
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, Esp32BaseWeb::nativeTestResponse().body.find("长期样本库"));
+    TEST_ASSERT_EQUAL(std::string::npos, Esp32BaseWeb::nativeTestResponse().body.find("打开方案列表"));
+    TEST_ASSERT_EQUAL(std::string::npos, Esp32BaseWeb::nativeTestResponse().body.find("打开生成面板"));
     TEST_ASSERT_EQUAL_UINT32(0, fixture.calibrationFiles.longTermSampleBulkReads);
 }
 
-void test_metering_page_initial_render_does_not_scan_full_scheme_store() {
+void test_metering_page_keeps_only_metering_description_collapsed() {
     WebFixture fixture;
-    fixture.calibrationFiles.meteringSchemeRecordReads = 0;
     registerRoutes();
     Esp32BaseWeb::nativeTestBeginRequest(Esp32BaseWeb::METHOD_GET, "/faucet/metering");
     Esp32BaseWeb::nativeTestSetAuthenticated(true);
@@ -433,8 +575,15 @@ void test_metering_page_initial_render_does_not_scan_full_scheme_store() {
     TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch("/faucet/metering", Esp32BaseWeb::METHOD_GET));
 
     TEST_ASSERT_EQUAL(200, Esp32BaseWeb::nativeTestResponse().code);
-    TEST_ASSERT_NOT_EQUAL(std::string::npos, Esp32BaseWeb::nativeTestResponse().body.find("当前启用方案"));
-    TEST_ASSERT_LESS_OR_EQUAL_UINT32(3, fixture.calibrationFiles.meteringSchemeRecordReads);
+    const std::string& body = Esp32BaseWeb::nativeTestResponse().body;
+    std::size_t detailsCount = 0;
+    std::size_t pos = body.find("<details");
+    while (pos != std::string::npos) {
+        ++detailsCount;
+        pos = body.find("<details", pos + 1);
+    }
+    TEST_ASSERT_EQUAL_size_t(1, detailsCount);
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("查看计量说明"));
 }
 
 void test_filter_reset_handler_rejects_missing_auth_before_context_work() {
@@ -713,9 +862,12 @@ void test_presets_handler_running_select_next_only_changes_next_preset() {
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_home_page_places_screen_status_in_machine_hero_footer);
+    RUN_TEST(test_home_page_initial_render_does_not_read_record_pages);
     RUN_TEST(test_stats_page_shows_zero_preset_distribution_when_no_recent_records);
-    RUN_TEST(test_metering_page_initial_render_does_not_analyze_long_term_samples);
-    RUN_TEST(test_metering_page_initial_render_does_not_scan_full_scheme_store);
+    RUN_TEST(test_stats_page_initial_render_does_not_read_record_pages);
+    RUN_TEST(test_calibration_page_initial_render_does_not_read_session_records);
+    RUN_TEST(test_metering_page_initial_render_shows_scheme_list_and_sample_library);
+    RUN_TEST(test_metering_page_keeps_only_metering_description_collapsed);
     RUN_TEST(test_filter_reset_handler_rejects_missing_auth_before_context_work);
     RUN_TEST(test_filter_reset_handler_rejects_cross_origin_post);
     RUN_TEST(test_filter_reset_handler_returns_invalid_index_without_runtime_write);

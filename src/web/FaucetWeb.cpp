@@ -709,7 +709,7 @@ void applyTimeEstimateForTarget(AppSnapshot& snapshot,
     }
 }
 
-void applyTargetDurationEstimate(AppSnapshot& snapshot) {
+void applyTargetDurationEstimate(AppSnapshot& snapshot, bool includeRecentFlow = true) {
     snapshot.targetEstimatedDurationSec = 0;
     snapshot.selectedPresetEstimatedDurationSec = 0;
     snapshot.targetEstimatedVolumeMl = 0;
@@ -720,7 +720,7 @@ void applyTargetDurationEstimate(AppSnapshot& snapshot) {
     snapshot.selectedPresetEstimatedPulseCount = 0;
     snapshot.selectedPresetStablePulsePerSec = 0.0f;
     snapshot.selectedPresetEstimateReason = nullptr;
-    const std::uint32_t flowMlPerMin = recentAverageFlowMlPerMin();
+    const std::uint32_t flowMlPerMin = includeRecentFlow ? recentAverageFlowMlPerMin() : 0;
     snapshot.recentAverageFlowMlPerMin = flowMlPerMin;
     if (snapshot.water.mode == WaterMode::Volume) {
         snapshot.targetEstimatedDurationSec =
@@ -1825,13 +1825,6 @@ void sendActiveMeteringSchemeSummaryPanel() {
                             "<span class='status-pill status-muted'>无可用方案</span></div></section>");
 }
 
-void sendMeteringSchemeListPlaceholder() {
-    Esp32BaseWeb::sendChunk("<section id='metering-scheme-list' class='panel calibration-param-panel'><div class='panel-head'><h3>计量方案列表</h3>"
-                            "<button class='btn-link' type='button' onclick='return faucetLoadSchemeListPanel(this)'>打开方案列表</button></div>"
-                            "<p class='muted'>方案列表会读取 Flash 中的方案槽位；需要切换、编辑或删除方案时再打开。</p>"
-                            "</section>");
-}
-
 void sendMeteringTrialModal() {
     Esp32BaseWeb::sendChunk("<div id='metering-trial-modal' class='metering-trial-modal' aria-hidden='true'>"
                             "<div class='metering-trial-card'><div class='panel-head'><h3>测算</h3>"
@@ -2520,6 +2513,12 @@ void sendCalibrationSamplesPanel(std::uint32_t samplePulseWindowSec) {
     Esp32BaseWeb::sendChunk("</table></section>");
 }
 
+void sendCalibrationSamplesPlaceholder() {
+    Esp32BaseWeb::sendChunk("<section id='calibration-samples' class='panel' data-autoload='1'><div class='panel-head'><h3>本次校准接水记录</h3></div>"
+                            "<p class='hint'>正在读取本次接水记录。</p>"
+                            "</section>");
+}
+
 bool findLongTermSampleForAttempt(std::uint32_t sessionId,
                                   std::uint8_t attemptIndex,
                                   std::uint32_t& sampleId) {
@@ -2669,12 +2668,30 @@ void sendGeneratedSampleResiduals(const MeteringSchemeCandidate& candidate,
     }
 }
 
-void sendCalibrationGenerationPlaceholder() {
+void sendCalibrationGenerationSummaryPanel() {
+    const SegmentedCalibrationOptions options = calibrationOptionsForWeb();
     Esp32BaseWeb::sendChunk("<section id='scheme-generation' class='panel'><div class='panel-head'><div><h3>长期样本库与参数生成</h3>"
-                            "<p class='hint'>打开后会读取长期样本库并分析原始脉冲，用于生成和复核计量参数。</p></div>"
-                            "<button class='btn-link' type='button' onclick='return faucetLoadGenerationPanel(this)'>打开生成面板</button></div>"
-                            "<p class='muted'>计量方案列表已加载；样本分析只在需要生成或复核参数时执行。</p>"
-                            "</section>");
+                            "<p class='hint'>长期样本默认显示；点击生成参数时才分析原始脉冲并生成计量方案。</p></div>"
+                            "<form method='post' action='/faucet/metering' onsubmit='return faucetSubmitGenerationAction(this)'>"
+                            "<input type='hidden' name='action' value='generate_segmented'>"
+                            "<input type='hidden' name='ajax' value='1'>"
+                            "<input class='primary' type='submit' value='生成参数'></form></div>"
+                            "<div class='calibration-generation-settings'>");
+    sendFmt("<span>分析脉冲间隔 <b>%s</b></span>",
+            options.pulseMinIntervalUsOverride == 0 ? "记录值" : "覆盖值");
+    if (options.pulseMinIntervalUsOverride != 0) {
+        sendFmt("<span><b>%luus</b></span>", static_cast<unsigned long>(options.pulseMinIntervalUsOverride));
+    }
+    sendFmt("<span>稳态窗口 <b>%lus</b></span><span>稳态容差 <b>%u%%</b></span>"
+            "<span>容量跨度提醒 <b>%luml</b></span><span>误差提醒阈值 <b>%luml / %u.%u%%</b></span></div>",
+            static_cast<unsigned long>(options.stableWindowSec),
+            static_cast<unsigned>(options.stableTolerancePercent),
+            static_cast<unsigned long>(options.minVolumeSpanMl),
+            static_cast<unsigned long>(options.maxErrorMl),
+            static_cast<unsigned>(options.maxRelativeErrorTenthPercent / 10U),
+            static_cast<unsigned>(options.maxRelativeErrorTenthPercent % 10U));
+    sendLongTermSampleLibraryTable();
+    Esp32BaseWeb::sendChunk("</section>");
 }
 
 void sendCalibrationGenerationPanel() {
@@ -2866,11 +2883,11 @@ void sendCalibrationPageScript() {
                             "function faucetCloseSchemeDetail(){var modal=document.getElementById('scheme-detail-modal');if(modal){modal.classList.remove('is-open');modal.setAttribute('aria-hidden','true');}}"
                             "function faucetReplaceCalibrationSection(id,url){return fetch(url,{cache:'no-store',credentials:'same-origin'}).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.text();}).then(function(html){var old=document.getElementById(id);if(!old)return;var box=document.createElement('div');box.innerHTML=html;var next=box.querySelector('#'+id);if(next)old.replaceWith(next);});}"
                             "function faucetRefreshCalibrationSamples(){return faucetReplaceCalibrationSection('calibration-samples','/faucet/calibration?partial=samples');}"
+                            "function faucetAutoLoadCalibrationSamples(){var e=document.getElementById('calibration-samples');if(e&&e.dataset.autoload==='1')setTimeout(function(){faucetRefreshCalibrationSamples().catch(function(){var old=document.getElementById('calibration-samples');if(old)old.innerHTML=\"<div class='panel-head'><h3>本次校准接水记录</h3></div><p class='err'>接水记录加载失败，请稍后刷新。</p>\";});},0);}"
                             "function faucetSubmitSampleCalibration(f){if(typeof once==='function'&&!once(f))return false;fetch('/faucet/calibration',{method:'POST',body:new FormData(f),cache:'no-store',credentials:'same-origin'}).then(function(r){if(!r.ok)return faucetReadCalibrationError(r).then(function(code){throw new Error(code);});return r.json();}).then(function(){return faucetRefreshCalibrationSamples().catch(function(){faucetResetSampleCalibrationForm(f);alert('校准已保存，但页面刷新失败，请手动刷新查看最新状态。');});}).catch(function(e){faucetResetSampleCalibrationForm(f);alert('保存失败：'+faucetCalibrationErrorMessage(e.message));});return false;}"
-                            "function faucetLoadSchemeListPanel(btn){if(btn)btn.disabled=true;return faucetReplaceCalibrationSection('metering-scheme-list','/faucet/metering?partial=schemes').catch(function(){if(btn)btn.disabled=false;alert('方案列表加载失败，请刷新页面后重试。');}),false;}"
-                            "function faucetLoadGenerationPanel(btn){if(btn)btn.disabled=true;return faucetReplaceCalibrationSection('scheme-generation','/faucet/metering?partial=generation').catch(function(){if(btn)btn.disabled=false;alert('生成面板加载失败，请刷新页面后重试。');}),false;}"
                             "function faucetSubmitGenerationAction(f){if(typeof once==='function'&&!once(f))return false;var fd=new FormData(f),action=String(fd.get('action')||'');fetch('/faucet/metering',{method:'POST',body:fd,cache:'no-store',credentials:'same-origin'}).then(function(r){if(!r.ok)return faucetReadCalibrationError(r).then(function(code){throw new Error(code);});return r.json();}).then(function(){var url='/faucet/metering?partial=generation'+(action==='generate_segmented'?'&generated=1':'');return faucetReplaceCalibrationSection('scheme-generation',url).catch(function(){alert('生成操作已完成，但页面刷新失败，请手动刷新查看最新状态。');});}).catch(function(e){f.dataset.busy='';var b=f.querySelector('[type=submit]');if(b)b.disabled=false;alert('操作失败：'+faucetCalibrationErrorMessage(e.message));});return false;}"
                             "faucetStartCalibrationCountdown();"
+                            "faucetAutoLoadCalibrationSamples();"
                             "</script>");
 }
 
@@ -3973,6 +3990,20 @@ void sendTodayOverview(const TodayOverview& overview) {
     Esp32BaseWeb::sendChunk("</section></div></section>");
 }
 
+void sendTodayOverviewPlaceholder(std::uint32_t fallbackTodayMl) {
+    char today[24]{};
+    formatLiters(fallbackTodayMl, today, sizeof(today));
+    Esp32BaseWeb::sendChunk("<section id='todayOverview' class='today-overview'><h2>今日概览</h2>"
+                            "<div class='today-layout'><section class='panel today-summary-card'>"
+                            "<span class='today-summary-label'>今日总量</span><strong class='today-total-main'>");
+    Esp32BaseWeb::sendChunk(today);
+    Esp32BaseWeb::sendChunk("</strong><span class='today-total-meta today-meta-line'>"
+                            "<span class='today-meta-item'>接水 <span class='today-meta-value'>-- 次</span></span>"
+                            "<span class='today-meta-item'>用时 <span class='today-meta-value'>--</span></span>"
+                            "</span></section><section class='panel today-records'>"
+                            "<p class='hint'>正在加载今天的记录。</p></section></div></section>");
+}
+
 void sendHomeAutoRefreshScript() {
     Esp32BaseWeb::sendChunk("<script>"
                             "var faucetIdlePollMs=10000;"
@@ -4148,13 +4179,13 @@ void handleFaucetPage() {
         snapshot.maxAppTickUs = diagnostics.maxAppTickUs;
         snapshot.maxBaseHandleUs = diagnostics.maxBaseHandleUs;
     }
-    applyTargetDurationEstimate(snapshot);
+    applyTargetDurationEstimate(snapshot, false);
     const FaucetDisplayStatus displayStatus =
         g_context.currentDisplayStatus
             ? g_context.currentDisplayStatus()
             : FaucetDisplayStatus{DisplayFrame{DisplayPage::Sleep, false, {}, {}}, false};
     sendMachineStatusCard(snapshot, displayStatus.screenOn);
-    sendTodayOverview(collectTodayOverview(g_context.nowSeconds(), snapshot.statistics.todayMl));
+    sendTodayOverviewPlaceholder(snapshot.statistics.todayMl);
     sendFilterCards(g_context.nowSeconds());
     sendHomeAutoRefreshScript();
     sendPageEnd();
@@ -4242,19 +4273,7 @@ void handlePresetsPage() {
     sendPageEnd();
 }
 
-void handleStatsPage() {
-    if (!Esp32BaseWeb::checkAuth()) {
-        return;
-    }
-    if (!requireContext()) {
-        return;
-    }
-    if (waterTaskActive()) {
-        sendPageStart("统计");
-        Esp32BaseWeb::sendChunk("<h2>统计</h2><section class='panel'><p class='err'>出水任务进行中，暂不生成统计报表。</p></section>");
-        sendPageEnd();
-        return;
-    }
+void sendStatsReportPanel() {
     const std::uint32_t now = g_context.nowSeconds();
     const WaterUsageSummary summary = aggregateWaterRecords(*g_context.records, now, kChartDays);
     const AppSnapshot snapshot = g_context.app->snapshot();
@@ -4290,8 +4309,7 @@ void handleStatsPage() {
                   static_cast<double>(last30DailyCount),
                   static_cast<unsigned long>(summary.last30DaysCount));
     std::snprintf(totalMeta, sizeof(totalMeta), "累计 %lu 次", static_cast<unsigned long>(summary.totalCount));
-    Esp32BaseWeb::sendHeader("用水统计");
-    Esp32BaseWeb::sendChunk("<h2>统计</h2>");
+    Esp32BaseWeb::sendChunk("<section id='stats-report' class='stats-report'>");
     if (summary.unknownCount > 0) {
         sendFmt("<p class='warn'>⚠ 含 %lu 条无时间记录，未纳入按日期图表。</p>",
                 static_cast<unsigned long>(summary.unknownCount));
@@ -4311,6 +4329,48 @@ void handleStatsPage() {
     }
     Esp32BaseWeb::sendChunk("</div>");
     sendUsagePatterns(summary, *g_context.config);
+    Esp32BaseWeb::sendChunk("</section>");
+}
+
+void sendStatsReportPlaceholder() {
+    Esp32BaseWeb::sendChunk("<section id='stats-report' class='panel' data-autoload='1'><div class='panel-head'><h3>统计报表</h3></div>"
+                            "<p class='hint'>正在生成统计报表。</p>"
+                            "</section>");
+}
+
+void sendStatsPageScript() {
+    Esp32BaseWeb::sendChunk("<script>"
+                            "function faucetLoadStatsReport(){fetch('/faucet/stats?partial=report',{cache:'no-store',credentials:'same-origin'}).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.text();}).then(function(html){var old=document.getElementById('stats-report');if(!old)return;var box=document.createElement('div');box.innerHTML=html;var next=box.querySelector('#stats-report');if(next)old.replaceWith(next);}).catch(function(){var old=document.getElementById('stats-report');if(old)old.innerHTML=\"<div class='panel-head'><h3>统计报表</h3></div><p class='err'>统计报表加载失败，请稍后刷新。</p>\";});}"
+                            "var stats=document.getElementById('stats-report');if(stats&&stats.dataset.autoload==='1')setTimeout(faucetLoadStatsReport,0);"
+                            "</script>");
+}
+
+void handleStatsPage() {
+    if (!Esp32BaseWeb::checkAuth()) {
+        return;
+    }
+    if (!requireContext()) {
+        return;
+    }
+    if (waterTaskActive()) {
+        sendPageStart("统计");
+        Esp32BaseWeb::sendChunk("<h2>统计</h2><section class='panel'><p class='err'>出水任务进行中，暂不生成统计报表。</p></section>");
+        sendPageEnd();
+        return;
+    }
+    char text[24]{};
+    if (getParam("partial", text, sizeof(text)) && std::strcmp(text, "report") == 0) {
+        if (!Esp32BaseWeb::beginResponse(200, "text/html; charset=utf-8", nullptr)) {
+            return;
+        }
+        sendStatsReportPanel();
+        Esp32BaseWeb::endResponse();
+        return;
+    }
+    Esp32BaseWeb::sendHeader("用水统计");
+    Esp32BaseWeb::sendChunk("<h2>统计</h2>");
+    sendStatsReportPlaceholder();
+    sendStatsPageScript();
     sendPageEnd();
 }
 
@@ -4807,7 +4867,7 @@ void handleCalibrationPage() {
     sendFmt("<input class='primary' type='submit' value='确认应用'%s></form></div>",
             canApply ? "" : " disabled");
     Esp32BaseWeb::sendChunk("</section>");
-    sendCalibrationSamplesPanel(configuredPulseObservationWindowSec());
+    sendCalibrationSamplesPlaceholder();
     sendCalibrationPageScript();
     sendPageEnd();
 }
@@ -4862,12 +4922,12 @@ void handleMeteringPage() {
     Esp32BaseWeb::sendChunk("<p class='muted'>集中管理当前启用的流量计计量参数、手工方案，以及从样本库生成的新方案；本页不提供远程出水或停水能力。</p>");
     Esp32BaseWeb::sendChunk("<div class='calibration-param-layout'>");
     sendActiveMeteringSchemeSummaryPanel();
-    sendMeteringSchemeListPlaceholder();
+    sendCalibrationParameterPanels();
     Esp32BaseWeb::sendChunk("</div>");
     if (generationResultRequested()) {
         sendCalibrationGenerationPanel();
     } else {
-        sendCalibrationGenerationPlaceholder();
+        sendCalibrationGenerationSummaryPanel();
     }
     sendCalibrationFormulaPanel();
     sendMeteringTrialModal();

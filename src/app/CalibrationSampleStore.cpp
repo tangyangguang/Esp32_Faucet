@@ -282,7 +282,16 @@ bool CalibrationSessionTraceStore::clear() {
 
 bool CalibrationSessionTraceStore::clearForNewSession(std::uint32_t sessionId) {
     (void)sessionId;
-    return clear();
+    if (!ready()) {
+        return false;
+    }
+    if (!backend_.exists(path_)) {
+        const bool initialized = initializeFile(backend_, path_, kStoreKindSession, kCalibrationSessionTraceSlots);
+        status_ = initialized ? AppStorageStatus::Ready : AppStorageStatus::BackendFailure;
+        return initialized;
+    }
+    status_ = AppStorageStatus::Ready;
+    return true;
 }
 
 bool CalibrationSessionTraceStore::savePending(std::uint8_t slot,

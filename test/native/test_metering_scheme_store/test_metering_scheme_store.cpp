@@ -435,11 +435,11 @@ void test_manual_create_overwrites_oldest_non_current_when_fixed_slots_are_full(
     for (std::size_t i = 1; i < kMeteringSchemeStoreSlotCount; ++i) {
         TEST_ASSERT_TRUE(store.createManual("填充方案", MeteringParameters{12, 180, 360}, 1770000000 + i, lastId));
     }
-    TEST_ASSERT_EQUAL_UINT32(100, lastId);
+    TEST_ASSERT_EQUAL_UINT32(50, lastId);
 
     std::uint32_t overflowId = 0;
     TEST_ASSERT_TRUE(store.createManual("覆盖方案", MeteringParameters{14, 200, 380}, 1770000200, overflowId));
-    TEST_ASSERT_EQUAL_UINT32(101, overflowId);
+    TEST_ASSERT_EQUAL_UINT32(51, overflowId);
 
     MeteringSchemeRecord overwritten{};
     TEST_ASSERT_FALSE(store.findById(2, overwritten));
@@ -458,13 +458,14 @@ void test_manual_create_prefers_disabled_non_current_slot_when_fixed_slots_are_f
     for (std::size_t i = 1; i < kMeteringSchemeStoreSlotCount; ++i) {
         TEST_ASSERT_TRUE(store.createManual("填充方案", MeteringParameters{12, 180, 360}, 1770000000 + i, ids[i]));
     }
-    TEST_ASSERT_TRUE(store.disableScheme(ids[50], 1770000200));
+    const std::size_t disabledIndex = kMeteringSchemeStoreSlotCount / 2;
+    TEST_ASSERT_TRUE(store.disableScheme(ids[disabledIndex], 1770000200));
 
     std::uint32_t overflowId = 0;
     TEST_ASSERT_TRUE(store.createManual("覆盖停用方案", MeteringParameters{14, 200, 380}, 1770000300, overflowId));
 
     MeteringSchemeRecord disabledVictim{};
-    TEST_ASSERT_FALSE(store.findById(ids[50], disabledVictim));
+    TEST_ASSERT_FALSE(store.findById(ids[disabledIndex], disabledVictim));
     MeteringSchemeRecord smallerAvailable{};
     TEST_ASSERT_TRUE(store.findById(ids[1], smallerAvailable));
     MeteringSchemeRecord created{};

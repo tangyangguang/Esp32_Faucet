@@ -108,6 +108,9 @@ public:
 
 class MemoryFileBackend : public WaterRecordFileBackend {
 public:
+    std::uint32_t longTermSampleBulkReads = 0;
+    std::uint32_t meteringSchemeRecordReads = 0;
+
     bool exists(const char* path) override {
         return files.find(path ? path : "") != files.end();
     }
@@ -141,6 +144,12 @@ public:
     bool readAt(const char* path, std::size_t offset, std::uint8_t* out, std::size_t len) override {
         if (!path || !out) {
             return false;
+        }
+        if (std::strcmp(path, "/cal-samples.bin") == 0 && len > 1024) {
+            ++longTermSampleBulkReads;
+        }
+        if (std::strcmp(path, "/metering-schemes.bin") == 0 && offset >= 32 && len > 32) {
+            ++meteringSchemeRecordReads;
         }
         const auto it = files.find(path);
         if (it == files.end() || offset + len > it->second.size()) {
@@ -206,6 +215,74 @@ void applyTestMeteringScheme(AppController& app) {
     MeteringSchemeRecord scheme{};
     initializeManualMeteringScheme(scheme, 99, "native", MeteringParameters{0, 0, 1000}, 1714502300);
     TEST_ASSERT_TRUE(app.applyActiveMeteringScheme(scheme));
+}
+
+std::size_t fillWebCalibrationSamples(WaterPulseTraceSample* samples,
+                                       std::size_t capacity,
+                                       std::uint32_t startupPulses,
+                                       std::uint32_t stablePulses,
+                                       std::uint32_t stableSeconds) {
+    if (!samples || capacity < startupPulses + stablePulses || stableSeconds == 0) {
+        return 0;
+    }
+    std::size_t count = 0;
+    for (std::uint32_t sec = 0; sec < 5; ++sec) {
+        const std::uint32_t pulsesThisSec = startupPulses / 5 + (sec < startupPulses % 5 ? 1 : 0);
+        for (std::uint32_t i = 0; i < pulsesThisSec; ++i) {
+            samples[count++] = WaterPulseTraceSample{static_cast<std::uint32_t>(sec * 1000000UL + i * 5000UL)};
+        }
+    }
+    for (std::uint32_t sec = 0; sec < stableSeconds; ++sec) {
+        const std::uint32_t pulsesThisSec = stablePulses / stableSeconds + (sec < stablePulses % stableSeconds ? 1 : 0);
+        for (std::uint32_t i = 0; i < pulsesThisSec; ++i) {
+            samples[count++] =
+                WaterPulseTraceSample{static_cast<std::uint32_t>((5 + sec) * 1000000UL + i * 5000UL)};
+        }
+    }
+    return count;
+}
+
+void saveLongTermWebSample(CalibrationLongTermSampleStore& sampleStore,
+                           std::uint32_t actualMl,
+                           std::uint32_t startupPulses,
+                           std::uint32_t stablePulses,
+                           std::uint32_t stableSeconds) {
+    WaterPulseTraceSample samples[2048]{};
+    const std::size_t sampleCount =
+        fillWebCalibrationSamples(samples, 2048, startupPulses, stablePulses, stableSeconds);
+    TEST_ASSERT_GREATER_THAN_size_t(0, sampleCount);
+    CalibrationStoredTrace stored{};
+    stored.valid = true;
+    stored.pendingActual = false;
+    stored.sessionId = 42;
+    stored.attemptIndex = 1;
+    stored.actualMl = actualMl;
+    stored.savedAt = 1714502400UL;
+    stored.trace.traceId = 700;
+    stored.trace.startTime = 1714502400UL;
+    stored.trace.record = WaterRecord{
+        1714502400UL,
+        actualMl,
+        actualMl,
+        startupPulses + stablePulses,
+        0,
+        static_cast<std::uint16_t>(5 + stableSeconds),
+        WaterMode::Volume,
+        WaterResult::Completed,
+        0,
+        99,
+        7,
+        {0, 0, 0, 0},
+    };
+    stored.trace.sampleCount = sampleCount;
+    stored.trace.totalPulses = startupPulses + stablePulses;
+    stored.trace.actualMl = actualMl;
+    stored.trace.pulseMinIntervalUs = kDefaultPulseMinIntervalUs;
+    stored.trace.finalState = WaterPulseTraceState::Completed;
+    stored.trace.finished = true;
+    std::uint32_t sampleId = 0;
+    TEST_ASSERT_TRUE(sampleStore.save(stored, samples, sampleCount, sampleId));
+    TEST_ASSERT_NOT_EQUAL_UINT32(0, sampleId);
 }
 
 std::uint32_t testNowSeconds() {
@@ -327,6 +404,37 @@ void test_stats_page_shows_zero_preset_distribution_when_no_recent_records() {
     TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("P1 ·"));
     TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("<strong>0 次</strong><small>占 0%"));
     TEST_ASSERT_EQUAL(std::string::npos, body.find("最近 30 天没有可聚合的真实时间记录。"));
+}
+
+void test_metering_page_initial_render_does_not_analyze_long_term_samples() {
+    WebFixture fixture;
+    saveLongTermWebSample(fixture.sampleStore, 1200, 45, 360, 12);
+    fixture.calibrationFiles.longTermSampleBulkReads = 0;
+    registerRoutes();
+    Esp32BaseWeb::nativeTestBeginRequest(Esp32BaseWeb::METHOD_GET, "/faucet/metering");
+    Esp32BaseWeb::nativeTestSetAuthenticated(true);
+    Esp32BaseWeb::nativeTestSetSameOrigin(true);
+
+    TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch("/faucet/metering", Esp32BaseWeb::METHOD_GET));
+
+    TEST_ASSERT_EQUAL(200, Esp32BaseWeb::nativeTestResponse().code);
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, Esp32BaseWeb::nativeTestResponse().body.find("计量方案列表"));
+    TEST_ASSERT_EQUAL_UINT32(0, fixture.calibrationFiles.longTermSampleBulkReads);
+}
+
+void test_metering_page_initial_render_does_not_scan_full_scheme_store() {
+    WebFixture fixture;
+    fixture.calibrationFiles.meteringSchemeRecordReads = 0;
+    registerRoutes();
+    Esp32BaseWeb::nativeTestBeginRequest(Esp32BaseWeb::METHOD_GET, "/faucet/metering");
+    Esp32BaseWeb::nativeTestSetAuthenticated(true);
+    Esp32BaseWeb::nativeTestSetSameOrigin(true);
+
+    TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch("/faucet/metering", Esp32BaseWeb::METHOD_GET));
+
+    TEST_ASSERT_EQUAL(200, Esp32BaseWeb::nativeTestResponse().code);
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, Esp32BaseWeb::nativeTestResponse().body.find("当前启用方案"));
+    TEST_ASSERT_LESS_OR_EQUAL_UINT32(3, fixture.calibrationFiles.meteringSchemeRecordReads);
 }
 
 void test_filter_reset_handler_rejects_missing_auth_before_context_work() {
@@ -606,6 +714,8 @@ int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_home_page_places_screen_status_in_machine_hero_footer);
     RUN_TEST(test_stats_page_shows_zero_preset_distribution_when_no_recent_records);
+    RUN_TEST(test_metering_page_initial_render_does_not_analyze_long_term_samples);
+    RUN_TEST(test_metering_page_initial_render_does_not_scan_full_scheme_store);
     RUN_TEST(test_filter_reset_handler_rejects_missing_auth_before_context_work);
     RUN_TEST(test_filter_reset_handler_rejects_cross_origin_post);
     RUN_TEST(test_filter_reset_handler_returns_invalid_index_without_runtime_write);

@@ -1452,13 +1452,17 @@ void test_metering_scheme_page_uses_active_card_and_table_layout() {
     std::fclose(file);
     TEST_ASSERT_GREATER_THAN_size_t(0, read);
 
+    const char* summaryPanel = std::strstr(buffer, "void sendActiveMeteringSchemeSummaryPanel()");
+    TEST_ASSERT_NOT_NULL(summaryPanel);
+    const char* placeholderPanel = std::strstr(buffer, "void sendMeteringSchemeListPlaceholder()");
+    TEST_ASSERT_NOT_NULL(placeholderPanel);
     const char* panel = std::strstr(buffer, "void sendCalibrationParameterPanels()");
     TEST_ASSERT_NOT_NULL(panel);
     const char* nextFunction = std::strstr(panel, "void sendMeteringSchemeEditPage");
     TEST_ASSERT_NOT_NULL(nextFunction);
 
-    TEST_ASSERT_NOT_NULL(std::strstr(panel, "active-metering-card"));
-    TEST_ASSERT_NOT_NULL(std::strstr(panel, "active-metering-metrics"));
+    TEST_ASSERT_NOT_NULL(findWithin(summaryPanel, placeholderPanel, "active-metering-card"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "active-metering-metrics"));
     TEST_ASSERT_NOT_NULL(std::strstr(panel, "计量方案列表"));
     TEST_ASSERT_NOT_NULL(std::strstr(panel, "metering-scheme-table"));
     TEST_ASSERT_NOT_NULL(std::strstr(panel, "<th>启动阶段</th><th>稳态阶段</th><th>样本与误差</th>"));
@@ -1467,11 +1471,11 @@ void test_metering_scheme_page_uses_active_card_and_table_layout() {
     TEST_ASSERT_NOT_NULL(std::strstr(panel, "formatStartupDurationSeconds"));
     TEST_ASSERT_NOT_NULL(std::strstr(panel, "历史使用："));
     TEST_ASSERT_NULL(std::strstr(panel, "scheme-meta-lines"));
-    TEST_ASSERT_NOT_NULL(std::strstr(panel, "sendActiveMeteringSchemeCard"));
+    TEST_ASSERT_NOT_NULL(findWithin(summaryPanel, placeholderPanel, "sendActiveMeteringSchemeCard"));
     TEST_ASSERT_NULL(std::strstr(panel, "scheme.usedEver ? \"已使用\" : \"未使用\""));
     TEST_ASSERT_NULL(std::strstr(panel, "meteringSchemeSourceName(scheme.sourceType)"));
     TEST_ASSERT_NULL(findWithin(panel, nextFunction, "scheme-param-table"));
-    TEST_ASSERT_NULL(findWithin(panel, nextFunction, "metering-scheme-list"));
+    TEST_ASSERT_NOT_NULL(findWithin(panel, nextFunction, "metering-scheme-list"));
     TEST_ASSERT_NULL(findWithin(panel, nextFunction, "metering-scheme-row"));
     const char* oldRecordHeader = std::strstr(panel, "<th>记录</th>");
     const char* oldRecordCell = std::strstr(panel, "出水记录 <b>%lu</b> 条");

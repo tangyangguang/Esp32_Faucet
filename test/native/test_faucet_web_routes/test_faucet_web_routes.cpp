@@ -1746,6 +1746,25 @@ void test_presets_api_allows_next_preset_switch_actions() {
     TEST_ASSERT_TRUE_MESSAGE(status < browserForm, "preset switch actions must return updated status JSON");
 }
 
+void test_home_status_script_discards_stale_status_responses() {
+    FILE* file = std::fopen("src/web/FaucetWeb.cpp", "rb");
+    TEST_ASSERT_NOT_NULL(file);
+    static char buffer[420000]{};
+    const std::size_t read = std::fread(buffer, 1, sizeof(buffer) - 1, file);
+    std::fclose(file);
+    TEST_ASSERT_GREATER_THAN_size_t(0, read);
+
+    const char* script = std::strstr(buffer, "function faucetSelectPreset(action)");
+    TEST_ASSERT_NOT_NULL(script);
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "var faucetHomeStatusSeq=0;"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "var faucetHomeAppliedSeq=0;"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "function faucetNextStatusSeq(){return ++faucetHomeStatusSeq;}"));
+    TEST_ASSERT_NOT_NULL(std::strstr(script, "function faucetApplyHomeStatus(s,seq){if(seq&&seq<faucetHomeAppliedSeq)return;if(seq)faucetHomeAppliedSeq=seq;"));
+    TEST_ASSERT_NOT_NULL(std::strstr(script, "var seq=faucetNextStatusSeq();fetch('/api/faucet/presets'"));
+    TEST_ASSERT_NOT_NULL(std::strstr(script, "var seq=faucetNextStatusSeq();fetch('/api/faucet/status'"));
+    TEST_ASSERT_NOT_NULL(std::strstr(script, "faucetApplyHomeStatus(s,seq);"));
+}
+
 void test_business_post_handlers_use_post_allowed_guard() {
     FILE* file = std::fopen("src/web/FaucetWeb.cpp", "rb");
     TEST_ASSERT_NOT_NULL(file);
@@ -1909,6 +1928,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_app_config_submit_rejects_read_only_business_config_before_field_writes);
     RUN_TEST(test_web_config_writes_reload_current_config_before_persisting);
     RUN_TEST(test_presets_api_allows_next_preset_switch_actions);
+    RUN_TEST(test_home_status_script_discards_stale_status_responses);
     RUN_TEST(test_business_post_handlers_use_post_allowed_guard);
     RUN_TEST(test_heavy_web_handlers_return_busy_while_water_task_active);
     RUN_TEST(test_web_write_handlers_return_busy_before_trace_or_filter_runtime_writes);

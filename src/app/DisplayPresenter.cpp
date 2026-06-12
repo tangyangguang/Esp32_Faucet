@@ -120,7 +120,9 @@ DisplayFrame DisplayPresenter::render(const AppSnapshot& snapshot, std::uint32_t
         char left[kDisplayLineLength]{};
         std::snprintf(left, sizeof(left), "%s %s", stateText(snapshot.water.lastResult), volume);
         composeTopLine(line1, left, snapshot.pulsePerLiter);
-        std::snprintf(line2, sizeof(line2), "OK Back");
+        char elapsed[8]{};
+        formatElapsed(elapsed, sizeof(elapsed), snapshot.water.elapsedSec);
+        std::snprintf(line2, sizeof(line2), "OK Back %s", elapsed);
         return makeFrame(DisplayPage::Result, true, line1, line2);
     }
 

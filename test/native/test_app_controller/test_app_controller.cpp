@@ -368,6 +368,37 @@ void test_app_controller_starts_after_double_ok_and_opens_valve() {
     TEST_ASSERT_EQUAL_UINT8(100, app.snapshot().valve.dutyPercent);
 }
 
+void test_app_controller_confirm_and_running_start_volume_stays_zero_until_first_pulse() {
+    SystemConfig config = makeDefaultConfig();
+    StatisticsStore statistics;
+    statistics.reset({20260506, 202619, 202605});
+    FilterStore filters(config.filters);
+    MemoryRecordWriter records;
+    AppController app(config, statistics, filters, records);
+    MeteringSchemeRecord scheme{};
+    initializeManualMeteringScheme(
+        scheme, 99, "启动段测试", MeteringParameters{8, 130, 248}, 1714502300);
+    TEST_ASSERT_TRUE(app.applyActiveMeteringScheme(scheme));
+
+    app.resetInputs({false, false, false, false}, 0);
+    pressAndReleaseOk(app, 100);
+    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(WaterState::Confirm),
+                            static_cast<std::uint8_t>(app.snapshot().water.state));
+    TEST_ASSERT_EQUAL_UINT32(0, app.snapshot().water.volumeMl);
+
+    pressAndReleaseOk(app, 300);
+    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(WaterState::Running),
+                            static_cast<std::uint8_t>(app.snapshot().water.state));
+    TEST_ASSERT_EQUAL_UINT32(0, app.snapshot().water.volumeMl);
+
+    app.tick(input({false, false, false, false}, 900, 900000, 1714502300));
+    TEST_ASSERT_EQUAL_UINT32(0, app.snapshot().water.volumeMl);
+
+    app.onFlowPulse(1000000);
+    app.tick(input({false, false, false, false}, 1200, 1200000, 1714502301));
+    TEST_ASSERT_EQUAL_UINT32(16, app.snapshot().water.volumeMl);
+}
+
 void test_app_controller_completion_writes_record_statistics_and_filters() {
     SystemConfig config = makeDefaultConfig();
     StatisticsStore statistics;
@@ -1451,6 +1482,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_app_controller_successful_record_writes_scheme_id_and_used_flag);
     RUN_TEST(test_app_controller_record_write_failure_does_not_mark_scheme_used);
     RUN_TEST(test_app_controller_starts_after_double_ok_and_opens_valve);
+    RUN_TEST(test_app_controller_confirm_and_running_start_volume_stays_zero_until_first_pulse);
     RUN_TEST(test_app_controller_completion_writes_record_statistics_and_filters);
     RUN_TEST(test_app_controller_web_preset_switch_during_run_updates_next_preset_only);
     RUN_TEST(test_app_controller_local_plus_does_not_switch_preset_while_running);

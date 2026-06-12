@@ -151,7 +151,7 @@ void test_display_result_page_shows_summary() {
 
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(DisplayPage::Result), static_cast<std::uint8_t>(frame.page));
     TEST_ASSERT_EQUAL_STRING("Done 7.50L  450P", frame.line1);
-    TEST_ASSERT_EQUAL_STRING("OK Back", frame.line2);
+    TEST_ASSERT_EQUAL_STRING("OK Back 02:43", frame.line2);
     assertPulseLabelFixedRight(frame);
     assertDisplayLinesFit(frame);
 }

@@ -4302,8 +4302,8 @@ void sendStatsReportPanel() {
     char monthMeta[48]{};
     char average30Meta[48]{};
     char totalMeta[32]{};
-    formatLiters(summary.todayMl, today, sizeof(today));
-    formatLiters(summary.monthMl, month, sizeof(month));
+    formatLiters(snapshot.statistics.todayMl, today, sizeof(today));
+    formatLiters(snapshot.statistics.monthMl, month, sizeof(month));
     formatLiters(snapshot.statistics.totalMl, total, sizeof(total));
     formatLiters(summary.last30DaysDailyAverageMl, average30, sizeof(average30));
     formatMonthRange(summary, monthRange, sizeof(monthRange));

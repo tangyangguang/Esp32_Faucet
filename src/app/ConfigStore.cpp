@@ -168,6 +168,20 @@ bool hasLegacyLifeDays(ConfigBackend& backend) {
     return false;
 }
 
+bool hasLegacyFilterRuntime(ConfigBackend& backend) {
+    for (std::size_t i = 0; i < kFilterCount; ++i) {
+        char key[16]{};
+        const char* suffixes[] = {"start", "used"};
+        for (const char* suffix : suffixes) {
+            filterKey(key, sizeof(key), i, suffix);
+            if (hasIntKey(backend, kConfigNs, key)) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
 std::int32_t inferLegacyVersionWithoutVersion(ConfigBackend& backend) {
     if (!hasRecognizedLegacySystemConfig(backend)) {
         return 0;
@@ -513,6 +527,13 @@ bool ConfigStore::resetStatistics(const PeriodKeys& keys) {
 
 void ConfigStore::loadFilterRuntime(FilterRecord (&records)[kFilterCount]) {
     const std::int32_t version = backend_.getInt(kRunNs, "ver", 0);
+    if (version == 0 && hasLegacyFilterRuntime(backend_)) {
+        for (std::size_t i = 0; i < kFilterCount; ++i) {
+            loadLegacyFilterRuntime(backend_, records[i], i);
+        }
+        saveFilterRuntime(records);
+        return;
+    }
     if (!isReadableRuntimeVersion(version)) {
         return;
     }

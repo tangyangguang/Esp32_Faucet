@@ -102,8 +102,14 @@ bool WaterRecordFileStore::begin() {
 
 bool WaterRecordFileStore::append(const WaterRecord& record) {
     if (!ready_) {
-        status_ = WaterRecordFileStatus::Unavailable;
-        return false;
+        if (validPath(path_) && !backend_.exists(path_)) {
+            if (!initializeNewFile()) {
+                return false;
+            }
+        } else {
+            status_ = WaterRecordFileStatus::Unavailable;
+            return false;
+        }
     }
     if (!backend_.exists(path_) && !initializeNewFile()) {
         status_ = WaterRecordFileStatus::BackendFailure;
@@ -223,7 +229,7 @@ const char* WaterRecordFileStore::storageName() const {
 }
 
 WaterRecordFileStatus WaterRecordFileStore::status() const {
-    if (ready_ && !backend_.exists(path_)) {
+    if (validPath(path_) && !backend_.exists(path_)) {
         return WaterRecordFileStatus::Missing;
     }
     return status_;

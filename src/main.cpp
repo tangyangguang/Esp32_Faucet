@@ -62,7 +62,7 @@ public:
     }
 
     bool append(const faucet::WaterRecord& record) override {
-        if (fileStore_ && fileStore_->ready() && fileStore_->append(record)) {
+        if (fileStore_ && fileStore_->append(record)) {
             return true;
         }
         return ramStore_.append(record);

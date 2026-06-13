@@ -247,6 +247,26 @@ void test_file_record_corrupt_header_preserves_existing_file() {
     TEST_ASSERT_EQUAL_INT64(4, backend.fileSize("/water.bin"));
 }
 
+void test_file_record_corrupt_state_reports_missing_after_external_format_and_recovers_on_append() {
+    MemoryFileBackend backend;
+    const std::uint8_t bad[4] = {1, 2, 3, 4};
+    TEST_ASSERT_TRUE(backend.writeAt("/water.bin", 0, bad, sizeof(bad)));
+    WaterRecordFileStore store(backend, "/water.bin", 3);
+    TEST_ASSERT_FALSE(store.begin());
+    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(WaterRecordFileStatus::Corrupt),
+                            static_cast<std::uint8_t>(store.status()));
+
+    TEST_ASSERT_TRUE(backend.removeFile("/water.bin"));
+
+    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(WaterRecordFileStatus::Missing),
+                            static_cast<std::uint8_t>(store.status()));
+    TEST_ASSERT_TRUE(store.append(makeRecord(300, 3000)));
+    TEST_ASSERT_TRUE(store.ready());
+    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(WaterRecordFileStatus::Ready),
+                            static_cast<std::uint8_t>(store.status()));
+    TEST_ASSERT_EQUAL_size_t(1, store.count());
+}
+
 void test_file_record_clear_keeps_file_ready() {
     MemoryFileBackend backend;
     WaterRecordFileStore store(backend, "/water.bin", 3);
@@ -396,6 +416,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_file_record_persists_header_and_records_across_instances);
     RUN_TEST(test_file_record_capacity_mismatch_preserves_existing_file);
     RUN_TEST(test_file_record_corrupt_header_preserves_existing_file);
+    RUN_TEST(test_file_record_corrupt_state_reports_missing_after_external_format_and_recovers_on_append);
     RUN_TEST(test_file_record_clear_keeps_file_ready);
     RUN_TEST(test_file_record_reports_zero_after_external_remove_and_recovers_on_append);
     RUN_TEST(test_file_record_preallocates_record_slots_and_backup_header);

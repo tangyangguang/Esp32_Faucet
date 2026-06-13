@@ -500,6 +500,33 @@ void test_stats_page_shows_zero_preset_distribution_when_no_recent_records() {
     TEST_ASSERT_EQUAL(std::string::npos, body.find("最近 30 天没有可聚合的真实时间记录。"));
 }
 
+void test_stats_page_uses_runtime_period_totals_when_record_file_is_empty() {
+    WebFixture fixture;
+    StatisticsRecord record{};
+    record.todayMl = 210;
+    record.weekMl = 900;
+    record.monthMl = 1234;
+    record.totalMl = 4567;
+    record.lastDayKey = 20260506;
+    record.lastWeekKey = 202619;
+    record.lastMonthKey = 202605;
+    fixture.statistics = StatisticsStore(record);
+    registerRoutes();
+    Esp32BaseWeb::nativeTestBeginRequest(Esp32BaseWeb::METHOD_GET, "/faucet/stats?partial=report");
+    Esp32BaseWeb::nativeTestSetParam("partial", "report");
+    Esp32BaseWeb::nativeTestSetAuthenticated(true);
+    Esp32BaseWeb::nativeTestSetSameOrigin(true);
+
+    TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch("/faucet/stats", Esp32BaseWeb::METHOD_GET));
+
+    const std::string& body = Esp32BaseWeb::nativeTestResponse().body;
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("<span>今日</span><strong>0.21 L</strong>"));
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("<span>本月"));
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("<strong>1.23 L</strong>"));
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("<span>总累计</span><strong>4.57 L</strong>"));
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("<span>过去 30 天日均</span><strong>0.00 L</strong>"));
+}
+
 void test_stats_page_initial_render_does_not_read_record_pages() {
     WebFixture fixture;
     CountingWaterRecordReader reader;
@@ -868,6 +895,7 @@ int main(int, char**) {
     RUN_TEST(test_home_page_places_screen_status_in_machine_hero_footer);
     RUN_TEST(test_home_page_initial_render_does_not_read_record_pages);
     RUN_TEST(test_stats_page_shows_zero_preset_distribution_when_no_recent_records);
+    RUN_TEST(test_stats_page_uses_runtime_period_totals_when_record_file_is_empty);
     RUN_TEST(test_stats_page_initial_render_does_not_read_record_pages);
     RUN_TEST(test_calibration_page_initial_render_does_not_read_session_records);
     RUN_TEST(test_metering_page_initial_render_shows_scheme_list_and_sample_library);

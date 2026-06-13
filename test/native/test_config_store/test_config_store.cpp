@@ -532,6 +532,21 @@ void test_filter_runtime_round_trips_start_and_used_only() {
     TEST_ASSERT_EQUAL_UINT32(0, loaded.filters[0].lifeMl);
 }
 
+void test_filter_runtime_recovers_legacy_runtime_when_current_config_was_already_migrated() {
+    FakeConfigBackend backend;
+    backend.setInt("faucet_cfg", "ver", 15);
+    backend.setInt("faucet_cfg", "f0_start", 1714502400);
+    backend.setInt("faucet_cfg", "f0_used", 123456);
+    ConfigStore store(backend);
+    SystemConfig config = store.loadSystemConfig();
+
+    store.loadFilterRuntime(config.filters);
+
+    TEST_ASSERT_EQUAL_UINT32(1714502400, config.filters[0].startTime);
+    TEST_ASSERT_EQUAL_UINT32(123456, config.filters[0].usedMl);
+    TEST_ASSERT_EQUAL_INT32(1, backend.getInt("faucet_run", "ver", 0));
+}
+
 void test_filter_runtime_future_version_keeps_current_records_and_storage() {
     FakeConfigBackend backend;
     backend.setInt("faucet_run", "ver", 255);
@@ -571,6 +586,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_statistics_runtime_rolls_loaded_periods);
     RUN_TEST(test_statistics_runtime_future_version_uses_defaults_without_erasing_storage);
     RUN_TEST(test_filter_runtime_round_trips_start_and_used_only);
+    RUN_TEST(test_filter_runtime_recovers_legacy_runtime_when_current_config_was_already_migrated);
     RUN_TEST(test_filter_runtime_future_version_keeps_current_records_and_storage);
     return UNITY_END();
 }

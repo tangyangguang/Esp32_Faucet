@@ -1,6 +1,7 @@
 #pragma once
 
 #include "app/DisplayPresenter.h"
+#include "app/LcdRecoveryPolicy.h"
 
 #include <cstdint>
 
@@ -12,7 +13,7 @@ public:
 
     bool begin(std::uint8_t address);
     bool present() const;
-    void apply(const DisplayFrame& frame);
+    void apply(const DisplayFrame& frame, bool userActivity = false);
 
 private:
     void write4(std::uint8_t value, bool rs);
@@ -21,6 +22,7 @@ private:
     void data(std::uint8_t value);
     void pulse(std::uint8_t value);
     bool writeExpander(std::uint8_t value);
+    bool probeBus();
     bool initialize();
     void markBusFailure();
     void setBacklight(bool on);
@@ -33,9 +35,8 @@ private:
     bool present_;
     bool backlight_;
     bool busFailed_;
-    std::uint32_t lastInitMs_;
-    std::uint32_t lastRetryMs_;
     DisplayFrame lastFrame_;
+    LcdRecoveryPolicy recovery_;
 };
 
 }  // namespace faucet

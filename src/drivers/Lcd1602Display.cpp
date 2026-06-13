@@ -1,7 +1,5 @@
 #include "drivers/Lcd1602Display.h"
 
-#include "app/TimeUtils.h"
-
 #include <Arduino.h>
 #include <Wire.h>
 
@@ -17,8 +15,6 @@ constexpr std::uint8_t kDataShift = 4;
 constexpr std::uint8_t kCols = 16;
 constexpr std::uint8_t kRows = 2;
 constexpr std::uint8_t kLineAddress[kRows] = {0x00, 0x40};
-constexpr std::uint32_t kReconnectRetryMs = 3000;
-
 bool sameFrame(const DisplayFrame& a, const DisplayFrame& b) {
     return a.page == b.page && a.on == b.on && std::strncmp(a.line1, b.line1, kDisplayLineLength) == 0 &&
            std::strncmp(a.line2, b.line2, kDisplayLineLength) == 0;
@@ -33,8 +29,6 @@ Lcd1602Display::Lcd1602Display(std::uint8_t sdaPin, std::uint8_t sclPin)
       present_(false),
       backlight_(true),
       busFailed_(false),
-      lastInitMs_(0),
-      lastRetryMs_(0),
       lastFrame_{} {}
 
 bool Lcd1602Display::begin(std::uint8_t address) {
@@ -67,7 +61,6 @@ bool Lcd1602Display::initialize() {
         return false;
     }
     present_ = true;
-    lastInitMs_ = millis();
     lastFrame_ = {};
     return true;
 }
@@ -76,7 +69,7 @@ bool Lcd1602Display::present() const {
     return present_;
 }
 
-void Lcd1602Display::apply(const DisplayFrame& frame) {
+void Lcd1602Display::apply(const DisplayFrame& frame, bool userActivity) {
     const std::uint32_t nowMs = millis();
     if (!frame.on) {
         if (present_ && !sameFrame(frame, lastFrame_)) {
@@ -90,18 +83,18 @@ void Lcd1602Display::apply(const DisplayFrame& frame) {
         return;
     }
 
+    const bool shouldProbe = recovery_.shouldProbe(frame.on, present_, userActivity, nowMs);
+    bool forceRedraw = false;
     if (!present_) {
-        if (elapsedAtLeast(nowMs, lastRetryMs_, kReconnectRetryMs)) {
-            lastRetryMs_ = nowMs;
-            if (!initialize()) {
-                return;
-            }
-        } else {
+        if (!shouldProbe || !initialize()) {
             return;
         }
+        forceRedraw = true;
+    } else if (shouldProbe && !probeBus()) {
+        return;
     }
 
-    if (sameFrame(frame, lastFrame_)) {
+    if (!forceRedraw && sameFrame(frame, lastFrame_)) {
         return;
     }
     setBacklight(frame.on);
@@ -156,10 +149,18 @@ bool Lcd1602Display::writeExpander(std::uint8_t value) {
     return ok;
 }
 
+bool Lcd1602Display::probeBus() {
+    Wire.beginTransmission(address_);
+    const bool ok = Wire.endTransmission() == 0;
+    if (!ok) {
+        markBusFailure();
+    }
+    return ok;
+}
+
 void Lcd1602Display::markBusFailure() {
     present_ = false;
     busFailed_ = true;
-    lastRetryMs_ = millis();
 }
 
 void Lcd1602Display::setBacklight(bool on) {

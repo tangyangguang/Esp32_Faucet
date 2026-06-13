@@ -45,6 +45,7 @@ constexpr std::size_t kPulseTraceCapacity = faucet::kMaxRecentPulseTraceCount;
 constexpr std::size_t kPulseTraceMaxSamples =
     static_cast<std::size_t>(faucet::kMaxRecentPulseTraceCount) * faucet::kPulseTraceMaxRawEdgesPerTrace;
 constexpr std::uint32_t kRuntimePersistenceRetryIntervalMs = 30000UL;
+constexpr std::uint32_t kI2cTimeoutMs = 20UL;
 constexpr const char* kWaterRecordPath = "/faucet_records_v2.bin";
 constexpr const char* kWaterRecordCalibrationPath = "/faucet_record_cal_v1.bin";
 constexpr const char* kMeteringSchemePath = "/faucet_metering_schemes_v1.bin";
@@ -241,6 +242,7 @@ void logStartupPhase(const char* phase) {
 
 void initializeI2cBus() {
     Wire.begin(faucet::kPinI2cSda, faucet::kPinI2cScl);
+    Wire.setTimeOut(kI2cTimeoutMs);
 }
 
 const char* configLoadStatusName(faucet::ConfigStore::LoadStatus status) {
@@ -667,13 +669,15 @@ void runApplicationTick() {
     g_valveHardware.apply(snapshot.valve);
 
     if (g_display) {
-        if (levels.cancelPressed || levels.okPressed || levels.plusPressed || levels.minusPressed ||
-            snapshot.water.state != faucet::WaterState::Idle || snapshot.localMode != faucet::LocalUiMode::Normal) {
+        const bool userActivity =
+            levels.cancelPressed || levels.okPressed || levels.plusPressed || levels.minusPressed;
+        if (userActivity || snapshot.water.state != faucet::WaterState::Idle ||
+            snapshot.localMode != faucet::LocalUiMode::Normal) {
             g_display->wake(nowMs);
         }
         if (faucet::elapsedAtLeast(nowMs, g_lastDisplayMs, 200UL)) {
             g_lastDisplayFrame = g_display->render(snapshot, nowMs);
-            g_lcd.apply(g_lastDisplayFrame);
+            g_lcd.apply(g_lastDisplayFrame, userActivity);
             g_lastDisplayMs = nowMs;
         }
     }

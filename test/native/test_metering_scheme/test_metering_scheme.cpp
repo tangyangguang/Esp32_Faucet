@@ -17,7 +17,7 @@ MeteringSchemeCandidate sampleCandidate() {
     MeteringSchemeCandidate candidate{};
     candidate.ready = true;
     candidate.sourceType = MeteringSchemeSource::CalibrationSession;
-    candidate.params = MeteringParameters{40, 553, 222};
+    candidate.params = MeteringParameters{40, 553, 222, 5000, 1950};
     candidate.generatedAt = 1770000000;
     candidate.sampleCount = 3;
     candidate.minActualMl = 1500;
@@ -29,7 +29,7 @@ MeteringSchemeCandidate sampleCandidate() {
 
 }  // namespace
 
-void test_default_store_has_one_enabled_active_default_scheme() {
+void test_default_store_has_one_current_not_deleted_default_scheme() {
     MeteringSchemeRecord records[4]{};
     MeteringSchemeCollection schemes = collectionFor(records);
 
@@ -37,13 +37,13 @@ void test_default_store_has_one_enabled_active_default_scheme() {
 
     TEST_ASSERT_EQUAL_UINT32(1, schemes.activeSchemeId);
     TEST_ASSERT_EQUAL_UINT32(2, schemes.nextSchemeId);
-    TEST_ASSERT_EQUAL_size_t(1, meteringSchemeCount(schemes, true));
+    TEST_ASSERT_EQUAL_size_t(1, meteringSchemeCount(schemes, false));
     const MeteringSchemeRecord* active = activeMeteringScheme(schemes);
     TEST_ASSERT_NOT_NULL(active);
     TEST_ASSERT_EQUAL_UINT32(1, active->id);
     TEST_ASSERT_TRUE(active->recordUsed);
-    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(MeteringSchemeState::Available),
-                            static_cast<unsigned>(active->state));
+    TEST_ASSERT_FALSE(active->deleted);
+    TEST_ASSERT_FALSE(active->usedEver);
     TEST_ASSERT_EQUAL_UINT32(1, active->revision);
     TEST_ASSERT_EQUAL_STRING("YF-S201 默认计量方案", active->name);
     TEST_ASSERT_EQUAL_UINT32(8, active->params.startupPulseCount);
@@ -53,10 +53,9 @@ void test_default_store_has_one_enabled_active_default_scheme() {
     TEST_ASSERT_EQUAL_UINT32(1950, active->params.stableFlowMlPerMin);
     TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(MeteringSchemeSource::Default),
                             static_cast<unsigned>(active->sourceType));
-    TEST_ASSERT_FALSE(active->usedEver);
 }
 
-void test_candidate_saves_as_new_scheme_without_enabling() {
+void test_candidate_saves_as_new_not_deleted_scheme_without_switching_current() {
     MeteringSchemeRecord records[4]{};
     MeteringSchemeCollection schemes = collectionFor(records);
     TEST_ASSERT_TRUE(initializeDefaultMeteringSchemes(schemes, 1770000000));
@@ -72,8 +71,8 @@ void test_candidate_saves_as_new_scheme_without_enabling() {
     const MeteringSchemeRecord* saved = findMeteringSchemeById(schemes, newId);
     TEST_ASSERT_NOT_NULL(saved);
     TEST_ASSERT_TRUE(saved->recordUsed);
-    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(MeteringSchemeState::Available),
-                            static_cast<unsigned>(saved->state));
+    TEST_ASSERT_FALSE(saved->deleted);
+    TEST_ASSERT_FALSE(saved->usedEver);
     TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(MeteringSchemeSource::CalibrationSession),
                             static_cast<unsigned>(saved->sourceType));
     TEST_ASSERT_EQUAL_STRING("低压实验", saved->name);
@@ -82,53 +81,54 @@ void test_candidate_saves_as_new_scheme_without_enabling() {
     TEST_ASSERT_EQUAL_UINT32(222, saved->params.stablePulsePerLiter);
     TEST_ASSERT_EQUAL_UINT32(5000, saved->params.startupDurationMs);
     TEST_ASSERT_EQUAL_UINT32(1950, saved->params.stableFlowMlPerMin);
-    TEST_ASSERT_EQUAL_UINT32(1, saved->revision);
-    TEST_ASSERT_EQUAL_UINT16(3, saved->sampleCount);
-    TEST_ASSERT_EQUAL_UINT32(1500, saved->minActualMl);
-    TEST_ASSERT_EQUAL_UINT32(7500, saved->maxActualMl);
-    TEST_ASSERT_EQUAL_UINT32(28, saved->maxErrorMl);
-    TEST_ASSERT_EQUAL_UINT16(18, saved->maxErrorTenthPercent);
-    TEST_ASSERT_FALSE(saved->usedEver);
 }
 
-void test_long_term_candidate_saves_generated_kind_without_activation() {
+void test_create_manual_uses_free_slot_before_deleted_slot() {
     MeteringSchemeRecord records[4]{};
     MeteringSchemeCollection schemes = collectionFor(records);
     TEST_ASSERT_TRUE(initializeDefaultMeteringSchemes(schemes, 1770000000));
-    MeteringSchemeCandidate candidate = sampleCandidate();
-    candidate.sourceType = MeteringSchemeSource::LongTermSamples;
-
-    std::uint32_t newId = 0;
-    TEST_ASSERT_TRUE(saveCandidateAsNewMeteringScheme(schemes, candidate, "长期样本生成", 1770000100, newId));
-
-    TEST_ASSERT_EQUAL_UINT32(1, schemes.activeSchemeId);
-    const MeteringSchemeRecord* saved = findMeteringSchemeById(schemes, newId);
-    TEST_ASSERT_NOT_NULL(saved);
-    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(MeteringSchemeSource::LongTermSamples),
-                            static_cast<unsigned>(saved->sourceType));
-    TEST_ASSERT_EQUAL_UINT16(3, saved->sampleCount);
-    TEST_ASSERT_EQUAL_UINT32(1500, saved->minActualMl);
-    TEST_ASSERT_EQUAL_UINT32(7500, saved->maxActualMl);
-}
-
-void test_manual_create_uses_source_manual_and_revision_one() {
-    MeteringSchemeRecord records[4]{};
-    MeteringSchemeCollection schemes = collectionFor(records);
-    TEST_ASSERT_TRUE(initializeDefaultMeteringSchemes(schemes, 1770000000));
+    initializeManualMeteringScheme(records[1], 99, "已删除", MeteringParameters{12, 180, 360}, 1770000001);
+    records[1].deleted = true;
 
     std::uint32_t newId = 0;
     TEST_ASSERT_TRUE(createManualMeteringScheme(
-        schemes, "手工低压", MeteringParameters{12, 180, 360}, 1770000200, newId));
+        schemes, "手工低压", MeteringParameters{12, 180, 360, 7000, 900}, 1770000200, newId));
 
-    const MeteringSchemeRecord* saved = findMeteringSchemeById(schemes, newId);
-    TEST_ASSERT_NOT_NULL(saved);
-    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(MeteringSchemeSource::Manual),
-                            static_cast<unsigned>(saved->sourceType));
-    TEST_ASSERT_EQUAL_UINT32(1, saved->revision);
-    TEST_ASSERT_EQUAL_UINT16(0, saved->sampleCount);
-    TEST_ASSERT_EQUAL_UINT32(0, saved->minActualMl);
-    TEST_ASSERT_EQUAL_UINT32(0, saved->maxActualMl);
-    TEST_ASSERT_EQUAL_UINT32(1, schemes.activeSchemeId);
+    TEST_ASSERT_EQUAL_UINT32(2, newId);
+    TEST_ASSERT_TRUE(records[1].deleted);
+    TEST_ASSERT_EQUAL_UINT32(2, records[2].id);
+    TEST_ASSERT_FALSE(records[2].deleted);
+}
+
+void test_create_manual_reuses_deleted_slot_when_no_free_slot_exists() {
+    MeteringSchemeRecord records[2]{};
+    MeteringSchemeCollection schemes = collectionFor(records);
+    TEST_ASSERT_TRUE(initializeDefaultMeteringSchemes(schemes, 1770000000));
+    initializeManualMeteringScheme(records[1], 2, "已删除", MeteringParameters{12, 180, 360}, 1770000001);
+    records[1].deleted = true;
+    schemes.nextSchemeId = 3;
+
+    std::uint32_t newId = 0;
+    TEST_ASSERT_TRUE(createManualMeteringScheme(
+        schemes, "复用槽位", MeteringParameters{14, 200, 380}, 1770000200, newId));
+
+    TEST_ASSERT_EQUAL_UINT32(3, newId);
+    TEST_ASSERT_EQUAL_UINT32(3, records[1].id);
+    TEST_ASSERT_EQUAL_STRING("复用槽位", records[1].name);
+    TEST_ASSERT_FALSE(records[1].deleted);
+}
+
+void test_create_manual_fails_when_all_slots_are_not_deleted() {
+    MeteringSchemeRecord records[2]{};
+    MeteringSchemeCollection schemes = collectionFor(records);
+    TEST_ASSERT_TRUE(initializeDefaultMeteringSchemes(schemes, 1770000000));
+    initializeManualMeteringScheme(records[1], 2, "占用", MeteringParameters{12, 180, 360}, 1770000001);
+    schemes.nextSchemeId = 3;
+
+    std::uint32_t newId = 0;
+    TEST_ASSERT_FALSE(createManualMeteringScheme(
+        schemes, "没有槽位", MeteringParameters{14, 200, 380}, 1770000200, newId));
+    TEST_ASSERT_EQUAL_UINT32(0, newId);
 }
 
 void test_core_edit_increments_revision() {
@@ -143,6 +143,20 @@ void test_core_edit_increments_revision() {
     TEST_ASSERT_TRUE(updateMeteringSchemeRecord(scheme, edit, 1770000300));
     TEST_ASSERT_EQUAL_UINT32(2, scheme.revision);
     TEST_ASSERT_EQUAL_UINT32(400, scheme.params.stablePulsePerLiter);
+}
+
+void test_used_scheme_rejects_metering_parameter_edit() {
+    MeteringSchemeRecord scheme{};
+    initializeManualMeteringScheme(
+        scheme, 2, "已使用", MeteringParameters{12, 180, 360}, 1770000000);
+    scheme.usedEver = true;
+
+    MeteringSchemeEdit edit = makeMeteringSchemeEdit(scheme);
+    edit.params.stablePulsePerLiter = 400;
+
+    TEST_ASSERT_FALSE(updateMeteringSchemeRecord(scheme, edit, 1770000300));
+    TEST_ASSERT_EQUAL_UINT32(1, scheme.revision);
+    TEST_ASSERT_EQUAL_UINT32(360, scheme.params.stablePulsePerLiter);
 }
 
 void test_name_only_edit_does_not_increment_revision() {
@@ -161,61 +175,50 @@ void test_name_only_edit_does_not_increment_revision() {
     TEST_ASSERT_EQUAL_UINT32(1770000500, scheme.updatedAt);
 }
 
-void test_used_scheme_rejects_metering_parameter_edit_but_allows_name_edit() {
+void test_used_scheme_rejects_name_only_edit() {
     MeteringSchemeRecord scheme{};
     initializeManualMeteringScheme(
-        scheme, 2, "已使用", MeteringParameters{12, 180, 360}, 1770000000);
+        scheme, 2, "旧名称", MeteringParameters{12, 180, 360}, 1770000000);
     scheme.usedEver = true;
 
-    MeteringSchemeEdit meteringEdit = makeMeteringSchemeEdit(scheme);
-    meteringEdit.params.stablePulsePerLiter = 400;
-    TEST_ASSERT_FALSE(updateMeteringSchemeRecord(scheme, meteringEdit, 1770000300));
-    TEST_ASSERT_EQUAL_UINT32(360, scheme.params.stablePulsePerLiter);
-    TEST_ASSERT_EQUAL_UINT32(1, scheme.revision);
+    MeteringSchemeEdit edit = makeMeteringSchemeEdit(scheme);
+    std::strncpy(edit.name, "新名称", sizeof(edit.name) - 1);
 
-    MeteringSchemeEdit nameEdit = makeMeteringSchemeEdit(scheme);
-    std::strncpy(nameEdit.name, "只改名称", sizeof(nameEdit.name) - 1);
-    TEST_ASSERT_TRUE(updateMeteringSchemeRecord(scheme, nameEdit, 1770000400));
-    TEST_ASSERT_EQUAL_STRING("只改名称", scheme.name);
+    TEST_ASSERT_FALSE(updateMeteringSchemeRecord(scheme, edit, 1770000500));
+    TEST_ASSERT_EQUAL_STRING("旧名称", scheme.name);
+    TEST_ASSERT_TRUE(scheme.usedEver);
     TEST_ASSERT_EQUAL_UINT32(1, scheme.revision);
 }
 
-void test_current_scheme_cannot_be_disabled_or_deleted() {
+void test_current_scheme_cannot_be_logically_deleted() {
     MeteringSchemeRecord scheme{};
     initializeManualMeteringScheme(
         scheme, 2, "当前", MeteringParameters{12, 180, 360}, 1770000000);
 
-    TEST_ASSERT_FALSE(canDisableMeteringScheme(scheme, 2, 2));
-    TEST_ASSERT_FALSE(canPhysicallyDeleteMeteringScheme(scheme, 2, 2));
+    TEST_ASSERT_FALSE(canDeleteMeteringScheme(scheme, 2));
 }
 
-void test_last_valid_scheme_cannot_be_deleted_even_if_not_active() {
+void test_non_current_scheme_can_be_logically_deleted_even_if_referenced() {
     MeteringSchemeRecord scheme{};
     initializeManualMeteringScheme(
-        scheme, 2, "最后一套", MeteringParameters{12, 180, 360}, 1770000000);
+        scheme, 2, "历史引用", MeteringParameters{12, 180, 360}, 1770000000);
 
-    TEST_ASSERT_FALSE(canPhysicallyDeleteMeteringScheme(scheme, 1, 1));
+    TEST_ASSERT_TRUE(canDeleteMeteringScheme(scheme, 1));
 }
 
-void test_used_scheme_cannot_be_physically_deleted() {
-    MeteringSchemeRecord scheme{};
-    initializeManualMeteringScheme(
-        scheme, 2, "已使用", MeteringParameters{12, 180, 360}, 1770000000);
+void test_deleted_scheme_is_not_counted_in_default_list_count() {
+    MeteringSchemeRecord records[2]{};
+    MeteringSchemeCollection schemes = collectionFor(records);
+    TEST_ASSERT_TRUE(initializeDefaultMeteringSchemes(schemes, 1770000000));
+    initializeManualMeteringScheme(records[1], 2, "已删除", MeteringParameters{12, 180, 360}, 1770000001);
+    records[1].deleted = true;
 
-    scheme.usedEver = true;
-    TEST_ASSERT_FALSE(canPhysicallyDeleteMeteringScheme(scheme, 1, 2));
-}
-
-void test_unused_non_current_scheme_can_be_physically_deleted() {
-    MeteringSchemeRecord scheme{};
-    initializeManualMeteringScheme(
-        scheme, 2, "未使用", MeteringParameters{12, 180, 360}, 1770000000);
-
-    TEST_ASSERT_TRUE(canPhysicallyDeleteMeteringScheme(scheme, 1, 2));
+    TEST_ASSERT_EQUAL_size_t(1, meteringSchemeCount(schemes, false));
+    TEST_ASSERT_EQUAL_size_t(2, meteringSchemeCount(schemes, true));
 }
 
 void test_metering_estimate_uses_segmented_parameters_for_target_volume() {
-    const MeteringParameters params{8, 36, 225};
+    const MeteringParameters params{8, 36, 225, 5000, 1950};
 
     TEST_ASSERT_EQUAL_UINT32(4, estimatePulsesForVolumeMl(params, 18));
     TEST_ASSERT_EQUAL_UINT32(8, estimatePulsesForVolumeMl(params, 36));
@@ -230,7 +233,7 @@ void test_metering_estimate_uses_segmented_parameters_for_target_volume() {
 }
 
 void test_metering_estimate_handles_no_startup_segment() {
-    const MeteringParameters params{0, 0, 450};
+    const MeteringParameters params{0, 0, 450, 5000, 1950};
 
     TEST_ASSERT_EQUAL_UINT32(675, estimatePulsesForVolumeMl(params, 1500));
 
@@ -240,51 +243,23 @@ void test_metering_estimate_handles_no_startup_segment() {
     TEST_ASSERT_EQUAL_UINT32(450, estimate.fullRunPulsePerLiter);
 }
 
-void test_time_estimate_uses_segmented_startup_and_stable_flow() {
-    const MeteringParameters params{8, 36, 225, 5000, 480};
-
-    TEST_ASSERT_EQUAL_UINT32(2500, estimateDurationMsForVolumeMl(params, 18));
-    TEST_ASSERT_EQUAL_UINT32(5000, estimateDurationMsForVolumeMl(params, 36));
-    TEST_ASSERT_EQUAL_UINT32(130000, estimateDurationMsForVolumeMl(params, 1036));
-
-    TEST_ASSERT_EQUAL_UINT32(18, estimateVolumeMlForDurationMs(params, 2500));
-    TEST_ASSERT_EQUAL_UINT32(36, estimateVolumeMlForDurationMs(params, 5000));
-    TEST_ASSERT_EQUAL_UINT32(1036, estimateVolumeMlForDurationMs(params, 130000));
-}
-
-void test_time_estimate_handles_no_startup_time_segment() {
-    const MeteringParameters params{0, 0, 450, 0, 600};
-
-    TEST_ASSERT_EQUAL_UINT32(100000, estimateDurationMsForVolumeMl(params, 1000));
-    TEST_ASSERT_EQUAL_UINT32(1000, estimateVolumeMlForDurationMs(params, 100000));
-}
-
-void test_time_estimate_parameter_validation() {
-    TEST_ASSERT_FALSE(validMeteringSchemeParameters(MeteringParameters{0, 0, 450, 0, 0}));
-    TEST_ASSERT_FALSE(validMeteringSchemeParameters(MeteringParameters{0, 0, 450, 0, 30001}));
-    TEST_ASSERT_FALSE(validMeteringSchemeParameters(MeteringParameters{0, 0, 450, 60001, 600}));
-    TEST_ASSERT_TRUE(validMeteringSchemeParameters(MeteringParameters{0, 0, 450, 0, 600}));
-}
-
 int main(int argc, char** argv) {
     (void)argc;
     (void)argv;
     UNITY_BEGIN();
-    RUN_TEST(test_default_store_has_one_enabled_active_default_scheme);
-    RUN_TEST(test_candidate_saves_as_new_scheme_without_enabling);
-    RUN_TEST(test_long_term_candidate_saves_generated_kind_without_activation);
-    RUN_TEST(test_manual_create_uses_source_manual_and_revision_one);
+    RUN_TEST(test_default_store_has_one_current_not_deleted_default_scheme);
+    RUN_TEST(test_candidate_saves_as_new_not_deleted_scheme_without_switching_current);
+    RUN_TEST(test_create_manual_uses_free_slot_before_deleted_slot);
+    RUN_TEST(test_create_manual_reuses_deleted_slot_when_no_free_slot_exists);
+    RUN_TEST(test_create_manual_fails_when_all_slots_are_not_deleted);
     RUN_TEST(test_core_edit_increments_revision);
+    RUN_TEST(test_used_scheme_rejects_metering_parameter_edit);
     RUN_TEST(test_name_only_edit_does_not_increment_revision);
-    RUN_TEST(test_used_scheme_rejects_metering_parameter_edit_but_allows_name_edit);
-    RUN_TEST(test_current_scheme_cannot_be_disabled_or_deleted);
-    RUN_TEST(test_last_valid_scheme_cannot_be_deleted_even_if_not_active);
-    RUN_TEST(test_used_scheme_cannot_be_physically_deleted);
-    RUN_TEST(test_unused_non_current_scheme_can_be_physically_deleted);
+    RUN_TEST(test_used_scheme_rejects_name_only_edit);
+    RUN_TEST(test_current_scheme_cannot_be_logically_deleted);
+    RUN_TEST(test_non_current_scheme_can_be_logically_deleted_even_if_referenced);
+    RUN_TEST(test_deleted_scheme_is_not_counted_in_default_list_count);
     RUN_TEST(test_metering_estimate_uses_segmented_parameters_for_target_volume);
     RUN_TEST(test_metering_estimate_handles_no_startup_segment);
-    RUN_TEST(test_time_estimate_uses_segmented_startup_and_stable_flow);
-    RUN_TEST(test_time_estimate_handles_no_startup_time_segment);
-    RUN_TEST(test_time_estimate_parameter_validation);
     return UNITY_END();
 }

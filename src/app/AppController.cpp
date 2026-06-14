@@ -157,6 +157,7 @@ AppController::AppController(const SystemConfig& config,
       lastValveDesiredOpen_(false),
       calibrationValveOpen_(false),
       lastRecordWriteOk_(true),
+      valveOutputSink_(nullptr),
       persistenceDirty_(false),
       configDirty_(false),
       pendingBeep_(BeepPattern::None),
@@ -212,6 +213,7 @@ AppController::AppController(const SystemConfig& config,
       lastValveDesiredOpen_(false),
       calibrationValveOpen_(false),
       lastRecordWriteOk_(true),
+      valveOutputSink_(nullptr),
       persistenceDirty_(false),
       configDirty_(false),
       pendingBeep_(BeepPattern::None),
@@ -386,6 +388,10 @@ bool AppController::emergencyStop(std::uint32_t nowMs) {
     return false;
 }
 
+void AppController::setValveOutputSink(ValveOutputSink sink) {
+    valveOutputSink_ = sink;
+}
+
 void AppController::setFlowDroppedPulses(std::uint32_t droppedPulses) {
     flowDroppedPulses_ = droppedPulses;
 }
@@ -425,7 +431,7 @@ bool AppController::applyConfig(const SystemConfig& config) {
 
 bool AppController::applyActiveMeteringScheme(const MeteringSchemeRecord& activeScheme) {
     if (!canApplyConfig() || !activeScheme.recordUsed ||
-        activeScheme.state != MeteringSchemeState::Available ||
+        activeScheme.deleted ||
         !validMeteringSchemeParameters(activeScheme.params)) {
         return false;
     }
@@ -685,7 +691,7 @@ bool AppController::applyGeneratedCalibrationForWeb(std::uint32_t nowSeconds) {
     }
     std::uint32_t newId = 0;
     if (!meteringSchemes_->saveCandidateAsNew(calibrationCandidate_, "校准生成计量方案", nowSeconds, newId) ||
-        !meteringSchemes_->enableScheme(newId, nowSeconds)) {
+        !meteringSchemes_->setActiveScheme(newId, nowSeconds)) {
         return false;
     }
     calibrationCandidate_ = MeteringSchemeCandidate{};
@@ -864,14 +870,6 @@ void AppController::handleButtonEvent(ButtonEvent event,
                 startSelectedPreset(nowMs, nowUs, nowSeconds, timeSynced, bootId);
             } else if (water.state == WaterState::Running || water.state == WaterState::Paused) {
                 if (water_.togglePause(nowMs)) {
-                    if (pulseTraces_ && activeTraceId_ != 0) {
-                        const std::uint32_t elapsedUs = elapsedSince(nowUs, activeTraceStartUs_);
-                        if (water.state == WaterState::Running) {
-                            pulseTraces_->markPaused(activeTraceId_, elapsedUs);
-                        } else if (water.state == WaterState::Paused) {
-                            pulseTraces_->markResumedAfterPause(activeTraceId_, elapsedUs);
-                        }
-                    }
                     pendingBeep_ = BeepPattern::Click;
                 }
             }
@@ -925,11 +923,6 @@ void AppController::startSelectedPreset(std::uint32_t nowMs,
         windowFlowMlPerMin_ = 0;
         displayFlowMlPerMin_ = 0;
         runAverageFlowMlPerMin_ = 0;
-        if (pulseTraces_) {
-            pulseTraces_->setRecentTraceLimit(config_.recentPulseTraceCount);
-            activeTraceId_ = pulseTraces_->beginTrace(nowSeconds, config_.pulseMinIntervalUs);
-            activeTraceStartUs_ = nowUs;
-        }
         pendingBeep_ = BeepPattern::Click;
     }
 }
@@ -1116,6 +1109,9 @@ void AppController::syncValve(std::uint32_t nowMs) {
     }
     valve_.tick(nowMs);
     lastValveDesiredOpen_ = desiredOpen;
+    if (valveOutputSink_) {
+        valveOutputSink_(valve_.output());
+    }
 }
 
 void AppController::processResult(std::uint32_t startTime,
@@ -1152,13 +1148,12 @@ void AppController::processResult(std::uint32_t startTime,
     const WaterPulseTraceState traceState = traceStateForResult(result.result);
     finishPulseTrace(record, traceState, flow, nowUs);
 
-    lastResultRecord_ = record;
-    lastResultRecordValid_ = record.pulseCount > 0 && waterResultAllowsCalibration(record.result);
+    lastResultRecord_ = WaterRecord{};
+    lastResultRecordValid_ = false;
     lastRecordWriteOk_ = records_.append(record);
     if (lastRecordWriteOk_ && meteringSchemes_ && !activeMeteringScheme_.usedEver) {
-        if (meteringSchemes_->markUsedAfterRecordWrite(activeMeteringScheme_.id)) {
-            activeMeteringScheme_.usedEver = true;
-        }
+        activeMeteringScheme_.usedEver = true;
+        meteringSchemes_->markUsedAfterRecordWrite(activeMeteringScheme_.id);
     }
     if (periodKeysValid) {
         statistics_.addWater(result.volumeMl, periodKeys);

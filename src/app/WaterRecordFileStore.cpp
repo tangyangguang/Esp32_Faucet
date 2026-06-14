@@ -144,7 +144,7 @@ bool WaterRecordFileStore::append(const WaterRecord& record) {
 }
 
 std::size_t WaterRecordFileStore::rewriteBootRelativeTimes(std::uint32_t bootId, std::uint32_t bootStartRealSec) {
-    if (!ready_ || !backend_.exists(path_) || bootId == 0) {
+    if (!ready() || bootId == 0) {
         return 0;
     }
     std::size_t changed = 0;
@@ -174,7 +174,7 @@ std::size_t WaterRecordFileStore::readPage(std::size_t pageIndex,
     if (!ready_ || !output || outputCapacity == 0 || count_ == 0) {
         return 0;
     }
-    if (!backend_.exists(path_)) {
+    if (!ready()) {
         return 0;
     }
 
@@ -202,7 +202,7 @@ std::size_t WaterRecordFileStore::readPage(std::size_t pageIndex,
 }
 
 bool WaterRecordFileStore::clear() {
-    if (!ready_) {
+    if (!ready()) {
         return false;
     }
     oldestIndex_ = 0;
@@ -211,7 +211,7 @@ bool WaterRecordFileStore::clear() {
 }
 
 std::size_t WaterRecordFileStore::count() const {
-    return ready_ && backend_.exists(path_) ? count_ : 0;
+    return ready() ? count_ : 0;
 }
 
 std::size_t WaterRecordFileStore::capacity() const {
@@ -219,7 +219,7 @@ std::size_t WaterRecordFileStore::capacity() const {
 }
 
 bool WaterRecordFileStore::ready() const {
-    return ready_ && backend_.exists(path_);
+    return ready_ && status_ == WaterRecordFileStatus::Ready && backend_.exists(path_);
 }
 
 const char* WaterRecordFileStore::storageName() const {

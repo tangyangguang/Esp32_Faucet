@@ -29,6 +29,20 @@ public:
     }
 };
 
+bool gValveSinkSawClosedBeforeRecordAppend = false;
+bool gRecordAppendObservedClosedValve = false;
+
+class ObservingRecordWriter : public WaterRecordWriter {
+public:
+    std::vector<WaterRecord> records;
+
+    bool append(const WaterRecord& record) override {
+        gRecordAppendObservedClosedValve = gValveSinkSawClosedBeforeRecordAppend;
+        records.push_back(record);
+        return true;
+    }
+};
+
 class MemoryCalibrationWriter : public WaterRecordCalibrationWriter {
 public:
     bool ok = true;
@@ -45,6 +59,8 @@ public:
 
 class MemoryFileBackend : public WaterRecordFileBackend {
 public:
+    int failWriteAtCount = 0;
+
     bool exists(const char* path) override {
         return files.find(path ? path : "") != files.end();
     }
@@ -88,6 +104,10 @@ public:
         if (!path || (!data && len > 0)) {
             return false;
         }
+        if (failWriteAtCount > 0) {
+            --failWriteAtCount;
+            return false;
+        }
         std::vector<std::uint8_t>& file = files[path];
         if (offset + len > file.size()) {
             file.resize(offset + len, 0);
@@ -117,7 +137,7 @@ bool prepareMeteringScheme(MeteringSchemeStore& store,
     if (!store.createManual("运行方案", MeteringParameters{0, 0, stablePulsePerLiter}, 1714502300, id)) {
         return false;
     }
-    if (!store.enableScheme(id, 1714502301)) {
+    if (!store.setActiveScheme(id, 1714502301)) {
         return false;
     }
     return store.activeScheme(active);
@@ -303,7 +323,7 @@ void test_app_controller_uses_active_scheme_parameters_for_flow_meter() {
     TEST_ASSERT_EQUAL_UINT32(1000, app.snapshot().pulsePerLiter);
 }
 
-void test_app_controller_successful_record_writes_scheme_id_and_used_flag() {
+void test_app_controller_successful_record_writes_scheme_id_and_marks_scheme_used_once() {
     SystemConfig config = makeDefaultConfig();
     StatisticsStore statistics;
     statistics.reset({20260506, 202619, 202605});
@@ -322,6 +342,7 @@ void test_app_controller_successful_record_writes_scheme_id_and_used_flag() {
     TEST_ASSERT_EQUAL_UINT32(active.id, records.records[0].meteringSchemeId);
     MeteringSchemeRecord updated{};
     TEST_ASSERT_TRUE(schemes.findById(active.id, updated));
+    TEST_ASSERT_FALSE(updated.deleted);
     TEST_ASSERT_TRUE(updated.usedEver);
 }
 
@@ -343,7 +364,30 @@ void test_app_controller_record_write_failure_does_not_mark_scheme_used() {
     TEST_ASSERT_FALSE(app.lastRecordWriteOk());
     MeteringSchemeRecord updated{};
     TEST_ASSERT_TRUE(schemes.findById(active.id, updated));
+    TEST_ASSERT_FALSE(updated.deleted);
     TEST_ASSERT_FALSE(updated.usedEver);
+}
+
+void test_app_controller_record_write_success_locks_active_scheme_even_if_used_mark_persist_fails() {
+    SystemConfig config = makeDefaultConfig();
+    StatisticsStore statistics;
+    statistics.reset({20260506, 202619, 202605});
+    FilterStore filters(config.filters);
+    MemoryRecordWriter records;
+    MemoryFileBackend backend;
+    MeteringSchemeStore schemes(backend, "/schemes.bin");
+    MeteringSchemeRecord active{};
+    TEST_ASSERT_TRUE(prepareMeteringScheme(schemes, 1000, active));
+    AppController app(config, active, statistics, filters, records, schemes);
+
+    backend.failWriteAtCount = 1;
+    finishVolumeRun(app);
+
+    TEST_ASSERT_TRUE(app.lastRecordWriteOk());
+    TEST_ASSERT_TRUE(app.activeMeteringScheme().usedEver);
+    MeteringSchemeRecord persisted{};
+    TEST_ASSERT_TRUE(schemes.findById(active.id, persisted));
+    TEST_ASSERT_FALSE(persisted.usedEver);
 }
 
 void test_app_controller_starts_after_double_ok_and_opens_valve() {
@@ -435,6 +479,35 @@ void test_app_controller_completion_writes_record_statistics_and_filters() {
     TEST_ASSERT_FALSE(app.consumePersistenceDirty());
     app.markPersistenceDirtyForRetry();
     TEST_ASSERT_TRUE(app.consumePersistenceDirty());
+}
+
+void test_app_controller_pushes_closed_valve_output_before_record_persistence() {
+    SystemConfig config = makeDefaultConfig();
+    StatisticsStore statistics;
+    statistics.reset({20260506, 202619, 202605});
+    FilterStore filters(config.filters);
+    ObservingRecordWriter records;
+    AppController app(config, statistics, filters, records);
+    applyTestMeteringScheme(app);
+    app.setValveOutputSink([](ValveOutput output) {
+        if (!output.enabled) {
+            gValveSinkSawClosedBeforeRecordAppend = true;
+        }
+    });
+
+    app.resetInputs({false, false, false, false}, 0);
+    pressAndReleaseOk(app, 100);
+    pressAndReleaseOk(app, 300);
+    gValveSinkSawClosedBeforeRecordAppend = false;
+    gRecordAppendObservedClosedValve = false;
+
+    for (std::uint32_t i = 0; i < 1500; ++i) {
+        app.onFlowPulse(1000000UL + i * 2000UL);
+    }
+    app.tick(input({false, false, false, false}, 5000, 5000000, 1714502400));
+
+    TEST_ASSERT_EQUAL_size_t(1, records.records.size());
+    TEST_ASSERT_TRUE(gRecordAppendObservedClosedValve);
 }
 
 void test_app_controller_web_preset_switch_during_run_updates_next_preset_only() {
@@ -888,8 +961,7 @@ void test_app_controller_applies_generated_session_scheme_and_keeps_old_scheme()
     MeteringSchemeRecord oldScheme{};
     TEST_ASSERT_TRUE(schemes.findById(oldActiveId, oldScheme));
     TEST_ASSERT_TRUE(oldScheme.recordUsed);
-    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(MeteringSchemeState::Available),
-                            static_cast<unsigned>(oldScheme.state));
+    TEST_ASSERT_FALSE(oldScheme.deleted);
     TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationSessionStatus::Applied),
                             static_cast<unsigned>(app.snapshot().calibrationStatus));
 }
@@ -985,20 +1057,8 @@ void test_app_controller_pause_timeout_trace_is_not_marked_error_and_can_calibra
     TEST_ASSERT_EQUAL_size_t(1, records.records.size());
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(WaterResult::PauseTimeout),
                             static_cast<std::uint8_t>(records.records[0].result));
-    TEST_ASSERT_TRUE(app.snapshot().calibrationReady);
-    const WaterPulseTrace* trace = pulseTraces.traceAt(0);
-    TEST_ASSERT_NOT_NULL(trace);
-    TEST_ASSERT_TRUE(trace->finished);
-    TEST_ASSERT_GREATER_THAN_size_t(0, trace->sampleCount);
-    const WaterPulseTraceSample* lastSample = pulseTraces.sampleAt(*trace, trace->sampleCount - 1);
-    TEST_ASSERT_NOT_NULL(lastSample);
-    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(WaterPulseTraceState::PauseTimeout),
-                            static_cast<std::uint8_t>(trace->finalState));
-    TEST_ASSERT_EQUAL_UINT8(1, trace->pauseWindowCount);
-    TEST_ASSERT_GREATER_OR_EQUAL_UINT32(1500000, trace->pauseWindows[0].startElapsedUs);
-    TEST_ASSERT_LESS_OR_EQUAL_UINT32(1700000, trace->pauseWindows[0].startElapsedUs);
-    TEST_ASSERT_GREATER_OR_EQUAL_UINT32(11700000, trace->pauseWindows[0].endElapsedUs);
-    TEST_ASSERT_LESS_OR_EQUAL_UINT32(11900000, trace->pauseWindows[0].endElapsedUs);
+    TEST_ASSERT_FALSE(app.snapshot().calibrationReady);
+    TEST_ASSERT_EQUAL_size_t(0, pulseTraces.count());
 }
 
 void test_app_controller_applies_calibration_from_pause_timeout_record() {
@@ -1134,15 +1194,7 @@ void test_app_controller_pause_resume_then_completion_updates_persistence_once()
     TEST_ASSERT_EQUAL_UINT32(1500, statistics.record().todayMl);
     TEST_ASSERT_EQUAL_UINT32(1500, filters.record(0).usedMl);
     TEST_ASSERT_TRUE(app.consumePersistenceDirty());
-
-    const WaterPulseTrace* trace = pulseTraces.traceAt(0);
-    TEST_ASSERT_NOT_NULL(trace);
-    TEST_ASSERT_TRUE(trace->resumedAfterPause);
-    TEST_ASSERT_EQUAL_UINT8(1, trace->pauseWindowCount);
-    TEST_ASSERT_GREATER_OR_EQUAL_UINT32(2200000, trace->pauseWindows[0].startElapsedUs);
-    TEST_ASSERT_LESS_OR_EQUAL_UINT32(2400000, trace->pauseWindows[0].startElapsedUs);
-    TEST_ASSERT_GREATER_OR_EQUAL_UINT32(19700000, trace->pauseWindows[0].endElapsedUs);
-    TEST_ASSERT_LESS_OR_EQUAL_UINT32(20000000, trace->pauseWindows[0].endElapsedUs);
+    TEST_ASSERT_EQUAL_size_t(0, pulseTraces.count());
 }
 
 void test_app_controller_stop_down_closes_valve_and_records_user_stop() {
@@ -1174,7 +1226,7 @@ void test_app_controller_stop_down_closes_valve_and_records_user_stop() {
     TEST_ASSERT_EQUAL_UINT32(300, records.records[0].volumeMl);
 }
 
-void test_app_controller_emergency_stop_keeps_ram_pulse_trace_for_record() {
+void test_app_controller_normal_output_does_not_collect_ram_pulse_trace() {
     SystemConfig config = makeDefaultConfig();
     StatisticsStore statistics;
     statistics.reset({20260506, 202619, 202605});
@@ -1200,15 +1252,8 @@ void test_app_controller_emergency_stop_keeps_ram_pulse_trace_for_record() {
     TEST_ASSERT_EQUAL_size_t(1, records.records.size());
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(WaterResult::StoppedByUser),
                             static_cast<std::uint8_t>(records.records[0].result));
-    TEST_ASSERT_EQUAL_size_t(1, pulseTraces.count());
-    const WaterPulseTrace* trace = pulseTraces.traceAt(0);
-    TEST_ASSERT_NOT_NULL(trace);
-    TEST_ASSERT_TRUE(trace->finished);
-    TEST_ASSERT_EQUAL_UINT32(records.records[0].pulseCount, trace->totalPulses);
-    TEST_ASSERT_GREATER_THAN_size_t(0, trace->sampleCount);
-    TEST_ASSERT_NOT_NULL(pulseTraces.findByRecord(records.records[0]));
-    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(WaterPulseTraceState::Stopped),
-                            static_cast<std::uint8_t>(trace->finalState));
+    TEST_ASSERT_EQUAL_size_t(0, pulseTraces.count());
+    TEST_ASSERT_NULL(pulseTraces.findByRecord(records.records[0]));
 }
 
 void test_app_controller_emergency_stop_closes_valve_without_debounce() {
@@ -1479,18 +1524,20 @@ int main(int argc, char** argv) {
 
     UNITY_BEGIN();
     RUN_TEST(test_app_controller_uses_active_scheme_parameters_for_flow_meter);
-    RUN_TEST(test_app_controller_successful_record_writes_scheme_id_and_used_flag);
+    RUN_TEST(test_app_controller_successful_record_writes_scheme_id_and_marks_scheme_used_once);
     RUN_TEST(test_app_controller_record_write_failure_does_not_mark_scheme_used);
+    RUN_TEST(test_app_controller_record_write_success_locks_active_scheme_even_if_used_mark_persist_fails);
     RUN_TEST(test_app_controller_starts_after_double_ok_and_opens_valve);
     RUN_TEST(test_app_controller_confirm_and_running_start_volume_stays_zero_until_first_pulse);
     RUN_TEST(test_app_controller_completion_writes_record_statistics_and_filters);
+    RUN_TEST(test_app_controller_pushes_closed_valve_output_before_record_persistence);
     RUN_TEST(test_app_controller_web_preset_switch_during_run_updates_next_preset_only);
     RUN_TEST(test_app_controller_local_plus_does_not_switch_preset_while_running);
     RUN_TEST(test_app_controller_offline_completion_marks_unknown_time_with_boot_id);
     RUN_TEST(test_app_controller_offline_start_sync_before_completion_writes_real_time);
     RUN_TEST(test_app_controller_pause_resume_then_completion_updates_persistence_once);
     RUN_TEST(test_app_controller_stop_down_closes_valve_and_records_user_stop);
-    RUN_TEST(test_app_controller_emergency_stop_keeps_ram_pulse_trace_for_record);
+    RUN_TEST(test_app_controller_normal_output_does_not_collect_ram_pulse_trace);
     RUN_TEST(test_app_controller_emergency_stop_closes_valve_without_debounce);
     RUN_TEST(test_app_controller_applies_config_only_while_idle);
     RUN_TEST(test_app_controller_emits_beep_patterns_for_actions_and_completion);

@@ -9,8 +9,6 @@
 
 namespace faucet {
 
-class ConfigBackend;
-
 struct MeteringSchemeStoreHeader {
     std::uint32_t magic;
     std::uint16_t version;
@@ -34,7 +32,7 @@ public:
     std::uint32_t activeSchemeId() const;
     bool activeScheme(MeteringSchemeRecord& output) const;
     bool findById(std::uint32_t id, MeteringSchemeRecord& output) const;
-    std::size_t list(MeteringSchemeRecord* output, std::size_t outputCapacity, bool includeDisabled) const;
+    std::size_t list(MeteringSchemeRecord* output, std::size_t outputCapacity, bool includeDeleted) const;
 
     bool saveCandidateAsNew(const MeteringSchemeCandidate& candidate,
                             const char* name,
@@ -45,21 +43,15 @@ public:
                       std::uint32_t nowSeconds,
                       std::uint32_t& newId);
     bool updateScheme(const MeteringSchemeRecord& edited, std::uint32_t nowSeconds);
-    bool enableScheme(std::uint32_t schemeId, std::uint32_t nowSeconds);
-    bool disableScheme(std::uint32_t schemeId, std::uint32_t nowSeconds);
-    bool restoreScheme(std::uint32_t schemeId, std::uint32_t nowSeconds);
-    bool deleteScheme(std::uint32_t schemeId);
+    bool setActiveScheme(std::uint32_t schemeId, std::uint32_t nowSeconds);
+    bool deleteScheme(std::uint32_t schemeId, std::uint32_t nowSeconds);
     bool markUsedAfterRecordWrite(std::uint32_t schemeId);
-    bool migrateLegacyFromConfig(ConfigBackend& config, std::uint32_t nowSeconds);
 
 private:
     bool validPath() const;
     bool initializeNewFile();
-    bool migrateV1File(const MeteringSchemeStoreHeader& loaded);
-    bool migrateV3CandidateFile(const MeteringSchemeStoreHeader& loaded);
     bool normalizeSlotCount();
     bool repairNextSchemeId();
-    bool upgradeLegacyDefaultSchemeIfNeeded();
     bool loadHeader();
     bool saveHeader() const;
     bool readRecord(std::size_t slot, MeteringSchemeRecord& output) const;

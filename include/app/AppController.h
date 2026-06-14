@@ -82,6 +82,8 @@ struct AppSnapshot {
     std::uint32_t maxBaseHandleUs = 0;
 };
 
+using ValveOutputSink = void (*)(ValveOutput output);
+
 enum class CalibrationApplyResult : std::uint8_t {
     Saved = 0,
     NotAvailable = 1,
@@ -125,6 +127,7 @@ public:
     bool consumeConfigDirty();
     BeepPattern consumeBeepPattern();
     bool emergencyStop(std::uint32_t nowMs);
+    void setValveOutputSink(ValveOutputSink sink);
     void setFlowDroppedPulses(std::uint32_t droppedPulses);
     bool selectNextPresetForWeb();
     bool selectPreviousPresetForWeb();
@@ -219,6 +222,7 @@ private:
     bool lastValveDesiredOpen_;
     bool calibrationValveOpen_;
     bool lastRecordWriteOk_;
+    ValveOutputSink valveOutputSink_;
     bool persistenceDirty_;
     bool configDirty_;
     BeepPattern pendingBeep_;

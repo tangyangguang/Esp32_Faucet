@@ -24,16 +24,24 @@ bool textEquals(const char* left, const char* right) {
     return std::strcmp(left ? left : "", right ? right : "") == 0;
 }
 
-bool schemeAvailable(const MeteringSchemeRecord& scheme) {
-    return scheme.recordUsed && scheme.state == MeteringSchemeState::Available;
-}
-
 MeteringSchemeRecord* findFreeSchemeSlot(MeteringSchemeCollection& schemes) {
     if (!schemes.records) {
         return nullptr;
     }
     for (std::size_t i = 0; i < schemes.capacity; ++i) {
         if (!schemes.records[i].recordUsed) {
+            return &schemes.records[i];
+        }
+    }
+    return nullptr;
+}
+
+MeteringSchemeRecord* findDeletedSchemeSlot(MeteringSchemeCollection& schemes) {
+    if (!schemes.records) {
+        return nullptr;
+    }
+    for (std::size_t i = 0; i < schemes.capacity; ++i) {
+        if (schemes.records[i].recordUsed && schemes.records[i].deleted) {
             return &schemes.records[i];
         }
     }
@@ -49,7 +57,7 @@ void initializeCommonScheme(MeteringSchemeRecord& scheme,
     scheme = MeteringSchemeRecord{};
     scheme.id = id;
     scheme.recordUsed = true;
-    scheme.state = MeteringSchemeState::Available;
+    scheme.deleted = false;
     copyText(scheme.name, name && name[0] ? name : "未命名计量方案");
     scheme.params = params;
     scheme.sourceType = source;
@@ -197,14 +205,14 @@ void initializeManualMeteringScheme(MeteringSchemeRecord& scheme,
     initializeCommonScheme(scheme, id, name, params, MeteringSchemeSource::Manual, nowSeconds);
 }
 
-std::size_t meteringSchemeCount(const MeteringSchemeCollection& schemes, bool includeDisabled) {
+std::size_t meteringSchemeCount(const MeteringSchemeCollection& schemes, bool includeDeleted) {
     if (!schemes.records) {
         return 0;
     }
     std::size_t count = 0;
     for (std::size_t i = 0; i < schemes.capacity; ++i) {
         const MeteringSchemeRecord& scheme = schemes.records[i];
-        if (scheme.recordUsed && (includeDisabled || scheme.state == MeteringSchemeState::Available)) {
+        if (scheme.recordUsed && (includeDeleted || !scheme.deleted)) {
             ++count;
         }
     }
@@ -254,6 +262,9 @@ bool saveCandidateAsNewMeteringScheme(MeteringSchemeCollection& schemes,
     }
     MeteringSchemeRecord* slot = findFreeSchemeSlot(schemes);
     if (!slot) {
+        slot = findDeletedSchemeSlot(schemes);
+    }
+    if (!slot) {
         return false;
     }
     newSchemeId = schemes.nextSchemeId++;
@@ -273,6 +284,9 @@ bool createManualMeteringScheme(MeteringSchemeCollection& schemes,
         return false;
     }
     MeteringSchemeRecord* slot = findFreeSchemeSlot(schemes);
+    if (!slot) {
+        slot = findDeletedSchemeSlot(schemes);
+    }
     if (!slot) {
         return false;
     }
@@ -309,13 +323,10 @@ MeteringSchemeEditKind classifyMeteringSchemeEdit(const MeteringSchemeRecord& sc
 bool updateMeteringSchemeRecord(MeteringSchemeRecord& scheme,
                                 const MeteringSchemeEdit& edit,
                                 std::uint32_t nowSeconds) {
-    if (!scheme.recordUsed || !validMeteringSchemeParameters(edit.params)) {
+    if (!scheme.recordUsed || scheme.deleted || scheme.usedEver || !validMeteringSchemeParameters(edit.params)) {
         return false;
     }
     const MeteringSchemeEditKind kind = classifyMeteringSchemeEdit(scheme, edit);
-    if (scheme.usedEver && kind == MeteringSchemeEditKind::MeteringOrApplicability) {
-        return false;
-    }
     copyText(scheme.name, edit.name);
     scheme.params = edit.params;
     scheme.updatedAt = nowSeconds;
@@ -325,16 +336,8 @@ bool updateMeteringSchemeRecord(MeteringSchemeRecord& scheme,
     return true;
 }
 
-bool canDisableMeteringScheme(const MeteringSchemeRecord& scheme,
-                              std::uint32_t activeSchemeId,
-                              std::size_t enabledSchemeCount) {
-    return schemeAvailable(scheme) && scheme.id != activeSchemeId && enabledSchemeCount > 1;
-}
-
-bool canPhysicallyDeleteMeteringScheme(const MeteringSchemeRecord& scheme,
-                                       std::uint32_t activeSchemeId,
-                                       std::size_t validSchemeCount) {
-    return scheme.recordUsed && validSchemeCount > 1 && scheme.id != activeSchemeId && !scheme.usedEver;
+bool canDeleteMeteringScheme(const MeteringSchemeRecord& scheme, std::uint32_t activeSchemeId) {
+    return scheme.recordUsed && !scheme.deleted && scheme.id != activeSchemeId;
 }
 
 }  // namespace faucet

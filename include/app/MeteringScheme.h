@@ -8,7 +8,6 @@
 namespace faucet {
 
 constexpr std::size_t kMeteringSchemeNameLength = 32;
-constexpr std::size_t kLegacyMeteringSlotCount = 4;
 constexpr std::size_t kMeteringSchemeStoreSlotCount = 50;
 constexpr const char* kDefaultMeteringSchemeName = "YF-S201 默认计量方案";
 constexpr std::uint32_t kDefaultStartupPulseCount = 8;
@@ -28,13 +27,7 @@ enum class MeteringSchemeSource : std::uint8_t {
     Default = 0,
     CalibrationSession = 1,
     Manual = 2,
-    Migrated = 3,
     LongTermSamples = 4,
-};
-
-enum class MeteringSchemeState : std::uint8_t {
-    Available = 0,
-    Disabled = 1,
 };
 
 enum class MeteringSchemeEditKind : std::uint8_t {
@@ -46,7 +39,7 @@ enum class MeteringSchemeEditKind : std::uint8_t {
 struct MeteringSchemeRecord {
     std::uint32_t id = 0;
     bool recordUsed = false;
-    MeteringSchemeState state = MeteringSchemeState::Available;
+    bool deleted = false;
     char name[kMeteringSchemeNameLength]{};
     MeteringParameters params{};
     MeteringSchemeSource sourceType = MeteringSchemeSource::Default;
@@ -116,7 +109,7 @@ void initializeManualMeteringScheme(MeteringSchemeRecord& scheme,
                                     const char* name,
                                     const MeteringParameters& params,
                                     std::uint32_t nowSeconds);
-std::size_t meteringSchemeCount(const MeteringSchemeCollection& schemes, bool includeDisabled);
+std::size_t meteringSchemeCount(const MeteringSchemeCollection& schemes, bool includeDeleted);
 MeteringSchemeRecord* findMeteringSchemeById(MeteringSchemeCollection& schemes, std::uint32_t id);
 const MeteringSchemeRecord* findMeteringSchemeById(const MeteringSchemeCollection& schemes, std::uint32_t id);
 MeteringSchemeRecord* activeMeteringScheme(MeteringSchemeCollection& schemes);
@@ -140,11 +133,6 @@ bool updateMeteringSchemeRecord(MeteringSchemeRecord& scheme,
                                 const MeteringSchemeEdit& edit,
                                 std::uint32_t nowSeconds);
 
-bool canDisableMeteringScheme(const MeteringSchemeRecord& scheme,
-                              std::uint32_t activeSchemeId,
-                              std::size_t enabledSchemeCount);
-bool canPhysicallyDeleteMeteringScheme(const MeteringSchemeRecord& scheme,
-                                       std::uint32_t activeSchemeId,
-                                       std::size_t validSchemeCount);
+bool canDeleteMeteringScheme(const MeteringSchemeRecord& scheme, std::uint32_t activeSchemeId);
 
 }  // namespace faucet

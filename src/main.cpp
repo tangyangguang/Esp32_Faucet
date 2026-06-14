@@ -371,6 +371,10 @@ faucet::FaucetRuntimeDiagnostics currentRuntimeDiagnostics() {
     return faucet::FaucetRuntimeDiagnostics{g_maxLoopIntervalUs, g_maxAppTickUs, g_maxBaseHandleUs};
 }
 
+void applyValveOutput(faucet::ValveOutput output) {
+    g_valveHardware.apply(output);
+}
+
 void requestRecordStoreRebuildAfterFormatFs() {
     g_rebuildRecordStoreAfterFormatFs = true;
 }
@@ -457,8 +461,6 @@ void initializeApplication() {
     const bool meteringSchemesReady = g_meteringSchemes.begin();
     if (!meteringSchemesReady) {
         ESP32BASE_LOG_W("app", "metering scheme store unavailable, using config fallback");
-    } else if (!g_meteringSchemes.migrateLegacyFromConfig(g_configBackend, nowSeconds)) {
-        ESP32BASE_LOG_W("app", "legacy metering scheme migration failed");
     }
     const bool calibrationSessionReady = g_calibrationSession.begin();
     const bool calibrationSessionTracesReady = g_calibrationSessionTraces.begin();
@@ -562,6 +564,7 @@ void initializeApplication() {
     g_buttons.begin();
     g_flowPulses.begin();
     g_valveHardware.begin();
+    g_app->setValveOutputSink(applyValveOutput);
     g_beep.setEnabled(g_config.beepEnabled);
     g_beepHardware.begin();
     g_lcd.begin(g_config.lcdI2cAddress);

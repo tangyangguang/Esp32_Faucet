@@ -861,7 +861,7 @@ void test_metering_scheme_write_redirects_busy_to_metering_page() {
     Esp32BaseWeb::nativeTestBeginRequest(Esp32BaseWeb::METHOD_POST, "/faucet/metering");
     Esp32BaseWeb::nativeTestSetAuthenticated(true);
     Esp32BaseWeb::nativeTestSetSameOrigin(true);
-    Esp32BaseWeb::nativeTestSetParam("action", "enable_metering_scheme");
+    Esp32BaseWeb::nativeTestSetParam("action", "set_active_metering_scheme");
     Esp32BaseWeb::nativeTestSetParam("id", "1");
 
     TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch("/faucet/metering", Esp32BaseWeb::METHOD_POST));

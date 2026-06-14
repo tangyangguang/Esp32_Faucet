@@ -339,11 +339,29 @@ void test_file_record_append_failure_keeps_runtime_state() {
 
     backend.failWriteAt = true;
     TEST_ASSERT_FALSE(store.append(makeRecord(200, 2000)));
-    TEST_ASSERT_EQUAL_size_t(1, store.count());
+    TEST_ASSERT_FALSE(store.ready());
+    TEST_ASSERT_EQUAL_size_t(0, store.count());
 
+    backend.failWriteAt = false;
+    TEST_ASSERT_TRUE(store.append(makeRecord(300, 3000)));
     WaterRecord page[1]{};
     TEST_ASSERT_EQUAL_size_t(1, store.readPage(0, 1, page, 1));
-    TEST_ASSERT_EQUAL_UINT32(100, page[0].startTime);
+    TEST_ASSERT_EQUAL_UINT32(300, page[0].startTime);
+}
+
+void test_file_record_append_failure_marks_store_unready_for_reader_fallback() {
+    MemoryFileBackend backend;
+    WaterRecordFileStore store(backend, "/water.bin", 3);
+    TEST_ASSERT_TRUE(store.begin());
+    TEST_ASSERT_TRUE(store.append(makeRecord(100, 1000)));
+
+    backend.failWriteAt = true;
+    TEST_ASSERT_FALSE(store.append(makeRecord(200, 2000)));
+
+    TEST_ASSERT_FALSE(store.ready());
+    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(WaterRecordFileStatus::BackendFailure),
+                            static_cast<std::uint8_t>(store.status()));
+    TEST_ASSERT_EQUAL_STRING("unavailable", store.storageName());
 }
 
 void test_file_record_header_failure_rolls_back_runtime_state() {
@@ -354,12 +372,14 @@ void test_file_record_header_failure_rolls_back_runtime_state() {
 
     backend.failWriteAt = true;
     TEST_ASSERT_FALSE(store.append(makeRecord(200, 2000)));
-    TEST_ASSERT_EQUAL_size_t(1, store.count());
+    TEST_ASSERT_FALSE(store.ready());
+    TEST_ASSERT_EQUAL_size_t(0, store.count());
 
     backend.failWriteAt = false;
+    TEST_ASSERT_TRUE(store.append(makeRecord(300, 3000)));
     WaterRecord page[1]{};
     TEST_ASSERT_EQUAL_size_t(1, store.readPage(0, 1, page, 1));
-    TEST_ASSERT_EQUAL_UINT32(100, page[0].startTime);
+    TEST_ASSERT_EQUAL_UINT32(300, page[0].startTime);
 }
 
 void test_file_record_recovers_from_corrupt_primary_header_using_backup() {
@@ -425,6 +445,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_file_record_grows_record_file_as_records_are_appended);
     RUN_TEST(test_file_record_reports_backend_failures);
     RUN_TEST(test_file_record_append_failure_keeps_runtime_state);
+    RUN_TEST(test_file_record_append_failure_marks_store_unready_for_reader_fallback);
     RUN_TEST(test_file_record_header_failure_rolls_back_runtime_state);
     RUN_TEST(test_file_record_recovers_from_corrupt_primary_header_using_backup);
     RUN_TEST(test_file_record_rewrites_current_boot_relative_times);

@@ -1622,7 +1622,7 @@ void test_main_source_wires_metering_scheme_store_without_snapshot_store() {
 
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "#include \"app/MeteringSchemeStore.h\""));
     TEST_ASSERT_NULL(std::strstr(buffer, "#include \"app/WaterRecordMeteringSnapshotStore.h\""));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "\"/faucet_metering_schemes_v1.bin\""));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "\"/faucet_metering_schemes_v6.bin\""));
     TEST_ASSERT_NULL(std::strstr(buffer, "\"/faucet_record_metering_v1.bin\""));
     TEST_ASSERT_NULL(std::strstr(buffer, "PersistentRecordMeteringSnapshotStore"));
     TEST_ASSERT_NULL(std::strstr(buffer, "g_meteringSchemes.migrateLegacyFromConfig"));

@@ -49,7 +49,7 @@ constexpr std::size_t kMaxFlowPulsesPerTick = 32;
 constexpr std::uint32_t kI2cTimeoutMs = 20UL;
 constexpr const char* kWaterRecordPath = "/faucet_records_v2.bin";
 constexpr const char* kWaterRecordCalibrationPath = "/faucet_record_cal_v1.bin";
-constexpr const char* kMeteringSchemePath = "/faucet_metering_schemes_v1.bin";
+constexpr const char* kMeteringSchemePath = "/faucet_metering_schemes_v6.bin";
 constexpr const char* kCalibrationSessionPath = "/faucet_cal_session_v1.bin";
 constexpr const char* kCalibrationSessionTracePath = "/faucet_cal_session_traces_v1.bin";
 constexpr const char* kCalibrationLongTermSamplesPath = "/faucet_cal_samples_v1.bin";
@@ -706,8 +706,10 @@ void runApplicationTick() {
         !g_runtimePersistenceRetryActive ||
         faucet::elapsedAtLeast(nowMs, g_lastRuntimePersistenceFailureMs, kRuntimePersistenceRetryIntervalMs);
     if (runtimePersistenceRetryDue && g_app->consumePersistenceDirty() && g_filters) {
+        ESP32BASE_LOG_I("app", "runtime_persistence_begin");
         const bool ok = g_configStore.saveStatistics(g_statistics.record()) &&
                         g_configStore.saveFilterRuntime(g_filters->records());
+        ESP32BASE_LOG_I("app", "runtime_persistence_done ok=%s", ok ? "yes" : "no");
         if (!ok && !g_persistenceFailureLogged) {
             ESP32BASE_LOG_E("app", "runtime persistence failed");
             g_persistenceFailureLogged = true;

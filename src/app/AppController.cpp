@@ -7,6 +7,15 @@
 #include <limits>
 #include <new>
 
+#ifndef NATIVE_BUILD
+#include <Esp32Base.h>
+#define APP_RESULT_LOG_I(tag, fmt, ...) ESP32BASE_LOG_I(tag, fmt, ##__VA_ARGS__)
+#else
+#define APP_RESULT_LOG_I(tag, fmt, ...) \
+    do {                                \
+    } while (0)
+#endif
+
 namespace faucet {
 namespace {
 
@@ -1145,12 +1154,21 @@ void AppController::processResult(std::uint32_t startTime,
         markWaterRecordBootId(record, bootId);
     }
 
+    APP_RESULT_LOG_I("app",
+                     "water_result_ready result=%u volume_ml=%lu target=%lu pulses=%lu scheme_id=%lu",
+                     static_cast<unsigned>(result.result),
+                     static_cast<unsigned long>(record.volumeMl),
+                     static_cast<unsigned long>(record.targetValue),
+                     static_cast<unsigned long>(record.pulseCount),
+                     static_cast<unsigned long>(record.meteringSchemeId));
     const WaterPulseTraceState traceState = traceStateForResult(result.result);
     finishPulseTrace(record, traceState, flow, nowUs);
 
     lastResultRecord_ = WaterRecord{};
     lastResultRecordValid_ = false;
+    APP_RESULT_LOG_I("app", "water_record_append_begin");
     lastRecordWriteOk_ = records_.append(record);
+    APP_RESULT_LOG_I("app", "water_record_append_done ok=%s", lastRecordWriteOk_ ? "yes" : "no");
     if (lastRecordWriteOk_ && meteringSchemes_ && !activeMeteringScheme_.usedEver) {
         activeMeteringScheme_.usedEver = true;
         meteringSchemes_->markUsedAfterRecordWrite(activeMeteringScheme_.id);
@@ -1159,6 +1177,11 @@ void AppController::processResult(std::uint32_t startTime,
         statistics_.addWater(result.volumeMl, periodKeys);
     }
     filters_.addWater(result.volumeMl);
+    APP_RESULT_LOG_I("app",
+                     "water_runtime_totals_updated period_keys=%s today_ml=%lu total_ml=%lu",
+                     periodKeysValid ? "valid" : "invalid",
+                     static_cast<unsigned long>(statistics_.record().todayMl),
+                     static_cast<unsigned long>(statistics_.record().totalMl));
     persistCalibrationPendingAttempt(record, nowSeconds);
     persistenceDirty_ = true;
     pendingBeep_ = result.result == WaterResult::Completed ? BeepPattern::Done : BeepPattern::Error;

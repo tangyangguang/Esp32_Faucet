@@ -131,7 +131,7 @@ void test_config_migrates_v1_without_losing_user_values() {
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(ConfigStore::LoadStatus::MigratedLegacy),
                             static_cast<std::uint8_t>(store.lastSystemConfigLoadStatus()));
     TEST_ASSERT_FALSE(store.systemConfigReadOnly());
-    TEST_ASSERT_EQUAL_INT32(15, backend.getInt("faucet_cfg", "ver", 0));
+    TEST_ASSERT_EQUAL_INT32(16, backend.getInt("faucet_cfg", "ver", 0));
     TEST_ASSERT_EQUAL_INT32(static_cast<std::int32_t>(kDefaultPulseObservationWindowSec),
                             backend.getInt("faucet_cfg", "pulse_win_s", 0));
     TEST_ASSERT_EQUAL_INT32(90, backend.getInt("faucet_cfg", "f0_life_min", 0));
@@ -180,7 +180,7 @@ void test_config_migrates_legacy_fields_when_version_is_missing() {
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(ConfigStore::LoadStatus::MigratedLegacy),
                             static_cast<std::uint8_t>(store.lastSystemConfigLoadStatus()));
     TEST_ASSERT_FALSE(store.systemConfigReadOnly());
-    TEST_ASSERT_EQUAL_INT32(15, backend.getInt("faucet_cfg", "ver", 0));
+    TEST_ASSERT_EQUAL_INT32(16, backend.getInt("faucet_cfg", "ver", 0));
     TEST_ASSERT_EQUAL_INT32(static_cast<std::int32_t>(kDefaultPulseObservationWindowSec),
                             backend.getInt("faucet_cfg", "pulse_win_s", 0));
     TEST_ASSERT_EQUAL_UINT32(23, loaded.confirmTimeoutSec);
@@ -206,7 +206,7 @@ void test_config_migrates_v2_filter_ranges_and_single_calibration_target() {
 
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(ConfigStore::LoadStatus::MigratedLegacy),
                             static_cast<std::uint8_t>(store.lastSystemConfigLoadStatus()));
-    TEST_ASSERT_EQUAL_INT32(15, backend.getInt("faucet_cfg", "ver", 0));
+    TEST_ASSERT_EQUAL_INT32(16, backend.getInt("faucet_cfg", "ver", 0));
     TEST_ASSERT_EQUAL_INT32(static_cast<std::int32_t>(kDefaultPulseObservationWindowSec),
                             backend.getInt("faucet_cfg", "pulse_win_s", 0));
     TEST_ASSERT_TRUE(loaded.filters[1].enabled);
@@ -350,7 +350,7 @@ void test_config_save_and_load_round_trips_system_config() {
     TEST_ASSERT_EQUAL_UINT32(180, loaded.filters[1].recommendDays);
     TEST_ASSERT_EQUAL_UINT32(365, loaded.filters[1].maxDays);
     TEST_ASSERT_EQUAL_UINT32(2000000, loaded.filters[1].lifeMl);
-    TEST_ASSERT_EQUAL_UINT32(0, loaded.filters[1].startTime);
+    TEST_ASSERT_EQUAL_UINT32(1714502400, loaded.filters[1].startTime);
     TEST_ASSERT_EQUAL_UINT32(0, loaded.filters[1].usedMl);
 }
 
@@ -404,7 +404,7 @@ void test_config_migrates_missing_pulse_observation_window_to_default() {
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(ConfigStore::LoadStatus::MigratedLegacy),
                             static_cast<std::uint8_t>(store.lastSystemConfigLoadStatus()));
     TEST_ASSERT_TRUE(store.lastSystemConfigMigrationWriteBack());
-    TEST_ASSERT_EQUAL_INT32(15, backend.getInt("faucet_cfg", "ver", 0));
+    TEST_ASSERT_EQUAL_INT32(16, backend.getInt("faucet_cfg", "ver", 0));
     TEST_ASSERT_EQUAL_INT32(static_cast<std::int32_t>(kDefaultPulseObservationWindowSec),
                             backend.getInt("faucet_cfg", "pulse_win_s", 0));
 }
@@ -505,7 +505,7 @@ void test_statistics_runtime_future_version_uses_defaults_without_erasing_storag
     TEST_ASSERT_EQUAL_STRING("123", text);
 }
 
-void test_filter_runtime_round_trips_start_and_used_only() {
+void test_filter_runtime_round_trips_used_and_boot_only() {
     FakeConfigBackend backend;
     ConfigStore store(backend);
     SystemConfig config = makeDefaultConfig();
@@ -519,11 +519,13 @@ void test_filter_runtime_round_trips_start_and_used_only() {
     TEST_ASSERT_TRUE(store.saveFilterRuntime(config.filters));
 
     SystemConfig loaded = makeDefaultConfig();
+    loaded.filters[0].startTime = 999;
+    loaded.filters[1].startTime = 888;
     store.loadFilterRuntime(loaded.filters);
-    TEST_ASSERT_EQUAL_UINT32(111, loaded.filters[0].startTime);
+    TEST_ASSERT_EQUAL_UINT32(999, loaded.filters[0].startTime);
     TEST_ASSERT_EQUAL_UINT32(4000000000UL, loaded.filters[0].usedMl);
     TEST_ASSERT_EQUAL_UINT32(9, loaded.filters[0].startBootId);
-    TEST_ASSERT_EQUAL_UINT32(222, loaded.filters[1].startTime);
+    TEST_ASSERT_EQUAL_UINT32(888, loaded.filters[1].startTime);
     TEST_ASSERT_EQUAL_UINT32(333, loaded.filters[1].usedMl);
     TEST_ASSERT_EQUAL_UINT32(10, loaded.filters[1].startBootId);
     TEST_ASSERT_EQUAL_STRING("第1级滤芯", loaded.filters[0].name);
@@ -545,6 +547,28 @@ void test_filter_runtime_recovers_legacy_runtime_when_current_config_was_already
     TEST_ASSERT_EQUAL_UINT32(1714502400, config.filters[0].startTime);
     TEST_ASSERT_EQUAL_UINT32(123456, config.filters[0].usedMl);
     TEST_ASSERT_EQUAL_INT32(1, backend.getInt("faucet_run", "ver", 0));
+}
+
+void test_v15_migration_preserves_filter_start_time_from_runtime_storage() {
+    FakeConfigBackend backend;
+    backend.setInt("faucet_cfg", "ver", 15);
+    backend.setBool("faucet_cfg", "f0_en", true);
+    backend.setStr("faucet_cfg", "f0_name", "PP");
+    backend.setInt("faucet_run", "ver", 1);
+    backend.setStr("faucet_run", "f0_start", "1714502400");
+    backend.setStr("faucet_run", "f0_used", "123456");
+    ConfigStore store(backend);
+
+    const SystemConfig loaded = store.loadSystemConfig();
+
+    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(ConfigStore::LoadStatus::MigratedLegacy),
+                            static_cast<std::uint8_t>(store.lastSystemConfigLoadStatus()));
+    TEST_ASSERT_TRUE(store.lastSystemConfigMigrationWriteBack());
+    TEST_ASSERT_EQUAL_INT32(16, backend.getInt("faucet_cfg", "ver", 0));
+    TEST_ASSERT_TRUE(loaded.filters[0].enabled);
+    TEST_ASSERT_EQUAL_STRING("PP", loaded.filters[0].name);
+    TEST_ASSERT_EQUAL_UINT32(1714502400, loaded.filters[0].startTime);
+    TEST_ASSERT_EQUAL_INT32(1714502400, backend.getInt("faucet_cfg", "f0_start", 0));
 }
 
 void test_filter_runtime_future_version_keeps_current_records_and_storage() {
@@ -585,8 +609,9 @@ int main(int argc, char** argv) {
     RUN_TEST(test_statistics_runtime_round_trips_uint32_values);
     RUN_TEST(test_statistics_runtime_rolls_loaded_periods);
     RUN_TEST(test_statistics_runtime_future_version_uses_defaults_without_erasing_storage);
-    RUN_TEST(test_filter_runtime_round_trips_start_and_used_only);
+    RUN_TEST(test_filter_runtime_round_trips_used_and_boot_only);
     RUN_TEST(test_filter_runtime_recovers_legacy_runtime_when_current_config_was_already_migrated);
+    RUN_TEST(test_v15_migration_preserves_filter_start_time_from_runtime_storage);
     RUN_TEST(test_filter_runtime_future_version_keeps_current_records_and_storage);
     return UNITY_END();
 }

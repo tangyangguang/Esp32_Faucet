@@ -192,10 +192,11 @@ void appendPresetSummary(JsonWriter& writer,
     const bool available = index < kPresetCount && config.presets[index].enabled;
     const std::size_t count = enabledPresetCount(config);
     const std::size_t ordinal = enabledPresetOrdinal(config, index);
-    writer.append(",\"%s\":{\"available\":%s,\"index\":%u,\"enabledOrdinal\":%u,\"enabledCount\":%u",
+    writer.append(",\"%s\":{\"available\":%s,\"index\":%u,\"displayNumber\":%u,\"enabledOrdinal\":%u,\"enabledCount\":%u",
                   name,
                   available ? "true" : "false",
                   available ? static_cast<unsigned>(index) : 0U,
+                  available ? static_cast<unsigned>(index + 1U) : 0U,
                   static_cast<unsigned>(ordinal),
                   static_cast<unsigned>(count));
     if (!available) {

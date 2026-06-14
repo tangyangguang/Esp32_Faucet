@@ -3731,15 +3731,13 @@ void sendNextPresetControl(const AppSnapshot& snapshot) {
     const bool available = snapshot.water.selectedPreset < kPresetCount && config.presets[snapshot.water.selectedPreset].enabled;
     char target[24]{};
     char estimate[160]{};
-    const std::size_t count = enabledPresetCount(config);
-    const std::size_t ordinal = enabledPresetOrdinal(config, snapshot.water.selectedPreset);
     Esp32BaseWeb::sendChunk("<div id='nextPresetControl' class='next-preset-control'>"
                             "<button class='preset-step' type='button' aria-label='上一个预设' data-action='action=select_previous' onclick=\"faucetSelectPreset('select_previous')\">‹</button>"
                             "<div class='next-preset-copy'><span>下次预设</span><strong id='nextPresetLabel'>");
     if (available) {
         const PresetConfig& preset = config.presets[snapshot.water.selectedPreset];
         formatPresetTarget(preset, target, sizeof(target));
-        sendFmt("P%u/%u · ", static_cast<unsigned>(ordinal), static_cast<unsigned>(count));
+        sendFmt("P%u · ", static_cast<unsigned>(snapshot.water.selectedPreset + 1U));
         sendHtmlEscapedBounded(preset.name[0] ? preset.name : "未命名", sizeof(preset.name));
         sendFmt(" · %s", target);
         formatPresetEstimate(preset,
@@ -4042,7 +4040,7 @@ void sendHomeAutoRefreshScript() {
                             "function faucetResultText(r){return {completed:'完成',stoppedByUser:'手动停止',safetyStopped:'安全停止',flowError:'流量异常',pauseTimeout:'暂停超时'}[r]||'未知';}"
                             "function faucetStatusNote(s,r){return {idle:'设备可用，等待按键启动',confirm:'等待确认，确认后开始出水',running:'正在出水，请留意容器',paused:'已暂停，等待继续或取消',error:faucetResultText(r)}[s]||'状态未知';}"
                             "function faucetPresetTarget(p){return p&&p.mode==='time'?faucetSeconds(p.targetValue):faucetLiters(p&&p.targetValue);}"
-                            "function faucetPresetLabel(p){if(!p||!p.available)return '无可用预设';return 'P'+p.enabledOrdinal+'/'+p.enabledCount+' · '+(p.name||'未命名')+' · '+faucetPresetTarget(p);}"
+                            "function faucetPresetLabel(p){if(!p||!p.available)return '无可用预设';var n=Number(p.displayNumber)||((Number(p.index)||0)+1);return 'P'+n+' · '+(p.name||'未命名')+' · '+faucetPresetTarget(p);}"
                             "function faucetEstimateText(mode,e,m){if(!e||!e.available)return (e&&e.reason)||'计量参数未就绪';if(mode==='time')return '预计 '+faucetLiters(e.targetMl)+' · '+e.pulseCount+'P · 稳态 '+faucetFlowLitersPerMinCompact((m&&m.stableFlowMlPerMin)||0);var t='预计 '+e.fullRunPulsePerLiter+'P/L · '+e.pulseCount+'P';return e.estimatedDurationSec>0?t+' · 约 '+faucetSeconds(e.estimatedDurationSec):t;}"
                             "function faucetTargetMeta(mode,e){if(mode==='time'){return e&&e.available?'预计 '+faucetLiters(e.targetMl):((e&&e.reason)||'计量参数未就绪');}if(!e||!e.available)return (e&&e.reason)||'计量参数未就绪';return e.estimatedDurationSec>0?'预计约 '+faucetSeconds(e.estimatedDurationSec):'计量参数未就绪';}"
                             "function faucetPresetEstimate(p,m){if(!p||!p.available)return '';return faucetEstimateText(p.mode,p.targetEstimate,m);}"
@@ -5714,8 +5712,9 @@ bool sendJsonBuffer(bool ok, const char* json) {
 }
 
 bool contextReady() {
-    if (!g_context.config || !g_context.configStore || !g_context.app || !g_context.filters || !g_context.records ||
-        !g_context.recordCalibrations || !g_context.recordCalibrationWriter || !g_context.nowSeconds) {
+    if (!g_context.config || !g_context.configStore || !g_context.statistics || !g_context.app || !g_context.filters ||
+        !g_context.records || !g_context.recordCalibrations || !g_context.recordCalibrationWriter ||
+        !g_context.nowSeconds) {
         return false;
     }
     return true;
@@ -5727,6 +5726,22 @@ bool requireContext() {
         return false;
     }
     return true;
+}
+
+void handleAfterFormatFs(const Esp32BaseWeb::FormatFsResult& result, void*) {
+    if (!result.formatSuccess || !g_context.configStore || !g_context.statistics || !g_context.app) {
+        return;
+    }
+
+    const StatisticsRecord current = g_context.app->snapshot().statistics;
+    const PeriodKeys keys{current.lastDayKey, current.lastWeekKey, current.lastMonthKey};
+    g_context.statistics->reset(keys);
+    if (!g_context.configStore->resetStatistics(keys)) {
+        g_context.app->markPersistenceDirtyForRetry();
+    }
+    if (g_context.afterFormatFs) {
+        g_context.afterFormatFs();
+    }
 }
 
 const char* configLoadStatusName(ConfigStore::LoadStatus status) {
@@ -7070,6 +7085,7 @@ bool registerFaucetWeb() {
     }
 
     Esp32BaseWeb::setHeadExtraCallback(sendAppStylesheetLink);
+    Esp32BaseWeb::setAfterFormatFsCallback(handleAfterFormatFs);
 
     bool ok = true;
     const FaucetWebRoute* routes = faucetWebRoutes();

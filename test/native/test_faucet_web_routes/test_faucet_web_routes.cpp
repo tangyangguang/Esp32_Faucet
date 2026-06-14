@@ -1897,6 +1897,19 @@ void test_storage_status_and_persistence_retry_are_explicit() {
     TEST_ASSERT_NOT_NULL(std::strstr(mainBuffer, "g_runtimePersistenceRetryActive"));
 }
 
+void test_main_loop_budgets_flow_pulse_drain_to_keep_local_stop_responsive() {
+    FILE* mainFile = std::fopen("src/main.cpp", "rb");
+    TEST_ASSERT_NOT_NULL(mainFile);
+    static char mainBuffer[90000]{};
+    const std::size_t mainRead = std::fread(mainBuffer, 1, sizeof(mainBuffer) - 1, mainFile);
+    std::fclose(mainFile);
+    TEST_ASSERT_GREATER_THAN_size_t(0, mainRead);
+
+    TEST_ASSERT_NOT_NULL(std::strstr(mainBuffer, "kMaxFlowPulsesPerTick"));
+    TEST_ASSERT_NOT_NULL(std::strstr(mainBuffer, "processedPulses < kMaxFlowPulsesPerTick"));
+    TEST_ASSERT_NULL(std::strstr(mainBuffer, "while (g_flowPulses.pop(pulseUs))"));
+}
+
 int main(int argc, char** argv) {
     (void)argc;
     (void)argv;
@@ -1938,5 +1951,6 @@ int main(int argc, char** argv) {
     RUN_TEST(test_web_write_handlers_return_busy_before_trace_or_filter_runtime_writes);
     RUN_TEST(test_incomplete_factory_reset_path_is_not_kept_as_dead_code);
     RUN_TEST(test_storage_status_and_persistence_retry_are_explicit);
+    RUN_TEST(test_main_loop_budgets_flow_pulse_drain_to_keep_local_stop_responsive);
     return UNITY_END();
 }

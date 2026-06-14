@@ -124,6 +124,7 @@ void test_status_json_contains_next_preset_summary() {
 
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"nextPreset\""));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"index\":1"));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"displayNumber\":2"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"enabledOrdinal\":2"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"enabledCount\":2"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"name\":\"7.5L\""));

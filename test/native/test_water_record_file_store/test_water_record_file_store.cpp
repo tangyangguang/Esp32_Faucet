@@ -128,8 +128,8 @@ void test_file_record_initializes_empty_file() {
     TEST_ASSERT_EQUAL_size_t(0, store.count());
     TEST_ASSERT_EQUAL_size_t(10, store.capacity());
     TEST_ASSERT_TRUE(backend.exists("/water.bin"));
-    TEST_ASSERT_EQUAL_INT64(24 + static_cast<int>(sizeof(WaterRecord) * 10) + 24,
-                            backend.fileSize("/water.bin"));
+    TEST_ASSERT_EQUAL_INT64(24, backend.fileSize("/water.bin"));
+    TEST_ASSERT_EQUAL_size_t(0, backend.createSizedCalls);
 }
 
 void test_file_record_appends_and_reads_newest_first() {
@@ -308,17 +308,17 @@ void test_file_record_reports_zero_after_external_remove_and_recovers_on_append(
     TEST_ASSERT_EQUAL_UINT32(300, page[0].startTime);
 }
 
-void test_file_record_preallocates_record_slots_and_backup_header() {
+void test_file_record_grows_record_file_as_records_are_appended() {
     MemoryFileBackend backend;
     WaterRecordFileStore store(backend, "/water.bin", 3);
     TEST_ASSERT_TRUE(store.begin());
 
     TEST_ASSERT_TRUE(store.append(makeRecord(100, 1000)));
-    TEST_ASSERT_EQUAL_INT64(24 + static_cast<int>(sizeof(WaterRecord) * 3) + 24,
+    TEST_ASSERT_EQUAL_INT64(24 + static_cast<int>(sizeof(WaterRecord)),
                             backend.fileSize("/water.bin"));
 
     TEST_ASSERT_TRUE(store.append(makeRecord(200, 2000)));
-    TEST_ASSERT_EQUAL_INT64(24 + static_cast<int>(sizeof(WaterRecord) * 3) + 24,
+    TEST_ASSERT_EQUAL_INT64(24 + static_cast<int>(sizeof(WaterRecord) * 2),
                             backend.fileSize("/water.bin"));
 }
 
@@ -371,6 +371,9 @@ void test_file_record_recovers_from_corrupt_primary_header_using_backup() {
         TEST_ASSERT_TRUE(store.append(makeRecord(200, 2000)));
     }
 
+    std::uint8_t header[24]{};
+    TEST_ASSERT_TRUE(backend.readAt("/water.bin", 0, header, sizeof(header)));
+    TEST_ASSERT_TRUE(backend.writeAt("/water.bin", 24 + sizeof(WaterRecord) * 3, header, sizeof(header)));
     backend.overwriteByte("/water.bin", 0, 0x00);
 
     WaterRecordFileStore loaded(backend, "/water.bin", 3);
@@ -419,7 +422,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_file_record_corrupt_state_reports_missing_after_external_format_and_recovers_on_append);
     RUN_TEST(test_file_record_clear_keeps_file_ready);
     RUN_TEST(test_file_record_reports_zero_after_external_remove_and_recovers_on_append);
-    RUN_TEST(test_file_record_preallocates_record_slots_and_backup_header);
+    RUN_TEST(test_file_record_grows_record_file_as_records_are_appended);
     RUN_TEST(test_file_record_reports_backend_failures);
     RUN_TEST(test_file_record_append_failure_keeps_runtime_state);
     RUN_TEST(test_file_record_header_failure_rolls_back_runtime_state);

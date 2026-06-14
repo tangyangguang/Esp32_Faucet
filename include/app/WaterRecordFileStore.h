@@ -45,7 +45,6 @@ private:
     bool initializeNewFile();
     bool loadHeader();
     bool saveHeader();
-    bool ensureFileSizeForHeaders();
     bool appendRecord(std::size_t index, const WaterRecord& record);
     bool readRecordSpan(std::size_t firstIndex, WaterRecord* output, std::size_t count) const;
     std::size_t fileSizeBytes() const;

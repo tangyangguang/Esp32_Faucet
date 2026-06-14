@@ -12,7 +12,7 @@ namespace {
 constexpr const char* kConfigNs = "faucet_cfg";
 constexpr const char* kStatNs = "faucet_stat";
 constexpr const char* kRunNs = "faucet_run";
-constexpr std::int32_t kConfigVersion = 15;
+constexpr std::int32_t kConfigVersion = 16;
 constexpr std::int32_t kRuntimeVersion = 1;
 
 std::int32_t toInt(std::uint32_t value) {
@@ -171,7 +171,7 @@ bool hasLegacyLifeDays(ConfigBackend& backend) {
 bool hasLegacyFilterRuntime(ConfigBackend& backend) {
     for (std::size_t i = 0; i < kFilterCount; ++i) {
         char key[16]{};
-        const char* suffixes[] = {"start", "used"};
+        const char* suffixes[] = {"used"};
         for (const char* suffix : suffixes) {
             filterKey(key, sizeof(key), i, suffix);
             if (hasIntKey(backend, kConfigNs, key)) {
@@ -270,20 +270,29 @@ void loadFilterBasics(ConfigBackend& backend, FilterRecord& filter, std::size_t 
     backend.getStr(kConfigNs, key, filter.name, sizeof(filter.name), filter.name);
     filterKey(key, sizeof(key), index, "life_ml");
     filter.lifeMl = static_cast<std::uint32_t>(backend.getInt(kConfigNs, key, toInt(filter.lifeMl)));
-}
-
-void loadLegacyFilterRuntime(ConfigBackend& backend, FilterRecord& filter, std::size_t index) {
-    char key[12]{};
     filterKey(key, sizeof(key), index, "start");
     filter.startTime = static_cast<std::uint32_t>(backend.getInt(kConfigNs, key, toInt(filter.startTime)));
+}
+
+void loadLegacyFilterRuntimeFromConfig(ConfigBackend& backend, FilterRecord& filter, std::size_t index) {
+    char key[12]{};
     filterKey(key, sizeof(key), index, "used");
     filter.usedMl = static_cast<std::uint32_t>(backend.getInt(kConfigNs, key, toInt(filter.usedMl)));
+}
+
+void migrateFilterStartTimeFromRuntime(ConfigBackend& backend, FilterRecord& filter, std::size_t index) {
+    char key[12]{};
+    filterKey(key, sizeof(key), index, "start");
+    if (hasStrKey(backend, kConfigNs, key) || hasIntKey(backend, kConfigNs, key)) {
+        return;
+    }
+    filter.startTime = getU32(backend, kRunNs, key, filter.startTime);
 }
 
 void loadLegacyFilters(ConfigBackend& backend, SystemConfig& config) {
     for (std::size_t i = 0; i < kFilterCount; ++i) {
         loadFilterBasics(backend, config.filters[i], i);
-        loadLegacyFilterRuntime(backend, config.filters[i], i);
+        loadLegacyFilterRuntimeFromConfig(backend, config.filters[i], i);
         char key[12]{};
         filterKey(key, sizeof(key), i, "life_d");
         const std::uint32_t lifeDays =
@@ -296,8 +305,9 @@ void loadLegacyFilters(ConfigBackend& backend, SystemConfig& config) {
 void loadFilterRanges(ConfigBackend& backend, SystemConfig& config, std::int32_t version) {
     for (std::size_t i = 0; i < kFilterCount; ++i) {
         loadFilterBasics(backend, config.filters[i], i);
-        if (version < kConfigVersion) {
-            loadLegacyFilterRuntime(backend, config.filters[i], i);
+        if (version < 16) {
+            migrateFilterStartTimeFromRuntime(backend, config.filters[i], i);
+            loadLegacyFilterRuntimeFromConfig(backend, config.filters[i], i);
         }
         char key[12]{};
         filterKey(key, sizeof(key), i, "life_min");
@@ -440,6 +450,8 @@ bool ConfigStore::saveSystemConfig(const SystemConfig& config) {
         ok = okAll(ok, backend_.setInt(kConfigNs, key, toInt(safe.filters[i].maxDays)));
         filterKey(key, sizeof(key), i, "life_ml");
         ok = okAll(ok, backend_.setInt(kConfigNs, key, toInt(safe.filters[i].lifeMl)));
+        filterKey(key, sizeof(key), i, "start");
+        ok = okAll(ok, backend_.setInt(kConfigNs, key, toInt(safe.filters[i].startTime)));
     }
     if (ok) {
         ok = backend_.setInt(kConfigNs, "ver", kConfigVersion);
@@ -529,7 +541,7 @@ void ConfigStore::loadFilterRuntime(FilterRecord (&records)[kFilterCount]) {
     const std::int32_t version = backend_.getInt(kRunNs, "ver", 0);
     if (version == 0 && hasLegacyFilterRuntime(backend_)) {
         for (std::size_t i = 0; i < kFilterCount; ++i) {
-            loadLegacyFilterRuntime(backend_, records[i], i);
+            loadLegacyFilterRuntimeFromConfig(backend_, records[i], i);
         }
         saveFilterRuntime(records);
         return;
@@ -540,8 +552,6 @@ void ConfigStore::loadFilterRuntime(FilterRecord (&records)[kFilterCount]) {
 
     for (std::size_t i = 0; i < kFilterCount; ++i) {
         char key[12]{};
-        filterKey(key, sizeof(key), i, "start");
-        records[i].startTime = getU32(backend_, kRunNs, key, records[i].startTime);
         filterKey(key, sizeof(key), i, "used");
         records[i].usedMl = getU32(backend_, kRunNs, key, records[i].usedMl);
         filterKey(key, sizeof(key), i, "boot");
@@ -556,8 +566,6 @@ bool ConfigStore::saveFilterRuntime(const FilterRecord (&records)[kFilterCount])
     bool ok = backend_.setInt(kRunNs, "ver", kRuntimeVersion);
     for (std::size_t i = 0; i < kFilterCount; ++i) {
         char key[12]{};
-        filterKey(key, sizeof(key), i, "start");
-        ok = okAll(ok, setU32(backend_, kRunNs, key, records[i].startTime));
         filterKey(key, sizeof(key), i, "used");
         ok = okAll(ok, setU32(backend_, kRunNs, key, records[i].usedMl));
         filterKey(key, sizeof(key), i, "boot");

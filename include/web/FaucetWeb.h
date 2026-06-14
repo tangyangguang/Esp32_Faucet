@@ -13,6 +13,7 @@ class CalibrationSessionTraceStore;
 class ConfigStore;
 class FilterStore;
 class MeteringSchemeStore;
+class StatisticsStore;
 class WaterRecordCalibrationReader;
 class WaterRecordCalibrationWriter;
 class WaterRecordReader;
@@ -23,6 +24,7 @@ struct SystemConfig;
 using FaucetNowSeconds = std::uint32_t (*)();
 using FaucetBootId = std::uint32_t (*)();
 using FaucetApplySettings = void (*)(const SystemConfig&);
+using FaucetAfterFormatFs = void (*)();
 
 struct FaucetDisplayStatus {
     DisplayFrame logicalFrame;
@@ -42,6 +44,7 @@ using FaucetCurrentRuntimeDiagnostics = FaucetRuntimeDiagnostics (*)();
 struct FaucetWebContext {
     SystemConfig* config;
     ConfigStore* configStore;
+    StatisticsStore* statistics;
     AppController* app;
     FilterStore* filters;
     const WaterRecordReader* records;
@@ -56,6 +59,7 @@ struct FaucetWebContext {
     FaucetNowSeconds nowSeconds;
     FaucetBootId bootId;
     FaucetApplySettings applySettings;
+    FaucetAfterFormatFs afterFormatFs;
     FaucetCurrentDisplayStatus currentDisplayStatus;
     FaucetCurrentRuntimeDiagnostics currentRuntimeDiagnostics;
 };

@@ -8,8 +8,6 @@ namespace {
 
 constexpr std::uint32_t kRecordMagic = 0x46575244UL;  // FWRD
 constexpr std::uint16_t kRecordVersion = 1;
-constexpr std::size_t kFileExtendChunkSize = 64;
-
 struct RecordHeader {
     std::uint32_t magic;
     std::uint16_t version;
@@ -238,7 +236,8 @@ WaterRecordFileStatus WaterRecordFileStore::status() const {
 bool WaterRecordFileStore::initializeNewFile() {
     oldestIndex_ = 0;
     count_ = 0;
-    ready_ = backend_.createSized(path_, fileSizeBytes()) && saveHeader();
+    const RecordHeader header = makeHeader(capacity_, count_, oldestIndex_);
+    ready_ = backend_.appendBytes(path_, reinterpret_cast<const std::uint8_t*>(&header), sizeof(header));
     status_ = ready_ ? WaterRecordFileStatus::Ready : WaterRecordFileStatus::BackendFailure;
     return ready_;
 }
@@ -260,19 +259,15 @@ bool WaterRecordFileStore::loadHeader() {
         return false;
     }
 
-    RecordHeader selected = header;
     const bool primaryValid = validHeader(header, capacity_, true);
     bool backupValid = false;
+    RecordHeader backup{};
     if (fileSize >= static_cast<std::int64_t>(backupHeaderOffset() + sizeof(RecordHeader))) {
-        RecordHeader backup{};
         if (!backend_.readAt(path_, backupHeaderOffset(), reinterpret_cast<std::uint8_t*>(&backup), sizeof(backup))) {
             status_ = WaterRecordFileStatus::BackendFailure;
             return false;
         }
         backupValid = validHeader(backup, capacity_, false);
-        if (backupValid) {
-            selected = backup;
-        }
     }
 
     if (!primaryValid && !backupValid) {
@@ -283,6 +278,7 @@ bool WaterRecordFileStore::loadHeader() {
         return false;
     }
 
+    const RecordHeader& selected = primaryValid ? header : backup;
     const std::size_t requiredSize =
         sizeof(RecordHeader) + static_cast<std::size_t>(selected.count) * sizeof(WaterRecord);
     if (fileSize < static_cast<std::int64_t>(requiredSize)) {
@@ -298,32 +294,8 @@ bool WaterRecordFileStore::loadHeader() {
 }
 
 bool WaterRecordFileStore::saveHeader() {
-    if (!ensureFileSizeForHeaders()) {
-        return false;
-    }
     const RecordHeader header = makeHeader(capacity_, count_, oldestIndex_);
-    if (!backend_.writeAt(path_, backupHeaderOffset(), reinterpret_cast<const std::uint8_t*>(&header), sizeof(header))) {
-        return false;
-    }
-    backend_.writeAt(path_, 0, reinterpret_cast<const std::uint8_t*>(&header), sizeof(header));
-    return true;
-}
-
-bool WaterRecordFileStore::ensureFileSizeForHeaders() {
-    std::int64_t size = backend_.fileSize(path_);
-    if (size < 0 || size > static_cast<std::int64_t>(fileSizeBytes())) {
-        return false;
-    }
-    static const std::uint8_t zeros[kFileExtendChunkSize]{};
-    while (size < static_cast<std::int64_t>(fileSizeBytes())) {
-        const std::size_t remaining = fileSizeBytes() - static_cast<std::size_t>(size);
-        const std::size_t chunk = std::min<std::size_t>(remaining, sizeof(zeros));
-        if (!backend_.appendBytes(path_, zeros, chunk)) {
-            return false;
-        }
-        size += static_cast<std::int64_t>(chunk);
-    }
-    return true;
+    return backend_.writeAt(path_, 0, reinterpret_cast<const std::uint8_t*>(&header), sizeof(header));
 }
 
 bool WaterRecordFileStore::appendRecord(std::size_t index, const WaterRecord& record) {

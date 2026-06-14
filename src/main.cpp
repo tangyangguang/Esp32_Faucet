@@ -45,6 +45,7 @@ constexpr std::size_t kPulseTraceCapacity = faucet::kMaxRecentPulseTraceCount;
 constexpr std::size_t kPulseTraceMaxSamples =
     static_cast<std::size_t>(faucet::kMaxRecentPulseTraceCount) * faucet::kPulseTraceMaxRawEdgesPerTrace;
 constexpr std::uint32_t kRuntimePersistenceRetryIntervalMs = 30000UL;
+constexpr std::size_t kMaxFlowPulsesPerTick = 32;
 constexpr std::uint32_t kI2cTimeoutMs = 20UL;
 constexpr const char* kWaterRecordPath = "/faucet_records_v2.bin";
 constexpr const char* kWaterRecordCalibrationPath = "/faucet_record_cal_v1.bin";
@@ -201,6 +202,7 @@ faucet::DisplayPresenter* g_display = nullptr;
 faucet::DisplayFrame g_lastDisplayFrame{faucet::DisplayPage::Sleep, false, {}, {}};
 bool g_persistenceFailureLogged = false;
 bool g_runtimePersistenceRetryActive = false;
+bool g_rebuildRecordStoreAfterFormatFs = false;
 std::uint32_t g_lastRuntimePersistenceFailureMs = 0;
 std::uint32_t g_lastDisplayMs = 0;
 std::uint32_t g_lastDroppedPulsesLogged = 0;
@@ -369,6 +371,10 @@ faucet::FaucetRuntimeDiagnostics currentRuntimeDiagnostics() {
     return faucet::FaucetRuntimeDiagnostics{g_maxLoopIntervalUs, g_maxAppTickUs, g_maxBaseHandleUs};
 }
 
+void requestRecordStoreRebuildAfterFormatFs() {
+    g_rebuildRecordStoreAfterFormatFs = true;
+}
+
 void applyRuntimeSettings(const faucet::SystemConfig& config) {
     g_beep.setEnabled(config.beepEnabled);
     if (g_display) {
@@ -528,6 +534,7 @@ void initializeApplication() {
     faucet::setFaucetWebContext(
         faucet::FaucetWebContext{&g_config,
                                  &g_configStore,
+                                 &g_statistics,
                                  g_app,
                                  g_filters,
                                  &g_records,
@@ -542,6 +549,7 @@ void initializeApplication() {
                                  currentSeconds,
                                  currentBootId,
                                  applyRuntimeSettings,
+                                 requestRecordStoreRebuildAfterFormatFs,
                                  currentDisplayStatus,
                                  currentRuntimeDiagnostics});
     faucet::setFaucetAppConfigContext(
@@ -622,6 +630,13 @@ void runApplicationTick() {
         return;
     }
 
+    if (g_rebuildRecordStoreAfterFormatFs) {
+        g_rebuildRecordStoreAfterFormatFs = false;
+        if (!g_waterRecordFile.begin()) {
+            ESP32BASE_LOG_E("app", "record store rebuild after fs format failed");
+        }
+    }
+
     const std::uint32_t nowMs = millis();
     const std::uint32_t nowUs = micros();
     const faucet::ButtonLevels levels = g_buttons.read();
@@ -631,8 +646,10 @@ void runApplicationTick() {
     }
 
     std::uint32_t pulseUs = 0;
-    while (g_flowPulses.pop(pulseUs)) {
+    std::size_t processedPulses = 0;
+    while (processedPulses < kMaxFlowPulsesPerTick && g_flowPulses.pop(pulseUs)) {
         g_app->onFlowPulse(pulseUs);
+        ++processedPulses;
     }
     const std::uint32_t droppedPulses = g_flowPulses.droppedPulses();
     g_app->setFlowDroppedPulses(droppedPulses);

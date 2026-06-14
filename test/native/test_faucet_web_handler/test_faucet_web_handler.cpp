@@ -230,6 +230,12 @@ private:
     std::map<std::string, std::vector<std::uint8_t>> files;
 };
 
+std::uint32_t g_afterFormatFsNotifications = 0;
+
+void countAfterFormatFsNotification() {
+    ++g_afterFormatFsNotifications;
+}
+
 AppTickInput appInput(ButtonLevels levels, std::uint32_t nowMs, std::uint32_t nowUs) {
     return AppTickInput{
         levels,
@@ -403,6 +409,7 @@ struct WebFixture {
         FaucetWebContext context{};
         context.config = &config;
         context.configStore = &configStore;
+        context.statistics = &statistics;
         context.app = &app;
         context.filters = &filters;
         context.records = &recordReader;
@@ -414,6 +421,7 @@ struct WebFixture {
         context.calibrationLongTermSamples = &sampleStore;
         context.nowSeconds = testNowSeconds;
         context.bootId = testBootId;
+        context.afterFormatFs = countAfterFormatFsNotification;
         setFaucetWebContext(context);
     }
 };
@@ -464,6 +472,26 @@ void test_home_page_places_screen_status_in_machine_hero_footer() {
     TEST_ASSERT_TRUE(screenFooter < screenStatus);
     TEST_ASSERT_TRUE(screenStatus < machineOverview);
     TEST_ASSERT_TRUE(screenStatus < statusStrip);
+}
+
+void test_home_page_labels_only_second_enabled_preset_as_p2() {
+    WebFixture fixture;
+    for (std::size_t i = 0; i < kPresetCount; ++i) {
+        fixture.config.presets[i].enabled = false;
+    }
+    fixture.config.presets[1].enabled = true;
+    std::strncpy(fixture.config.presets[1].name, "OnlySecond", sizeof(fixture.config.presets[1].name) - 1);
+    TEST_ASSERT_TRUE(fixture.app.applyConfig(fixture.config));
+    registerRoutes();
+    Esp32BaseWeb::nativeTestBeginRequest(Esp32BaseWeb::METHOD_GET, "/index");
+    Esp32BaseWeb::nativeTestSetAuthenticated(true);
+    Esp32BaseWeb::nativeTestSetSameOrigin(true);
+
+    TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch("/index", Esp32BaseWeb::METHOD_GET));
+
+    const std::string& body = Esp32BaseWeb::nativeTestResponse().body;
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("<strong id='nextPresetLabel'>P2 · OnlySecond"));
+    TEST_ASSERT_EQUAL(std::string::npos, body.find("<strong id='nextPresetLabel'>P1/1"));
 }
 
 void test_home_page_initial_render_does_not_read_record_pages() {
@@ -525,6 +553,43 @@ void test_stats_page_uses_runtime_period_totals_when_record_file_is_empty() {
     TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("<strong>1.23 L</strong>"));
     TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("<span>总累计</span><strong>4.57 L</strong>"));
     TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("<span>过去 30 天日均</span><strong>0.00 L</strong>"));
+}
+
+void test_after_format_fs_notification_resets_runtime_statistics() {
+    WebFixture fixture;
+    StatisticsRecord record{};
+    record.todayMl = 210;
+    record.weekMl = 900;
+    record.monthMl = 1234;
+    record.totalMl = 4567;
+    record.lastDayKey = 20260506;
+    record.lastWeekKey = 202619;
+    record.lastMonthKey = 202605;
+    fixture.statistics = StatisticsStore(record);
+    TEST_ASSERT_TRUE(fixture.configStore.saveStatistics(record));
+    registerRoutes();
+
+    Esp32BaseWeb::nativeTestNotifyToolsFormatFsSuccess(true, true);
+
+    const StatisticsRecord live = fixture.app.snapshot().statistics;
+    TEST_ASSERT_EQUAL_UINT32(0, live.todayMl);
+    TEST_ASSERT_EQUAL_UINT32(0, live.weekMl);
+    TEST_ASSERT_EQUAL_UINT32(0, live.monthMl);
+    TEST_ASSERT_EQUAL_UINT32(0, live.totalMl);
+    TEST_ASSERT_EQUAL_UINT32(20260506, live.lastDayKey);
+    const StatisticsRecord persisted = fixture.configStore.loadStatistics({20260506, 202619, 202605});
+    TEST_ASSERT_EQUAL_UINT32(0, persisted.todayMl);
+    TEST_ASSERT_EQUAL_UINT32(0, persisted.totalMl);
+}
+
+void test_after_format_fs_notification_notifies_app_storage_rebuild() {
+    WebFixture fixture;
+    g_afterFormatFsNotifications = 0;
+    registerRoutes();
+
+    Esp32BaseWeb::nativeTestNotifyToolsFormatFsSuccess(true, true);
+
+    TEST_ASSERT_EQUAL_UINT32(1, g_afterFormatFsNotifications);
 }
 
 void test_stats_page_initial_render_does_not_read_record_pages() {
@@ -893,9 +958,12 @@ void test_presets_handler_running_select_next_only_changes_next_preset() {
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_home_page_places_screen_status_in_machine_hero_footer);
+    RUN_TEST(test_home_page_labels_only_second_enabled_preset_as_p2);
     RUN_TEST(test_home_page_initial_render_does_not_read_record_pages);
     RUN_TEST(test_stats_page_shows_zero_preset_distribution_when_no_recent_records);
     RUN_TEST(test_stats_page_uses_runtime_period_totals_when_record_file_is_empty);
+    RUN_TEST(test_after_format_fs_notification_resets_runtime_statistics);
+    RUN_TEST(test_after_format_fs_notification_notifies_app_storage_rebuild);
     RUN_TEST(test_stats_page_initial_render_does_not_read_record_pages);
     RUN_TEST(test_calibration_page_initial_render_does_not_read_session_records);
     RUN_TEST(test_metering_page_initial_render_shows_scheme_list_and_sample_library);

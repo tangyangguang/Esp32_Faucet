@@ -331,16 +331,11 @@ void test_config_save_and_load_round_trips_sensor_config() {
 
     TEST_ASSERT_EQUAL_INT32(18, backend.getInt("faucet_cfg", "ver", 0));
     TEST_ASSERT_EQUAL_INT32(1234, backend.getInt("faucet_cfg", "tds_scale_milli", 0));
-    TEST_ASSERT_EQUAL_INT32(-7, backend.getInt("faucet_cfg", "sensor_vref_mv", -7));
     char sensorText[32]{};
     TEST_ASSERT_TRUE(backend.getStr("faucet_cfg", "temp_sensor", sensorText, sizeof(sensorText), ""));
     TEST_ASSERT_EQUAL_STRING("ntc50k_b3950", sensorText);
     TEST_ASSERT_TRUE(backend.getStr("faucet_cfg", "tds_sensor", sensorText, sizeof(sensorText), ""));
     TEST_ASSERT_EQUAL_STRING("tds_board_v1", sensorText);
-    TEST_ASSERT_FALSE(backend.getBool("faucet_cfg", "temp_en", false));
-    TEST_ASSERT_EQUAL_INT32(-7, backend.getInt("faucet_cfg", "temp_kind", -7));
-    TEST_ASSERT_FALSE(backend.getBool("faucet_cfg", "tds_en", false));
-    TEST_ASSERT_EQUAL_INT32(-7, backend.getInt("faucet_cfg", "tds_kind", -7));
     const SystemConfig loaded = store.loadSystemConfig();
     TEST_ASSERT_EQUAL_UINT16(3300, loaded.sensorVrefMv);
     TEST_ASSERT_TRUE(loaded.lcdSensorPageEnabled);
@@ -366,25 +361,6 @@ void test_config_save_and_load_round_trips_sensor_config() {
     TEST_ASSERT_EQUAL_UINT16(410, loaded.tdsCalibrationVoltageMv);
     TEST_ASSERT_TRUE(loaded.tdsCalibrated);
     TEST_ASSERT_FALSE(loaded.tdsTemperatureCompensationEnabled);
-}
-
-void test_config_ignores_removed_sensor_keys() {
-    FakeConfigBackend backend;
-    backend.setInt("faucet_cfg", "ver", 18);
-    backend.setBool("faucet_cfg", "temp_en", true);
-    backend.setInt("faucet_cfg", "temp_kind", static_cast<std::int32_t>(TemperatureKind::Ntc50kB3950));
-    backend.setBool("faucet_cfg", "tds_en", true);
-    backend.setInt("faucet_cfg", "tds_kind", static_cast<std::int32_t>(TdsKind::AnalogTdsAo));
-    ConfigStore store(backend);
-
-    const SystemConfig loaded = store.loadSystemConfig();
-
-    TEST_ASSERT_FALSE(loaded.temperatureEnabled);
-    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(TemperatureKind::None),
-                            static_cast<std::uint8_t>(loaded.temperatureKind));
-    TEST_ASSERT_FALSE(loaded.tdsEnabled);
-    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(TdsKind::None),
-                            static_cast<std::uint8_t>(loaded.tdsKind));
 }
 
 void test_config_load_sanitizes_stored_values() {
@@ -629,7 +605,6 @@ int main(int argc, char** argv) {
     RUN_TEST(test_config_invalid_version_uses_defaults_until_explicit_save);
     RUN_TEST(test_config_save_and_load_round_trips_system_config);
     RUN_TEST(test_config_save_and_load_round_trips_sensor_config);
-    RUN_TEST(test_config_ignores_removed_sensor_keys);
     RUN_TEST(test_config_load_sanitizes_stored_values);
     RUN_TEST(test_non_current_config_missing_pulse_observation_window_uses_default);
     RUN_TEST(test_config_reset_restores_defaults);

@@ -124,9 +124,8 @@ Esp32BaseWeb::Method toBaseMethod(FaucetWebMethod method) {
             return Esp32BaseWeb::METHOD_GET;
         case FaucetWebMethod::Post:
             return Esp32BaseWeb::METHOD_POST;
-        case FaucetWebMethod::Any:
         default:
-            return Esp32BaseWeb::METHOD_ANY;
+            return Esp32BaseWeb::METHOD_GET;
     }
 }
 

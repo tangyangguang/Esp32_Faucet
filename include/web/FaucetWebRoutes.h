@@ -10,7 +10,6 @@ constexpr std::size_t kFaucetWebMaxRoutes = 24;
 enum class FaucetWebMethod : std::uint8_t {
     Get = 0,
     Post = 1,
-    Any = 2,
 };
 
 enum class FaucetWebRouteKind : std::uint8_t {

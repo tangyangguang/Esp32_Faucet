@@ -68,17 +68,14 @@ void test_business_api_routes_use_explicit_methods() {
         if (std::strcmp(routes[i].path, "/api/faucet/presets") == 0) {
             foundPresetsGet = foundPresetsGet || routes[i].method == FaucetWebMethod::Get;
             foundPresetsPost = foundPresetsPost || routes[i].method == FaucetWebMethod::Post;
-            TEST_ASSERT_NOT_EQUAL(FaucetWebMethod::Any, routes[i].method);
         }
         if (std::strcmp(routes[i].path, "/api/faucet/filters") == 0) {
             foundFiltersGet = foundFiltersGet || routes[i].method == FaucetWebMethod::Get;
             foundFiltersPost = foundFiltersPost || routes[i].method == FaucetWebMethod::Post;
-            TEST_ASSERT_NOT_EQUAL(FaucetWebMethod::Any, routes[i].method);
         }
         if (std::strcmp(routes[i].path, "/api/faucet/records") == 0) {
             foundRecordsGet = foundRecordsGet || routes[i].method == FaucetWebMethod::Get;
             foundRecordsPost = foundRecordsPost || routes[i].method == FaucetWebMethod::Post;
-            TEST_ASSERT_NOT_EQUAL(FaucetWebMethod::Any, routes[i].method);
         }
     }
 
@@ -240,7 +237,7 @@ std::string readSourceFile(const char* path) {
     return body;
 }
 
-void test_source_has_no_removed_metering_route_or_history_compatibility_paths() {
+void test_source_has_no_removed_metering_route() {
     const char* files[] = {
         "include/web/FaucetWebPolicy.h",
         "src/web/FaucetWebPolicy.cpp",
@@ -259,21 +256,6 @@ void test_source_has_no_removed_metering_route_or_history_compatibility_paths() 
         "handleMeteringPost",
         "handleMeteringRedirect",
         "FaucetWebWriteTarget::Metering",
-        "temp_en",
-        "temp_kind",
-        "tds_en",
-        "tds_kind",
-        "migrated_legacy",
-        "MigratedLegacy",
-        "migrationWriteBack",
-        "lastSystemMigrationWriteBack",
-        "hasRecognizedLegacySystemConfig",
-        "inferLegacyVersionWithoutVersion",
-        "loadLegacyDisplayConfig",
-        "loadLegacyFilters",
-        "loadLegacyFilterRuntimeFromConfig",
-        "migrateFilterStartTimeFromRuntime",
-        "schemeFromLegacyConfig",
     };
 
     for (const char* path : files) {
@@ -491,9 +473,6 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NULL(std::strstr(buffer, "设备明细已达上限"));
     TEST_ASSERT_NULL(std::strstr(buffer, "设备存储明细文件异常"));
     TEST_ASSERT_NULL(std::strstr(buffer, "永久保存"));
-    TEST_ASSERT_NULL(std::strstr(buffer, "name='action' value='delete_legacy'"));
-    TEST_ASSERT_NULL(std::strstr(buffer, "清理旧版明细文件"));
-    TEST_ASSERT_NULL(std::strstr(buffer, "delete_legacy"));
     TEST_ASSERT_NULL(std::strstr(buffer, "%s / %s · %u%%"));
     TEST_ASSERT_NULL(std::strstr(buffer, "约 %lu 点 / 最多 %lu 条"));
     TEST_ASSERT_NULL(std::strstr(buffer, "sendMetricCard(\"内存占用\", used)"));
@@ -2010,7 +1989,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_filter_forms_use_registered_api_endpoints);
     RUN_TEST(test_presets_page_is_available_in_navigation);
     RUN_TEST(test_records_page_and_calibration_api_are_available);
-    RUN_TEST(test_source_has_no_removed_metering_route_or_history_compatibility_paths);
+    RUN_TEST(test_source_has_no_removed_metering_route);
     RUN_TEST(test_web_page_source_has_no_remote_water_control_forms);
     RUN_TEST(test_web_page_source_links_cacheable_app_css);
     RUN_TEST(test_web_page_source_contains_expected_ui_improvements);

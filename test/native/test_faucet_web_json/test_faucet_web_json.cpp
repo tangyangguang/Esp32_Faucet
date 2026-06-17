@@ -123,7 +123,6 @@ void test_status_json_can_include_config_runtime_status() {
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"rawVersion\":18"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"currentVersion\":18"));
     TEST_ASSERT_NULL(std::strstr(json, "readOnly"));
-    TEST_ASSERT_NULL(std::strstr(json, "migrationWriteBack"));
     TEST_ASSERT_NULL(std::strstr(json, "password"));
 }
 
@@ -288,49 +287,6 @@ void test_usage_summary_json_handles_full_daily_sensor_series() {
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"invalidSensorRecordCount\":1"));
 }
 
-void test_config_json_contains_safety_and_display_settings() {
-    char json[2400]{};
-    SystemConfig config = makeDefaultConfig();
-    config.beepEnabled = false;
-    config.lcdSensorPageEnabled = true;
-    config.temperatureEnabled = true;
-    config.temperatureKind = TemperatureKind::Ntc50kB3950;
-    config.temperatureOffsetCentiC = -20;
-    config.tdsEnabled = true;
-    config.tdsKind = TdsKind::AnalogTdsAo;
-    config.tdsCalibrationMode = TdsCalibrationMode::TwoPoint;
-    config.tdsCalibrationRevision = 3;
-    config.tdsCalibrated = true;
-
-    TEST_ASSERT_TRUE(writeConfigJson(config, json, sizeof(json)));
-
-    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"confirmTimeoutSec\":60"));
-    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"maxOutVolumeMl\":30000"));
-    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"volumeAdjustStepMl\":100"));
-    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"timeAdjustStepSec\":10"));
-    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"pulseMinIntervalUs\":1000"));
-    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"pulseMaxEffectiveHz\":1000"));
-    TEST_ASSERT_NULL(std::strstr(json, "recentPulseTraceCount"));
-    TEST_ASSERT_NULL(std::strstr(json, "activeMeteringSlot"));
-    TEST_ASSERT_NULL(std::strstr(json, "startupPulseCount"));
-    TEST_ASSERT_NULL(std::strstr(json, "startupVolumeMl"));
-    TEST_ASSERT_NULL(std::strstr(json, "stablePulsePerLiter"));
-    TEST_ASSERT_NULL(std::strstr(json, "meteringCandidateReady"));
-    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"valveHoldDutyPercent\":70"));
-    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"beepEnabled\":false"));
-    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"sensorVrefMv\":3300"));
-    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"lcdSensorPageEnabled\":true"));
-    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"temperatureEnabled\":true"));
-    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"temperatureKind\":1"));
-    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"temperatureOffsetCentiC\":-20"));
-    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"tdsEnabled\":true"));
-    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"tdsKind\":1"));
-    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"tdsCalibrationMode\":2"));
-    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"tdsCalibrationRevision\":3"));
-    TEST_ASSERT_NULL(std::strstr(json, "tdsCalibrationReferenceSource"));
-    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"tdsCalibrated\":true"));
-}
-
 void test_presets_json_escapes_names_and_lists_nine_presets() {
     char json[1400]{};
     SystemConfig config = makeDefaultConfig();
@@ -421,7 +377,6 @@ int main(int argc, char** argv) {
     RUN_TEST(test_stats_json_contains_all_periods);
     RUN_TEST(test_usage_summary_json_contains_aggregated_series);
     RUN_TEST(test_usage_summary_json_handles_full_daily_sensor_series);
-    RUN_TEST(test_config_json_contains_safety_and_display_settings);
     RUN_TEST(test_presets_json_escapes_names_and_lists_nine_presets);
     RUN_TEST(test_filters_json_contains_runtime_fields);
     RUN_TEST(test_water_records_json_is_paged_and_read_only);

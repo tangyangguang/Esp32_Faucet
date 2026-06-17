@@ -134,15 +134,15 @@ void test_file_record_initializes_empty_file() {
     TEST_ASSERT_EQUAL_size_t(0, backend.createSizedCalls);
 }
 
-void test_file_record_reports_old_schema_as_incompatible() {
+void test_file_record_reports_mismatched_schema_as_incompatible() {
     MemoryFileBackend backend;
-    const std::uint8_t oldHeader[kWaterRecordHeaderBytes] = {
+    const std::uint8_t mismatchedHeader[kWaterRecordHeaderBytes] = {
         0x44, 0x52, 0x57, 0x46,  // FWRD
-        0x01, 0x00,              // old version
-        0x20, 0x00,              // old 32-byte record size
+        0x01, 0x00,              // non-current version
+        0x20, 0x00,              // non-current record size
         0x03, 0x00, 0x00, 0x00,
     };
-    TEST_ASSERT_TRUE(backend.writeAt("/water.bin", 0, oldHeader, sizeof(oldHeader)));
+    TEST_ASSERT_TRUE(backend.writeAt("/water.bin", 0, mismatchedHeader, sizeof(mismatchedHeader)));
 
     WaterRecordFileStore store(backend, "/water.bin", 3);
 
@@ -451,7 +451,7 @@ int main(int argc, char** argv) {
 
     UNITY_BEGIN();
     RUN_TEST(test_file_record_initializes_empty_file);
-    RUN_TEST(test_file_record_reports_old_schema_as_incompatible);
+    RUN_TEST(test_file_record_reports_mismatched_schema_as_incompatible);
     RUN_TEST(test_file_record_appends_and_reads_newest_first);
     RUN_TEST(test_file_record_rolls_after_capacity);
     RUN_TEST(test_file_record_reads_page_in_contiguous_spans);

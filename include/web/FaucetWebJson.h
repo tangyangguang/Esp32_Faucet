@@ -33,7 +33,6 @@ bool writeUsageSummaryJson(const WaterUsageSummary& summary,
                            std::uint32_t totalMl,
                            char* out,
                            std::size_t len);
-bool writeConfigJson(const SystemConfig& config, char* out, std::size_t len);
 bool writePresetsJson(const PresetConfig (&presets)[kPresetCount], char* out, std::size_t len);
 bool writeFiltersJson(const FilterRecord (&filters)[kFilterCount], char* out, std::size_t len);
 bool writeWaterRecordsJson(const WaterRecord* records,

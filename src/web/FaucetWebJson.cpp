@@ -475,68 +475,6 @@ bool writeUsageSummaryJson(const WaterUsageSummary& summary,
     return writer.ok();
 }
 
-bool writeConfigJson(const SystemConfig& config, char* out, std::size_t len) {
-    JsonWriter writer(out, len);
-    writer.append("{\"confirmTimeoutSec\":%lu,\"maxOutTimeSec\":%lu,\"maxOutVolumeMl\":%lu,"
-                  "\"overflowPercent\":%u,\"noFlowTimeoutSec\":%lu,\"highFlowMlPerMin\":%lu,"
-                  "\"highFlowDurationSec\":%lu,\"pauseTimeoutSec\":%lu,\"volumeAdjustStepMl\":%lu,"
-                  "\"timeAdjustStepSec\":%lu,\"pulseMinIntervalUs\":%lu,"
-                  "\"pulseMaxEffectiveHz\":%lu,"
-                  "\"valveFullPowerSec\":%lu,"
-                  "\"valveHoldDutyPercent\":%u,\"displaySleepSec\":%lu,\"resultDisplaySec\":%lu,"
-                  "\"lcdI2cAddress\":%u,\"beepEnabled\":%s,"
-                  "\"sensorVrefMv\":%u,\"lcdSensorPageEnabled\":%s,"
-                  "\"temperatureEnabled\":%s,\"temperatureKind\":%u,\"temperatureOffsetCentiC\":%d,"
-                  "\"temperatureCalibrated\":%s,\"tdsEnabled\":%s,\"tdsKind\":%u,"
-                  "\"tdsCalibrationMode\":%u,\"tdsCalibrationRevision\":%u,"
-                  "\"tdsScaleMilli\":%ld,\"tdsOffsetPpm\":%d,"
-                  "\"tdsLowReferencePpm\":%u,\"tdsLowRawPpm\":%u,"
-                  "\"tdsHighReferencePpm\":%u,\"tdsHighRawPpm\":%u,"
-                  "\"tdsCalibrationTime\":%lu,\"tdsCalibrationTemperatureCentiC\":%d,"
-                  "\"tdsCalibrationVoltageMv\":%u,\"tdsCalibrated\":%s,"
-                  "\"tdsTemperatureCompensationEnabled\":%s}",
-                  static_cast<unsigned long>(config.confirmTimeoutSec),
-                  static_cast<unsigned long>(config.maxOutTimeSec),
-                  static_cast<unsigned long>(config.maxOutVolumeMl),
-                  static_cast<unsigned>(config.overflowPercent),
-                  static_cast<unsigned long>(config.noFlowTimeoutSec),
-                  static_cast<unsigned long>(config.highFlowMlPerMin),
-                  static_cast<unsigned long>(config.highFlowDurationSec),
-                  static_cast<unsigned long>(config.pauseTimeoutSec),
-                  static_cast<unsigned long>(config.volumeAdjustStepMl),
-                  static_cast<unsigned long>(config.timeAdjustStepSec),
-                  static_cast<unsigned long>(config.pulseMinIntervalUs),
-                  static_cast<unsigned long>(1000000UL / config.pulseMinIntervalUs),
-                  static_cast<unsigned long>(config.valveFullPowerSec),
-                  static_cast<unsigned>(config.valveHoldDutyPercent),
-                  static_cast<unsigned long>(config.displaySleepSec),
-                  static_cast<unsigned long>(config.resultDisplaySec),
-                  config.lcdI2cAddress,
-                  config.beepEnabled ? "true" : "false",
-                  static_cast<unsigned>(config.sensorVrefMv),
-                  config.lcdSensorPageEnabled ? "true" : "false",
-                  config.temperatureEnabled ? "true" : "false",
-                  static_cast<unsigned>(config.temperatureKind),
-                  static_cast<int>(config.temperatureOffsetCentiC),
-                  config.temperatureCalibrated ? "true" : "false",
-                  config.tdsEnabled ? "true" : "false",
-                  static_cast<unsigned>(config.tdsKind),
-                  static_cast<unsigned>(config.tdsCalibrationMode),
-                  static_cast<unsigned>(config.tdsCalibrationRevision),
-                  static_cast<long>(config.tdsScale * 1000.0f),
-                  static_cast<int>(config.tdsOffsetPpm),
-                  static_cast<unsigned>(config.tdsLowReferencePpm),
-                  static_cast<unsigned>(config.tdsLowRawPpm),
-                  static_cast<unsigned>(config.tdsHighReferencePpm),
-                  static_cast<unsigned>(config.tdsHighRawPpm),
-                  static_cast<unsigned long>(config.tdsCalibrationTime),
-                  static_cast<int>(config.tdsCalibrationTemperatureCentiC),
-                  static_cast<unsigned>(config.tdsCalibrationVoltageMv),
-                  config.tdsCalibrated ? "true" : "false",
-                  config.tdsTemperatureCompensationEnabled ? "true" : "false");
-    return writer.ok();
-}
-
 bool writePresetsJson(const PresetConfig (&presets)[kPresetCount], char* out, std::size_t len) {
     JsonWriter writer(out, len);
     writer.append("{\"presets\":[");

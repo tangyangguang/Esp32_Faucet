@@ -58,13 +58,13 @@ pio run -e esp32dev -t upload --upload-port <端口>
 
 当前主环境和 smoke 环境串口上传速度使用 `460800`，避免 `921600` 在部分 CH340 板子上切换波特率失败。
 
-日常需要烧录测试主固件时，优先显示并使用 Esp32Base 快速 Web OTA：
+用户日常调试可使用 Esp32Base 快速 Web OTA：
 
 ```sh
 pio run -e esp32dev -t webota
 ```
 
-`webota` 使用本地 `platformio.local.ini` 中的 `custom_esp32base_webota_host` IP 地址，不依赖 mDNS。首次使用前复制 `platformio.example.ini` 为 `platformio.local.ini` 并填写设备地址和认证信息。只有首次烧录、文件系统/分区变化、网络不可达或 OTA 失败恢复时，再回到串口上传。
+`webota` 使用本地 `platformio.local.ini` 中的 `custom_esp32base_webota_host` IP 地址，不依赖 mDNS。首次使用前复制 `platformio.example.ini` 为 `platformio.local.ini` 并填写设备地址和认证信息。代理做烧录、验证或恢复实验时仍按 `AGENTS.md` 使用本机串口上传；只有用户自己日常调试时把 WebOTA 作为便利入口。
 
 本项目分区表首个应用分区为 `ota_0`，偏移是 `0x20000`。`platformio.ini` 必须保留：
 
@@ -124,15 +124,15 @@ pio device monitor -e esp32dev --port <端口> --baud 115200
 - 蜂鸣器提示音。
 - 72 小时连续运行。
 
-## 2026-05-06 裸板复测
+## 2026-06-02 裸板复测
 
 连接状态：只连接 ESP32 核心板，串口为 `/dev/cu.usbserial-130`，未接业务外设。
 
 本次已验证：
 
 - `pio device list` 可识别 CH340 串口。
-- 2026-06-02 代码侧复测：`pio test -e native` 通过，273 个 native 用例全部成功。
-- 2026-06-02 代码侧复测：`pio run -e esp32dev` 通过，主固件 RAM 约 26.3%，Flash 约 88.4%。
+- 2026-06-17 代码侧复测：`pio test -e native` 通过，374 个 native 用例全部成功。
+- 2026-06-17 代码侧复测：`pio run -e esp32dev` 通过，主固件 RAM 约 27.0%，Flash 约 92.2%。
 - 固件体积预算：当前双 OTA app 分区为 `0x160000`，Flash 使用率已超过 85% 预警线；继续增加 Web 页面、诊断或日志前，优先评估静态 HTML/CSS 字符串体积、可静态化资源迁移到 LittleFS，或重新评估分区表。
 - `pio run -e esp32dev_smoke` 通过。
 - 主固件串口启动正常：进入 `setup()`，`rtc=absent`、`lcd=absent`、`records=file`，WiFi 已连接，Web 服务就绪，NTP 已同步。

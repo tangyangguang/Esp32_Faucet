@@ -27,13 +27,21 @@ AppSnapshot makeSnapshot() {
     snapshot.runAverageFlowMlPerMin = 1660;
     snapshot.recentAverageFlowMlPerMin = 1810;
     snapshot.meteringParams = MeteringParameters{8, 130, 248};
+    snapshot.temperatureSensorEnabled = true;
+    snapshot.tdsSensorEnabled = true;
+    snapshot.sensors.inputVoltageMv = SensorValue{true, 12100};
+    snapshot.sensors.temperatureCentiC = SensorValue{true, 2530};
+    snapshot.sensors.tdsPpm = SensorValue{true, 8};
+    snapshot.sensors.tdsVoltageMv = SensorValue{true, 19};
+    snapshot.sensors.tdsCalibrated = true;
+    snapshot.sensors.tdsTemperatureCompensated = true;
     return snapshot;
 }
 
 }  // namespace
 
 void test_status_json_contains_no_remote_control_capability() {
-    char json[2048]{};
+    char json[4096]{};
 
     TEST_ASSERT_TRUE(writeStatusJson(makeSnapshot(), json, sizeof(json)));
 
@@ -69,12 +77,18 @@ void test_status_json_contains_no_remote_control_capability() {
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"valveHoldDutyPercent\":70"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"screenOn\":false"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"waterControl\":false"));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"sensor\""));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"inputVoltageMv\":12100"));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"temperature\":{\"enabled\":true,\"currentCentiC\":2530,\"calibrated\":false}"));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"tds\":{\"enabled\":true,\"currentPpm\":8,\"voltageMv\":19,\"calibrated\":true"));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"temperatureCompensated\":true"));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"flags\":0"));
     TEST_ASSERT_NULL(std::strstr(json, "startWater"));
     TEST_ASSERT_NULL(std::strstr(json, "stop"));
 }
 
 void test_status_json_can_report_screen_state() {
-    char json[2048]{};
+    char json[4096]{};
 
     TEST_ASSERT_TRUE(writeStatusJson(makeSnapshot(), true, json, sizeof(json)));
 
@@ -82,7 +96,7 @@ void test_status_json_can_report_screen_state() {
 }
 
 void test_status_json_uses_configured_valve_pwm_values() {
-    char json[2048]{};
+    char json[4096]{};
     SystemConfig config = makeDefaultConfig();
     config.valveFullPowerSec = 5;
     config.valveHoldDutyPercent = 45;
@@ -97,24 +111,24 @@ void test_status_json_uses_configured_valve_pwm_values() {
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"waterControl\":false"));
 }
 
-void test_status_json_can_include_config_migration_diagnostics() {
-    char json[2048]{};
+void test_status_json_can_include_config_runtime_status() {
+    char json[4096]{};
     SystemConfig config = makeDefaultConfig();
-    const ConfigRuntimeStatus status{"migrated_legacy", 0, 11, false, true};
+    const ConfigRuntimeStatus status{"loaded_current", 18, 18};
 
     TEST_ASSERT_TRUE(writeStatusJson(makeSnapshot(), true, config, &status, json, sizeof(json)));
 
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"config\""));
-    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"status\":\"migrated_legacy\""));
-    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"rawVersion\":0"));
-    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"currentVersion\":11"));
-    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"readOnly\":false"));
-    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"migrationWriteBack\":true"));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"status\":\"loaded_current\""));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"rawVersion\":18"));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"currentVersion\":18"));
+    TEST_ASSERT_NULL(std::strstr(json, "readOnly"));
+    TEST_ASSERT_NULL(std::strstr(json, "migrationWriteBack"));
     TEST_ASSERT_NULL(std::strstr(json, "password"));
 }
 
 void test_status_json_contains_next_preset_summary() {
-    char json[2048]{};
+    char json[4096]{};
     SystemConfig config = makeDefaultConfig();
     AppSnapshot snapshot = makeSnapshot();
     snapshot.water.selectedPreset = 1;
@@ -134,7 +148,7 @@ void test_status_json_contains_next_preset_summary() {
 }
 
 void test_status_json_reports_time_target_estimate_from_stable_pulses() {
-    char json[2048]{};
+    char json[4096]{};
     AppSnapshot snapshot = makeSnapshot();
     snapshot.water.mode = WaterMode::Time;
     snapshot.water.targetValue = 249;
@@ -152,7 +166,7 @@ void test_status_json_reports_time_target_estimate_from_stable_pulses() {
 }
 
 void test_status_json_reports_missing_time_estimate_reason() {
-    char json[2048]{};
+    char json[4096]{};
     AppSnapshot snapshot = makeSnapshot();
     snapshot.water.mode = WaterMode::Time;
     snapshot.water.targetValue = 249;
@@ -165,7 +179,7 @@ void test_status_json_reports_missing_time_estimate_reason() {
 }
 
 void test_status_json_reports_time_next_preset_estimate() {
-    char json[2048]{};
+    char json[4096]{};
     SystemConfig config = makeDefaultConfig();
     config.presets[1].type = PresetType::Time;
     config.presets[1].value = 249;
@@ -206,9 +220,14 @@ void test_usage_summary_json_contains_aggregated_series() {
     summary.unknownCount = 2;
     summary.todayDay = 9630;
     summary.monthStartDay = 9615;
+    summary.sensorRecordCount = 2;
+    summary.uncalibratedSensorRecordCount = 1;
     summary.dayCount = 2;
     summary.days[0] = DailyUsageBucket{9629, 6000, 30, 3};
     summary.days[1] = DailyUsageBucket{9630, 12000, 60, 4};
+    summary.days[1].temperatureAvgCentiC = 2530;
+    summary.days[1].tdsAvgPpm = 8;
+    summary.days[1].sensorRecordCount = 2;
     summary.presetCounts[1] = CountVolumeBucket{12000, 4};
     summary.hourBuckets[7] = CountVolumeBucket{6000, 3};
     summary.resultCounts[static_cast<std::size_t>(WaterResult::FlowError)] = 1;
@@ -222,16 +241,66 @@ void test_usage_summary_json_contains_aggregated_series() {
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"last30DaysDailyAverageMl\":600"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"dailySeries\""));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"day\":9630"));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"temperatureAvgCentiC\":2530"));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"tdsAvgPpm\":8"));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"sensorRecordCount\":2"));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"uncalibratedSensorRecordCount\":1"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"presetCounts\""));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"hour\":7"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"resultCounts\""));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"volumeHist\""));
 }
 
+void test_usage_summary_json_handles_full_daily_sensor_series() {
+    WaterUsageSummary summary{};
+    summary.todayMl = 31000;
+    summary.monthMl = 465000;
+    summary.last30DaysMl = 465000;
+    summary.last30DaysDailyAverageMl = 15500;
+    summary.todayDay = 9630;
+    summary.monthStartDay = 9601;
+    summary.sensorRecordCount = 30;
+    summary.uncalibratedSensorRecordCount = 4;
+    summary.invalidSensorRecordCount = 1;
+    summary.dayCount = kUsageSummaryMaxDays;
+    for (std::size_t i = 0; i < kUsageSummaryMaxDays; ++i) {
+        DailyUsageBucket& day = summary.days[i];
+        day.dayIndex = 9601 + static_cast<std::uint32_t>(i);
+        day.volumeMl = 1000 + static_cast<std::uint32_t>(i * 1000);
+        day.durationSec = 60 + static_cast<std::uint32_t>(i);
+        day.count = static_cast<std::uint16_t>(i + 1);
+        day.temperatureAvgCentiC = static_cast<std::int16_t>(1800 + i * 10);
+        day.temperatureMinCentiC = static_cast<std::int16_t>(1700 + i * 10);
+        day.temperatureMaxCentiC = static_cast<std::int16_t>(1900 + i * 10);
+        day.tdsAvgPpm = static_cast<std::uint16_t>(5 + i);
+        day.tdsMinPpm = static_cast<std::uint16_t>(4 + i);
+        day.tdsMaxPpm = static_cast<std::uint16_t>(6 + i);
+        day.sensorRecordCount = 1;
+    }
+
+    char tooSmall[8192]{};
+    TEST_ASSERT_FALSE(writeUsageSummaryJson(summary, 465000, tooSmall, sizeof(tooSmall)));
+
+    char json[32768]{};
+    TEST_ASSERT_TRUE(writeUsageSummaryJson(summary, 465000, json, sizeof(json)));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"day\":9630"));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"tdsMaxPpm\":35"));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"invalidSensorRecordCount\":1"));
+}
+
 void test_config_json_contains_safety_and_display_settings() {
-    char json[1400]{};
+    char json[2400]{};
     SystemConfig config = makeDefaultConfig();
     config.beepEnabled = false;
+    config.lcdSensorPageEnabled = true;
+    config.temperatureEnabled = true;
+    config.temperatureKind = TemperatureKind::Ntc50kB3950;
+    config.temperatureOffsetCentiC = -20;
+    config.tdsEnabled = true;
+    config.tdsKind = TdsKind::AnalogTdsAo;
+    config.tdsCalibrationMode = TdsCalibrationMode::TwoPoint;
+    config.tdsCalibrationRevision = 3;
+    config.tdsCalibrated = true;
 
     TEST_ASSERT_TRUE(writeConfigJson(config, json, sizeof(json)));
 
@@ -241,7 +310,7 @@ void test_config_json_contains_safety_and_display_settings() {
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"timeAdjustStepSec\":10"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"pulseMinIntervalUs\":1000"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"pulseMaxEffectiveHz\":1000"));
-    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"recentPulseTraceCount\":1"));
+    TEST_ASSERT_NULL(std::strstr(json, "recentPulseTraceCount"));
     TEST_ASSERT_NULL(std::strstr(json, "activeMeteringSlot"));
     TEST_ASSERT_NULL(std::strstr(json, "startupPulseCount"));
     TEST_ASSERT_NULL(std::strstr(json, "startupVolumeMl"));
@@ -249,6 +318,17 @@ void test_config_json_contains_safety_and_display_settings() {
     TEST_ASSERT_NULL(std::strstr(json, "meteringCandidateReady"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"valveHoldDutyPercent\":70"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"beepEnabled\":false"));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"sensorVrefMv\":3300"));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"lcdSensorPageEnabled\":true"));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"temperatureEnabled\":true"));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"temperatureKind\":1"));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"temperatureOffsetCentiC\":-20"));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"tdsEnabled\":true"));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"tdsKind\":1"));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"tdsCalibrationMode\":2"));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"tdsCalibrationRevision\":3"));
+    TEST_ASSERT_NULL(std::strstr(json, "tdsCalibrationReferenceSource"));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"tdsCalibrated\":true"));
 }
 
 void test_presets_json_escapes_names_and_lists_nine_presets() {
@@ -290,7 +370,11 @@ void test_water_records_json_is_paged_and_read_only() {
         {100, 1500, 1500, 675, 2, 30, WaterMode::Volume, WaterResult::Completed, 0, 0, 7, {0, 0, 0, 0}},
         {200, 300, 60, 135, 1, 10, WaterMode::Time, WaterResult::StoppedByUser, 1, 0, 8, {0, 0, 0, 0}},
     };
-    char json[1024]{};
+    records[0].temperatureAvgCentiC = 2530;
+    records[0].tdsAvgPpm = 8;
+    records[0].sensorSampleCount = 12;
+    records[0].tdsCalibratedAtRun = 1;
+    char json[2048]{};
 
     TEST_ASSERT_TRUE(writeWaterRecordsJson(records, 2, 1, 50, 60, "file", "ready", json, sizeof(json)));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"storage\":\"file\""));
@@ -308,6 +392,9 @@ void test_water_records_json_is_paged_and_read_only() {
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"meteringSchemeId\":8"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"averageFlowMlPerMin\":3000"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"averageFlowMlPerMin\":1800"));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"temperatureAvgCentiC\":2530"));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"tdsAvgPpm\":8"));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"sensorSampleCount\":12"));
     TEST_ASSERT_NULL(std::strstr(json, "\"stablePulsePerLiterAtRun\""));
     TEST_ASSERT_NULL(std::strstr(json, "\"pulsePerMlAtRun\""));
     TEST_ASSERT_NULL(std::strstr(json, "startWater"));
@@ -326,13 +413,14 @@ int main(int argc, char** argv) {
     RUN_TEST(test_status_json_contains_no_remote_control_capability);
     RUN_TEST(test_status_json_can_report_screen_state);
     RUN_TEST(test_status_json_uses_configured_valve_pwm_values);
-    RUN_TEST(test_status_json_can_include_config_migration_diagnostics);
+    RUN_TEST(test_status_json_can_include_config_runtime_status);
     RUN_TEST(test_status_json_contains_next_preset_summary);
     RUN_TEST(test_status_json_reports_time_target_estimate_from_stable_pulses);
     RUN_TEST(test_status_json_reports_missing_time_estimate_reason);
     RUN_TEST(test_status_json_reports_time_next_preset_estimate);
     RUN_TEST(test_stats_json_contains_all_periods);
     RUN_TEST(test_usage_summary_json_contains_aggregated_series);
+    RUN_TEST(test_usage_summary_json_handles_full_daily_sensor_series);
     RUN_TEST(test_config_json_contains_safety_and_display_settings);
     RUN_TEST(test_presets_json_escapes_names_and_lists_nine_presets);
     RUN_TEST(test_filters_json_contains_runtime_fields);

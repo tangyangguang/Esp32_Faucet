@@ -1,6 +1,7 @@
 #include <unity.h>
 
 #include "app/WaterRecordStore.h"
+#include "app/WaterSensors.h"
 
 using namespace faucet;
 
@@ -89,7 +90,58 @@ WaterRecord makeRecord(std::uint32_t startTime,
     return record;
 }
 
+WaterRecord makeSensorRecord(std::uint32_t startTime,
+                             std::uint32_t volumeMl,
+                             std::int16_t tempAvg,
+                             std::uint16_t tdsAvg,
+                             std::uint16_t sampleCount,
+                             bool calibrated,
+                             std::uint16_t flags = 0) {
+    WaterRecord record = makeRecord(startTime, volumeMl);
+    record.temperatureAvgCentiC = tempAvg;
+    record.temperatureMinCentiC = static_cast<std::int16_t>(tempAvg - 10);
+    record.temperatureMaxCentiC = static_cast<std::int16_t>(tempAvg + 10);
+    record.tdsAvgPpm = tdsAvg;
+    record.tdsMinPpm = tdsAvg > 1 ? static_cast<std::uint16_t>(tdsAvg - 1) : tdsAvg;
+    record.tdsMaxPpm = static_cast<std::uint16_t>(tdsAvg + 1);
+    record.tdsVoltageAvgMv = 24;
+    record.sensorSampleCount = sampleCount;
+    record.sensorFlags = flags;
+    record.tdsCalibrationRevisionAtRun = calibrated ? 2 : 0;
+    record.tdsCalibrationModeAtRun = static_cast<std::uint8_t>(calibrated ? TdsCalibrationMode::TwoPoint
+                                                                          : TdsCalibrationMode::None);
+    record.tdsCalibratedAtRun = calibrated ? 1 : 0;
+    record.tdsTemperatureCompensatedAtRun = 1;
+    return record;
+}
+
 }  // namespace
+
+void test_water_record_sensor_fields_do_not_reuse_boot_id_storage() {
+    WaterRecord record = makeRecord(832032000UL, 1500);
+    markWaterRecordBootId(record, 0x12345678UL);
+    record.temperatureAvgCentiC = 2530;
+    record.temperatureMinCentiC = 2480;
+    record.temperatureMaxCentiC = 2570;
+    record.tdsAvgPpm = 8;
+    record.tdsMinPpm = 6;
+    record.tdsMaxPpm = 12;
+    record.tdsVoltageAvgMv = 24;
+    record.sensorSampleCount = 30;
+    record.sensorFlags = 0x0002;
+    record.tdsCalibrationRevisionAtRun = 7;
+    record.tdsCalibrationModeAtRun = static_cast<std::uint8_t>(TdsCalibrationMode::TwoPoint);
+    record.tdsCalibratedAtRun = 1;
+    record.tdsTemperatureCompensatedAtRun = 1;
+    record.tdsTempFallback25CAtRun = 0;
+
+    TEST_ASSERT_EQUAL_size_t(64, sizeof(WaterRecord));
+    TEST_ASSERT_EQUAL_UINT32(0x12345678UL, waterRecordBootId(record));
+    TEST_ASSERT_EQUAL_INT16(2530, record.temperatureAvgCentiC);
+    TEST_ASSERT_EQUAL_UINT16(8, record.tdsAvgPpm);
+    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(TdsCalibrationMode::TwoPoint),
+                            record.tdsCalibrationModeAtRun);
+}
 
 void test_record_append_keeps_newest_first() {
     WaterRecord records[4]{};
@@ -252,6 +304,43 @@ void test_record_aggregate_uses_practical_volume_histogram_ranges() {
     TEST_ASSERT_EQUAL_UINT32(1, summary.volumeHist[4].count);
 }
 
+void test_record_aggregation_excludes_uncalibrated_sensors_by_default() {
+    WaterRecord records[4]{};
+    WaterRecordStore store(records, 4);
+    constexpr std::uint32_t today = 832032000UL;
+    TEST_ASSERT_TRUE(store.append(makeSensorRecord(today, 1000, 2500, 8, 10, true)));
+    TEST_ASSERT_TRUE(store.append(makeSensorRecord(today, 1000, 2800, 160, 30, false, kWaterSensorFlagTdsUncalibrated)));
+
+    const WaterUsageSummary summary = aggregateWaterRecords(store, today, 30);
+
+    TEST_ASSERT_EQUAL_UINT32(1, summary.sensorRecordCount);
+    TEST_ASSERT_EQUAL_UINT32(1, summary.uncalibratedSensorRecordCount);
+    TEST_ASSERT_EQUAL_UINT16(1, summary.days[29].sensorRecordCount);
+    TEST_ASSERT_EQUAL_INT16(2500, summary.days[29].temperatureAvgCentiC);
+    TEST_ASSERT_EQUAL_UINT16(8, summary.days[29].tdsAvgPpm);
+}
+
+void test_record_aggregation_can_include_uncalibrated_sensors_when_requested() {
+    WaterRecord records[4]{};
+    WaterRecordStore store(records, 4);
+    constexpr std::uint32_t today = 832032000UL;
+    TEST_ASSERT_TRUE(store.append(makeSensorRecord(today, 1000, 2500, 8, 10, true)));
+    TEST_ASSERT_TRUE(store.append(makeSensorRecord(today, 1000, 2800, 160, 30, false, kWaterSensorFlagTdsUncalibrated)));
+
+    const WaterUsageSummary summary = aggregateWaterRecords(store, today, 30, true);
+
+    TEST_ASSERT_EQUAL_UINT32(2, summary.sensorRecordCount);
+    TEST_ASSERT_EQUAL_UINT32(1, summary.uncalibratedSensorRecordCount);
+    TEST_ASSERT_EQUAL_UINT16(2, summary.days[29].sensorRecordCount);
+    TEST_ASSERT_EQUAL_UINT16(1, summary.days[29].uncalibratedSensorRecordCount);
+    TEST_ASSERT_EQUAL_INT16(2725, summary.days[29].temperatureAvgCentiC);
+    TEST_ASSERT_EQUAL_UINT16(122, summary.days[29].tdsAvgPpm);
+    TEST_ASSERT_EQUAL_INT16(2490, summary.days[29].temperatureMinCentiC);
+    TEST_ASSERT_EQUAL_INT16(2810, summary.days[29].temperatureMaxCentiC);
+    TEST_ASSERT_EQUAL_UINT16(7, summary.days[29].tdsMinPpm);
+    TEST_ASSERT_EQUAL_UINT16(161, summary.days[29].tdsMaxPpm);
+}
+
 void test_record_aggregate_reads_small_pages_for_web_stack_safety() {
     SpyRecordReader reader;
 
@@ -306,6 +395,7 @@ int main(int argc, char** argv) {
     (void)argv;
 
     UNITY_BEGIN();
+    RUN_TEST(test_water_record_sensor_fields_do_not_reuse_boot_id_storage);
     RUN_TEST(test_record_append_keeps_newest_first);
     RUN_TEST(test_record_rolls_when_capacity_is_full);
     RUN_TEST(test_record_reads_pages_newest_first);
@@ -315,6 +405,8 @@ int main(int argc, char** argv) {
     RUN_TEST(test_record_rewrites_current_boot_relative_times);
     RUN_TEST(test_record_aggregate_uses_calendar_month_and_real_daily_buckets);
     RUN_TEST(test_record_aggregate_uses_practical_volume_histogram_ranges);
+    RUN_TEST(test_record_aggregation_excludes_uncalibrated_sensors_by_default);
+    RUN_TEST(test_record_aggregation_can_include_uncalibrated_sensors_when_requested);
     RUN_TEST(test_record_aggregate_reads_small_pages_for_web_stack_safety);
     RUN_TEST(test_record_aggregate_stops_after_records_older_than_window);
     RUN_TEST(test_record_query_filters_real_records_by_time_range_and_paginates_matches);

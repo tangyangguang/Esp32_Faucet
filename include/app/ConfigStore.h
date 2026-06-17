@@ -24,12 +24,8 @@ public:
 class ConfigStore {
 public:
     enum class LoadStatus : std::uint8_t {
-        DefaultsNoVersion = 0,
+        Defaults = 0,
         LoadedCurrent = 1,
-        MigratedLegacy = 2,
-        LoadedFutureVersionReadOnly = 3,
-        UnsupportedVersionDefault = 4,
-        LoadedUnsupportedVersionReadOnly = 5,
     };
 
     explicit ConfigStore(ConfigBackend& backend);
@@ -38,10 +34,8 @@ public:
     bool saveSystemConfig(const SystemConfig& config);
     bool resetSystemConfig();
     LoadStatus lastSystemConfigLoadStatus() const;
-    bool systemConfigReadOnly() const;
     std::int32_t lastSystemConfigRawVersion() const;
     std::int32_t currentSystemConfigVersion() const;
-    bool lastSystemConfigMigrationWriteBack() const;
 
     StatisticsRecord loadStatistics(const PeriodKeys& defaultKeys);
     bool saveStatistics(const StatisticsRecord& record);
@@ -54,9 +48,7 @@ public:
 private:
     ConfigBackend& backend_;
     LoadStatus lastSystemStatus_;
-    bool systemConfigReadOnly_;
     std::int32_t lastSystemRawVersion_;
-    bool lastSystemMigrationWriteBack_;
 };
 
 }  // namespace faucet

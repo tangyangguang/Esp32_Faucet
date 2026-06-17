@@ -55,12 +55,11 @@ bool validCurrentHeaderForFile(const MeteringSchemeStoreHeader& header, std::int
         header.candidateSize != 0 ||
         header.nextSchemeId == 0 ||
         header.activeSchemeId == 0 ||
-        header.slotCount == 0 ||
-        header.slotCount > kMeteringSchemeStoreSlotCount ||
+        header.slotCount != kMeteringSchemeStoreSlotCount ||
         header.checksum != headerChecksum(header)) {
         return false;
     }
-    return fileSize >= static_cast<std::int64_t>(expectedFileSizeForHeader(header));
+    return fileSize == static_cast<std::int64_t>(expectedFileSizeForHeader(header));
 }
 
 bool tempPathFor(const char* path, char* out, std::size_t len) {
@@ -132,7 +131,7 @@ bool MeteringSchemeStore::begin() {
         return false;
     }
     ready_ = true;
-    if (!normalizeSlotCount() || !repairNextSchemeId()) {
+    if (!repairNextSchemeId()) {
         ready_ = false;
         status_ = AppStorageStatus::BackendFailure;
         return false;
@@ -382,46 +381,6 @@ bool MeteringSchemeStore::initializeNewFile() {
                          static_cast<std::uint32_t>(kMeteringSchemeStoreSlotCount));
     ready_ = writeCurrentSchemeFile(backend_, path_, header_, records.get());
     return ready_;
-}
-
-bool MeteringSchemeStore::normalizeSlotCount() {
-    if (!ready()) {
-        return false;
-    }
-    if (header_.slotCount == kMeteringSchemeStoreSlotCount &&
-        backend_.fileSize(path_) == static_cast<std::int64_t>(expectedFileSize())) {
-        return true;
-    }
-
-    std::unique_ptr<MeteringSchemeRecord[]> records(
-        new (std::nothrow) MeteringSchemeRecord[kMeteringSchemeStoreSlotCount]{});
-    if (!records) {
-        return false;
-    }
-    const std::size_t copyCount = std::min<std::size_t>(header_.slotCount, kMeteringSchemeStoreSlotCount);
-    std::uint32_t maxId = 0;
-    bool activeFound = false;
-    for (std::size_t i = 0; i < copyCount; ++i) {
-        MeteringSchemeRecord record{};
-        if (!readRecord(i, record)) {
-            return false;
-        }
-        records[i] = record;
-        if (record.recordUsed) {
-            maxId = std::max(maxId, record.id);
-            if (record.id == header_.activeSchemeId && !record.deleted) {
-                activeFound = true;
-            }
-        }
-    }
-    if (!activeFound || maxId == UINT32_MAX) {
-        return false;
-    }
-    const std::uint32_t nextId = std::max<std::uint32_t>(header_.nextSchemeId, maxId + 1U);
-    header_ = makeHeader(header_.activeSchemeId,
-                         nextId == 0 ? 1 : nextId,
-                         static_cast<std::uint32_t>(kMeteringSchemeStoreSlotCount));
-    return writeCurrentSchemeFile(backend_, path_, header_, records.get());
 }
 
 bool MeteringSchemeStore::repairNextSchemeId() {

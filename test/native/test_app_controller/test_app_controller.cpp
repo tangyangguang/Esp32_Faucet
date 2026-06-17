@@ -4,6 +4,7 @@
 #include "app/CalibrationSampleStore.h"
 #include "app/CalibrationSessionStore.h"
 #include "app/MeteringSchemeStore.h"
+#include "app/WaterSensorManager.h"
 #include "app/WaterRecordCalibrationStore.h"
 
 #include <cstring>
@@ -126,6 +127,42 @@ public:
 private:
     std::map<std::string, std::vector<std::uint8_t>> files;
 };
+
+class FakeAdcReader : public AdcReader {
+public:
+    AdcReadResult values[4]{};
+
+    bool begin() override {
+        return true;
+    }
+
+    bool setRange(AdcChannel, AdcRange) override {
+        return true;
+    }
+
+    AdcReadResult readSingleEnded(AdcChannel channel) override {
+        return values[static_cast<std::size_t>(channel)];
+    }
+};
+
+AdcReadResult okMv(std::int16_t mv) {
+    AdcReadResult result{};
+    result.ok = true;
+    result.millivolts = mv;
+    return result;
+}
+
+SystemConfig enabledWaterSensorConfig() {
+    SystemConfig config = makeDefaultConfig();
+    config.temperatureEnabled = true;
+    config.temperatureKind = TemperatureKind::Ntc50kB3950;
+    config.tdsEnabled = true;
+    config.tdsKind = TdsKind::AnalogTdsAo;
+    config.tdsCalibrated = true;
+    config.tdsCalibrationMode = TdsCalibrationMode::TwoPoint;
+    config.tdsCalibrationRevision = 3;
+    return config;
+}
 
 bool prepareMeteringScheme(MeteringSchemeStore& store,
                            std::uint32_t stablePulsePerLiter,
@@ -321,6 +358,130 @@ void test_app_controller_uses_active_scheme_parameters_for_flow_meter() {
     AppController app(config, active, statistics, filters, records, schemes);
 
     TEST_ASSERT_EQUAL_UINT32(1000, app.snapshot().pulsePerLiter);
+}
+
+void test_app_snapshot_contains_water_sensor_snapshot() {
+    SystemConfig config = enabledWaterSensorConfig();
+    StatisticsStore statistics;
+    statistics.reset({20260506, 202619, 202605});
+    FilterStore filters(config.filters);
+    MemoryRecordWriter records;
+    FakeAdcReader adc;
+    adc.values[0] = okMv(1091);
+    adc.values[1] = okMv(1650);
+    adc.values[2] = okMv(24);
+    WaterSensorManager sensors(adc);
+    sensors.configure(config);
+    sensors.begin();
+    AppController app(config, statistics, filters, records, nullptr, nullptr, nullptr, nullptr, nullptr, &sensors);
+
+    app.tick(input({false, false, false, false}, 1000, 1000000, 1714502400));
+
+    const AppSnapshot snapshot = app.snapshot();
+    TEST_ASSERT_TRUE(snapshot.sensors.inputVoltageMv.valid);
+    TEST_ASSERT_EQUAL_INT32(12001, snapshot.sensors.inputVoltageMv.value);
+    TEST_ASSERT_TRUE(snapshot.sensors.temperatureCentiC.valid);
+    TEST_ASSERT_TRUE(snapshot.sensors.tdsPpm.valid);
+    TEST_ASSERT_TRUE(snapshot.temperatureSensorEnabled);
+    TEST_ASSERT_TRUE(snapshot.tdsSensorEnabled);
+}
+
+void test_temperature_reference_calibration_sets_offset_from_raw_temperature() {
+    SystemConfig config = enabledWaterSensorConfig();
+    config.temperatureOffsetCentiC = 120;
+    config.temperatureCalibrated = true;
+    StatisticsStore statistics;
+    statistics.reset({20260506, 202619, 202605});
+    FilterStore filters(config.filters);
+    MemoryRecordWriter records;
+    FakeAdcReader adc;
+    adc.values[0] = okMv(1091);
+    adc.values[1] = okMv(1650);
+    adc.values[2] = okMv(24);
+    WaterSensorManager sensors(adc);
+    sensors.configure(config);
+    sensors.begin();
+    AppController app(config, statistics, filters, records, nullptr, nullptr, nullptr, nullptr, nullptr, &sensors);
+
+    app.tick(input({false, false, false, false}, 1000, 1000000, 1714502400));
+
+    const AppSnapshot before = app.snapshot();
+    TEST_ASSERT_TRUE(before.sensors.temperatureRawCentiC.valid);
+    TEST_ASSERT_TRUE(app.saveTemperatureCalibrationForWeb(
+        static_cast<std::int16_t>(before.sensors.temperatureRawCentiC.value + 60)));
+    TEST_ASSERT_TRUE(app.config().temperatureCalibrated);
+    TEST_ASSERT_EQUAL_INT16(60, app.config().temperatureOffsetCentiC);
+}
+
+void test_temperature_reference_calibration_rejects_disabled_temperature_sensor() {
+    SystemConfig config = makeDefaultConfig();
+    StatisticsStore statistics;
+    statistics.reset({20260506, 202619, 202605});
+    FilterStore filters(config.filters);
+    MemoryRecordWriter records;
+    FakeAdcReader adc;
+    adc.values[1] = okMv(1650);
+    WaterSensorManager sensors(adc);
+    sensors.configure(config);
+    sensors.begin();
+    AppController app(config, statistics, filters, records, nullptr, nullptr, nullptr, nullptr, nullptr, &sensors);
+
+    app.tick(input({false, false, false, false}, 1000, 1000000, 1714502400));
+
+    TEST_ASSERT_FALSE(app.saveTemperatureCalibrationForWeb(2500));
+    TEST_ASSERT_FALSE(app.config().temperatureCalibrated);
+}
+
+void test_app_records_sensor_summary_on_completed_run() {
+    SystemConfig config = enabledWaterSensorConfig();
+    StatisticsStore statistics;
+    statistics.reset({20260506, 202619, 202605});
+    FilterStore filters(config.filters);
+    MemoryRecordWriter records;
+    FakeAdcReader adc;
+    adc.values[0] = okMv(1091);
+    adc.values[1] = okMv(1650);
+    adc.values[2] = okMv(24);
+    WaterSensorManager sensors(adc);
+    sensors.configure(config);
+    sensors.begin();
+    AppController app(config, statistics, filters, records, nullptr, nullptr, nullptr, nullptr, nullptr, &sensors);
+    applyTestMeteringScheme(app);
+
+    app.resetInputs({false, false, false, false}, 0);
+    pressAndReleaseOk(app, 100);
+    pressAndReleaseOk(app, 300);
+    app.tick(input({false, false, false, false}, 1500, 1500000, 1714502397));
+    for (std::uint32_t i = 0; i < 1500; ++i) {
+        app.onFlowPulse(1000000UL + i * 2000UL);
+    }
+    app.tick(input({false, false, false, false}, 5000, 5000000, 1714502400));
+
+    TEST_ASSERT_EQUAL_size_t(1, records.records.size());
+    TEST_ASSERT_GREATER_THAN_UINT16(0, records.records[0].sensorSampleCount);
+    TEST_ASSERT_INT_WITHIN(50, 2500, records.records[0].temperatureAvgCentiC);
+    TEST_ASSERT_EQUAL_UINT16(10, records.records[0].tdsAvgPpm);
+    TEST_ASSERT_EQUAL_UINT16(3, records.records[0].tdsCalibrationRevisionAtRun);
+    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(TdsCalibrationMode::TwoPoint),
+                            records.records[0].tdsCalibrationModeAtRun);
+}
+
+void test_app_rejects_tds_calibration_when_running() {
+    SystemConfig config = enabledWaterSensorConfig();
+    StatisticsStore statistics;
+    statistics.reset({20260506, 202619, 202605});
+    FilterStore filters(config.filters);
+    MemoryRecordWriter records;
+    FakeAdcReader adc;
+    WaterSensorManager sensors(adc);
+    sensors.configure(config);
+    AppController app(config, statistics, filters, records, nullptr, nullptr, nullptr, nullptr, nullptr, &sensors);
+    applyTestMeteringScheme(app);
+    app.resetInputs({false, false, false, false}, 0);
+    pressAndReleaseOk(app, 100);
+    pressAndReleaseOk(app, 300);
+
+    TEST_ASSERT_FALSE(app.startTdsSinglePointCalibrationForWeb(10, 1714502400));
 }
 
 void test_app_controller_successful_record_writes_scheme_id_and_marks_scheme_used_once() {
@@ -1524,6 +1685,11 @@ int main(int argc, char** argv) {
 
     UNITY_BEGIN();
     RUN_TEST(test_app_controller_uses_active_scheme_parameters_for_flow_meter);
+    RUN_TEST(test_app_snapshot_contains_water_sensor_snapshot);
+    RUN_TEST(test_temperature_reference_calibration_sets_offset_from_raw_temperature);
+    RUN_TEST(test_temperature_reference_calibration_rejects_disabled_temperature_sensor);
+    RUN_TEST(test_app_records_sensor_summary_on_completed_run);
+    RUN_TEST(test_app_rejects_tds_calibration_when_running);
     RUN_TEST(test_app_controller_successful_record_writes_scheme_id_and_marks_scheme_used_once);
     RUN_TEST(test_app_controller_record_write_failure_does_not_mark_scheme_used);
     RUN_TEST(test_app_controller_record_write_success_locks_active_scheme_even_if_used_mark_persist_fails);

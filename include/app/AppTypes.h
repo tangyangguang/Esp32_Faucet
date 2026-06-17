@@ -93,7 +93,24 @@ struct WaterRecord {
     std::uint8_t reserved0;
     std::uint32_t meteringSchemeId;
     std::uint8_t reserved[4];
+    std::int16_t temperatureAvgCentiC;
+    std::int16_t temperatureMinCentiC;
+    std::int16_t temperatureMaxCentiC;
+    std::uint16_t tdsAvgPpm;
+    std::uint16_t tdsMinPpm;
+    std::uint16_t tdsMaxPpm;
+    std::uint16_t tdsVoltageAvgMv;
+    std::uint16_t sensorSampleCount;
+    std::uint16_t sensorFlags;
+    std::uint16_t tdsCalibrationRevisionAtRun;
+    std::uint8_t tdsCalibrationModeAtRun;
+    std::uint8_t tdsCalibratedAtRun;
+    std::uint8_t tdsTemperatureCompensatedAtRun;
+    std::uint8_t tdsTempFallback25CAtRun;
+    std::uint8_t sensorReserved[4];
 };
+
+static_assert(sizeof(WaterRecord) == 64, "WaterRecord persistent layout changed; bump record file format.");
 
 inline std::uint32_t waterRecordBootId(const WaterRecord& record) {
     return static_cast<std::uint32_t>(record.reserved[0]) |

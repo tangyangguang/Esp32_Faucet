@@ -37,6 +37,9 @@ public:
 private:
     std::uint32_t sleepTimeoutMs_;
     std::uint32_t lastWakeMs_;
+    std::uint32_t idlePageAnchorMs_;
+    bool idleSensorPageVisible_;
+    WaterState lastWaterState_;
 
     static DisplayFrame makeFrame(DisplayPage page, bool on, const char* line1, const char* line2);
 };

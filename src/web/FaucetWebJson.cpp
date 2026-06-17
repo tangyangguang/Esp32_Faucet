@@ -179,6 +179,14 @@ void appendEscaped(JsonWriter& writer, const char* text) {
     writer.append("\"");
 }
 
+void appendSensorValue(JsonWriter& writer, const SensorValue& value) {
+    if (value.valid) {
+        writer.append("%ld", static_cast<long>(value.value));
+    } else {
+        writer.append("null");
+    }
+}
+
 void appendPresetSummary(JsonWriter& writer,
                          const char* name,
                          const SystemConfig& config,
@@ -334,6 +342,22 @@ bool writeStatusJson(const AppSnapshot& snapshot,
                   static_cast<unsigned long>(config.valveFullPowerSec),
                   static_cast<unsigned>(config.valveHoldDutyPercent),
                   screenOn ? "true" : "false");
+    writer.append(",\"sensor\":{\"inputVoltageMv\":");
+    appendSensorValue(writer, snapshot.sensors.inputVoltageMv);
+    writer.append(",\"temperature\":{\"enabled\":%s,\"currentCentiC\":",
+                  snapshot.temperatureSensorEnabled ? "true" : "false");
+    appendSensorValue(writer, snapshot.sensors.temperatureCentiC);
+    writer.append(",\"calibrated\":%s},\"tds\":{\"enabled\":%s,\"currentPpm\":",
+                  config.temperatureCalibrated ? "true" : "false",
+                  snapshot.tdsSensorEnabled ? "true" : "false");
+    appendSensorValue(writer, snapshot.sensors.tdsPpm);
+    writer.append(",\"voltageMv\":");
+    appendSensorValue(writer, snapshot.sensors.tdsVoltageMv);
+    writer.append(",\"calibrated\":%s,\"temperatureCompensated\":%s,\"tempFallback25C\":%s},\"flags\":%u}",
+                  snapshot.sensors.tdsCalibrated ? "true" : "false",
+                  snapshot.sensors.tdsTemperatureCompensated ? "true" : "false",
+                  snapshot.sensors.tdsTempFallback25C ? "true" : "false",
+                  static_cast<unsigned>(snapshot.sensors.flags));
     appendPresetSummary(writer,
                         "nextPreset",
                         config,
@@ -355,13 +379,10 @@ bool writeStatusJson(const AppSnapshot& snapshot,
                         snapshot.targetStablePulsePerSec,
                         snapshot.targetEstimateReason);
     if (configStatus) {
-        writer.append(",\"config\":{\"status\":\"%s\",\"rawVersion\":%ld,\"currentVersion\":%ld,"
-                      "\"readOnly\":%s,\"migrationWriteBack\":%s}",
+        writer.append(",\"config\":{\"status\":\"%s\",\"rawVersion\":%ld,\"currentVersion\":%ld}",
                       configStatus->loadStatus ? configStatus->loadStatus : "unknown",
                       static_cast<long>(configStatus->rawVersion),
-                      static_cast<long>(configStatus->currentVersion),
-                      configStatus->readOnly ? "true" : "false",
-                      configStatus->migrationWriteBack ? "true" : "false");
+                      static_cast<long>(configStatus->currentVersion));
     }
     writer.append("}");
     return writer.ok();
@@ -401,12 +422,23 @@ bool writeUsageSummaryJson(const WaterUsageSummary& summary,
                   static_cast<unsigned long>(summary.todayDay),
                   static_cast<unsigned long>(summary.monthStartDay));
     for (std::size_t i = 0; i < summary.dayCount; ++i) {
-        writer.append("%s{\"day\":%lu,\"volumeMl\":%lu,\"durationSec\":%lu,\"count\":%u}",
+        writer.append("%s{\"day\":%lu,\"volumeMl\":%lu,\"durationSec\":%lu,\"count\":%u,"
+                      "\"temperatureAvgCentiC\":%d,\"temperatureMinCentiC\":%d,\"temperatureMaxCentiC\":%d,"
+                      "\"tdsAvgPpm\":%u,\"tdsMinPpm\":%u,\"tdsMaxPpm\":%u,"
+                      "\"sensorRecordCount\":%u,\"uncalibratedSensorRecordCount\":%u}",
                       i == 0 ? "" : ",",
                       static_cast<unsigned long>(summary.days[i].dayIndex),
                       static_cast<unsigned long>(summary.days[i].volumeMl),
                       static_cast<unsigned long>(summary.days[i].durationSec),
-                      static_cast<unsigned>(summary.days[i].count));
+                      static_cast<unsigned>(summary.days[i].count),
+                      static_cast<int>(summary.days[i].temperatureAvgCentiC),
+                      static_cast<int>(summary.days[i].temperatureMinCentiC),
+                      static_cast<int>(summary.days[i].temperatureMaxCentiC),
+                      static_cast<unsigned>(summary.days[i].tdsAvgPpm),
+                      static_cast<unsigned>(summary.days[i].tdsMinPpm),
+                      static_cast<unsigned>(summary.days[i].tdsMaxPpm),
+                      static_cast<unsigned>(summary.days[i].sensorRecordCount),
+                      static_cast<unsigned>(summary.days[i].uncalibratedSensorRecordCount));
     }
     writer.append("],\"presetCounts\":[");
     for (std::size_t i = 0; i < kPresetCount; ++i) {
@@ -436,7 +468,10 @@ bool writeUsageSummaryJson(const WaterUsageSummary& summary,
                       static_cast<unsigned long>(summary.volumeHist[i].volumeMl),
                       static_cast<unsigned>(summary.volumeHist[i].count));
     }
-    writer.append("]}");
+    writer.append("],\"sensorRecordCount\":%lu,\"uncalibratedSensorRecordCount\":%lu,\"invalidSensorRecordCount\":%lu}",
+                  static_cast<unsigned long>(summary.sensorRecordCount),
+                  static_cast<unsigned long>(summary.uncalibratedSensorRecordCount),
+                  static_cast<unsigned long>(summary.invalidSensorRecordCount));
     return writer.ok();
 }
 
@@ -446,10 +481,20 @@ bool writeConfigJson(const SystemConfig& config, char* out, std::size_t len) {
                   "\"overflowPercent\":%u,\"noFlowTimeoutSec\":%lu,\"highFlowMlPerMin\":%lu,"
                   "\"highFlowDurationSec\":%lu,\"pauseTimeoutSec\":%lu,\"volumeAdjustStepMl\":%lu,"
                   "\"timeAdjustStepSec\":%lu,\"pulseMinIntervalUs\":%lu,"
-                  "\"pulseMaxEffectiveHz\":%lu,\"recentPulseTraceCount\":%lu,"
+                  "\"pulseMaxEffectiveHz\":%lu,"
                   "\"valveFullPowerSec\":%lu,"
                   "\"valveHoldDutyPercent\":%u,\"displaySleepSec\":%lu,\"resultDisplaySec\":%lu,"
-                  "\"lcdI2cAddress\":%u,\"beepEnabled\":%s}",
+                  "\"lcdI2cAddress\":%u,\"beepEnabled\":%s,"
+                  "\"sensorVrefMv\":%u,\"lcdSensorPageEnabled\":%s,"
+                  "\"temperatureEnabled\":%s,\"temperatureKind\":%u,\"temperatureOffsetCentiC\":%d,"
+                  "\"temperatureCalibrated\":%s,\"tdsEnabled\":%s,\"tdsKind\":%u,"
+                  "\"tdsCalibrationMode\":%u,\"tdsCalibrationRevision\":%u,"
+                  "\"tdsScaleMilli\":%ld,\"tdsOffsetPpm\":%d,"
+                  "\"tdsLowReferencePpm\":%u,\"tdsLowRawPpm\":%u,"
+                  "\"tdsHighReferencePpm\":%u,\"tdsHighRawPpm\":%u,"
+                  "\"tdsCalibrationTime\":%lu,\"tdsCalibrationTemperatureCentiC\":%d,"
+                  "\"tdsCalibrationVoltageMv\":%u,\"tdsCalibrated\":%s,"
+                  "\"tdsTemperatureCompensationEnabled\":%s}",
                   static_cast<unsigned long>(config.confirmTimeoutSec),
                   static_cast<unsigned long>(config.maxOutTimeSec),
                   static_cast<unsigned long>(config.maxOutVolumeMl),
@@ -462,13 +507,33 @@ bool writeConfigJson(const SystemConfig& config, char* out, std::size_t len) {
                   static_cast<unsigned long>(config.timeAdjustStepSec),
                   static_cast<unsigned long>(config.pulseMinIntervalUs),
                   static_cast<unsigned long>(1000000UL / config.pulseMinIntervalUs),
-                  static_cast<unsigned long>(config.recentPulseTraceCount),
                   static_cast<unsigned long>(config.valveFullPowerSec),
                   static_cast<unsigned>(config.valveHoldDutyPercent),
                   static_cast<unsigned long>(config.displaySleepSec),
                   static_cast<unsigned long>(config.resultDisplaySec),
                   config.lcdI2cAddress,
-                  config.beepEnabled ? "true" : "false");
+                  config.beepEnabled ? "true" : "false",
+                  static_cast<unsigned>(config.sensorVrefMv),
+                  config.lcdSensorPageEnabled ? "true" : "false",
+                  config.temperatureEnabled ? "true" : "false",
+                  static_cast<unsigned>(config.temperatureKind),
+                  static_cast<int>(config.temperatureOffsetCentiC),
+                  config.temperatureCalibrated ? "true" : "false",
+                  config.tdsEnabled ? "true" : "false",
+                  static_cast<unsigned>(config.tdsKind),
+                  static_cast<unsigned>(config.tdsCalibrationMode),
+                  static_cast<unsigned>(config.tdsCalibrationRevision),
+                  static_cast<long>(config.tdsScale * 1000.0f),
+                  static_cast<int>(config.tdsOffsetPpm),
+                  static_cast<unsigned>(config.tdsLowReferencePpm),
+                  static_cast<unsigned>(config.tdsLowRawPpm),
+                  static_cast<unsigned>(config.tdsHighReferencePpm),
+                  static_cast<unsigned>(config.tdsHighRawPpm),
+                  static_cast<unsigned long>(config.tdsCalibrationTime),
+                  static_cast<int>(config.tdsCalibrationTemperatureCentiC),
+                  static_cast<unsigned>(config.tdsCalibrationVoltageMv),
+                  config.tdsCalibrated ? "true" : "false",
+                  config.tdsTemperatureCompensationEnabled ? "true" : "false");
     return writer.ok();
 }
 
@@ -537,7 +602,13 @@ bool writeWaterRecordsJson(const WaterRecord* records,
         writer.append("%s{\"startTime\":%lu,\"volumeMl\":%lu,\"durationSec\":%u,"
                       "\"mode\":\"%s\",\"result\":\"%s\",\"targetValue\":%lu,\"selectedPreset\":%u,"
                       "\"pulseCount\":%lu,\"rejectedPulseCount\":%lu,\"meteringSchemeId\":%lu,"
-                      "\"averageFlowMlPerMin\":%lu}",
+                      "\"averageFlowMlPerMin\":%lu,"
+                      "\"temperatureAvgCentiC\":%d,\"temperatureMinCentiC\":%d,\"temperatureMaxCentiC\":%d,"
+                      "\"tdsAvgPpm\":%u,\"tdsMinPpm\":%u,\"tdsMaxPpm\":%u,\"tdsVoltageAvgMv\":%u,"
+                      "\"sensorSampleCount\":%u,\"sensorFlags\":%u,"
+                      "\"tdsCalibrationRevisionAtRun\":%u,\"tdsCalibrationModeAtRun\":%u,"
+                      "\"tdsCalibratedAtRun\":%u,\"tdsTemperatureCompensatedAtRun\":%u,"
+                      "\"tdsTempFallback25CAtRun\":%u}",
                       i == 0 ? "" : ",",
                       static_cast<unsigned long>(record.startTime),
                       static_cast<unsigned long>(record.volumeMl),
@@ -549,7 +620,21 @@ bool writeWaterRecordsJson(const WaterRecord* records,
                       static_cast<unsigned long>(record.pulseCount),
                       static_cast<unsigned long>(record.rejectedPulseCount),
                       static_cast<unsigned long>(record.meteringSchemeId),
-                      static_cast<unsigned long>(averageFlowMlPerMin));
+                      static_cast<unsigned long>(averageFlowMlPerMin),
+                      static_cast<int>(record.temperatureAvgCentiC),
+                      static_cast<int>(record.temperatureMinCentiC),
+                      static_cast<int>(record.temperatureMaxCentiC),
+                      static_cast<unsigned>(record.tdsAvgPpm),
+                      static_cast<unsigned>(record.tdsMinPpm),
+                      static_cast<unsigned>(record.tdsMaxPpm),
+                      static_cast<unsigned>(record.tdsVoltageAvgMv),
+                      static_cast<unsigned>(record.sensorSampleCount),
+                      static_cast<unsigned>(record.sensorFlags),
+                      static_cast<unsigned>(record.tdsCalibrationRevisionAtRun),
+                      static_cast<unsigned>(record.tdsCalibrationModeAtRun),
+                      static_cast<unsigned>(record.tdsCalibratedAtRun),
+                      static_cast<unsigned>(record.tdsTemperatureCompensatedAtRun),
+                      static_cast<unsigned>(record.tdsTempFallback25CAtRun));
     }
     writer.append("]}");
     return writer.ok();

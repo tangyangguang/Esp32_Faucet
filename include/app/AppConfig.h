@@ -28,9 +28,7 @@ constexpr std::uint32_t kMaxTimeAdjustStepSec = 300;
 constexpr std::uint32_t kDefaultPulseMinIntervalUs = 1000;
 constexpr std::uint32_t kMinPulseMinIntervalUs = 100;
 constexpr std::uint32_t kMaxPulseMinIntervalUs = 100000;
-constexpr std::uint32_t kDefaultRecentPulseTraceCount = 1;
-constexpr std::uint32_t kMinRecentPulseTraceCount = 1;
-constexpr std::uint32_t kMaxRecentPulseTraceCount = 1;
+constexpr std::uint32_t kRecentPulseTraceCount = 1;
 constexpr std::uint32_t kDefaultPulseObservationWindowSec = 10;
 constexpr std::uint32_t kMinPulseObservationWindowSec = 1;
 constexpr std::uint32_t kMaxPulseObservationWindowSec = 60;
@@ -74,6 +72,22 @@ enum class FilterLifeStatus : std::uint8_t {
     Expired = 2,
 };
 
+enum class TemperatureKind : std::uint8_t {
+    None = 0,
+    Ntc50kB3950 = 1,
+};
+
+enum class TdsKind : std::uint8_t {
+    None = 0,
+    AnalogTdsAo = 1,
+};
+
+enum class TdsCalibrationMode : std::uint8_t {
+    None = 0,
+    SinglePoint = 1,
+    TwoPoint = 2,
+};
+
 struct SystemConfig {
     std::uint32_t confirmTimeoutSec;
     std::uint32_t maxOutTimeSec;
@@ -86,7 +100,6 @@ struct SystemConfig {
     std::uint32_t volumeAdjustStepMl;
     std::uint32_t timeAdjustStepSec;
     std::uint32_t pulseMinIntervalUs;
-    std::uint32_t recentPulseTraceCount;
     std::uint32_t pulseObservationWindowSec;
     std::uint32_t calibrationAnalysisPulseMinIntervalUs;
     std::uint32_t calibrationStableWindowSec;
@@ -100,6 +113,27 @@ struct SystemConfig {
     std::uint32_t resultDisplaySec;
     std::uint8_t lcdI2cAddress;
     bool beepEnabled;
+    std::uint16_t sensorVrefMv;
+    bool lcdSensorPageEnabled;
+    bool temperatureEnabled;
+    TemperatureKind temperatureKind;
+    std::int16_t temperatureOffsetCentiC;
+    bool temperatureCalibrated;
+    bool tdsEnabled;
+    TdsKind tdsKind;
+    TdsCalibrationMode tdsCalibrationMode;
+    std::uint16_t tdsCalibrationRevision;
+    float tdsScale;
+    std::int16_t tdsOffsetPpm;
+    std::uint16_t tdsLowReferencePpm;
+    std::uint16_t tdsLowRawPpm;
+    std::uint16_t tdsHighReferencePpm;
+    std::uint16_t tdsHighRawPpm;
+    std::uint32_t tdsCalibrationTime;
+    std::int16_t tdsCalibrationTemperatureCentiC;
+    std::uint16_t tdsCalibrationVoltageMv;
+    bool tdsCalibrated;
+    bool tdsTemperatureCompensationEnabled;
     PresetConfig presets[kPresetCount];
     FilterRecord filters[kFilterCount];
 };

@@ -19,6 +19,7 @@
 #include "app/WaterRecordFileStore.h"
 #include "app/WaterRecordStore.h"
 #include "app/WaterPulseTraceStore.h"
+#include "drivers/Ads1115Reader.h"
 #include "drivers/BoardPins.h"
 #include "drivers/FlowPulseReader.h"
 #include "drivers/GpioButtonReader.h"
@@ -41,9 +42,9 @@ constexpr std::size_t kRamRecordCapacity = 128;
 constexpr std::size_t kRamRecordCalibrationCapacity = 32;
 constexpr std::size_t kWaterRecordCapacity = 20000;
 constexpr std::size_t kWaterRecordCalibrationCapacity = 512;
-constexpr std::size_t kPulseTraceCapacity = faucet::kMaxRecentPulseTraceCount;
+constexpr std::size_t kPulseTraceCapacity = faucet::kRecentPulseTraceCount;
 constexpr std::size_t kPulseTraceMaxSamples =
-    static_cast<std::size_t>(faucet::kMaxRecentPulseTraceCount) * faucet::kPulseTraceMaxRawEdgesPerTrace;
+    static_cast<std::size_t>(faucet::kRecentPulseTraceCount) * faucet::kPulseTraceMaxRawEdgesPerTrace;
 constexpr std::uint32_t kRuntimePersistenceRetryIntervalMs = 30000UL;
 constexpr std::size_t kMaxFlowPulsesPerTick = 32;
 constexpr std::uint32_t kI2cTimeoutMs = 20UL;
@@ -193,6 +194,8 @@ faucet::GpioButtonReader g_buttons(faucet::kPinButtonCancel,
                                    faucet::kPinButtonPlus,
                                    faucet::kPinButtonMinus);
 faucet::FlowPulseReader g_flowPulses(faucet::kPinFlow);
+faucet::Ads1115Reader g_ads1115(0x48);
+faucet::WaterSensorManager g_waterSensors(g_ads1115);
 faucet::PwmValveHardware g_valveHardware(faucet::kPinValve, faucet::kLedcChannelValve);
 faucet::BeepDriver g_beep;
 faucet::PwmBeepHardware g_beepHardware(faucet::kPinBeep, faucet::kLedcChannelBeep);
@@ -249,18 +252,10 @@ void initializeI2cBus() {
 
 const char* configLoadStatusName(faucet::ConfigStore::LoadStatus status) {
     switch (status) {
-        case faucet::ConfigStore::LoadStatus::DefaultsNoVersion:
-            return "defaults_no_version";
+        case faucet::ConfigStore::LoadStatus::Defaults:
+            return "defaults";
         case faucet::ConfigStore::LoadStatus::LoadedCurrent:
             return "loaded_current";
-        case faucet::ConfigStore::LoadStatus::MigratedLegacy:
-            return "migrated_legacy";
-        case faucet::ConfigStore::LoadStatus::LoadedFutureVersionReadOnly:
-            return "future_version_read_only";
-        case faucet::ConfigStore::LoadStatus::UnsupportedVersionDefault:
-            return "unsupported_version_default";
-        case faucet::ConfigStore::LoadStatus::LoadedUnsupportedVersionReadOnly:
-            return "unsupported_version_read_only";
     }
     return "unknown";
 }
@@ -268,18 +263,13 @@ const char* configLoadStatusName(faucet::ConfigStore::LoadStatus status) {
 void logSystemConfigStatus() {
     const faucet::ConfigStore::LoadStatus status = g_configStore.lastSystemConfigLoadStatus();
     ESP32BASE_LOG_I("app",
-                    "system config load status=%s raw_version=%ld target_version=%ld migrated_writeback=%s read_only=%s",
+                    "system config load status=%s raw_version=%ld target_version=%ld",
                     configLoadStatusName(status),
                     static_cast<long>(g_configStore.lastSystemConfigRawVersion()),
-                    static_cast<long>(g_configStore.currentSystemConfigVersion()),
-                    g_configStore.lastSystemConfigMigrationWriteBack() ? "yes" : "no",
-                    g_configStore.systemConfigReadOnly() ? "yes" : "no");
-    if (status == faucet::ConfigStore::LoadStatus::LoadedFutureVersionReadOnly) {
-        ESP32BASE_LOG_W("app", "system config loaded from future version in read-only mode");
-    } else if (status == faucet::ConfigStore::LoadStatus::LoadedUnsupportedVersionReadOnly) {
-        ESP32BASE_LOG_W("app", "system config loaded from unsupported version in read-only mode");
-    } else if (status == faucet::ConfigStore::LoadStatus::UnsupportedVersionDefault) {
-        ESP32BASE_LOG_W("app", "system config version unsupported, defaults used");
+                    static_cast<long>(g_configStore.currentSystemConfigVersion()));
+    if (status == faucet::ConfigStore::LoadStatus::Defaults &&
+        g_configStore.lastSystemConfigRawVersion() != g_configStore.currentSystemConfigVersion()) {
+        ESP32BASE_LOG_W("app", "system config version mismatch, defaults used until next save");
     }
 }
 
@@ -353,18 +343,7 @@ std::uint32_t currentBootId() {
 }
 
 faucet::FaucetDisplayStatus currentDisplayStatus() {
-    faucet::DisplayFrame physicalFrame = g_lastDisplayFrame;
-    faucet::DisplayFrame logicalFrame = g_lastDisplayFrame;
-    if (g_display && g_app) {
-        const std::uint32_t nowMs = millis();
-        const faucet::AppSnapshot snapshot = g_app->snapshot();
-        physicalFrame = g_display->render(snapshot, nowMs);
-        g_lastDisplayFrame = physicalFrame;
-        faucet::DisplayPresenter awakePresenter(0);
-        awakePresenter.wake(nowMs);
-        logicalFrame = awakePresenter.render(snapshot, nowMs);
-    }
-    return faucet::FaucetDisplayStatus{logicalFrame, physicalFrame.on};
+    return faucet::FaucetDisplayStatus{g_lastDisplayFrame, g_lastDisplayFrame.on};
 }
 
 faucet::FaucetRuntimeDiagnostics currentRuntimeDiagnostics() {
@@ -381,6 +360,7 @@ void requestRecordStoreRebuildAfterFormatFs() {
 
 void applyRuntimeSettings(const faucet::SystemConfig& config) {
     g_beep.setEnabled(config.beepEnabled);
+    g_waterSensors.configure(config);
     if (g_display) {
         g_display->configure(config.displaySleepSec);
         g_display->wake(millis());
@@ -452,6 +432,9 @@ void initializeApplication() {
     g_rtc.begin();
     logStartupPhase("rtc_ready");
     g_config = g_configStore.loadSystemConfig();
+    g_waterSensors.configure(g_config);
+    const bool ads1115Ready = g_waterSensors.begin();
+    ESP32BASE_LOG_I("app", "ads1115=%s address=0x48", ads1115Ready ? "present" : "absent");
     logSystemConfigStatus();
     logStartupPhase("config_ready");
     const std::uint32_t nowSeconds = currentSeconds();
@@ -480,7 +463,7 @@ void initializeApplication() {
             kPulseTraceCapacity,
             g_pulseTraceSamples,
             kPulseTraceMaxSamples,
-            g_config.recentPulseTraceCount);
+            faucet::kRecentPulseTraceCount);
     }
     if (!g_pulseTraces) {
         ESP32BASE_LOG_W("app", "pulse trace store allocation failed, trace diagnostics disabled");
@@ -498,7 +481,7 @@ void initializeApplication() {
         return;
     }
     if (g_pulseTraces) {
-        g_pulseTraces->setRecentTraceLimit(g_config.recentPulseTraceCount);
+        g_pulseTraces->setRecentTraceLimit(faucet::kRecentPulseTraceCount);
     }
     faucet::MeteringSchemeRecord activeScheme{};
     if (meteringSchemesReady && g_meteringSchemes.activeScheme(activeScheme)) {
@@ -512,7 +495,8 @@ void initializeApplication() {
             &g_recordCalibrations,
             &g_calibrationSession,
             &g_calibrationSessionTraces,
-            &g_calibrationLongTermSamples);
+            &g_calibrationLongTermSamples,
+            &g_waterSensors);
     } else {
         g_app = new (std::nothrow) faucet::AppController(
             g_config,
@@ -523,7 +507,8 @@ void initializeApplication() {
             &g_recordCalibrations,
             &g_calibrationSession,
             &g_calibrationSessionTraces,
-            &g_calibrationLongTermSamples);
+            &g_calibrationLongTermSamples,
+            &g_waterSensors);
     }
     if (!g_app) {
         ESP32BASE_LOG_E("app", "app controller allocation failed");

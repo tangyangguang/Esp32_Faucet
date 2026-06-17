@@ -40,10 +40,9 @@ WaterPulseTraceState traceStateForResult(WaterResult result) {
     }
 }
 
-MeteringSchemeRecord schemeFromLegacyConfig(const SystemConfig& config) {
-    (void)config;
+MeteringSchemeRecord defaultRuntimeMeteringScheme() {
     MeteringSchemeRecord scheme{};
-    initializeManualMeteringScheme(scheme, 1, "运行计量方案", defaultMeteringParameters(), 0);
+    initializeManualMeteringScheme(scheme, 1, "默认计量方案", defaultMeteringParameters(), 0);
     return scheme;
 }
 
@@ -134,9 +133,10 @@ AppController::AppController(const SystemConfig& config,
                              WaterRecordCalibrationWriter* recordCalibrations,
                              CalibrationSessionFileStore* calibrationSessions,
                              CalibrationSessionTraceStore* calibrationSessionTraces,
-                             CalibrationLongTermSampleStore* calibrationLongTermSamples)
+                             CalibrationLongTermSampleStore* calibrationLongTermSamples,
+                             WaterSensorManager* waterSensors)
     : config_(config),
-      activeMeteringScheme_(schemeFromLegacyConfig(config)),
+      activeMeteringScheme_(defaultRuntimeMeteringScheme()),
       water_(config_),
       localMode_(LocalUiMode::Normal),
       buttons_(),
@@ -148,6 +148,7 @@ AppController::AppController(const SystemConfig& config,
       recordCalibrations_(recordCalibrations),
       meteringSchemes_(nullptr),
       pulseTraces_(pulseTraces),
+      waterSensors_(waterSensors),
       calibrationSessions_(calibrationSessions),
       calibrationSessionTraces_(calibrationSessionTraces),
       calibrationLongTermSamples_(calibrationLongTermSamples),
@@ -190,7 +191,8 @@ AppController::AppController(const SystemConfig& config,
                              WaterRecordCalibrationWriter* recordCalibrations,
                              CalibrationSessionFileStore* calibrationSessions,
                              CalibrationSessionTraceStore* calibrationSessionTraces,
-                             CalibrationLongTermSampleStore* calibrationLongTermSamples)
+                             CalibrationLongTermSampleStore* calibrationLongTermSamples,
+                             WaterSensorManager* waterSensors)
     : config_(config),
       activeMeteringScheme_(activeScheme),
       water_(config_),
@@ -204,6 +206,7 @@ AppController::AppController(const SystemConfig& config,
       recordCalibrations_(recordCalibrations),
       meteringSchemes_(&meteringSchemes),
       pulseTraces_(pulseTraces),
+      waterSensors_(waterSensors),
       calibrationSessions_(calibrationSessions),
       calibrationSessionTraces_(calibrationSessionTraces),
       calibrationLongTermSamples_(calibrationLongTermSamples),
@@ -234,7 +237,7 @@ AppController::AppController(const SystemConfig& config,
       lastResultRecord_{} {
     sanitizeConfig(config_);
     if (!activeMeteringScheme_.recordUsed || !validMeteringSchemeParameters(activeMeteringScheme_.params)) {
-        activeMeteringScheme_ = schemeFromLegacyConfig(config_);
+        activeMeteringScheme_ = defaultRuntimeMeteringScheme();
         flow_.setMeteringParameters(activeMeteringScheme_.params);
     }
     restoreCalibrationSession();
@@ -252,6 +255,9 @@ void AppController::onFlowPulse(std::uint32_t nowUs) {
 }
 
 void AppController::tick(const AppTickInput& input) {
+    if (waterSensors_) {
+        waterSensors_->tick(input.nowMs);
+    }
     const ButtonEvent event = buttons_.update(input.buttons, input.nowMs);
     expireIdleCalibrationSession(input.timeSynced ? input.nowSeconds : 0);
     handleButtonEvent(event, input.nowMs, input.nowUs, input.nowSeconds, input.timeSynced, input.bootId);
@@ -262,11 +268,15 @@ void AppController::tick(const AppTickInput& input) {
 
     syncFlow(input.nowUs);
     const FlowSnapshot flow = flow_.snapshot(input.nowUs);
+    const bool wasRunningForSensorRun = water_.snapshot().state == WaterState::Running;
     currentFlowMlPerMin_ = flow.currentFlowMlPerMin;
     instantFlowMlPerMin_ = flow.instantFlowMlPerMin;
     windowFlowMlPerMin_ = flow.windowFlowMlPerMin;
     displayFlowMlPerMin_ = flow.displayFlowMlPerMin;
     water_.tick(input.nowMs, flow.windowFlowMlPerMin);
+    if (waterSensors_ && wasRunningForSensorRun) {
+        waterSensors_->sampleRun();
+    }
     const WaterSnapshot waterAfterTick = water_.snapshot();
     runAverageFlowMlPerMin_ =
         waterAfterTick.elapsedSec == 0
@@ -349,6 +359,12 @@ AppSnapshot AppController::snapshot() const {
     snapshot.displayFlowMlPerMin = displayFlowMlPerMin_;
     snapshot.runAverageFlowMlPerMin = runAverageFlowMlPerMin_;
     snapshot.flowDroppedPulses = flowDroppedPulses_;
+    if (waterSensors_) {
+        snapshot.sensors = waterSensors_->snapshot();
+    }
+    snapshot.lcdSensorPageEnabled = config_.lcdSensorPageEnabled;
+    snapshot.temperatureSensorEnabled = config_.temperatureEnabled;
+    snapshot.tdsSensorEnabled = config_.tdsEnabled;
     return snapshot;
 }
 
@@ -433,7 +449,10 @@ bool AppController::applyConfig(const SystemConfig& config) {
     adjustmentStepMl_ = config_.volumeAdjustStepMl;
     timeAdjustmentStepSec_ = config_.timeAdjustStepSec;
     if (pulseTraces_) {
-        pulseTraces_->setRecentTraceLimit(config_.recentPulseTraceCount);
+        pulseTraces_->setRecentTraceLimit(kRecentPulseTraceCount);
+    }
+    if (waterSensors_) {
+        waterSensors_->configure(config_);
     }
     return true;
 }
@@ -715,6 +734,69 @@ bool AppController::applyGeneratedCalibrationForWeb(std::uint32_t nowSeconds) {
     return saveCalibrationSession();
 }
 
+bool AppController::canUseTdsCalibration() const {
+    return waterSensors_ && localMode_ == LocalUiMode::Normal && water_.snapshot().state == WaterState::Idle;
+}
+
+bool AppController::startTdsSinglePointCalibrationForWeb(std::uint16_t referencePpm,
+                                                         std::uint32_t nowSeconds) {
+    return canUseTdsCalibration() &&
+           waterSensors_->startTdsSinglePointCalibration(referencePpm, nowSeconds);
+}
+
+bool AppController::startTdsTwoPointLowCalibrationForWeb(std::uint16_t referencePpm,
+                                                         std::uint32_t nowSeconds) {
+    return canUseTdsCalibration() &&
+           waterSensors_->startTdsTwoPointLow(referencePpm, nowSeconds);
+}
+
+bool AppController::startTdsTwoPointHighCalibrationForWeb(std::uint16_t referencePpm,
+                                                          std::uint32_t nowSeconds) {
+    return canUseTdsCalibration() &&
+           waterSensors_->startTdsTwoPointHigh(referencePpm, nowSeconds);
+}
+
+bool AppController::cancelTdsCalibrationForWeb() {
+    return canUseTdsCalibration() && waterSensors_->cancelTdsCalibration();
+}
+
+bool AppController::saveTdsCalibrationForWeb(std::uint32_t nowSeconds) {
+    if (!canUseTdsCalibration()) {
+        return false;
+    }
+    SystemConfig updated = config_;
+    if (!waterSensors_->saveReadyTdsCalibration(updated, nowSeconds)) {
+        return false;
+    }
+    sanitizeConfig(updated);
+    config_ = updated;
+    water_.applyConfig(config_);
+    pendingBeep_ = BeepPattern::Done;
+    return true;
+}
+
+bool AppController::saveTemperatureCalibrationForWeb(std::int16_t referenceCentiC) {
+    if (!canApplyConfig() || !waterSensors_ || !config_.temperatureEnabled ||
+        config_.temperatureKind != TemperatureKind::Ntc50kB3950) {
+        return false;
+    }
+    const WaterSensorSnapshot sensors = waterSensors_->snapshot();
+    if (!sensors.temperatureRawCentiC.valid) {
+        return false;
+    }
+    config_.temperatureOffsetCentiC =
+        static_cast<std::int16_t>(referenceCentiC - sensors.temperatureRawCentiC.value);
+    config_.temperatureCalibrated = true;
+    sanitizeConfig(config_);
+    water_.applyConfig(config_);
+    pendingBeep_ = BeepPattern::Done;
+    return true;
+}
+
+TdsCalibrationSessionSnapshot AppController::tdsCalibrationSnapshot() const {
+    return waterSensors_ ? waterSensors_->calibrationSnapshot() : TdsCalibrationSessionSnapshot{};
+}
+
 CalibrationApplyResult AppController::applyCalibrationFromRecord(const WaterRecord& record, std::uint32_t actualMl) {
     return applyCalibrationFromRecordInternal(record, actualMl, false, 0);
 }
@@ -932,6 +1014,9 @@ void AppController::startSelectedPreset(std::uint32_t nowMs,
         windowFlowMlPerMin_ = 0;
         displayFlowMlPerMin_ = 0;
         runAverageFlowMlPerMin_ = 0;
+        if (waterSensors_) {
+            waterSensors_->beginRun();
+        }
         pendingBeep_ = BeepPattern::Click;
     }
 }
@@ -1039,8 +1124,11 @@ bool AppController::beginCalibrationLocalRun(std::uint32_t nowMs,
     windowFlowMlPerMin_ = 0;
     displayFlowMlPerMin_ = 0;
     runAverageFlowMlPerMin_ = 0;
+    if (waterSensors_) {
+        waterSensors_->beginRun();
+    }
     if (pulseTraces_) {
-        pulseTraces_->setRecentTraceLimit(config_.recentPulseTraceCount);
+        pulseTraces_->setRecentTraceLimit(kRecentPulseTraceCount);
         activeTraceId_ = pulseTraces_->beginTrace(nowSeconds, config_.pulseMinIntervalUs);
         activeTraceStartUs_ = nowUs;
     }
@@ -1152,6 +1240,23 @@ void AppController::processResult(std::uint32_t startTime,
     };
     if (!startTimeSynced) {
         markWaterRecordBootId(record, bootId);
+    }
+    if (waterSensors_) {
+        const WaterSensorRunSummary sensors = waterSensors_->finishRun();
+        record.temperatureAvgCentiC = sensors.temperatureAvgCentiC;
+        record.temperatureMinCentiC = sensors.temperatureMinCentiC;
+        record.temperatureMaxCentiC = sensors.temperatureMaxCentiC;
+        record.tdsAvgPpm = sensors.tdsAvgPpm;
+        record.tdsMinPpm = sensors.tdsMinPpm;
+        record.tdsMaxPpm = sensors.tdsMaxPpm;
+        record.tdsVoltageAvgMv = sensors.tdsVoltageAvgMv;
+        record.sensorSampleCount = sensors.sensorSampleCount;
+        record.sensorFlags = sensors.sensorFlags;
+        record.tdsCalibrationRevisionAtRun = sensors.tdsCalibrationRevisionAtRun;
+        record.tdsCalibrationModeAtRun = sensors.tdsCalibrationModeAtRun;
+        record.tdsCalibratedAtRun = sensors.tdsCalibratedAtRun;
+        record.tdsTemperatureCompensatedAtRun = sensors.tdsTemperatureCompensatedAtRun;
+        record.tdsTempFallback25CAtRun = sensors.tdsTempFallback25CAtRun;
     }
 
     APP_RESULT_LOG_I("app",

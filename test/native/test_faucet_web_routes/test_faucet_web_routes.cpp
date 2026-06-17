@@ -4,6 +4,7 @@
 
 #include <cstdio>
 #include <cstring>
+#include <string>
 
 using namespace faucet;
 
@@ -29,10 +30,10 @@ void test_routes_do_not_register_remote_water_control_paths() {
 void test_navigation_pages_use_requested_order_and_labels() {
     const FaucetWebRoute* routes = faucetWebRoutes();
     const char* expectedPaths[] = {
-        "/index", "/faucet/records", "/faucet/stats", "/faucet/presets", "/faucet/filters", "/faucet/calibration", "/faucet/metering"};
-    const char* expectedTitles[] = {"首页", "记录", "统计", "预设", "滤芯", "校准", "计量方案"};
+        "/index", "/faucet/records", "/faucet/stats", "/faucet/presets", "/faucet/filters", "/faucet/calibration"};
+    const char* expectedTitles[] = {"首页", "记录", "统计", "预设", "滤芯", "校准"};
 
-    for (std::size_t i = 0; i < 7; ++i) {
+    for (std::size_t i = 0; i < 6; ++i) {
         TEST_ASSERT_EQUAL_STRING(expectedPaths[i], routes[i].path);
         TEST_ASSERT_EQUAL(FaucetWebMethod::Get, routes[i].method);
         TEST_ASSERT_EQUAL(FaucetWebRouteKind::Page, routes[i].kind);
@@ -100,6 +101,8 @@ void test_business_api_routes_use_explicit_methods() {
     TEST_ASSERT_FALSE(faucetWebRouteAllowed("/faucet/config"));
     TEST_ASSERT_TRUE(faucetWebRouteAllowed("/faucet/records"));
     TEST_ASSERT_TRUE(faucetWebRouteAllowed("/faucet/calibration"));
+    TEST_ASSERT_TRUE(faucetWebRouteAllowed("/faucet/calibration/flow"));
+    TEST_ASSERT_FALSE(faucetWebRouteAllowed("/faucet/metering"));
     TEST_ASSERT_FALSE(faucetWebRouteAllowed("/faucet/logs"));
 }
 
@@ -163,10 +166,10 @@ void test_records_page_and_calibration_api_are_available() {
     bool found = false;
     bool foundCalibrationPage = false;
     bool foundCalibrationPost = false;
+    bool foundFlowCalibrationPage = false;
+    bool foundFlowCalibrationPost = false;
     bool foundCalibrationDetail = false;
     bool foundCalibrationSamples = false;
-    bool foundMeteringPage = false;
-    bool foundMeteringPost = false;
     bool foundApi = false;
     for (std::size_t i = 0; i < faucetWebRouteCount(); ++i) {
         if (std::strcmp(routes[i].path, "/faucet/records") == 0) {
@@ -188,20 +191,20 @@ void test_records_page_and_calibration_api_are_available() {
                                      routes[i].kind == FaucetWebRouteKind::Api &&
                                      routes[i].title == nullptr;
         }
+        if (std::strcmp(routes[i].path, "/faucet/calibration/flow") == 0) {
+            foundFlowCalibrationPage = foundFlowCalibrationPage ||
+                                       (routes[i].method == FaucetWebMethod::Get &&
+                                        routes[i].kind == FaucetWebRouteKind::Api &&
+                                        routes[i].title == nullptr);
+            foundFlowCalibrationPost = foundFlowCalibrationPost ||
+                                       (routes[i].method == FaucetWebMethod::Post &&
+                                        routes[i].kind == FaucetWebRouteKind::Api &&
+                                        routes[i].title == nullptr);
+        }
         if (std::strcmp(routes[i].path, "/faucet/calibration/samples") == 0) {
             foundCalibrationSamples = routes[i].method == FaucetWebMethod::Get &&
                                       routes[i].kind == FaucetWebRouteKind::Api &&
                                       routes[i].title == nullptr;
-        }
-        if (std::strcmp(routes[i].path, "/faucet/metering") == 0) {
-            foundMeteringPage = foundMeteringPage ||
-                                (routes[i].method == FaucetWebMethod::Get &&
-                                 routes[i].kind == FaucetWebRouteKind::Page &&
-                                 std::strcmp(routes[i].title, "计量方案") == 0);
-            foundMeteringPost = foundMeteringPost ||
-                                (routes[i].method == FaucetWebMethod::Post &&
-                                 routes[i].kind == FaucetWebRouteKind::Api &&
-                                 routes[i].title == nullptr);
         }
         if (std::strcmp(routes[i].path, "/api/faucet/records") == 0) {
             foundApi = foundApi || (routes[i].method == FaucetWebMethod::Post &&
@@ -211,11 +214,74 @@ void test_records_page_and_calibration_api_are_available() {
     TEST_ASSERT_TRUE(found);
     TEST_ASSERT_TRUE(foundCalibrationPage);
     TEST_ASSERT_TRUE(foundCalibrationPost);
+    TEST_ASSERT_TRUE(foundFlowCalibrationPage);
+    TEST_ASSERT_TRUE(foundFlowCalibrationPost);
     TEST_ASSERT_TRUE(foundCalibrationDetail);
     TEST_ASSERT_TRUE(foundCalibrationSamples);
-    TEST_ASSERT_TRUE(foundMeteringPage);
-    TEST_ASSERT_TRUE(foundMeteringPost);
     TEST_ASSERT_TRUE(foundApi);
+}
+
+std::string readSourceFile(const char* path) {
+    FILE* file = std::fopen(path, "rb");
+    TEST_ASSERT_NOT_NULL(file);
+    std::string body;
+    char buffer[4096]{};
+    while (true) {
+        const std::size_t read = std::fread(buffer, 1, sizeof(buffer), file);
+        if (read > 0) {
+            body.append(buffer, read);
+        }
+        if (read < sizeof(buffer)) {
+            break;
+        }
+    }
+    std::fclose(file);
+    TEST_ASSERT_FALSE(body.empty());
+    return body;
+}
+
+void test_source_has_no_removed_metering_route_or_history_compatibility_paths() {
+    const char* files[] = {
+        "include/web/FaucetWebPolicy.h",
+        "src/web/FaucetWebPolicy.cpp",
+        "src/web/FaucetWebRoutes.cpp",
+        "src/web/FaucetWeb.cpp",
+        "include/web/FaucetWebJson.h",
+        "src/web/FaucetWebJson.cpp",
+        "include/app/ConfigStore.h",
+        "src/app/ConfigStore.cpp",
+        "src/app/AppController.cpp",
+        "src/main.cpp",
+    };
+    const char* forbidden[] = {
+        "/faucet/metering",
+        "handleMeteringPage",
+        "handleMeteringPost",
+        "handleMeteringRedirect",
+        "FaucetWebWriteTarget::Metering",
+        "temp_en",
+        "temp_kind",
+        "tds_en",
+        "tds_kind",
+        "migrated_legacy",
+        "MigratedLegacy",
+        "migrationWriteBack",
+        "lastSystemMigrationWriteBack",
+        "hasRecognizedLegacySystemConfig",
+        "inferLegacyVersionWithoutVersion",
+        "loadLegacyDisplayConfig",
+        "loadLegacyFilters",
+        "loadLegacyFilterRuntimeFromConfig",
+        "migrateFilterStartTimeFromRuntime",
+        "schemeFromLegacyConfig",
+    };
+
+    for (const char* path : files) {
+        const std::string body = readSourceFile(path);
+        for (const char* needle : forbidden) {
+            TEST_ASSERT_EQUAL_MESSAGE(std::string::npos, body.find(needle), needle);
+        }
+    }
 }
 
 void test_web_page_source_has_no_remote_water_control_forms() {
@@ -369,7 +435,7 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NULL(std::strstr(buffer, "findRecordMeteringSnapshot"));
     TEST_ASSERT_NULL(std::strstr(buffer, "g_context.recordMeteringSnapshots->findAny"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "样本覆盖"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "生成计量参数"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "生成计量参数"));
     TEST_ASSERT_NULL(std::strstr(buffer, "<h3>计量方案生成</h3>"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "生成参数"));
     TEST_ASSERT_NULL(std::strstr(buffer, "<h3>参数生成</h3>"));
@@ -454,7 +520,7 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NULL(std::strstr(buffer, "手工新建方案"));
     const char* recordsHandler = std::strstr(buffer, "void handleRecordsPage() {");
     const char* calibrationHandler = std::strstr(buffer, "void handleCalibrationPage() {");
-    const char* meteringHandler = std::strstr(buffer, "void handleMeteringPage() {");
+    const char* meteringHandler = std::strstr(buffer, "void handleFlowCalibrationPage() {");
     const char* recordDetailHandler = std::strstr(buffer, "void handleRecordDetailPage() {");
     TEST_ASSERT_NOT_NULL(recordsHandler);
     TEST_ASSERT_NOT_NULL(calibrationHandler);
@@ -786,8 +852,8 @@ void test_web_page_source_contains_expected_ui_improvements() {
     const char* recordsApiActionBuffer = std::strstr(recordsApi, "char text[32]{};");
     TEST_ASSERT_NOT_NULL(recordsApiActionBuffer);
     TEST_ASSERT_TRUE(recordsApiActionBuffer < recordsApiEnd);
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "href='/faucet/metering?scheme=new'"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "href='/faucet/metering?scheme=%lu'"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "href='/faucet/calibration/flow?scheme=new'"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "href='/faucet/calibration/flow?scheme=%lu'"));
     const char* schemeEditSource = std::strstr(buffer, "void sendMeteringSchemeEditPage");
     TEST_ASSERT_NOT_NULL(schemeEditSource);
     TEST_ASSERT_NULL(std::strstr(schemeEditSource, "scheme ? scheme->params : defaultMeteringParameters()"));
@@ -815,24 +881,24 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NOT_NULL(findWithin(createSchemeApi, editSchemeApi, "if (!getParam(\"name\", name, sizeof(name))"));
     TEST_ASSERT_NOT_NULL(findWithin(createSchemeApi, editSchemeApi, "name[0] =="));
     TEST_ASSERT_NULL(findWithin(createSchemeApi, editSchemeApi, "std::snprintf(name, sizeof(name), \"手工方案\")"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "启用只切换当前计量参数"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "启用只切换当前计量参数"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "action='/faucet/calibration'"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "action='/faucet/metering'"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "action='/faucet/calibration/flow'"));
     TEST_ASSERT_NULL(std::strstr(buffer, "<span class='status-pill status-muted'>手动执行</span>"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "手动生成只扫描满足有效样本条件的数据"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "<details class='panel calibration-help-panel'><summary>"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "查看计量说明"));
-    TEST_ASSERT_NULL(std::strstr(buffer, "calibration-help-panel' open"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "生成参数：样本与拟合"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "出水估算：计量方案如何使用"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "<section class='panel calibration-help-panel'>"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "<h3>计量说明</h3>"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "查看计量说明"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "calibration-help-panel"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "生成参数：样本与拟合"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "出水估算：计量方案如何使用"));
     TEST_ASSERT_NULL(std::strstr(buffer, "参数说明与计算公式"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "有效样本条件"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "原始边沿未因超过单条上限而被截断"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "未发生暂停后恢复出水"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "原始边沿未因超过单条上限而被截断"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "未发生暂停后恢复出水"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "样本来源"));
     TEST_ASSERT_NULL(std::strstr(buffer, "样本先记录原始脉冲明细，再用量杯实测容量校准"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "实测容量 = Vs + 稳态脉冲数 × 每脉冲毫升数"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "估算出水量 = Vs + round((P - Ns) × 1000 / Ps)"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "实测容量 = Vs + 稳态脉冲数 × 每脉冲毫升数"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "估算出水量 = Vs + round((P - Ns) × 1000 / Ps)"));
     TEST_ASSERT_NULL(std::strstr(buffer, "估算出水量 = round(脉冲数 / 控制P/ml) + 启动补偿"));
     TEST_ASSERT_NULL(std::strstr(buffer, "实测容量 ≈ 启动等效水量 + 稳态脉冲数 × 1000 / 稳态P/L"));
     TEST_ASSERT_NULL(std::strstr(buffer, "全程平均只做长期诊断"));
@@ -845,7 +911,9 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "计量方案生成只使用长期样本库"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "存入长期库"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "calibration-timeout-pill"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "data-expires-at"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "data-calibration-countdown"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "data-remaining"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "data-expires-at"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "faucetStartCalibrationCountdown"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "非出水中 30 分钟无操作自动退出"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "RAM 临时"));
@@ -1246,7 +1314,7 @@ void test_calibration_page_avoids_large_metering_scheme_stack_arrays() {
 
     const char* panel = std::strstr(buffer, "void sendCalibrationParameterPanels()");
     TEST_ASSERT_NOT_NULL(panel);
-    const char* nextFunction = std::strstr(panel, "void sendCalibrationFormulaPanel()");
+    const char* nextFunction = std::strstr(panel, "const char* segmentedRejectReasonText(");
     TEST_ASSERT_NOT_NULL(nextFunction);
 
     const char* schemePointer = std::strstr(panel, "MeteringSchemeRecord* schemes");
@@ -1586,7 +1654,7 @@ void test_calibration_requested_ui_adjustments_are_enforced() {
     TEST_ASSERT_NULL(findWithin(schemeList, schemeEdit, "disable_metering_scheme"));
 }
 
-void test_main_source_renders_live_display_frame_for_web() {
+void test_main_source_uses_cached_display_frame_for_web_status() {
     FILE* file = std::fopen("src/main.cpp", "rb");
     TEST_ASSERT_NOT_NULL(file);
     static char buffer[64000]{};
@@ -1595,7 +1663,13 @@ void test_main_source_renders_live_display_frame_for_web() {
     TEST_ASSERT_GREATER_THAN_size_t(0, read);
 
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "faucet::FaucetDisplayStatus currentDisplayStatus()"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "faucet::DisplayPresenter awakePresenter(0)"));
+    const char* displayStatus = std::strstr(buffer, "faucet::FaucetDisplayStatus currentDisplayStatus()");
+    TEST_ASSERT_NOT_NULL(displayStatus);
+    const char* diagnostics = std::strstr(displayStatus, "faucet::FaucetRuntimeDiagnostics currentRuntimeDiagnostics()");
+    TEST_ASSERT_NOT_NULL(diagnostics);
+    TEST_ASSERT_NOT_NULL(findWithin(displayStatus, diagnostics, "return faucet::FaucetDisplayStatus{g_lastDisplayFrame, g_lastDisplayFrame.on}"));
+    TEST_ASSERT_NULL(findWithin(displayStatus, diagnostics, "faucet::DisplayPresenter awakePresenter(0)"));
+    TEST_ASSERT_NULL(findWithin(displayStatus, diagnostics, "g_display->render(snapshot, nowMs)"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "Esp32BaseWeb::setDeviceName(\"首页\")"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "Esp32BaseWeb::setHomePath(\"/index\")"));
     TEST_ASSERT_NULL(std::strstr(buffer, "Esp32BaseWeb::setHomePath(\"/faucet\")"));
@@ -1672,9 +1746,22 @@ void test_app_config_source_uses_clear_business_labels_and_help() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "有效脉冲间隔阈值；最大频率 = 1000000 / 当前值 Hz。"));
     TEST_ASSERT_NULL(std::strstr(buffer, "实时计量和明细分析的有效脉冲判定阈值；最大有效频率 = 1000000 / 当前值 Hz。"));
     TEST_ASSERT_NULL(std::strstr(buffer, "用于查看最近出水明细和校准后自动入库。"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "kKeyTemperatureSensor"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "kKeyTdsSensor"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "addEnum"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "水温传感器"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "TDS 传感器"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "50K B3950 NTC"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "TDS Board V1.0"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "TDS Board V1.0 A0"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "A0 电压"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "TDS Board V1.0 AO"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "传感器参考电压"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "水温传感器类型"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "TDS 模块类型"));
 }
 
-void test_app_config_save_migrates_before_marking_current_version() {
+void test_app_config_save_loads_config_before_marking_current_version() {
     FILE* file = std::fopen("src/app/FaucetAppConfig.cpp", "rb");
     TEST_ASSERT_NOT_NULL(file);
     static char buffer[24000]{};
@@ -1690,7 +1777,7 @@ void test_app_config_save_migrates_before_marking_current_version() {
     TEST_ASSERT_NULL_MESSAGE(markVersion, "AppConfig must not mark business config version directly");
 }
 
-void test_app_config_submit_rejects_read_only_business_config_before_field_writes() {
+void test_app_config_submit_has_no_read_only_business_config_gate() {
     FILE* file = std::fopen("src/app/FaucetAppConfig.cpp", "rb");
     TEST_ASSERT_NOT_NULL(file);
     static char buffer[24000]{};
@@ -1698,13 +1785,8 @@ void test_app_config_submit_rejects_read_only_business_config_before_field_write
     std::fclose(file);
     TEST_ASSERT_GREATER_THAN_size_t(0, read);
 
-    const char* validateHandler = std::strstr(buffer, "bool validateAppConfigPage");
-    TEST_ASSERT_NOT_NULL(validateHandler);
-    const char* changeHandler = std::strstr(validateHandler, "void onAppConfigChange");
-    TEST_ASSERT_NOT_NULL(changeHandler);
-    const char* readOnlyCheck = std::strstr(validateHandler, "g_context.configStore->systemConfigReadOnly()");
-    TEST_ASSERT_NOT_NULL_MESSAGE(readOnlyCheck, "AppConfig submit validation must reject read-only business config");
-    TEST_ASSERT_TRUE_MESSAGE(readOnlyCheck < changeHandler, "Read-only gate must run in pre-save page validation");
+    TEST_ASSERT_NULL(std::strstr(buffer, "systemConfigReadOnly"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "readOnly"));
 }
 
 void test_web_config_writes_reload_current_config_before_persisting() {
@@ -1721,7 +1803,7 @@ void test_web_config_writes_reload_current_config_before_persisting() {
     const char* saveConfig = std::strstr(persistHandler, "g_context.configStore->saveSystemConfig");
     TEST_ASSERT_NOT_NULL(loadConfig);
     TEST_ASSERT_NOT_NULL(saveConfig);
-    TEST_ASSERT_TRUE_MESSAGE(loadConfig < saveConfig, "Web saves must merge changes into loaded migrated config");
+    TEST_ASSERT_TRUE_MESSAGE(loadConfig < saveConfig, "Web saves must merge changes into loaded current config");
 }
 
 void test_presets_api_allows_next_preset_switch_actions() {
@@ -1748,6 +1830,24 @@ void test_presets_api_allows_next_preset_switch_actions() {
     TEST_ASSERT_TRUE_MESSAGE(next < browserForm, "preset switch actions must be handled before config form save");
     TEST_ASSERT_TRUE_MESSAGE(select < browserForm, "preset switch actions must be handled before config form save");
     TEST_ASSERT_TRUE_MESSAGE(status < browserForm, "preset switch actions must return updated status JSON");
+}
+
+void test_status_json_avoids_filesystem_record_reads_on_web_request_stack() {
+    FILE* file = std::fopen("src/web/FaucetWeb.cpp", "rb");
+    TEST_ASSERT_NOT_NULL(file);
+    static char buffer[420000]{};
+    const std::size_t read = std::fread(buffer, 1, sizeof(buffer) - 1, file);
+    std::fclose(file);
+    TEST_ASSERT_GREATER_THAN_size_t(0, read);
+
+    const char* statusJson = std::strstr(buffer, "void sendCurrentStatusJson()");
+    TEST_ASSERT_NOT_NULL(statusJson);
+    const char* nextFunction = std::strstr(statusJson, "const char* calibrationSessionStatusText");
+    TEST_ASSERT_NOT_NULL(nextFunction);
+    TEST_ASSERT_NOT_NULL(findWithin(statusJson, nextFunction, "applyTargetDurationEstimate(snapshot, false)"));
+    TEST_ASSERT_NOT_NULL(findWithin(statusJson, nextFunction, "static char json[4096]"));
+    TEST_ASSERT_NULL(findWithin(statusJson, nextFunction, "recentAverageFlowMlPerMin()"));
+    TEST_ASSERT_NULL(findWithin(statusJson, nextFunction, "\n    char json[4096]{}"));
 }
 
 void test_home_status_script_discards_stale_status_responses() {
@@ -1800,7 +1900,7 @@ void test_read_only_business_pages_do_not_return_busy_while_water_task_active() 
     const char* statsPage = std::strstr(buffer, "void handleStatsPage()");
     const char* recordsPage = std::strstr(buffer, "void handleRecordsPage()");
     const char* calibrationPage = std::strstr(buffer, "void handleCalibrationPage()");
-    const char* meteringPage = std::strstr(buffer, "void handleMeteringPage()");
+    const char* meteringPage = std::strstr(buffer, "void handleFlowCalibrationPage()");
     const char* detailPage = std::strstr(buffer, "void handleRecordDetailPage()");
     const char* recordsApi = std::strstr(buffer, "void handleRecordsApi()");
     TEST_ASSERT_NOT_NULL(statsPage);
@@ -1931,6 +2031,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_filter_forms_use_registered_api_endpoints);
     RUN_TEST(test_presets_page_is_available_in_navigation);
     RUN_TEST(test_records_page_and_calibration_api_are_available);
+    RUN_TEST(test_source_has_no_removed_metering_route_or_history_compatibility_paths);
     RUN_TEST(test_web_page_source_has_no_remote_water_control_forms);
     RUN_TEST(test_web_page_source_links_cacheable_app_css);
     RUN_TEST(test_web_page_source_contains_expected_ui_improvements);
@@ -1944,13 +2045,14 @@ int main(int argc, char** argv) {
     RUN_TEST(test_metering_scheme_page_uses_active_card_and_table_layout);
     RUN_TEST(test_metering_samples_and_generation_are_combined);
     RUN_TEST(test_calibration_requested_ui_adjustments_are_enforced);
-    RUN_TEST(test_main_source_renders_live_display_frame_for_web);
+    RUN_TEST(test_main_source_uses_cached_display_frame_for_web_status);
     RUN_TEST(test_main_source_wires_metering_scheme_store_without_snapshot_store);
     RUN_TEST(test_app_config_source_uses_clear_business_labels_and_help);
-    RUN_TEST(test_app_config_save_migrates_before_marking_current_version);
-    RUN_TEST(test_app_config_submit_rejects_read_only_business_config_before_field_writes);
+    RUN_TEST(test_app_config_save_loads_config_before_marking_current_version);
+    RUN_TEST(test_app_config_submit_has_no_read_only_business_config_gate);
     RUN_TEST(test_web_config_writes_reload_current_config_before_persisting);
     RUN_TEST(test_presets_api_allows_next_preset_switch_actions);
+    RUN_TEST(test_status_json_avoids_filesystem_record_reads_on_web_request_stack);
     RUN_TEST(test_home_status_script_discards_stale_status_responses);
     RUN_TEST(test_business_post_handlers_use_post_allowed_guard);
     RUN_TEST(test_read_only_business_pages_do_not_return_busy_while_water_task_active);

@@ -202,6 +202,93 @@ void test_display_omits_pulse_label_when_unavailable() {
     assertDisplayLinesFit(frame);
 }
 
+void test_idle_prefers_preset_page_before_sensor_rotation() {
+    DisplayPresenter presenter(30);
+    presenter.wake(1000);
+    AppSnapshot snapshot = makeSnapshot(WaterState::Idle, 1500);
+    snapshot.lcdSensorPageEnabled = true;
+    snapshot.temperatureSensorEnabled = true;
+    snapshot.tdsSensorEnabled = true;
+    snapshot.sensors.temperatureCentiC = SensorValue{true, 2530};
+    snapshot.sensors.tdsPpm = SensorValue{true, 8};
+    snapshot.sensors.inputVoltageMv = SensorValue{true, 12100};
+
+    DisplayFrame frame = presenter.render(snapshot, 2500);
+
+    TEST_ASSERT_EQUAL_STRING("SEL P1 1.5L 450P", frame.line1);
+    TEST_ASSERT_EQUAL_STRING("TODAY 1.23L", frame.line2);
+    assertDisplayLinesFit(frame);
+}
+
+void test_idle_sensor_page_rotates_after_three_seconds() {
+    DisplayPresenter presenter(30);
+    presenter.wake(1000);
+    AppSnapshot snapshot = makeSnapshot(WaterState::Idle, 1500);
+    snapshot.lcdSensorPageEnabled = true;
+    snapshot.temperatureSensorEnabled = true;
+    snapshot.tdsSensorEnabled = true;
+    snapshot.sensors.temperatureCentiC = SensorValue{true, 2530};
+    snapshot.sensors.tdsPpm = SensorValue{true, 8};
+    snapshot.sensors.inputVoltageMv = SensorValue{true, 12100};
+
+    DisplayFrame frame = presenter.render(snapshot, 4100);
+
+    TEST_ASSERT_EQUAL_STRING("T:25.3C TDS:008", frame.line1);
+    TEST_ASSERT_EQUAL_STRING("VIN:12.1V IDLE", frame.line2);
+    assertDisplayLinesFit(frame);
+}
+
+void test_preset_button_activity_resets_to_preset_page() {
+    DisplayPresenter presenter(30);
+    presenter.wake(1000);
+    AppSnapshot snapshot = makeSnapshot(WaterState::Idle, 1500);
+    snapshot.lcdSensorPageEnabled = true;
+    snapshot.temperatureSensorEnabled = true;
+    snapshot.tdsSensorEnabled = true;
+    snapshot.sensors.temperatureCentiC = SensorValue{true, 2530};
+    snapshot.sensors.tdsPpm = SensorValue{true, 8};
+    snapshot.sensors.inputVoltageMv = SensorValue{true, 12100};
+    TEST_ASSERT_EQUAL_STRING("T:25.3C TDS:008", presenter.render(snapshot, 4100).line1);
+
+    presenter.wake(4200);
+    DisplayFrame frame = presenter.render(snapshot, 4300);
+
+    TEST_ASSERT_EQUAL_STRING("SEL P1 1.5L 450P", frame.line1);
+    assertDisplayLinesFit(frame);
+}
+
+void test_running_never_shows_sensor_page() {
+    DisplayPresenter presenter(30);
+    presenter.wake(1000);
+    AppSnapshot snapshot = makeSnapshot(WaterState::Running, 1500, 300);
+    snapshot.lcdSensorPageEnabled = true;
+    snapshot.temperatureSensorEnabled = true;
+    snapshot.tdsSensorEnabled = true;
+    snapshot.sensors.temperatureCentiC = SensorValue{true, 2530};
+    snapshot.sensors.tdsPpm = SensorValue{true, 8};
+
+    DisplayFrame frame = presenter.render(snapshot, 5000);
+
+    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(DisplayPage::Running), static_cast<std::uint8_t>(frame.page));
+    TEST_ASSERT_NULL(std::strstr(frame.line1, "TDS"));
+    assertDisplayLinesFit(frame);
+}
+
+void test_sensor_invalid_uses_placeholders() {
+    DisplayPresenter presenter(30);
+    presenter.wake(1000);
+    AppSnapshot snapshot = makeSnapshot(WaterState::Idle, 1500);
+    snapshot.lcdSensorPageEnabled = true;
+    snapshot.temperatureSensorEnabled = true;
+    snapshot.tdsSensorEnabled = true;
+
+    DisplayFrame frame = presenter.render(snapshot, 4100);
+
+    TEST_ASSERT_EQUAL_STRING("T:--.-C TDS:---", frame.line1);
+    TEST_ASSERT_EQUAL_STRING("VIN:--.-V IDLE", frame.line2);
+    assertDisplayLinesFit(frame);
+}
+
 void test_beep_click_turns_off_after_duration() {
     BeepDriver beep(true);
 
@@ -280,6 +367,11 @@ int main(int argc, char** argv) {
     RUN_TEST(test_display_result_page_shows_summary);
     RUN_TEST(test_display_local_calibration_page_shows_session_state);
     RUN_TEST(test_display_omits_pulse_label_when_unavailable);
+    RUN_TEST(test_idle_prefers_preset_page_before_sensor_rotation);
+    RUN_TEST(test_idle_sensor_page_rotates_after_three_seconds);
+    RUN_TEST(test_preset_button_activity_resets_to_preset_page);
+    RUN_TEST(test_running_never_shows_sensor_page);
+    RUN_TEST(test_sensor_invalid_uses_placeholders);
     RUN_TEST(test_beep_click_turns_off_after_duration);
     RUN_TEST(test_beep_duration_survives_millis_wrap);
     RUN_TEST(test_beep_disabled_ignores_patterns_and_stops_active_output);

@@ -98,20 +98,87 @@ void composeTopLine(char (&out)[kDisplayLineLength], const char* left, std::uint
     out[kVisibleWidth] = '\0';
 }
 
+bool idleSensorPageAvailable(const AppSnapshot& snapshot) {
+    return snapshot.lcdSensorPageEnabled &&
+           (snapshot.temperatureSensorEnabled || snapshot.tdsSensorEnabled);
+}
+
+void formatTemperature(char* out, std::size_t len, const SensorValue& value) {
+    if (!value.valid) {
+        std::snprintf(out, len, "--.-");
+        return;
+    }
+    const std::int32_t tenths = value.value >= 0 ? (value.value + 5) / 10 : (value.value - 5) / 10;
+    const std::int32_t decimal = tenths % 10 < 0 ? -(tenths % 10) : tenths % 10;
+    std::snprintf(out, len, "%ld.%ld", static_cast<long>(tenths / 10), static_cast<long>(decimal));
+}
+
+void formatTds(char* out, std::size_t len, const SensorValue& value) {
+    if (!value.valid) {
+        std::snprintf(out, len, "---");
+        return;
+    }
+    const std::int32_t ppm = value.value < 0 ? 0 : value.value;
+    if (ppm < 1000) {
+        std::snprintf(out, len, "%03ld", static_cast<long>(ppm));
+    } else {
+        std::snprintf(out, len, "%ld", static_cast<long>(ppm));
+    }
+}
+
+void formatVoltage(char* out, std::size_t len, const SensorValue& value) {
+    if (!value.valid) {
+        std::snprintf(out, len, "--.-");
+        return;
+    }
+    const std::int32_t tenths = value.value >= 0 ? (value.value + 50) / 100 : 0;
+    std::snprintf(out, len, "%ld.%ld", static_cast<long>(tenths / 10), static_cast<long>(tenths % 10));
+}
+
+DisplayFrame makeIdleSensorFrame(const AppSnapshot& snapshot) {
+    char temp[8]{};
+    char tds[6]{};
+    char vin[8]{};
+    formatTemperature(temp, sizeof(temp), snapshot.sensors.temperatureCentiC);
+    formatTds(tds, sizeof(tds), snapshot.sensors.tdsPpm);
+    formatVoltage(vin, sizeof(vin), snapshot.sensors.inputVoltageMv);
+    char line1[kDisplayLineLength]{};
+    char line2[kDisplayLineLength]{};
+    std::snprintf(line1, sizeof(line1), "T:%sC TDS:%s", temp, tds);
+    std::snprintf(line2, sizeof(line2), "VIN:%sV IDLE", vin);
+    DisplayFrame frame{DisplayPage::Idle, true, {}, {}};
+    copyLine(frame.line1, line1);
+    copyLine(frame.line2, line2);
+    return frame;
+}
+
 }  // namespace
 
 DisplayPresenter::DisplayPresenter(std::uint32_t sleepTimeoutSec)
-    : sleepTimeoutMs_(msFromSeconds(sleepTimeoutSec)), lastWakeMs_(0) {}
+    : sleepTimeoutMs_(msFromSeconds(sleepTimeoutSec)),
+      lastWakeMs_(0),
+      idlePageAnchorMs_(0),
+      idleSensorPageVisible_(false),
+      lastWaterState_(WaterState::Idle) {}
 
 void DisplayPresenter::configure(std::uint32_t sleepTimeoutSec) {
     sleepTimeoutMs_ = msFromSeconds(sleepTimeoutSec);
+    idleSensorPageVisible_ = false;
 }
 
 void DisplayPresenter::wake(std::uint32_t nowMs) {
     lastWakeMs_ = nowMs;
+    idlePageAnchorMs_ = nowMs;
+    idleSensorPageVisible_ = false;
 }
 
 DisplayFrame DisplayPresenter::render(const AppSnapshot& snapshot, std::uint32_t nowMs) {
+    if (snapshot.water.state != WaterState::Idle || lastWaterState_ != WaterState::Idle) {
+        idlePageAnchorMs_ = nowMs;
+        idleSensorPageVisible_ = false;
+    }
+    lastWaterState_ = snapshot.water.state;
+
     if (snapshot.localMode == LocalUiMode::Result) {
         char line1[kDisplayLineLength]{};
         char line2[kDisplayLineLength]{};
@@ -186,6 +253,16 @@ DisplayFrame DisplayPresenter::render(const AppSnapshot& snapshot, std::uint32_t
     char line2[kDisplayLineLength]{};
     switch (snapshot.water.state) {
         case WaterState::Idle: {
+            if (idleSensorPageAvailable(snapshot)) {
+                const std::uint32_t elapsed = nowMs - idlePageAnchorMs_;
+                idleSensorPageVisible_ = ((elapsed / 3000UL) % 2UL) == 1UL;
+                if (idleSensorPageVisible_) {
+                    return makeIdleSensorFrame(snapshot);
+                }
+            } else {
+                idlePageAnchorMs_ = nowMs;
+                idleSensorPageVisible_ = false;
+            }
             if (snapshot.water.mode == WaterMode::Volume) {
                 char target[8]{};
                 formatLitersCompact(target, sizeof(target), snapshot.water.targetValue);

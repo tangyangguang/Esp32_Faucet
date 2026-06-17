@@ -12,6 +12,7 @@
 #include "app/WaterController.h"
 #include "app/WaterRecordCalibrationStore.h"
 #include "app/WaterPulseTraceStore.h"
+#include "app/WaterSensorManager.h"
 
 #include <cstdint>
 
@@ -80,6 +81,10 @@ struct AppSnapshot {
     std::uint32_t maxLoopIntervalUs = 0;
     std::uint32_t maxAppTickUs = 0;
     std::uint32_t maxBaseHandleUs = 0;
+    WaterSensorSnapshot sensors;
+    bool lcdSensorPageEnabled = false;
+    bool temperatureSensorEnabled = false;
+    bool tdsSensorEnabled = false;
 };
 
 using ValveOutputSink = void (*)(ValveOutput output);
@@ -103,7 +108,8 @@ public:
                   WaterRecordCalibrationWriter* recordCalibrations = nullptr,
                   CalibrationSessionFileStore* calibrationSessions = nullptr,
                   CalibrationSessionTraceStore* calibrationSessionTraces = nullptr,
-                  CalibrationLongTermSampleStore* calibrationLongTermSamples = nullptr);
+                  CalibrationLongTermSampleStore* calibrationLongTermSamples = nullptr,
+                  WaterSensorManager* waterSensors = nullptr);
     AppController(const SystemConfig& config,
                   const MeteringSchemeRecord& activeScheme,
                   StatisticsStore& statistics,
@@ -114,7 +120,8 @@ public:
                   WaterRecordCalibrationWriter* recordCalibrations = nullptr,
                   CalibrationSessionFileStore* calibrationSessions = nullptr,
                   CalibrationSessionTraceStore* calibrationSessionTraces = nullptr,
-                  CalibrationLongTermSampleStore* calibrationLongTermSamples = nullptr);
+                  CalibrationLongTermSampleStore* calibrationLongTermSamples = nullptr,
+                  WaterSensorManager* waterSensors = nullptr);
 
     void resetInputs(ButtonLevels levels, std::uint32_t nowMs);
     void onFlowPulse(std::uint32_t nowUs);
@@ -145,6 +152,16 @@ public:
     bool skipCalibrationAttemptForWeb(CalibrationSkipReason reason, std::uint32_t nowSeconds);
     bool generateCalibrationForWeb(std::uint32_t nowSeconds);
     bool applyGeneratedCalibrationForWeb(std::uint32_t nowSeconds);
+    bool startTdsSinglePointCalibrationForWeb(std::uint16_t referencePpm,
+                                              std::uint32_t nowSeconds);
+    bool startTdsTwoPointLowCalibrationForWeb(std::uint16_t referencePpm,
+                                              std::uint32_t nowSeconds);
+    bool startTdsTwoPointHighCalibrationForWeb(std::uint16_t referencePpm,
+                                               std::uint32_t nowSeconds);
+    bool cancelTdsCalibrationForWeb();
+    bool saveTdsCalibrationForWeb(std::uint32_t nowSeconds);
+    bool saveTemperatureCalibrationForWeb(std::int16_t referenceCentiC);
+    TdsCalibrationSessionSnapshot tdsCalibrationSnapshot() const;
     const SystemConfig& config() const;
     const MeteringSchemeRecord& activeMeteringScheme() const;
 
@@ -180,6 +197,7 @@ private:
                           WaterPulseTraceState finalState,
                           const FlowSnapshot& flow,
                           std::uint32_t nowUs);
+    bool canUseTdsCalibration() const;
     void syncValve(std::uint32_t nowMs);
     void processResult(std::uint32_t startTime,
                        const PeriodKeys& periodKeys,
@@ -203,6 +221,7 @@ private:
     WaterRecordCalibrationWriter* recordCalibrations_;
     MeteringSchemeStore* meteringSchemes_;
     WaterPulseTraceStore* pulseTraces_;
+    WaterSensorManager* waterSensors_;
     CalibrationSessionFileStore* calibrationSessions_;
     CalibrationSessionTraceStore* calibrationSessionTraces_;
     CalibrationLongTermSampleStore* calibrationLongTermSamples_;

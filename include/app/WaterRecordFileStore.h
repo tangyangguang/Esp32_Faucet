@@ -57,6 +57,7 @@ private:
     std::size_t capacity_;
     std::size_t oldestIndex_;
     std::size_t count_;
+    std::uint32_t commitSeq_;
     bool ready_;
     WaterRecordFileStatus status_;
 };

@@ -17,6 +17,14 @@ struct DailyUsageBucket {
     std::uint32_t volumeMl;
     std::uint32_t durationSec;
     std::uint16_t count;
+    std::int16_t temperatureAvgCentiC;
+    std::int16_t temperatureMinCentiC;
+    std::int16_t temperatureMaxCentiC;
+    std::uint16_t tdsAvgPpm;
+    std::uint16_t tdsMinPpm;
+    std::uint16_t tdsMaxPpm;
+    std::uint16_t sensorRecordCount;
+    std::uint16_t uncalibratedSensorRecordCount;
 };
 
 struct CountVolumeBucket {
@@ -42,6 +50,9 @@ struct WaterUsageSummary {
     std::uint32_t unknownMl;
     std::uint32_t unknownDurationSec;
     std::uint32_t unknownCount;
+    std::uint32_t sensorRecordCount;
+    std::uint32_t uncalibratedSensorRecordCount;
+    std::uint32_t invalidSensorRecordCount;
     std::uint32_t monthStartDay;
     std::uint32_t todayDay;
     std::uint8_t dayCount;
@@ -120,6 +131,7 @@ std::size_t queryWaterRecords(const WaterRecordReader& reader,
 
 WaterUsageSummary aggregateWaterRecords(const WaterRecordReader& reader,
                                         std::uint32_t nowSeconds,
-                                        std::uint8_t dayCount = kUsageSummaryMaxDays);
+                                        std::uint8_t dayCount = kUsageSummaryMaxDays,
+                                        bool includeUncalibratedSensors = false);
 
 }  // namespace faucet

@@ -50,7 +50,6 @@ public:
 private:
     bool validPath() const;
     bool initializeNewFile();
-    bool normalizeSlotCount();
     bool repairNextSchemeId();
     bool loadHeader();
     bool saveHeader() const;

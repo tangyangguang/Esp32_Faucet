@@ -1,5 +1,7 @@
 #include "app/WaterRecordStore.h"
 
+#include "app/WaterSensors.h"
+
 #include <algorithm>
 #include <limits>
 
@@ -73,6 +75,53 @@ std::size_t volumeHistIndex(std::uint32_t volumeMl) {
         return 3;
     }
     return 4;
+}
+
+bool recordHasSensorErrorFlags(const WaterRecord& record, bool includeUncalibratedSensors) {
+    constexpr std::uint16_t uncalibratedMask = kWaterSensorFlagTdsUncalibrated;
+    const std::uint16_t ignored = includeUncalibratedSensors ? uncalibratedMask : 0;
+    return (record.sensorFlags & static_cast<std::uint16_t>(~ignored)) != 0;
+}
+
+bool recordHasUsableSensorSummary(const WaterRecord& record, bool includeUncalibratedSensors, bool& uncalibrated) {
+    uncalibrated = record.tdsCalibratedAtRun == 0 ||
+                   (record.sensorFlags & kWaterSensorFlagTdsUncalibrated) != 0;
+    if (record.sensorSampleCount == 0) {
+        return false;
+    }
+    if (recordHasSensorErrorFlags(record, includeUncalibratedSensors)) {
+        return false;
+    }
+    if (uncalibrated && !includeUncalibratedSensors) {
+        return false;
+    }
+    return true;
+}
+
+void applySensorSummaryToDaily(DailyUsageBucket& daily,
+                               const WaterRecord& record,
+                               std::int64_t& tempSum,
+                               std::uint32_t& tdsSum,
+                               std::uint32_t& sampleSum,
+                               bool uncalibrated) {
+    if (daily.sensorRecordCount == 0) {
+        daily.temperatureMinCentiC = record.temperatureMinCentiC;
+        daily.temperatureMaxCentiC = record.temperatureMaxCentiC;
+        daily.tdsMinPpm = record.tdsMinPpm;
+        daily.tdsMaxPpm = record.tdsMaxPpm;
+    } else {
+        daily.temperatureMinCentiC = std::min(daily.temperatureMinCentiC, record.temperatureMinCentiC);
+        daily.temperatureMaxCentiC = std::max(daily.temperatureMaxCentiC, record.temperatureMaxCentiC);
+        daily.tdsMinPpm = std::min(daily.tdsMinPpm, record.tdsMinPpm);
+        daily.tdsMaxPpm = std::max(daily.tdsMaxPpm, record.tdsMaxPpm);
+    }
+    tempSum += static_cast<std::int64_t>(record.temperatureAvgCentiC) * record.sensorSampleCount;
+    tdsSum += static_cast<std::uint32_t>(record.tdsAvgPpm) * record.sensorSampleCount;
+    sampleSum += record.sensorSampleCount;
+    incrementCount(daily.sensorRecordCount);
+    if (uncalibrated) {
+        incrementCount(daily.uncalibratedSensorRecordCount);
+    }
 }
 
 }  // namespace
@@ -237,8 +286,12 @@ std::size_t queryWaterRecords(const WaterRecordReader& reader,
 
 WaterUsageSummary aggregateWaterRecords(const WaterRecordReader& reader,
                                         std::uint32_t nowSeconds,
-                                        std::uint8_t dayCount) {
+                                        std::uint8_t dayCount,
+                                        bool includeUncalibratedSensors) {
     WaterUsageSummary summary{};
+    std::int64_t dailyTempSums[kUsageSummaryMaxDays]{};
+    std::uint32_t dailyTdsSums[kUsageSummaryMaxDays]{};
+    std::uint32_t dailySensorSamples[kUsageSummaryMaxDays]{};
     if (dayCount == 0 || dayCount > kUsageSummaryMaxDays) {
         dayCount = kUsageSummaryMaxDays;
     }
@@ -325,10 +378,41 @@ WaterUsageSummary aggregateWaterRecords(const WaterRecordReader& reader,
             CountVolumeBucket& hist = summary.volumeHist[volumeHistIndex(record.volumeMl)];
             addSaturating(hist.volumeMl, record.volumeMl);
             incrementCount(hist.count);
+
+            if (record.sensorSampleCount > 0) {
+                bool uncalibrated = false;
+                const bool usable =
+                    recordHasUsableSensorSummary(record, includeUncalibratedSensors, uncalibrated);
+                if (usable) {
+                    addSaturating(summary.sensorRecordCount, 1);
+                    if (uncalibrated) {
+                        addSaturating(summary.uncalibratedSensorRecordCount, 1);
+                    }
+                    applySensorSummaryToDaily(daily,
+                                              record,
+                                              dailyTempSums[day - firstDay],
+                                              dailyTdsSums[day - firstDay],
+                                              dailySensorSamples[day - firstDay],
+                                              uncalibrated);
+                } else if (uncalibrated) {
+                    addSaturating(summary.uncalibratedSensorRecordCount, 1);
+                } else {
+                    addSaturating(summary.invalidSensorRecordCount, 1);
+                }
+            }
         }
         if (!pageHasWindowCandidate) {
             break;
         }
+    }
+    for (std::size_t i = 0; i < dayCount; ++i) {
+        const std::uint32_t samples = dailySensorSamples[i];
+        if (samples == 0) {
+            continue;
+        }
+        summary.days[i].temperatureAvgCentiC =
+            static_cast<std::int16_t>(dailyTempSums[i] / static_cast<std::int64_t>(samples));
+        summary.days[i].tdsAvgPpm = static_cast<std::uint16_t>(dailyTdsSums[i] / samples);
     }
     summary.last30DaysDailyAverageMl = (summary.last30DaysMl + 15UL) / 30UL;
     return summary;

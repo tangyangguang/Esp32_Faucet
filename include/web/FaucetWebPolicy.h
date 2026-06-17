@@ -7,7 +7,7 @@ namespace faucet {
 enum class FaucetWebWriteTarget {
     Records,
     Calibration,
-    Metering,
+    FlowCalibration,
     Filters,
 };
 

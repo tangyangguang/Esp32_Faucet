@@ -20,6 +20,7 @@ const char kGroupFlow[] = "flow";
 const char kGroupValve[] = "valve";
 const char kGroupLocal[] = "local";
 const char kGroupMetering[] = "metering";
+const char kGroupSensors[] = "sensors";
 
 const char kKeyConfirmTimeout[] = "confirm_s";
 const char kKeyMaxTime[] = "max_time";
@@ -45,6 +46,20 @@ const char kKeyDisplaySleep[] = "disp_s";
 const char kKeyResultDisplay[] = "result_s";
 const char kKeyLcdAddress[] = "lcd_addr";
 const char kKeyBeep[] = "beep";
+const char kKeyLcdSensorPage[] = "lcd_sensor_pg";
+const char kKeyTemperatureSensor[] = "temp_sensor";
+const char kKeyTdsSensor[] = "tds_sensor";
+const char kKeyTdsTemperatureCompensation[] = "tds_temp_comp";
+
+const Esp32BaseAppConfig::EnumOption kTemperatureSensorOptions[] = {
+    {"none", "禁用"},
+    {"ntc50k_b3950", "50K B3950 NTC"},
+};
+
+const Esp32BaseAppConfig::EnumOption kTdsSensorOptions[] = {
+    {"none", "禁用"},
+    {"tds_board_v1", "TDS Board V1.0"},
+};
 
 void copyError(char* error, std::size_t len, const char* text) {
     if (error && len > 0) {
@@ -57,10 +72,6 @@ bool submittedInt(const char* key, std::int32_t& out) {
 }
 
 bool validateAppConfigPage(char* error, std::size_t errorLen) {
-    if (g_context.configStore && g_context.configStore->systemConfigReadOnly()) {
-        copyError(error, errorLen, "业务配置来自未来版本或处于只读保护状态，拒绝保存。");
-        return false;
-    }
     if (g_context.app && !g_context.app->canApplyConfig()) {
         copyError(error, errorLen, "设备正在出水或显示结果，请回到待机后再保存配置。");
         return false;
@@ -115,10 +126,6 @@ void onAppConfigSave(const Esp32BaseAppConfig::SaveSummary& summary) {
     }
 
     SystemConfig loaded = g_context.configStore->loadSystemConfig();
-    if (g_context.configStore->systemConfigReadOnly()) {
-        ESP32BASE_LOG_W("appcfg", "runtime apply skipped because business config is read-only");
-        return;
-    }
     if (!g_context.app->applyConfig(loaded)) {
         ESP32BASE_LOG_W("appcfg", "runtime apply failed after app config save");
         return;
@@ -136,6 +143,7 @@ bool addCoreFields() {
     ok = Esp32BaseAppConfig::addGroup({kGroupValve, "电磁阀"}) && ok;
     ok = Esp32BaseAppConfig::addGroup({kGroupLocal, "本地交互"}) && ok;
     ok = Esp32BaseAppConfig::addGroup({kGroupMetering, "计量"}) && ok;
+    ok = Esp32BaseAppConfig::addGroup({kGroupSensors, "传感器"}) && ok;
 
     ok = Esp32BaseAppConfig::addInt({kGroupSafety, kConfigNs, kKeyConfirmTimeout, "确认页超时", static_cast<std::int32_t>(kDefaultConfirmTimeoutSec), 3, 60, 1, "s", "进入确认页后无操作自动取消。立即生效。", false, nullptr}) && ok;
     ok = Esp32BaseAppConfig::addInt({kGroupSafety, kConfigNs, kKeyMaxTime, "最大出水时长", static_cast<std::int32_t>(kDefaultMaxOutTimeSec), 30, 7200, 5, "s", "单次出水达到该时长强制关阀。立即生效。", false, nullptr}) && ok;
@@ -158,13 +166,18 @@ bool addCoreFields() {
     ok = Esp32BaseAppConfig::addInt({kGroupLocal, kConfigNs, kKeyLcdAddress, "LCD I2C 地址", kDefaultLcdI2cAddress, 0x03, 0x77, 1, nullptr, "保存后需重启，重启后重新探测 LCD。", true, nullptr}) && ok;
     ok = Esp32BaseAppConfig::addBool({kGroupLocal, kConfigNs, kKeyBeep, "蜂鸣器提示音", true, "控制按键、完成和异常提示音。立即生效。", false, nullptr}) && ok;
 
-    ok = Esp32BaseAppConfig::addInt({kGroupMetering, kConfigNs, kKeyCalibrationAnalysisPulseMinIntervalUs, "生成分析脉冲间隔", static_cast<std::int32_t>(kDefaultCalibrationAnalysisPulseMinIntervalUs), 0, static_cast<std::int32_t>(kMaxPulseMinIntervalUs), 100, "us", "0 表示使用样本记录时保存的有效脉冲间隔；非 0 时按该间隔重新分析样本。", false, nullptr}) && ok;
-    ok = Esp32BaseAppConfig::addInt({kGroupMetering, kConfigNs, kKeyPulseObservationWindowSec, "脉冲观察窗口", static_cast<std::int32_t>(kDefaultPulseObservationWindowSec), static_cast<std::int32_t>(kMinPulseObservationWindowSec), static_cast<std::int32_t>(kMaxPulseObservationWindowSec), 1, "s", "脉冲明细页用于观察启动阶段分布的前几秒窗口；只影响页面统计显示，不改变出水计量。", false, nullptr}) && ok;
+    ok = Esp32BaseAppConfig::addInt({kGroupMetering, kConfigNs, kKeyCalibrationAnalysisPulseMinIntervalUs, "生成分析脉冲间隔", static_cast<std::int32_t>(kDefaultCalibrationAnalysisPulseMinIntervalUs), 0, static_cast<std::int32_t>(kMaxPulseMinIntervalUs), 100, "us", "0 使用样本记录间隔；非 0 按该间隔重新分析样本。", false, nullptr}) && ok;
+    ok = Esp32BaseAppConfig::addInt({kGroupMetering, kConfigNs, kKeyPulseObservationWindowSec, "脉冲观察窗口", static_cast<std::int32_t>(kDefaultPulseObservationWindowSec), static_cast<std::int32_t>(kMinPulseObservationWindowSec), static_cast<std::int32_t>(kMaxPulseObservationWindowSec), 1, "s", "明细页观察启动阶段前几秒脉冲；不改变出水计量。", false, nullptr}) && ok;
     ok = Esp32BaseAppConfig::addInt({kGroupMetering, kConfigNs, kKeyCalibrationStableWindowSec, "生成稳态窗口", static_cast<std::int32_t>(kDefaultCalibrationStableWindowSec), static_cast<std::int32_t>(kMinCalibrationStableWindowSec), static_cast<std::int32_t>(kMaxCalibrationStableWindowSec), 1, "s", "识别稳定流量时要求连续满足条件的秒数。", false, nullptr}) && ok;
     ok = Esp32BaseAppConfig::addInt({kGroupMetering, kConfigNs, kKeyCalibrationStableTolerancePercent, "生成稳态容差", kDefaultCalibrationStableTolerancePercent, kMinCalibrationStableTolerancePercent, kMaxCalibrationStableTolerancePercent, 1, "%", "稳态窗口相对后半段稳定流量的允许偏差。", false, nullptr}) && ok;
     ok = Esp32BaseAppConfig::addInt({kGroupMetering, kConfigNs, kKeyCalibrationMinVolumeSpanMl, "生成最小容量跨度", static_cast<std::int32_t>(kDefaultCalibrationMinVolumeSpanMl), static_cast<std::int32_t>(kMinCalibrationMinVolumeSpanMl), static_cast<std::int32_t>(kMaxCalibrationMinVolumeSpanMl), 100, "ml", "参与生成的最大和最小实测容量至少需要拉开该距离。", false, nullptr}) && ok;
     ok = Esp32BaseAppConfig::addInt({kGroupMetering, kConfigNs, kKeyCalibrationMaxErrorMl, "生成最大拟合误差", static_cast<std::int32_t>(kDefaultCalibrationMaxErrorMl), static_cast<std::int32_t>(kMinCalibrationMaxErrorMl), static_cast<std::int32_t>(kMaxCalibrationMaxErrorMl), 10, "ml", "超过该绝对误差时作为样本质量提醒，仍允许生成结果。", false, nullptr}) && ok;
-    ok = Esp32BaseAppConfig::addInt({kGroupMetering, kConfigNs, kKeyCalibrationMaxRelativeErrorTenthPercent, "生成最大相对误差", kDefaultCalibrationMaxRelativeErrorTenthPercent, kMinCalibrationMaxRelativeErrorTenthPercent, kMaxCalibrationMaxRelativeErrorTenthPercent, 1, "0.1%", "单位为 0.1%；50 表示 5.0%。超过该相对误差时作为样本质量提醒，仍允许生成结果。", false, nullptr}) && ok;
+    ok = Esp32BaseAppConfig::addInt({kGroupMetering, kConfigNs, kKeyCalibrationMaxRelativeErrorTenthPercent, "生成最大相对误差", kDefaultCalibrationMaxRelativeErrorTenthPercent, kMinCalibrationMaxRelativeErrorTenthPercent, kMaxCalibrationMaxRelativeErrorTenthPercent, 1, "0.1%", "单位 0.1%；50 表示 5.0%。超过时作为样本质量提醒。", false, nullptr}) && ok;
+
+    ok = Esp32BaseAppConfig::addBool({kGroupSensors, kConfigNs, kKeyLcdSensorPage, "LCD 待机显示水温/TDS", false, "开启后仅在待机页轮换显示传感器信息。", false, nullptr}) && ok;
+    ok = Esp32BaseAppConfig::addEnum({kGroupSensors, kConfigNs, kKeyTemperatureSensor, "水温传感器", "none", kTemperatureSensorOptions, 2, "A1 水温探头；50K B3950 NTC，51K 上拉。", false, nullptr}) && ok;
+    ok = Esp32BaseAppConfig::addEnum({kGroupSensors, kConfigNs, kKeyTdsSensor, "TDS 传感器", "none", kTdsSensorOptions, 2, "ADS1115 A2；TDS Board V1.0 模拟输出。", false, nullptr}) && ok;
+    ok = Esp32BaseAppConfig::addBool({kGroupSensors, kConfigNs, kKeyTdsTemperatureCompensation, "TDS 温度补偿", true, "启用后使用当前水温补偿 TDS；无有效水温时按 25C 回退并记录标志。", false, nullptr}) && ok;
 
     return ok;
 }

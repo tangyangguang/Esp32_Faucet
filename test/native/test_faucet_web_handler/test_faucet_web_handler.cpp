@@ -106,6 +106,30 @@ public:
     std::vector<WaterRecord> records;
 };
 
+class FakeAdcReader : public AdcReader {
+public:
+    AdcReadResult values[4]{};
+
+    bool begin() override {
+        return true;
+    }
+
+    bool setRange(AdcChannel, AdcRange) override {
+        return true;
+    }
+
+    AdcReadResult readSingleEnded(AdcChannel channel) override {
+        return values[static_cast<std::size_t>(channel)];
+    }
+};
+
+AdcReadResult okMv(std::int16_t mv) {
+    AdcReadResult result{};
+    result.ok = true;
+    result.millivolts = mv;
+    return result;
+}
+
 class CountingWaterRecordReader : public WaterRecordReader {
 public:
     std::size_t readPage(std::size_t pageIndex,
@@ -387,6 +411,8 @@ struct WebFixture {
     CalibrationSessionFileStore sessionStore{calibrationFiles, "/cal-session.bin"};
     CalibrationSessionTraceStore traceStore{calibrationFiles, "/cal-traces.bin"};
     CalibrationLongTermSampleStore sampleStore{calibrationFiles, "/cal-samples.bin"};
+    FakeAdcReader adc;
+    WaterSensorManager waterSensors{adc};
     AppController app{config,
                       statistics,
                       filters,
@@ -395,9 +421,15 @@ struct WebFixture {
                       &calibrations,
                       &sessionStore,
                       &traceStore,
-                      &sampleStore};
+                      &sampleStore,
+                      &waterSensors};
 
     WebFixture() {
+        adc.values[0] = okMv(1100);
+        adc.values[1] = okMv(1634);
+        adc.values[2] = okMv(24);
+        waterSensors.configure(config);
+        waterSensors.begin();
         TEST_ASSERT_TRUE(sessionStore.begin());
         TEST_ASSERT_TRUE(traceStore.begin());
         TEST_ASSERT_TRUE(sampleStore.begin());
@@ -442,6 +474,14 @@ void beginPresetPost(const char* action) {
 
 void dispatchPresetPost() {
     TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch("/api/faucet/presets", Esp32BaseWeb::METHOD_POST));
+}
+
+void enableTdsForFixture(WebFixture& fixture) {
+    fixture.config.tdsEnabled = true;
+    fixture.config.tdsKind = TdsKind::AnalogTdsAo;
+    fixture.config.temperatureEnabled = true;
+    fixture.config.temperatureKind = TemperatureKind::Ntc50kB3950;
+    TEST_ASSERT_TRUE(fixture.app.applyConfig(fixture.config));
 }
 
 }  // namespace
@@ -612,20 +652,8 @@ void test_stats_page_initial_render_shows_complete_report() {
     TEST_ASSERT_GREATER_THAN_UINT32(0, reader.readPageCalls);
 }
 
-void test_calibration_page_initial_render_shows_session_records() {
+void test_calibration_home_shows_three_expanded_sections_without_flow_tables() {
     WebFixture fixture;
-    CalibrationSessionRecord session = makeCalibrationSession(88, testNowSeconds());
-    CalibrationAttempt attempt{};
-    attempt.attemptIndex = 0;
-    attempt.sessionTraceSlot = 0;
-    attempt.record = makeWebRecord(testNowSeconds(), 1200);
-    attempt.targetHintMl = 1200;
-    attempt.actualMl = 1190;
-    attempt.status = CalibrationAttemptStatus::Valid;
-    TEST_ASSERT_TRUE(appendCalibrationAttempt(session, attempt));
-    TEST_ASSERT_TRUE(fixture.sessionStore.save(session));
-    fixture.calibrationFiles.calibrationSessionReads = 0;
-    fixture.calibrationFiles.calibrationSessionTraceReads = 0;
     registerRoutes();
     Esp32BaseWeb::nativeTestBeginRequest(Esp32BaseWeb::METHOD_GET, "/faucet/calibration");
     Esp32BaseWeb::nativeTestSetAuthenticated(true);
@@ -634,26 +662,60 @@ void test_calibration_page_initial_render_shows_session_records() {
     TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch("/faucet/calibration", Esp32BaseWeb::METHOD_GET));
 
     TEST_ASSERT_EQUAL(200, Esp32BaseWeb::nativeTestResponse().code);
-    TEST_ASSERT_NOT_EQUAL(std::string::npos, Esp32BaseWeb::nativeTestResponse().body.find("本次校准接水记录"));
-    TEST_ASSERT_NOT_EQUAL(std::string::npos, Esp32BaseWeb::nativeTestResponse().body.find("1.190 L"));
-    TEST_ASSERT_EQUAL(std::string::npos, Esp32BaseWeb::nativeTestResponse().body.find("正在读取本次接水记录"));
-    TEST_ASSERT_EQUAL(std::string::npos, Esp32BaseWeb::nativeTestResponse().body.find("data-autoload='1'"));
-    TEST_ASSERT_GREATER_THAN_UINT32(0, fixture.calibrationFiles.calibrationSessionReads);
+    const std::string& body = Esp32BaseWeb::nativeTestResponse().body;
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("<h3>流量计校准</h3>"));
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("<h3>温度校准</h3>"));
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("<h3>水质校准</h3>"));
+    TEST_ASSERT_TRUE(body.find("<h3>流量计校准</h3>") < body.find("<h3>温度校准</h3>"));
+    TEST_ASSERT_TRUE(body.find("<h3>温度校准</h3>") < body.find("<h3>水质校准</h3>"));
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("href='/faucet/calibration/flow'"));
+    TEST_ASSERT_EQUAL(std::string::npos, body.find("本次校准接水记录"));
+    TEST_ASSERT_EQUAL(std::string::npos, body.find("计量方案列表"));
+    TEST_ASSERT_EQUAL(std::string::npos, body.find("<details"));
 }
 
-void test_metering_page_initial_render_shows_scheme_list_and_sample_library() {
+void test_calibration_page_initial_render_shows_tds_controls() {
+    WebFixture fixture;
+    registerRoutes();
+    Esp32BaseWeb::nativeTestBeginRequest(Esp32BaseWeb::METHOD_GET, "/faucet/calibration");
+    Esp32BaseWeb::nativeTestSetAuthenticated(true);
+    Esp32BaseWeb::nativeTestSetSameOrigin(true);
+
+    TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch("/faucet/calibration", Esp32BaseWeb::METHOD_GET));
+
+    const std::string& body = Esp32BaseWeb::nativeTestResponse().body;
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("水质校准"));
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("当前 TDS"));
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("1. 低值校准"));
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("2. 高值校准"));
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("单点校准"));
+    TEST_ASSERT_EQUAL(std::string::npos, body.find("高级：单点校准"));
+    TEST_ASSERT_EQUAL(std::string::npos, body.find("参考来源"));
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("采样电压"));
+    TEST_ASSERT_EQUAL(std::string::npos, body.find("A0 电压"));
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("tds_start_low"));
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("tds_start_high"));
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("tds_start_single"));
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("tds_save"));
+    TEST_ASSERT_EQUAL(std::string::npos, body.find("只接受 ppm"));
+}
+
+void test_flow_calibration_center_initial_render_shows_scheme_list_and_sample_library() {
     WebFixture fixture;
     saveLongTermWebSample(fixture.sampleStore, 1200, 45, 360, 12);
     fixture.calibrationFiles.longTermSampleBulkReads = 0;
     fixture.calibrationFiles.meteringSchemeRecordReads = 0;
     registerRoutes();
-    Esp32BaseWeb::nativeTestBeginRequest(Esp32BaseWeb::METHOD_GET, "/faucet/metering");
+    Esp32BaseWeb::nativeTestBeginRequest(Esp32BaseWeb::METHOD_GET, "/faucet/calibration/flow");
     Esp32BaseWeb::nativeTestSetAuthenticated(true);
     Esp32BaseWeb::nativeTestSetSameOrigin(true);
 
-    TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch("/faucet/metering", Esp32BaseWeb::METHOD_GET));
+    TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch("/faucet/calibration/flow", Esp32BaseWeb::METHOD_GET));
 
     TEST_ASSERT_EQUAL(200, Esp32BaseWeb::nativeTestResponse().code);
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, Esp32BaseWeb::nativeTestResponse().body.find("<h2>流量计校准</h2>"));
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, Esp32BaseWeb::nativeTestResponse().body.find("校准流程"));
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, Esp32BaseWeb::nativeTestResponse().body.find("本次校准样本"));
     TEST_ASSERT_NOT_EQUAL(std::string::npos, Esp32BaseWeb::nativeTestResponse().body.find("计量方案列表"));
     TEST_ASSERT_NOT_EQUAL(std::string::npos, Esp32BaseWeb::nativeTestResponse().body.find("长期样本库"));
     TEST_ASSERT_NOT_EQUAL(std::string::npos, Esp32BaseWeb::nativeTestResponse().body.find("已保存 1 /"));
@@ -666,25 +728,20 @@ void test_metering_page_initial_render_shows_scheme_list_and_sample_library() {
     TEST_ASSERT_LESS_OR_EQUAL_UINT32(3, fixture.calibrationFiles.meteringSchemeRecordReads);
 }
 
-void test_metering_page_keeps_only_metering_description_collapsed() {
+void test_flow_calibration_center_uses_no_collapsed_sections() {
     WebFixture fixture;
     registerRoutes();
-    Esp32BaseWeb::nativeTestBeginRequest(Esp32BaseWeb::METHOD_GET, "/faucet/metering");
+    Esp32BaseWeb::nativeTestBeginRequest(Esp32BaseWeb::METHOD_GET, "/faucet/calibration/flow");
     Esp32BaseWeb::nativeTestSetAuthenticated(true);
     Esp32BaseWeb::nativeTestSetSameOrigin(true);
 
-    TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch("/faucet/metering", Esp32BaseWeb::METHOD_GET));
+    TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch("/faucet/calibration/flow", Esp32BaseWeb::METHOD_GET));
 
     TEST_ASSERT_EQUAL(200, Esp32BaseWeb::nativeTestResponse().code);
     const std::string& body = Esp32BaseWeb::nativeTestResponse().body;
-    std::size_t detailsCount = 0;
-    std::size_t pos = body.find("<details");
-    while (pos != std::string::npos) {
-        ++detailsCount;
-        pos = body.find("<details", pos + 1);
-    }
-    TEST_ASSERT_EQUAL_size_t(1, detailsCount);
-    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("查看计量说明"));
+    TEST_ASSERT_EQUAL(std::string::npos, body.find("<details"));
+    TEST_ASSERT_EQUAL(std::string::npos, body.find("查看计量说明"));
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("开始校准流程"));
 }
 
 void test_running_water_allows_read_only_business_pages() {
@@ -701,8 +758,8 @@ void test_running_water_allows_read_only_business_pages() {
     const PageCase pages[] = {
         {"/faucet/records", "<h2>记录</h2>"},
         {"/faucet/stats", "按预设分布"},
-        {"/faucet/calibration", "校准会话"},
-        {"/faucet/metering", "计量方案列表"},
+        {"/faucet/calibration", "水质校准"},
+        {"/faucet/calibration/flow", "计量方案列表"},
     };
     for (const PageCase& page : pages) {
         registerRoutes();
@@ -807,33 +864,33 @@ void test_records_handler_redirects_trace_delete_busy_to_calibration_context() {
     TEST_ASSERT_EQUAL_STRING("/faucet/calibration?error=busy", Esp32BaseWeb::nativeTestResponseHeader("Location"));
 }
 
-void test_calibration_session_start_redirects_busy_to_calibration_page() {
+void test_flow_calibration_session_start_redirects_busy_to_flow_center() {
     WebFixture fixture;
     setRunning(fixture.app);
     registerRoutes();
-    Esp32BaseWeb::nativeTestBeginRequest(Esp32BaseWeb::METHOD_POST, "/faucet/calibration");
+    Esp32BaseWeb::nativeTestBeginRequest(Esp32BaseWeb::METHOD_POST, "/faucet/calibration/flow");
     Esp32BaseWeb::nativeTestSetAuthenticated(true);
     Esp32BaseWeb::nativeTestSetSameOrigin(true);
     Esp32BaseWeb::nativeTestSetParam("action", "start_session");
 
-    TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch("/faucet/calibration", Esp32BaseWeb::METHOD_POST));
+    TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch("/faucet/calibration/flow", Esp32BaseWeb::METHOD_POST));
 
     TEST_ASSERT_EQUAL(303, Esp32BaseWeb::nativeTestResponse().code);
-    TEST_ASSERT_EQUAL_STRING("/faucet/calibration?error=busy", Esp32BaseWeb::nativeTestResponseHeader("Location"));
+    TEST_ASSERT_EQUAL_STRING("/faucet/calibration/flow?error=busy", Esp32BaseWeb::nativeTestResponseHeader("Location"));
 }
 
-void test_calibration_session_start_redirects_success_from_idle() {
+void test_flow_calibration_session_start_redirects_success_from_idle() {
     WebFixture fixture;
     registerRoutes();
-    Esp32BaseWeb::nativeTestBeginRequest(Esp32BaseWeb::METHOD_POST, "/faucet/calibration");
+    Esp32BaseWeb::nativeTestBeginRequest(Esp32BaseWeb::METHOD_POST, "/faucet/calibration/flow");
     Esp32BaseWeb::nativeTestSetAuthenticated(true);
     Esp32BaseWeb::nativeTestSetSameOrigin(true);
     Esp32BaseWeb::nativeTestSetParam("action", "start_session");
 
-    TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch("/faucet/calibration", Esp32BaseWeb::METHOD_POST));
+    TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch("/faucet/calibration/flow", Esp32BaseWeb::METHOD_POST));
 
     TEST_ASSERT_EQUAL(303, Esp32BaseWeb::nativeTestResponse().code);
-    TEST_ASSERT_EQUAL_STRING("/faucet/calibration?saved=session_started",
+    TEST_ASSERT_EQUAL_STRING("/faucet/calibration/flow?saved=session_started",
                              Esp32BaseWeb::nativeTestResponseHeader("Location"));
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(LocalUiMode::Calibration),
                             static_cast<std::uint8_t>(fixture.app.snapshot().localMode));
@@ -845,15 +902,15 @@ void test_calibration_session_start_recovers_missing_session_file_after_format()
     WebFixture fixture;
     TEST_ASSERT_TRUE(fixture.calibrationFiles.removeFile("/cal-session.bin"));
     registerRoutes();
-    Esp32BaseWeb::nativeTestBeginRequest(Esp32BaseWeb::METHOD_POST, "/faucet/calibration");
+    Esp32BaseWeb::nativeTestBeginRequest(Esp32BaseWeb::METHOD_POST, "/faucet/calibration/flow");
     Esp32BaseWeb::nativeTestSetAuthenticated(true);
     Esp32BaseWeb::nativeTestSetSameOrigin(true);
     Esp32BaseWeb::nativeTestSetParam("action", "start_session");
 
-    TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch("/faucet/calibration", Esp32BaseWeb::METHOD_POST));
+    TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch("/faucet/calibration/flow", Esp32BaseWeb::METHOD_POST));
 
     TEST_ASSERT_EQUAL(303, Esp32BaseWeb::nativeTestResponse().code);
-    TEST_ASSERT_EQUAL_STRING("/faucet/calibration?saved=session_started",
+    TEST_ASSERT_EQUAL_STRING("/faucet/calibration/flow?saved=session_started",
                              Esp32BaseWeb::nativeTestResponseHeader("Location"));
     TEST_ASSERT_TRUE(fixture.calibrationFiles.exists("/cal-session.bin"));
     TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationSessionStatus::Preparing),
@@ -864,16 +921,75 @@ void test_calibration_session_start_rejects_duplicate_start_as_invalid_state() {
     WebFixture fixture;
     TEST_ASSERT_TRUE(fixture.app.startCalibrationSessionForWeb(testNowSeconds()));
     registerRoutes();
-    Esp32BaseWeb::nativeTestBeginRequest(Esp32BaseWeb::METHOD_POST, "/faucet/calibration");
+    Esp32BaseWeb::nativeTestBeginRequest(Esp32BaseWeb::METHOD_POST, "/faucet/calibration/flow");
     Esp32BaseWeb::nativeTestSetAuthenticated(true);
     Esp32BaseWeb::nativeTestSetSameOrigin(true);
     Esp32BaseWeb::nativeTestSetParam("action", "start_session");
 
+    TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch("/faucet/calibration/flow", Esp32BaseWeb::METHOD_POST));
+
+    TEST_ASSERT_EQUAL(303, Esp32BaseWeb::nativeTestResponse().code);
+    TEST_ASSERT_EQUAL_STRING("/faucet/calibration/flow?error=invalid_state",
+                             Esp32BaseWeb::nativeTestResponseHeader("Location"));
+}
+
+void test_tds_calibration_start_redirects_busy_to_calibration_page() {
+    WebFixture fixture;
+    enableTdsForFixture(fixture);
+    setRunning(fixture.app);
+    registerRoutes();
+    Esp32BaseWeb::nativeTestBeginRequest(Esp32BaseWeb::METHOD_POST, "/faucet/calibration");
+    Esp32BaseWeb::nativeTestSetAuthenticated(true);
+    Esp32BaseWeb::nativeTestSetSameOrigin(true);
+    Esp32BaseWeb::nativeTestSetParam("action", "tds_start_single");
+    Esp32BaseWeb::nativeTestSetParam("referencePpm", "10");
+
     TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch("/faucet/calibration", Esp32BaseWeb::METHOD_POST));
 
     TEST_ASSERT_EQUAL(303, Esp32BaseWeb::nativeTestResponse().code);
-    TEST_ASSERT_EQUAL_STRING("/faucet/calibration?error=invalid_state",
+    TEST_ASSERT_EQUAL_STRING("/faucet/calibration?error=busy", Esp32BaseWeb::nativeTestResponseHeader("Location"));
+}
+
+void test_tds_calibration_start_redirects_success_from_idle() {
+    WebFixture fixture;
+    enableTdsForFixture(fixture);
+    registerRoutes();
+    Esp32BaseWeb::nativeTestBeginRequest(Esp32BaseWeb::METHOD_POST, "/faucet/calibration");
+    Esp32BaseWeb::nativeTestSetAuthenticated(true);
+    Esp32BaseWeb::nativeTestSetSameOrigin(true);
+    Esp32BaseWeb::nativeTestSetParam("action", "tds_start_single");
+    Esp32BaseWeb::nativeTestSetParam("referencePpm", "10");
+
+    TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch("/faucet/calibration", Esp32BaseWeb::METHOD_POST));
+
+    TEST_ASSERT_EQUAL(303, Esp32BaseWeb::nativeTestResponse().code);
+    TEST_ASSERT_EQUAL_STRING("/faucet/calibration?saved=tds_calibration_started",
                              Esp32BaseWeb::nativeTestResponseHeader("Location"));
+    TEST_ASSERT_TRUE(fixture.app.tdsCalibrationSnapshot().active);
+}
+
+void test_tds_calibration_save_persists_config_after_stable_samples() {
+    WebFixture fixture;
+    enableTdsForFixture(fixture);
+    TEST_ASSERT_TRUE(fixture.app.startTdsSinglePointCalibrationForWeb(10, testNowSeconds()));
+    for (std::uint32_t i = 1; i <= 12; ++i) {
+        fixture.waterSensors.tick(i * 1000UL);
+    }
+    TEST_ASSERT_TRUE(fixture.app.tdsCalibrationSnapshot().readyToSave);
+    registerRoutes();
+    Esp32BaseWeb::nativeTestBeginRequest(Esp32BaseWeb::METHOD_POST, "/faucet/calibration");
+    Esp32BaseWeb::nativeTestSetAuthenticated(true);
+    Esp32BaseWeb::nativeTestSetSameOrigin(true);
+    Esp32BaseWeb::nativeTestSetParam("action", "tds_save");
+
+    TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch("/faucet/calibration", Esp32BaseWeb::METHOD_POST));
+
+    TEST_ASSERT_EQUAL(303, Esp32BaseWeb::nativeTestResponse().code);
+    TEST_ASSERT_EQUAL_STRING("/faucet/calibration?saved=tds_saved",
+                             Esp32BaseWeb::nativeTestResponseHeader("Location"));
+    const SystemConfig persisted = fixture.configStore.loadSystemConfig();
+    TEST_ASSERT_TRUE(persisted.tdsCalibrated);
+    TEST_ASSERT_EQUAL_UINT16(1, persisted.tdsCalibrationRevision);
 }
 
 void test_calibration_post_rejects_missing_action_as_invalid_action() {
@@ -890,20 +1006,20 @@ void test_calibration_post_rejects_missing_action_as_invalid_action() {
                              Esp32BaseWeb::nativeTestResponseHeader("Location"));
 }
 
-void test_metering_scheme_write_redirects_busy_to_metering_page() {
+void test_metering_scheme_write_redirects_busy_to_flow_center() {
     WebFixture fixture;
     setRunning(fixture.app);
     registerRoutes();
-    Esp32BaseWeb::nativeTestBeginRequest(Esp32BaseWeb::METHOD_POST, "/faucet/metering");
+    Esp32BaseWeb::nativeTestBeginRequest(Esp32BaseWeb::METHOD_POST, "/faucet/calibration/flow");
     Esp32BaseWeb::nativeTestSetAuthenticated(true);
     Esp32BaseWeb::nativeTestSetSameOrigin(true);
     Esp32BaseWeb::nativeTestSetParam("action", "set_active_metering_scheme");
     Esp32BaseWeb::nativeTestSetParam("id", "1");
 
-    TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch("/faucet/metering", Esp32BaseWeb::METHOD_POST));
+    TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch("/faucet/calibration/flow", Esp32BaseWeb::METHOD_POST));
 
     TEST_ASSERT_EQUAL(303, Esp32BaseWeb::nativeTestResponse().code);
-    TEST_ASSERT_EQUAL_STRING("/faucet/metering?error=busy", Esp32BaseWeb::nativeTestResponseHeader("Location"));
+    TEST_ASSERT_EQUAL_STRING("/faucet/calibration/flow?error=busy", Esp32BaseWeb::nativeTestResponseHeader("Location"));
 }
 
 void test_presets_handler_rejects_missing_auth_before_context_work() {
@@ -1001,9 +1117,10 @@ int main(int, char**) {
     RUN_TEST(test_after_format_fs_notification_resets_runtime_statistics);
     RUN_TEST(test_after_format_fs_notification_notifies_app_storage_rebuild);
     RUN_TEST(test_stats_page_initial_render_shows_complete_report);
-    RUN_TEST(test_calibration_page_initial_render_shows_session_records);
-    RUN_TEST(test_metering_page_initial_render_shows_scheme_list_and_sample_library);
-    RUN_TEST(test_metering_page_keeps_only_metering_description_collapsed);
+    RUN_TEST(test_calibration_home_shows_three_expanded_sections_without_flow_tables);
+    RUN_TEST(test_calibration_page_initial_render_shows_tds_controls);
+    RUN_TEST(test_flow_calibration_center_initial_render_shows_scheme_list_and_sample_library);
+    RUN_TEST(test_flow_calibration_center_uses_no_collapsed_sections);
     RUN_TEST(test_running_water_allows_read_only_business_pages);
     RUN_TEST(test_filter_reset_handler_rejects_missing_auth_before_context_work);
     RUN_TEST(test_filter_reset_handler_rejects_cross_origin_post);
@@ -1011,12 +1128,15 @@ int main(int, char**) {
     RUN_TEST(test_filter_reset_handler_redirects_busy_before_runtime_write);
     RUN_TEST(test_records_handler_redirects_trace_save_busy_before_trace_store_work);
     RUN_TEST(test_records_handler_redirects_trace_delete_busy_to_calibration_context);
-    RUN_TEST(test_calibration_session_start_redirects_busy_to_calibration_page);
-    RUN_TEST(test_calibration_session_start_redirects_success_from_idle);
+    RUN_TEST(test_flow_calibration_session_start_redirects_busy_to_flow_center);
+    RUN_TEST(test_flow_calibration_session_start_redirects_success_from_idle);
     RUN_TEST(test_calibration_session_start_recovers_missing_session_file_after_format);
     RUN_TEST(test_calibration_session_start_rejects_duplicate_start_as_invalid_state);
+    RUN_TEST(test_tds_calibration_start_redirects_busy_to_calibration_page);
+    RUN_TEST(test_tds_calibration_start_redirects_success_from_idle);
+    RUN_TEST(test_tds_calibration_save_persists_config_after_stable_samples);
     RUN_TEST(test_calibration_post_rejects_missing_action_as_invalid_action);
-    RUN_TEST(test_metering_scheme_write_redirects_busy_to_metering_page);
+    RUN_TEST(test_metering_scheme_write_redirects_busy_to_flow_center);
     RUN_TEST(test_presets_handler_rejects_missing_auth_before_context_work);
     RUN_TEST(test_presets_handler_rejects_cross_origin_post);
     RUN_TEST(test_presets_handler_rejects_invalid_action);

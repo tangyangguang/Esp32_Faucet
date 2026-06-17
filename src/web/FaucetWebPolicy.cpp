@@ -12,8 +12,8 @@ const char* busyLocationFor(FaucetWebWriteTarget target) {
             return "/faucet/records?error=busy";
         case FaucetWebWriteTarget::Calibration:
             return "/faucet/calibration?error=busy";
-        case FaucetWebWriteTarget::Metering:
-            return "/faucet/metering?error=busy";
+        case FaucetWebWriteTarget::FlowCalibration:
+            return "/faucet/calibration/flow?error=busy";
         case FaucetWebWriteTarget::Filters:
         default:
             return "/faucet/filters?error=busy";

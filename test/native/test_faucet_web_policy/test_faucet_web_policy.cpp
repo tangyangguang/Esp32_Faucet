@@ -13,7 +13,7 @@ void test_web_write_busy_policy_allows_writes_when_water_task_is_inactive() {
     TEST_ASSERT_EQUAL_STRING("unchanged", location);
 }
 
-void test_web_write_busy_policy_redirects_record_and_calibration_writes() {
+void test_web_write_busy_policy_redirects_record_calibration_and_flow_writes() {
     char location[64]{};
 
     TEST_ASSERT_TRUE(faucetWebWriteBusyRedirect(true, FaucetWebWriteTarget::Records, location, sizeof(location)));
@@ -24,8 +24,8 @@ void test_web_write_busy_policy_redirects_record_and_calibration_writes() {
     TEST_ASSERT_EQUAL_STRING("/faucet/calibration?error=busy", location);
 
     location[0] = '\0';
-    TEST_ASSERT_TRUE(faucetWebWriteBusyRedirect(true, FaucetWebWriteTarget::Metering, location, sizeof(location)));
-    TEST_ASSERT_EQUAL_STRING("/faucet/metering?error=busy", location);
+    TEST_ASSERT_TRUE(faucetWebWriteBusyRedirect(true, FaucetWebWriteTarget::FlowCalibration, location, sizeof(location)));
+    TEST_ASSERT_EQUAL_STRING("/faucet/calibration/flow?error=busy", location);
 }
 
 void test_web_write_busy_policy_redirects_filter_reset_before_runtime_write() {
@@ -41,7 +41,7 @@ int main(int argc, char** argv) {
 
     UNITY_BEGIN();
     RUN_TEST(test_web_write_busy_policy_allows_writes_when_water_task_is_inactive);
-    RUN_TEST(test_web_write_busy_policy_redirects_record_and_calibration_writes);
+    RUN_TEST(test_web_write_busy_policy_redirects_record_calibration_and_flow_writes);
     RUN_TEST(test_web_write_busy_policy_redirects_filter_reset_before_runtime_write);
     return UNITY_END();
 }

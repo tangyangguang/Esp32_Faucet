@@ -13,8 +13,6 @@ struct ConfigRuntimeStatus {
     const char* loadStatus;
     std::int32_t rawVersion;
     std::int32_t currentVersion;
-    bool readOnly;
-    bool migrationWriteBack;
 };
 
 bool writeStatusJson(const AppSnapshot& snapshot, char* out, std::size_t len);

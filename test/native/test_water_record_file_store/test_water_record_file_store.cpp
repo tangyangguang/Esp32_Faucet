@@ -12,6 +12,8 @@ using namespace faucet;
 
 namespace {
 
+constexpr std::size_t kWaterRecordHeaderBytes = 64;
+
 class MemoryFileBackend : public WaterRecordFileBackend {
 public:
     bool failWrite = false;
@@ -128,8 +130,27 @@ void test_file_record_initializes_empty_file() {
     TEST_ASSERT_EQUAL_size_t(0, store.count());
     TEST_ASSERT_EQUAL_size_t(10, store.capacity());
     TEST_ASSERT_TRUE(backend.exists("/water.bin"));
-    TEST_ASSERT_EQUAL_INT64(24, backend.fileSize("/water.bin"));
+    TEST_ASSERT_EQUAL_INT64(static_cast<std::int64_t>(kWaterRecordHeaderBytes), backend.fileSize("/water.bin"));
     TEST_ASSERT_EQUAL_size_t(0, backend.createSizedCalls);
+}
+
+void test_file_record_reports_old_schema_as_incompatible() {
+    MemoryFileBackend backend;
+    const std::uint8_t oldHeader[kWaterRecordHeaderBytes] = {
+        0x44, 0x52, 0x57, 0x46,  // FWRD
+        0x01, 0x00,              // old version
+        0x20, 0x00,              // old 32-byte record size
+        0x03, 0x00, 0x00, 0x00,
+    };
+    TEST_ASSERT_TRUE(backend.writeAt("/water.bin", 0, oldHeader, sizeof(oldHeader)));
+
+    WaterRecordFileStore store(backend, "/water.bin", 3);
+
+    TEST_ASSERT_FALSE(store.begin());
+    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(WaterRecordFileStatus::IncompatibleFormat),
+                            static_cast<std::uint8_t>(store.status()));
+    TEST_ASSERT_EQUAL_INT64(static_cast<std::int64_t>(kWaterRecordHeaderBytes), backend.fileSize("/water.bin"));
+    TEST_ASSERT_EQUAL_size_t(0, backend.removeCalls);
 }
 
 void test_file_record_appends_and_reads_newest_first() {
@@ -314,11 +335,11 @@ void test_file_record_grows_record_file_as_records_are_appended() {
     TEST_ASSERT_TRUE(store.begin());
 
     TEST_ASSERT_TRUE(store.append(makeRecord(100, 1000)));
-    TEST_ASSERT_EQUAL_INT64(24 + static_cast<int>(sizeof(WaterRecord)),
+    TEST_ASSERT_EQUAL_INT64(static_cast<std::int64_t>(kWaterRecordHeaderBytes + sizeof(WaterRecord)),
                             backend.fileSize("/water.bin"));
 
     TEST_ASSERT_TRUE(store.append(makeRecord(200, 2000)));
-    TEST_ASSERT_EQUAL_INT64(24 + static_cast<int>(sizeof(WaterRecord) * 2),
+    TEST_ASSERT_EQUAL_INT64(static_cast<std::int64_t>(kWaterRecordHeaderBytes + sizeof(WaterRecord) * 2),
                             backend.fileSize("/water.bin"));
 }
 
@@ -391,9 +412,6 @@ void test_file_record_recovers_from_corrupt_primary_header_using_backup() {
         TEST_ASSERT_TRUE(store.append(makeRecord(200, 2000)));
     }
 
-    std::uint8_t header[24]{};
-    TEST_ASSERT_TRUE(backend.readAt("/water.bin", 0, header, sizeof(header)));
-    TEST_ASSERT_TRUE(backend.writeAt("/water.bin", 24 + sizeof(WaterRecord) * 3, header, sizeof(header)));
     backend.overwriteByte("/water.bin", 0, 0x00);
 
     WaterRecordFileStore loaded(backend, "/water.bin", 3);
@@ -433,6 +451,7 @@ int main(int argc, char** argv) {
 
     UNITY_BEGIN();
     RUN_TEST(test_file_record_initializes_empty_file);
+    RUN_TEST(test_file_record_reports_old_schema_as_incompatible);
     RUN_TEST(test_file_record_appends_and_reads_newest_first);
     RUN_TEST(test_file_record_rolls_after_capacity);
     RUN_TEST(test_file_record_reads_page_in_contiguous_spans);

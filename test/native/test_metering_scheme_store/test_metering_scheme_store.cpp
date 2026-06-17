@@ -45,7 +45,7 @@ MeteringSchemeStoreHeader currentHeader(std::uint32_t activeSchemeId,
     return header;
 }
 
-MeteringSchemeStoreHeader incompatibleLegacyHeader() {
+MeteringSchemeStoreHeader incompatibleHeader() {
     MeteringSchemeStoreHeader header{
         kTestMeteringSchemeStoreMagic,
         4,
@@ -433,9 +433,9 @@ void test_begin_reports_backend_failure_when_next_id_repair_cannot_be_saved() {
                             static_cast<unsigned>(loaded.status()));
 }
 
-void test_begin_rejects_legacy_scheme_file_without_migration() {
+void test_begin_rejects_incompatible_scheme_file() {
     MemoryFileBackend backend;
-    const MeteringSchemeStoreHeader header = incompatibleLegacyHeader();
+    const MeteringSchemeStoreHeader header = incompatibleHeader();
     TEST_ASSERT_TRUE(backend.writeAt("/schemes.bin", 0, reinterpret_cast<const std::uint8_t*>(&header), sizeof(header)));
     const std::int64_t originalSize = backend.fileSize("/schemes.bin");
 
@@ -515,7 +515,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_set_active_header_failure_rolls_back_record_timestamp);
     RUN_TEST(test_begin_repairs_next_scheme_id_from_existing_records);
     RUN_TEST(test_begin_reports_backend_failure_when_next_id_repair_cannot_be_saved);
-    RUN_TEST(test_begin_rejects_legacy_scheme_file_without_migration);
+    RUN_TEST(test_begin_rejects_incompatible_scheme_file);
     RUN_TEST(test_begin_ignores_stale_temp_when_current_file_is_valid);
     RUN_TEST(test_begin_preserves_corrupt_scheme_file);
     return UNITY_END();

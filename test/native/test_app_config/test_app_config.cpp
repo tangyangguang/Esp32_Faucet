@@ -28,10 +28,7 @@ void test_default_config_matches_product_defaults() {
     TEST_ASSERT_EQUAL_UINT32(1000, config.pulseMinIntervalUs);
     TEST_ASSERT_EQUAL_UINT32(100, kMinPulseMinIntervalUs);
     TEST_ASSERT_EQUAL_UINT32(100000, kMaxPulseMinIntervalUs);
-    TEST_ASSERT_EQUAL_UINT32(kDefaultRecentPulseTraceCount, config.recentPulseTraceCount);
-    TEST_ASSERT_EQUAL_UINT32(1, config.recentPulseTraceCount);
-    TEST_ASSERT_EQUAL_UINT32(1, kMinRecentPulseTraceCount);
-    TEST_ASSERT_EQUAL_UINT32(1, kMaxRecentPulseTraceCount);
+    TEST_ASSERT_EQUAL_UINT32(1, kRecentPulseTraceCount);
     TEST_ASSERT_EQUAL_UINT32(kDefaultPulseObservationWindowSec, config.pulseObservationWindowSec);
     TEST_ASSERT_EQUAL_UINT32(10, config.pulseObservationWindowSec);
     TEST_ASSERT_EQUAL_UINT32(1, kMinPulseObservationWindowSec);
@@ -107,6 +104,34 @@ void test_default_filters_support_six_lightweight_records() {
     }
 }
 
+void test_sensor_config_defaults_disabled() {
+    const SystemConfig config = makeDefaultConfig();
+
+    TEST_ASSERT_EQUAL_UINT16(3300, config.sensorVrefMv);
+    TEST_ASSERT_FALSE(config.lcdSensorPageEnabled);
+    TEST_ASSERT_FALSE(config.temperatureEnabled);
+    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(TemperatureKind::None),
+                            static_cast<std::uint8_t>(config.temperatureKind));
+    TEST_ASSERT_EQUAL_INT16(0, config.temperatureOffsetCentiC);
+    TEST_ASSERT_FALSE(config.temperatureCalibrated);
+    TEST_ASSERT_FALSE(config.tdsEnabled);
+    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(TdsKind::None), static_cast<std::uint8_t>(config.tdsKind));
+    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(TdsCalibrationMode::None),
+                            static_cast<std::uint8_t>(config.tdsCalibrationMode));
+    TEST_ASSERT_EQUAL_UINT16(0, config.tdsCalibrationRevision);
+    TEST_ASSERT_EQUAL_FLOAT(1.0f, config.tdsScale);
+    TEST_ASSERT_EQUAL_INT16(0, config.tdsOffsetPpm);
+    TEST_ASSERT_EQUAL_UINT16(0, config.tdsLowReferencePpm);
+    TEST_ASSERT_EQUAL_UINT16(0, config.tdsLowRawPpm);
+    TEST_ASSERT_EQUAL_UINT16(0, config.tdsHighReferencePpm);
+    TEST_ASSERT_EQUAL_UINT16(0, config.tdsHighRawPpm);
+    TEST_ASSERT_EQUAL_UINT32(0, config.tdsCalibrationTime);
+    TEST_ASSERT_EQUAL_INT16(0, config.tdsCalibrationTemperatureCentiC);
+    TEST_ASSERT_EQUAL_UINT16(0, config.tdsCalibrationVoltageMv);
+    TEST_ASSERT_FALSE(config.tdsCalibrated);
+    TEST_ASSERT_TRUE(config.tdsTemperatureCompensationEnabled);
+}
+
 void test_sanitize_config_clamps_scalar_ranges() {
     SystemConfig config = makeDefaultConfig();
     config.confirmTimeoutSec = 0;
@@ -120,7 +145,6 @@ void test_sanitize_config_clamps_scalar_ranges() {
     config.volumeAdjustStepMl = 0;
     config.timeAdjustStepSec = 0;
     config.pulseMinIntervalUs = 1;
-    config.recentPulseTraceCount = 999999;
     config.pulseObservationWindowSec = 0;
     config.calibrationAnalysisPulseMinIntervalUs = 1;
     config.calibrationStableWindowSec = 1;
@@ -147,8 +171,6 @@ void test_sanitize_config_clamps_scalar_ranges() {
     TEST_ASSERT_EQUAL_UINT32(10, config.volumeAdjustStepMl);
     TEST_ASSERT_EQUAL_UINT32(1, config.timeAdjustStepSec);
     TEST_ASSERT_EQUAL_UINT32(kMinPulseMinIntervalUs, config.pulseMinIntervalUs);
-    TEST_ASSERT_EQUAL_UINT32(kMaxRecentPulseTraceCount, config.recentPulseTraceCount);
-    TEST_ASSERT_EQUAL_UINT32(1, config.recentPulseTraceCount);
     TEST_ASSERT_EQUAL_UINT32(kMinPulseObservationWindowSec, config.pulseObservationWindowSec);
     TEST_ASSERT_EQUAL_UINT32(kMinPulseMinIntervalUs, config.calibrationAnalysisPulseMinIntervalUs);
     TEST_ASSERT_EQUAL_UINT32(kMinCalibrationStableWindowSec, config.calibrationStableWindowSec);
@@ -167,11 +189,6 @@ void test_sanitize_config_clamps_scalar_ranges() {
     config.pulseMinIntervalUs = 999999;
     sanitizeConfig(config);
     TEST_ASSERT_EQUAL_UINT32(kMaxPulseMinIntervalUs, config.pulseMinIntervalUs);
-
-    config = makeDefaultConfig();
-    config.recentPulseTraceCount = 0;
-    sanitizeConfig(config);
-    TEST_ASSERT_EQUAL_UINT32(kMinRecentPulseTraceCount, config.recentPulseTraceCount);
 
     config = makeDefaultConfig();
     config.pulseObservationWindowSec = 999999;
@@ -310,6 +327,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_default_config_matches_product_defaults);
     RUN_TEST(test_default_presets_use_two_enabled_volume_presets);
     RUN_TEST(test_default_filters_support_six_lightweight_records);
+    RUN_TEST(test_sensor_config_defaults_disabled);
     RUN_TEST(test_sanitize_config_clamps_scalar_ranges);
     RUN_TEST(test_sanitize_config_clamps_preset_values_by_type);
     RUN_TEST(test_record_page_size_and_filter_life_helpers);

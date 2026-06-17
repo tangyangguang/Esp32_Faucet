@@ -831,39 +831,6 @@ void test_filter_reset_handler_redirects_busy_before_runtime_write() {
     TEST_ASSERT_EQUAL_UINT32(0, fixture.backend.filterRuntimeWrites);
 }
 
-void test_records_handler_redirects_trace_save_busy_before_trace_store_work() {
-    WebFixture fixture;
-    setRunning(fixture.app);
-    registerRoutes();
-    Esp32BaseWeb::nativeTestBeginRequest(Esp32BaseWeb::METHOD_POST, "/api/faucet/records");
-    Esp32BaseWeb::nativeTestSetAuthenticated(true);
-    Esp32BaseWeb::nativeTestSetSameOrigin(true);
-    Esp32BaseWeb::nativeTestSetParam("action", "save");
-    Esp32BaseWeb::nativeTestSetParam("trace", "1");
-
-    TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch("/api/faucet/records", Esp32BaseWeb::METHOD_POST));
-
-    TEST_ASSERT_EQUAL(303, Esp32BaseWeb::nativeTestResponse().code);
-    TEST_ASSERT_EQUAL_STRING("/faucet/records?error=busy", Esp32BaseWeb::nativeTestResponseHeader("Location"));
-}
-
-void test_records_handler_redirects_trace_delete_busy_to_calibration_context() {
-    WebFixture fixture;
-    setRunning(fixture.app);
-    registerRoutes();
-    Esp32BaseWeb::nativeTestBeginRequest(Esp32BaseWeb::METHOD_POST, "/api/faucet/records");
-    Esp32BaseWeb::nativeTestSetAuthenticated(true);
-    Esp32BaseWeb::nativeTestSetSameOrigin(true);
-    Esp32BaseWeb::nativeTestSetParam("action", "delete");
-    Esp32BaseWeb::nativeTestSetParam("trace", "1");
-    Esp32BaseWeb::nativeTestSetParam("from", "calibration");
-
-    TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch("/api/faucet/records", Esp32BaseWeb::METHOD_POST));
-
-    TEST_ASSERT_EQUAL(303, Esp32BaseWeb::nativeTestResponse().code);
-    TEST_ASSERT_EQUAL_STRING("/faucet/calibration?error=busy", Esp32BaseWeb::nativeTestResponseHeader("Location"));
-}
-
 void test_flow_calibration_session_start_redirects_busy_to_flow_center() {
     WebFixture fixture;
     setRunning(fixture.app);
@@ -1126,8 +1093,6 @@ int main(int, char**) {
     RUN_TEST(test_filter_reset_handler_rejects_cross_origin_post);
     RUN_TEST(test_filter_reset_handler_returns_invalid_index_without_runtime_write);
     RUN_TEST(test_filter_reset_handler_redirects_busy_before_runtime_write);
-    RUN_TEST(test_records_handler_redirects_trace_save_busy_before_trace_store_work);
-    RUN_TEST(test_records_handler_redirects_trace_delete_busy_to_calibration_context);
     RUN_TEST(test_flow_calibration_session_start_redirects_busy_to_flow_center);
     RUN_TEST(test_flow_calibration_session_start_redirects_success_from_idle);
     RUN_TEST(test_calibration_session_start_recovers_missing_session_file_after_format);

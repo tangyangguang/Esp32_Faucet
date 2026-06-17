@@ -532,7 +532,6 @@ void initializeApplication() {
                                  &g_calibrationSessionTraces,
                                  &g_calibrationLongTermSamples,
                                  g_pulseTraces,
-                                 nullptr,
                                  currentSeconds,
                                  currentBootId,
                                  applyRuntimeSettings,

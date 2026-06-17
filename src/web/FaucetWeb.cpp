@@ -42,7 +42,7 @@ constexpr std::uint32_t kChartDays = kUsageSummaryMaxDays;
 constexpr std::size_t kHomeTodayRecordLimit = 5;
 constexpr std::size_t kRawTracePreviewEdgeCount = 30;
 constexpr std::uint16_t kSegmentedCalibrationRequiredSamples = 2;
-constexpr std::size_t kSegmentedCalibrationMaxSamples = kSavedPulseTraceMaxCountLimit;
+constexpr std::size_t kSegmentedCalibrationMaxSamples = kCalibrationLongTermSampleSlots;
 FaucetWebContext g_context{};
 
 struct StablePulseEstimateCache {
@@ -51,7 +51,6 @@ struct StablePulseEstimateCache {
     std::size_t ramTraceCount = 0;
     std::uint32_t latestRamTraceId = 0;
     bool latestRamTraceFinished = false;
-    std::uint32_t savedTraceStatsKey = 0;
     float stablePulsePerSec = 0.0f;
 };
 
@@ -105,9 +104,6 @@ void handleCreateMeteringSchemeApi();
 void handleEditMeteringSchemeApi();
 void handleSetActiveMeteringSchemeApi();
 void handleDeleteMeteringSchemeApi();
-void handleTraceCalibrationApi();
-void handleTraceSaveApi();
-void handleTraceDeleteApi();
 const char* calibrationSessionStatusText(CalibrationSessionStatus status);
 bool calibrationSessionInactive(CalibrationSessionStatus status);
 bool calibrationSessionStorageReady();
@@ -606,20 +602,6 @@ void sendBusyJson(const char* context) {
     Esp32BaseWeb::sendJson(409, json);
 }
 
-std::uint32_t savedTraceStatsKey(const WaterPulseTraceFileStats& stats) {
-    std::uint32_t key = 2166136261UL;
-    auto mix = [&key](std::uint32_t value) {
-        key ^= value;
-        key *= 16777619UL;
-    };
-    mix(static_cast<std::uint32_t>(stats.savedCount));
-    mix(static_cast<std::uint32_t>(stats.usedBytes));
-    mix(static_cast<std::uint32_t>(stats.sampleCapacityPerTrace));
-    mix(stats.ready ? 1UL : 0UL);
-    mix(stats.corrupt ? 1UL : 0UL);
-    return key == 0 ? 1UL : key;
-}
-
 StablePulseEstimateCache stablePulseCacheKey() {
     StablePulseEstimateCache key{};
     if (g_context.pulseTraces) {
@@ -632,9 +614,6 @@ StablePulseEstimateCache stablePulseCacheKey() {
             }
         }
     }
-    if (g_context.savedPulseTraces && g_context.savedPulseTraces->ready()) {
-        key.savedTraceStatsKey = savedTraceStatsKey(g_context.savedPulseTraces->stats());
-    }
     return key;
 }
 
@@ -642,8 +621,7 @@ bool stablePulseCacheMatches(const StablePulseEstimateCache& key) {
     return g_stablePulseEstimateCache.ready &&
            g_stablePulseEstimateCache.ramTraceCount == key.ramTraceCount &&
            g_stablePulseEstimateCache.latestRamTraceId == key.latestRamTraceId &&
-           g_stablePulseEstimateCache.latestRamTraceFinished == key.latestRamTraceFinished &&
-           g_stablePulseEstimateCache.savedTraceStatsKey == key.savedTraceStatsKey;
+           g_stablePulseEstimateCache.latestRamTraceFinished == key.latestRamTraceFinished;
 }
 
 std::uint32_t recentAverageFlowMlPerMin() {
@@ -834,23 +812,10 @@ bool saveRecordActualMeasurement(const WaterRecord& record, std::uint32_t actual
     return g_context.recordCalibrationWriter->upsert(calibration);
 }
 
-bool ensureSavedPulseTracesReady() {
-    if (!g_context.savedPulseTraces) {
-        return false;
-    }
-    return g_context.savedPulseTraces->ready() || g_context.savedPulseTraces->begin();
-}
-
 bool syncTraceActualMeasurement(const WaterRecord& record, std::uint32_t actualMl) {
     bool updated = false;
     if (g_context.pulseTraces && g_context.pulseTraces->setActualMlByRecord(record, actualMl)) {
         updated = true;
-    }
-    if (ensureSavedPulseTracesReady()) {
-        WaterPulseTrace savedTrace{};
-        if (g_context.savedPulseTraces->findByRecord(record, savedTrace)) {
-            updated = g_context.savedPulseTraces->setActualMl(savedTrace.traceId, actualMl) || updated;
-        }
     }
     return updated;
 }
@@ -869,12 +834,7 @@ bool copyRamTraceSamples(const WaterPulseTrace& trace, WaterPulseTraceSample* ou
     return true;
 }
 
-bool copySavedTraceSamples(const WaterPulseTrace& trace, WaterPulseTraceSample* output, std::size_t outputCapacity) {
-    return g_context.savedPulseTraces && output && outputCapacity >= trace.sampleCount &&
-           g_context.savedPulseTraces->readSamples(trace.traceId, output, outputCapacity) == trace.sampleCount;
-}
-
-bool stablePulsePerSecFromTrace(const WaterPulseTrace& trace, bool savedSource, float& stablePulsePerSec) {
+bool stablePulsePerSecFromTrace(const WaterPulseTrace& trace, float& stablePulsePerSec) {
     stablePulsePerSec = 0.0f;
     if (!trace.finished || trace.truncated || trace.resumedAfterPause || trace.sampleCount < 6 || trace.totalPulses == 0) {
         return false;
@@ -883,8 +843,7 @@ bool stablePulsePerSecFromTrace(const WaterPulseTrace& trace, bool savedSource, 
     if (!samples) {
         return false;
     }
-    const bool copied = savedSource ? copySavedTraceSamples(trace, samples, trace.sampleCount)
-                                    : copyRamTraceSamples(trace, samples, trace.sampleCount);
+    const bool copied = copyRamTraceSamples(trace, samples, trace.sampleCount);
     if (copied) {
         const WaterPulseTraceAnalysis analysis =
             analyzeWaterPulseTrace(trace, samples, trace.sampleCount, calibrationOptionsForWeb());
@@ -906,7 +865,7 @@ float recentStablePulsePerSec() {
         for (std::size_t offset = 0; offset < g_context.pulseTraces->count(); ++offset) {
             const std::size_t index = g_context.pulseTraces->count() - 1 - offset;
             const WaterPulseTrace* trace = g_context.pulseTraces->traceAt(index);
-            if (trace && stablePulsePerSecFromTrace(*trace, false, stablePulsePerSec)) {
+            if (trace && stablePulsePerSecFromTrace(*trace, stablePulsePerSec)) {
                 g_stablePulseEstimateCache = key;
                 g_stablePulseEstimateCache.ready = true;
                 g_stablePulseEstimateCache.valid = true;
@@ -915,39 +874,6 @@ float recentStablePulsePerSec() {
             }
         }
     }
-    if (!ensureSavedPulseTracesReady()) {
-        g_stablePulseEstimateCache = key;
-        g_stablePulseEstimateCache.ready = true;
-        g_stablePulseEstimateCache.valid = false;
-        return 0.0f;
-    }
-    const WaterPulseTraceFileStats stats = g_context.savedPulseTraces->stats();
-    const std::size_t maxToRead = std::min<std::size_t>(stats.savedCount, kDefaultRecordPageSize);
-    if (maxToRead == 0) {
-        g_stablePulseEstimateCache = stablePulseCacheKey();
-        g_stablePulseEstimateCache.ready = true;
-        g_stablePulseEstimateCache.valid = false;
-        return 0.0f;
-    }
-    WaterPulseTrace* traces = new (std::nothrow) WaterPulseTrace[maxToRead]{};
-    if (!traces) {
-        g_stablePulseEstimateCache = stablePulseCacheKey();
-        g_stablePulseEstimateCache.ready = true;
-        g_stablePulseEstimateCache.valid = false;
-        return 0.0f;
-    }
-    const std::size_t count = g_context.savedPulseTraces->list(traces, maxToRead);
-    for (std::size_t i = 0; i < count; ++i) {
-        if (stablePulsePerSecFromTrace(traces[i], true, stablePulsePerSec)) {
-            delete[] traces;
-            g_stablePulseEstimateCache = stablePulseCacheKey();
-            g_stablePulseEstimateCache.ready = true;
-            g_stablePulseEstimateCache.valid = true;
-            g_stablePulseEstimateCache.stablePulsePerSec = stablePulsePerSec;
-            return stablePulsePerSec;
-        }
-    }
-    delete[] traces;
     g_stablePulseEstimateCache = stablePulseCacheKey();
     g_stablePulseEstimateCache.ready = true;
     g_stablePulseEstimateCache.valid = false;
@@ -955,7 +881,6 @@ float recentStablePulsePerSec() {
 }
 
 bool firstSecondsPulseTotal(const WaterPulseTrace& trace,
-                            bool savedSource,
                             std::uint32_t seconds,
                             std::uint32_t& totalPulses) {
     totalPulses = 0;
@@ -966,8 +891,7 @@ bool firstSecondsPulseTotal(const WaterPulseTrace& trace,
     if (!samples) {
         return false;
     }
-    const bool copied = savedSource ? copySavedTraceSamples(trace, samples, trace.sampleCount)
-                                    : copyRamTraceSamples(trace, samples, trace.sampleCount);
+    const bool copied = copyRamTraceSamples(trace, samples, trace.sampleCount);
     if (copied) {
         std::size_t count = 0;
         const std::uint32_t endUs = seconds * 1000000UL;
@@ -990,7 +914,6 @@ bool segmentedSampleAlreadySeen(const WaterRecord* records, std::size_t count, c
 }
 
 bool appendSegmentedSampleFromTrace(const WaterPulseTrace& trace,
-                                    bool savedSource,
                                     const SegmentedCalibrationOptions& options,
                                     SegmentedCalibrationSample* samples,
                                     WaterRecord* seenRecords,
@@ -1016,8 +939,7 @@ bool appendSegmentedSampleFromTrace(const WaterPulseTrace& trace,
     if (!traceSamples) {
         return false;
     }
-    const bool copied = savedSource ? copySavedTraceSamples(trace, traceSamples, trace.sampleCount)
-                                    : copyRamTraceSamples(trace, traceSamples, trace.sampleCount);
+    const bool copied = copyRamTraceSamples(trace, traceSamples, trace.sampleCount);
     if (!copied) {
         delete[] traceSamples;
         return false;
@@ -1141,7 +1063,6 @@ SegmentedSampleDiagnostics collectSegmentedSampleDiagnostics(bool includeRam) {
             const WaterPulseTrace* trace = g_context.pulseTraces->traceAt(index);
             if (trace) {
                 appendSegmentedSampleFromTrace(*trace,
-                                               false,
                                                options,
                                                samples,
                                                seenRecords,
@@ -1157,46 +1078,6 @@ SegmentedSampleDiagnostics collectSegmentedSampleDiagnostics(bool includeRam) {
     delete[] samples;
     delete[] seenRecords;
     return diagnostics;
-}
-
-bool saveRamTraceToDevice(std::uint32_t traceId,
-                          std::uint32_t* savedTraceId,
-                          WaterPulseTraceSaveStatus* status) {
-    if (savedTraceId) {
-        *savedTraceId = 0;
-    }
-    if (status) {
-        *status = WaterPulseTraceSaveStatus::Ok;
-    }
-    if (!g_context.pulseTraces || !ensureSavedPulseTracesReady() || traceId == 0) {
-        if (status) {
-            *status = WaterPulseTraceSaveStatus::NotReady;
-        }
-        return false;
-    }
-    const WaterPulseTrace* trace = g_context.pulseTraces->findById(traceId);
-    if (!trace || !trace->finished || trace->sampleCount == 0) {
-        if (status) {
-            *status = WaterPulseTraceSaveStatus::InvalidInput;
-        }
-        return false;
-    }
-    WaterRecordCalibration calibration{};
-    if (findRecordCalibration(trace->record, calibration)) {
-        g_context.pulseTraces->setActualMlByRecord(trace->record, calibration.actualMl);
-        trace = g_context.pulseTraces->findById(traceId);
-    }
-    WaterPulseTraceSample* samples = new (std::nothrow) WaterPulseTraceSample[trace->sampleCount]{};
-    if (!samples) {
-        if (status) {
-            *status = WaterPulseTraceSaveStatus::WriteFailed;
-        }
-        return false;
-    }
-    const bool copied = copyRamTraceSamples(*trace, samples, trace->sampleCount);
-    const bool saved = copied && g_context.savedPulseTraces->save(*trace, samples, trace->sampleCount, savedTraceId, status);
-    delete[] samples;
-    return saved;
 }
 
 bool ensureMeteringSchemesReady() {
@@ -1565,42 +1446,6 @@ void sendPulseTraceCachePanel() {
                 static_cast<unsigned long>(stats.sampleCapacityPerTrace));
     }
 
-    if (!g_context.savedPulseTraces) {
-        return;
-    }
-    WaterPulseTraceFileStats savedStats{};
-    const bool savedReady = ensureSavedPulseTracesReady();
-    char savedCount[32]{};
-    char savedSpace[48]{};
-    std::snprintf(savedCount, sizeof(savedCount), "-");
-    std::snprintf(savedSpace, sizeof(savedSpace), "-");
-    if (savedReady) {
-        savedStats = g_context.savedPulseTraces->stats();
-        char savedUsed[24]{};
-        char savedMax[24]{};
-        std::snprintf(savedCount,
-                      sizeof(savedCount),
-                      "%lu / %lu 条",
-                      static_cast<unsigned long>(savedStats.savedCount),
-                      static_cast<unsigned long>(savedStats.maxCount));
-        formatKb(savedStats.usedBytes, savedUsed, sizeof(savedUsed));
-        formatKb(savedStats.maxBytes, savedMax, sizeof(savedMax));
-        std::snprintf(savedSpace, sizeof(savedSpace), "%s / %s", savedUsed, savedMax);
-    }
-    Esp32BaseWeb::sendChunk("<section class='panel records-diagnostic-panel saved-trace-diagnostic'><div class='diagnostic-head'><h3>设备明细</h3>"
-                            "<span class='status-pill status-muted flash-badge'>Flash</span></div><div class='diagnostic-metric-grid'>");
-    sendFmt("<div class='diagnostic-metric'><span>保存</span><strong>%s</strong></div>", savedCount);
-    sendFmt("<div class='diagnostic-metric'><span>文件占用</span><strong>%s</strong></div>", savedSpace);
-    if (savedReady) {
-        sendFmt("</div><div class='diagnostic-foot'><span>单条最多 <b>%lu 点</b></span></div>",
-                static_cast<unsigned long>(savedStats.sampleCapacityPerTrace));
-    } else {
-        Esp32BaseWeb::sendChunk("</div><div class='diagnostic-foot'><span>单条最多 <b>-</b></span></div>");
-    }
-    if (savedReady && savedStats.corrupt) {
-        Esp32BaseWeb::sendChunk("<p class='err'>设备存储明细文件异常；不会影响启动和本次出水记录。</p>");
-    }
-    Esp32BaseWeb::sendChunk("</section>");
 }
 
 void sendMeteringTrialButton(const char* label,
@@ -2058,7 +1903,7 @@ struct CalibrationSampleState {
     bool resumedAfterPause = false;
 };
 
-CalibrationSampleState inspectCalibrationSample(const WaterPulseTrace& trace, bool savedSource) {
+CalibrationSampleState inspectCalibrationSample(const WaterPulseTrace& trace) {
     CalibrationSampleState state{};
     state.actualMl = actualMlForSegmentedSample(trace);
     state.truncated = trace.truncated;
@@ -2073,8 +1918,7 @@ CalibrationSampleState inspectCalibrationSample(const WaterPulseTrace& trace, bo
     if (!samples) {
         return state;
     }
-    const bool copied = savedSource ? copySavedTraceSamples(trace, samples, trace.sampleCount)
-                                    : copyRamTraceSamples(trace, samples, trace.sampleCount);
+    const bool copied = copyRamTraceSamples(trace, samples, trace.sampleCount);
     if (copied) {
         const WaterPulseTraceAnalysis analysis = analyzeWaterPulseTrace(trace, samples, trace.sampleCount);
         state.stable = analysis.stable && analysis.stablePulseCount > 0;
@@ -2085,7 +1929,7 @@ CalibrationSampleState inspectCalibrationSample(const WaterPulseTrace& trace, bo
     return state;
 }
 
-void sendCalibrationSampleStatusPills(const CalibrationSampleState& state, bool savedSource, const char* containerClass) {
+void sendCalibrationSampleStatusPills(const CalibrationSampleState& state, const char* containerClass) {
     sendFmt("<span class='%s'>", containerClass);
     if (state.truncated) {
         Esp32BaseWeb::sendChunk("<span class='status-pill status-warn'>明细已截断</span>"
@@ -2112,8 +1956,7 @@ void sendCalibrationSampleStatusPills(const CalibrationSampleState& state, bool 
         Esp32BaseWeb::sendChunk("</span>");
         return;
     }
-    Esp32BaseWeb::sendChunk(savedSource ? "<span class='status-pill status-muted'>设备明细</span>"
-                                        : "<span class='status-pill status-muted'>RAM 明细</span>");
+    Esp32BaseWeb::sendChunk("<span class='status-pill status-muted'>RAM 明细</span>");
     Esp32BaseWeb::sendChunk("</span>");
 }
 
@@ -2139,7 +1982,6 @@ std::uint32_t configuredPulseObservationWindowSec() {
 }
 
 void sendTraceDetailLink(bool fromCalibration,
-                         bool savedSource,
                          std::uint32_t traceId,
                          std::uint32_t bucket,
                          const char* label,
@@ -2149,81 +1991,48 @@ void sendTraceDetailLink(bool fromCalibration,
             className,
             detailPath,
             fromCalibration ? "from=calibration&" : "",
-            savedSource ? "saved=1&" : "",
             static_cast<unsigned long>(traceId),
             static_cast<unsigned long>(bucket),
             label);
 }
 
-bool readCalibrationTraceFromRequest(WaterPulseTrace& trace, bool& savedSource, std::uint32_t& traceId) {
+bool readCalibrationTraceFromRequest(WaterPulseTrace& trace, std::uint32_t& traceId) {
     char text[32]{};
     trace = {};
     traceId = 0;
-    savedSource = false;
     if (!getParam("trace", text, sizeof(text)) || !parseU32(text, traceId) || traceId == 0) {
         return false;
     }
-    if (getParam("traceSource", text, sizeof(text))) {
-        savedSource = std::strcmp(text, "saved") == 0;
-    } else if (getParam("saved", text, sizeof(text))) {
-        std::uint32_t savedValue = 0;
-        savedSource = parseU32(text, savedValue) && savedValue != 0;
+    const WaterPulseTrace* ramTrace = g_context.pulseTraces ? g_context.pulseTraces->findById(traceId) : nullptr;
+    if (!ramTrace) {
+        return false;
     }
-
-    if (savedSource) {
-        if (!ensureSavedPulseTracesReady() || !g_context.savedPulseTraces->findById(traceId, trace)) {
-            return false;
-        }
-    } else {
-        const WaterPulseTrace* ramTrace = g_context.pulseTraces ? g_context.pulseTraces->findById(traceId) : nullptr;
-        if (!ramTrace) {
-            return false;
-        }
-        trace = *ramTrace;
-    }
+    trace = *ramTrace;
     return trace.finished && trace.sampleCount > 0 && waterRecordCanCalibrate(trace.record);
 }
 
-bool ensureCalibratedTraceSaved(bool savedSource,
-                                std::uint32_t traceId,
+bool markCalibrationTraceActual(std::uint32_t traceId,
                                 const WaterRecord& record,
                                 std::uint32_t actualMl) {
-    if (savedSource) {
-        if (!ensureSavedPulseTracesReady() || !g_context.savedPulseTraces->setActualMl(traceId, actualMl)) {
-            return false;
-        }
-        if (g_context.pulseTraces) {
-            g_context.pulseTraces->setActualMlByRecord(record, actualMl);
-        }
-        return true;
-    }
     if (!g_context.pulseTraces || !g_context.pulseTraces->setActualMl(traceId, actualMl)) {
         return false;
     }
-    if (!ensureSavedPulseTracesReady()) {
-        return false;
-    }
-    WaterPulseTrace savedTrace{};
-    if (g_context.savedPulseTraces->findByRecord(record, savedTrace)) {
-        return g_context.savedPulseTraces->setActualMl(savedTrace.traceId, actualMl);
-    }
-    std::uint32_t savedTraceId = 0;
-    WaterPulseTraceSaveStatus status = WaterPulseTraceSaveStatus::Ok;
-    return saveRamTraceToDevice(traceId, &savedTraceId, &status);
+    g_context.pulseTraces->setActualMlByRecord(record, actualMl);
+    return true;
 }
 
-void sendCalibrationSampleRow(const WaterPulseTrace& trace, bool savedSource, std::uint32_t samplePulseWindowSec) {
+void sendCalibrationSampleRow(const WaterPulseTrace& trace, std::uint32_t samplePulseWindowSec) {
     char startTime[40]{};
     char duration[24]{};
     formatWaterRecordListTime(trace.record, startTime, sizeof(startTime));
     formatSecondsValue(trace.record.durationSec, duration, sizeof(duration));
-    const CalibrationSampleState state = inspectCalibrationSample(trace, savedSource);
+    const CalibrationSampleState state = inspectCalibrationSample(trace);
     WaterRecordCalibration calibration{};
     const bool calibrated = findRecordCalibration(trace.record, calibration);
     const std::uint32_t defaultActualMl = state.actualMl > 0 ? state.actualMl : trace.record.volumeMl;
     std::uint32_t firstWindowPulses = 0;
-    const bool firstWindowReady = firstSecondsPulseTotal(trace, savedSource, samplePulseWindowSec, firstWindowPulses);
-    const char* sourceValue = savedSource ? "saved" : "ram";
+    const bool firstWindowReady = firstSecondsPulseTotal(trace, samplePulseWindowSec, firstWindowPulses);
+    const char* sourceValue = "ram";
     char rowId[32]{};
     std::snprintf(rowId,
                   sizeof(rowId),
@@ -2260,13 +2069,12 @@ void sendCalibrationSampleRow(const WaterPulseTrace& trace, bool savedSource, st
     }
     Esp32BaseWeb::sendChunk("</td><td>");
     sendTraceDetailLink(true,
-                        savedSource,
                         trace.traceId,
                         1,
-                        savedSource ? "已保存到设备" : "RAM 中",
-                        savedSource ? "trace-badge trace-source-link status-ok" : "trace-badge trace-source-link status-muted");
+                        "RAM 中",
+                        "trace-badge trace-source-link status-muted");
     Esp32BaseWeb::sendChunk("</td><td>");
-    sendCalibrationSampleStatusPills(state, savedSource, "sample-status-pills");
+    sendCalibrationSampleStatusPills(state, "sample-status-pills");
     Esp32BaseWeb::sendChunk("</td><td><div class='row-actions sample-actions'>");
     MeteringParameters trialParams{};
     const bool trialParamsReady = meteringParamsForRecordTrend(trace.record, trialParams);
@@ -2274,7 +2082,7 @@ void sendCalibrationSampleRow(const WaterPulseTrace& trace, bool savedSource, st
     const std::uint32_t trialDefaultTargetMl =
         trace.record.mode == WaterMode::Volume && trace.record.targetValue > 0 ? trace.record.targetValue : trialVolumeMl;
     if (trialParamsReady) {
-        sendMeteringTrialButton(savedSource ? "已保存样本" : "RAM 样本",
+        sendMeteringTrialButton("RAM 样本",
                                 trialParams,
                                 trialDefaultTargetMl,
                                 trace.record.durationSec);
@@ -2292,9 +2100,7 @@ void sendCalibrationSampleRow(const WaterPulseTrace& trace, bool savedSource, st
                             "<form class='sample-calibration-form' method='post' action='/faucet/calibration' onsubmit='return faucetSubmitSampleCalibration(this)'>"
                             "<input type='hidden' name='action' value='calibrate'>"
                             "<input type='hidden' name='ajax' value='1'>"
-                            "<input type='hidden' name='traceSource' value='");
-    Esp32BaseWeb::sendChunk(sourceValue);
-    Esp32BaseWeb::sendChunk("'><input type='hidden' name='trace' value='");
+                            "<input type='hidden' name='trace' value='");
     sendFmt("%lu", static_cast<unsigned long>(trace.traceId));
     Esp32BaseWeb::sendChunk("'><div class='sample-calibration-info'><strong>校准容量</strong>"
                             "<span>左侧样本来自本次脉冲明细，请按量杯读数填写右侧实测容量。</span>"
@@ -2406,8 +2212,24 @@ void sendCalibrationSessionAttemptRow(const CalibrationSessionRecord& session,
                                 attempt.sessionTraceSlot < kCalibrationSessionTraceSlots &&
                                 g_context.calibrationSessionTraces->load(attempt.sessionTraceSlot, stored);
     std::uint32_t firstWindowPulses = 0;
-    const bool firstWindowReady =
-        hasStoredTrace && firstSecondsPulseTotal(stored.trace, true, samplePulseWindowSec, firstWindowPulses);
+    bool firstWindowReady = false;
+    if (hasStoredTrace && samplePulseWindowSec > 0 && stored.trace.sampleCount > 0) {
+        WaterPulseTraceSample* traceSamples = new (std::nothrow) WaterPulseTraceSample[stored.trace.sampleCount]{};
+        if (traceSamples) {
+            const std::size_t copied = g_context.calibrationSessionTraces->readSamples(
+                attempt.sessionTraceSlot, traceSamples, stored.trace.sampleCount);
+            if (copied == stored.trace.sampleCount) {
+                std::size_t count = 0;
+                const std::uint32_t endUs = samplePulseWindowSec * 1000000UL;
+                while (count < copied && traceSamples[count].elapsedUs < endUs) {
+                    ++count;
+                }
+                firstWindowPulses = effectivePulseCount(stored.trace, traceSamples, count);
+                firstWindowReady = true;
+            }
+            delete[] traceSamples;
+        }
+    }
     const bool stableReady =
         attempt.status == CalibrationAttemptStatus::Valid && !attempt.resumedAfterPause && !attempt.truncated;
     std::uint32_t sampleId = 0;
@@ -3243,16 +3065,12 @@ void sendNoticeFromQuery() {
         const bool generated = std::strcmp(text, "generated") == 0;
         const bool generatedDiscarded = std::strcmp(text, "generated_discarded") == 0;
         const bool restored = std::strcmp(text, "restored") == 0;
-        const bool traceSaved = std::strcmp(text, "trace") == 0;
-        const bool traceDeleted = std::strcmp(text, "trace_deleted") == 0;
         Esp32BaseWeb::sendChunk("<p class='ok'>");
         const bool longTermSample = std::strcmp(text, "long_term_sample") == 0;
         Esp32BaseWeb::sendChunk(actualOnly   ? "校准已保存。"
                                 : generated  ? "计量参数生成结果已生成。"
                                 : generatedDiscarded ? "生成结果已放弃。"
                                 : restored           ? "已恢复上一套参数。"
-                                : traceSaved         ? "明细已保存到设备。"
-                                : traceDeleted       ? "设备明细已删除。"
                                 : longTermSample     ? "样本已存入长期样本库。"
                                                      : "已保存。");
         Esp32BaseWeb::sendChunk("</p>");
@@ -3288,12 +3106,6 @@ void sendNoticeFromQuery() {
         message = "计量方案存储不可用；请检查存储状态，系统不会自动删除原文件。";
     } else if (std::strcmp(text, "used_scheme_locked") == 0 || std::strcmp(text, "scheme_locked") == 0) {
         message = "已使用或已删除的计量方案不能修改，请新建方案。";
-    } else if (std::strcmp(text, "saved_trace_full") == 0) {
-        message = "设备明细已达上限，请先删除不需要的明细。";
-    } else if (std::strcmp(text, "saved_trace_corrupt") == 0) {
-        message = "设备存储明细文件异常，已停止写入以保护已有数据。";
-    } else if (std::strcmp(text, "saved_trace_read_failed") == 0) {
-        message = "设备明细读取失败，文件可能未写完整或已损坏。";
     } else if (std::strcmp(text, "no_calibration_record") == 0) {
         message = "最新记录没有可用的原始脉冲，不能用于校准。";
     } else if (std::strcmp(text, "calibration_mark_failed") == 0) {
@@ -4965,7 +4777,7 @@ void handleRecordDetailPage() {
         sendBusyJson("record_detail");
         return;
     }
-    if (!g_context.pulseTraces && !g_context.savedPulseTraces) {
+    if (!g_context.pulseTraces) {
         if (rawRequest) {
             sendPlainTextResponse(503, "脉冲明细缓存不可用。\n");
             return;
@@ -4997,20 +4809,8 @@ void handleRecordDetailPage() {
     if (bucketSeconds != 2 && bucketSeconds != 3 && bucketSeconds != 4 && bucketSeconds != 5) {
         bucketSeconds = 1;
     }
-    bool savedSource = false;
-    if (getParam("saved", text, sizeof(text))) {
-        std::uint32_t savedValue = 0;
-        savedSource = parseU32(text, savedValue) && savedValue != 0;
-    }
-    WaterPulseTrace savedTrace{};
     const WaterPulseTrace* trace = nullptr;
-    if (savedSource) {
-        if (ensureSavedPulseTracesReady() && g_context.savedPulseTraces->findById(traceId, savedTrace)) {
-            trace = &savedTrace;
-        }
-    } else if (g_context.pulseTraces) {
-        trace = g_context.pulseTraces->findById(traceId);
-    }
+    trace = g_context.pulseTraces->findById(traceId);
     if (!trace) {
         if (rawRequest) {
             sendPlainTextResponse(404, "该脉冲明细不存在或已被 RAM 缓存淘汰。\n");
@@ -5036,24 +4836,9 @@ void handleRecordDetailPage() {
         sendPageEnd();
         return;
     }
-    if (savedSource) {
-        if (!g_context.savedPulseTraces ||
-            g_context.savedPulseTraces->readSamples(trace->traceId, samples, trace->sampleCount) != trace->sampleCount) {
-            delete[] samples;
-            if (rawRequest) {
-                sendPlainTextResponse(500, "设备明细读取失败。\n");
-                return;
-            }
-            Esp32BaseWeb::sendHeader("脉冲明细");
-            Esp32BaseWeb::sendChunk("<p class='err'>设备明细读取失败。</p>");
-            sendPageEnd();
-            return;
-        }
-    } else {
-        for (std::size_t i = 0; i < trace->sampleCount; ++i) {
-            const WaterPulseTraceSample* sample = g_context.pulseTraces ? g_context.pulseTraces->sampleAt(*trace, i) : nullptr;
-            samples[i] = sample ? *sample : WaterPulseTraceSample{};
-        }
+    for (std::size_t i = 0; i < trace->sampleCount; ++i) {
+        const WaterPulseTraceSample* sample = g_context.pulseTraces ? g_context.pulseTraces->sampleAt(*trace, i) : nullptr;
+        samples[i] = sample ? *sample : WaterPulseTraceSample{};
     }
     if (rawRequest) {
         sendPulseTraceRawText(*trace, samples, rawTraceShowAll);
@@ -5102,10 +4887,6 @@ void handleRecordDetailPage() {
     const std::size_t traceBytes = sizeof(WaterPulseTrace) + trace->sampleCount * sizeof(WaterPulseTraceSample);
     char traceKb[24]{};
     formatKb(traceBytes, traceKb, sizeof(traceKb));
-    const bool savedStoreReady = ensureSavedPulseTracesReady();
-    WaterPulseTrace savedTraceForRecord{};
-    const bool alreadySaved =
-        savedStoreReady && g_context.savedPulseTraces->findByRecord(trace->record, savedTraceForRecord);
     const std::uint32_t traceActualMl = actualMlForSegmentedSample(*trace);
     const bool traceActualSynced = trace->actualMl > 0;
     const bool traceActualFromRecord = !traceActualSynced && traceActualMl > 0;
@@ -5118,25 +4899,6 @@ void handleRecordDetailPage() {
     sendFmt("<h2>脉冲明细</h2><div class='form-actions'><a class='btn-link' href='%s'>%s</a>",
             backHref,
             backLabel);
-    if (savedSource || alreadySaved) {
-        Esp32BaseWeb::sendChunk("<form method='post' action='/api/faucet/records' onsubmit=\"return confirm('确认删除这条设备明细？')&&once(this)\">"
-                                "<input type='hidden' name='action' value='delete'>");
-        if (fromCalibration) {
-            Esp32BaseWeb::sendChunk("<input type='hidden' name='returnTo' value='calibration'>");
-        }
-        sendFmt("<input type='hidden' name='trace' value='%lu'><input class='secondary' type='submit' value='删除设备明细'></form>",
-                static_cast<unsigned long>(savedSource ? trace->traceId : savedTraceForRecord.traceId));
-    } else if (savedStoreReady) {
-        Esp32BaseWeb::sendChunk("<form method='post' action='/api/faucet/records' onsubmit=\"return once(this)\">"
-                                "<input type='hidden' name='action' value='save'>");
-        if (fromCalibration) {
-            Esp32BaseWeb::sendChunk("<input type='hidden' name='returnTo' value='calibration'>");
-        }
-        sendFmt("<input type='hidden' name='trace' value='%lu'><input class='secondary' type='submit' value='保存设备明细'></form>",
-                static_cast<unsigned long>(trace->traceId));
-    } else {
-        Esp32BaseWeb::sendChunk("<span class='status-pill status-muted'>样本库不可用</span>");
-    }
     Esp32BaseWeb::sendChunk("</div>");
 
     Esp32BaseWeb::sendChunk("<section class='panel sample-status-panel'><h3>样本状态</h3><table class='kv'>");
@@ -5154,7 +4916,7 @@ void handleRecordDetailPage() {
         Esp32BaseWeb::sendChunk("</td></tr>");
         Esp32BaseWeb::sendChunk(traceActualFromRecord
                                     ? "<tr><th>来源</th><td>来自校准容量记录。</td></tr>"
-                                    : "<tr><th>来源</th><td>来自脉冲明细样本库。</td></tr>");
+                                    : "<tr><th>来源</th><td>来自 RAM 明细。</td></tr>");
     }
     if (trace->resumedAfterPause) {
         Esp32BaseWeb::sendChunk("<tr><th>可用性</th><td>暂停后恢复出水，属于多段出水，不参与启动段和分段校准拟合。</td></tr>");
@@ -5171,7 +4933,7 @@ void handleRecordDetailPage() {
     } else {
         Esp32BaseWeb::sendChunk("<tr><th>可用性</th><td>缺少实测容量且稳态识别失败。</td></tr>");
     }
-    Esp32BaseWeb::sendChunk("</table><p class='hint'>校准容量统一从校准页脉冲明细保存；计量方案生成只使用长期样本库，不直接扫描 RAM 或设备明细。</p></section>");
+    Esp32BaseWeb::sendChunk("</table><p class='hint'>校准容量统一从校准页脉冲明细保存；计量方案生成只使用长期样本库，不直接扫描 RAM 明细。</p></section>");
 
     Esp32BaseWeb::sendChunk("<section class='panel'><h3>明细概况</h3><table class='kv'>");
     sendFmt("<tr><th>开始时间</th><td>%s</td></tr>"
@@ -5259,7 +5021,7 @@ void handleRecordDetailPage() {
                 bucket == bucketSeconds ? "true" : "false",
                 detailPath,
                 contextParam,
-                savedSource ? "saved=1&" : "",
+                "",
                 static_cast<unsigned long>(traceId),
                 static_cast<unsigned long>(bucket),
                 static_cast<unsigned long>(bucket));
@@ -5464,14 +5226,13 @@ void handleRecordDetailPage() {
     Esp32BaseWeb::sendChunk("<span><i class='legend-mark legend-paused'></i>暂停区间</span>"
                             "<span><i class='legend-mark legend-stable'></i>稳态开始</span>"
                             "</div></section>");
-    const char* rawSavedParam = savedSource ? "saved=1&" : "";
     const std::size_t rawPreviewCount = rawTracePreviewSampleCount(*trace);
     Esp32BaseWeb::sendChunk("<section class='panel detail-data'><div class='panel-head'><h3>原始明细</h3><div class='row-actions'>");
     if (trace->sampleCount > rawPreviewCount) {
         sendFmt("<a class='btn-link' target='_blank' rel='noopener' href='%s?raw=1&%s%strace=%lu&all=1'>导出所有明细</a>",
                 detailPath,
                 contextParam,
-                rawSavedParam,
+                "",
                 static_cast<unsigned long>(traceId));
     }
     const std::uint32_t rawPreviewEffective = effectivePulseCount(*trace, samples, rawPreviewCount);
@@ -6430,14 +6191,6 @@ void handleRecordsApi() {
             handleDeleteMeteringSchemeApi();
             return;
         }
-        if (std::strcmp(text, "delete") == 0) {
-            handleTraceDeleteApi();
-            return;
-        }
-        if (std::strcmp(text, "save") == 0) {
-            handleTraceSaveApi();
-            return;
-        }
         Esp32BaseWeb::sendJson(400, "{\"error\":\"invalid_action\"}");
         return;
     }
@@ -6567,9 +6320,8 @@ void handleRecordCalibrationApi() {
     }
 
     WaterPulseTrace trace{};
-    bool savedSource = false;
     std::uint32_t traceId = 0;
-    if (!readCalibrationTraceFromRequest(trace, savedSource, traceId)) {
+    if (!readCalibrationTraceFromRequest(trace, traceId)) {
         fail(404, "{\"error\":\"no_calibration_record\"}", "/faucet/calibration?error=no_calibration_record");
         return;
     }
@@ -6590,7 +6342,7 @@ void handleRecordCalibrationApi() {
     const std::uint32_t defaultActualMl = calibrated ? calibration.actualMl : trace.record.volumeMl;
     (void)defaultActualMl;
 
-    if (!ensureCalibratedTraceSaved(savedSource, traceId, trace.record, actualMl)) {
+    if (!markCalibrationTraceActual(traceId, trace.record, actualMl)) {
         fail(500, "{\"error\":\"save_failed\"}", "/faucet/calibration?error=save_failed");
         return;
     }
@@ -6867,135 +6619,6 @@ void handleDeleteMeteringSchemeApi() {
         return;
     }
     Esp32BaseWeb::redirectSeeOther("/faucet/calibration/flow?saved=scheme_deleted");
-}
-
-void handleTraceCalibrationApi() {
-    if (!Esp32BaseWeb::checkAuth() || !requireContext()) {
-        return;
-    }
-    if (!Esp32BaseWeb::isMethod(Esp32BaseWeb::METHOD_POST)) {
-        Esp32BaseWeb::sendJson(405, "{\"error\":\"method_not_allowed\"}");
-        return;
-    }
-    char text[32]{};
-    std::uint32_t traceId = 0;
-    if (getParam("action", text, sizeof(text))) {
-        if (std::strcmp(text, "delete") == 0) {
-            handleTraceDeleteApi();
-            return;
-        }
-    }
-    if (!g_context.pulseTraces) {
-        Esp32BaseWeb::redirectSeeOther("/faucet/records?error=no_calibration_record");
-        return;
-    }
-    std::uint32_t actualMl = 0;
-    if (!getParam("trace", text, sizeof(text)) || !parseU32(text, traceId) ||
-        !getParam("actualMl", text, sizeof(text)) || !parseU32(text, actualMl) ||
-        actualMl < kMinVolumePresetMl || actualMl > kMaxVolumePresetMl) {
-        Esp32BaseWeb::redirectSeeOther("/faucet/records?error=invalid_value");
-        return;
-    }
-    if (!g_context.pulseTraces->setActualMl(traceId, actualMl)) {
-        Esp32BaseWeb::redirectSeeOther("/faucet/records?error=no_calibration_record");
-        return;
-    }
-
-    char url[96]{};
-    std::snprintf(url, sizeof(url), "/faucet/records/detail?trace=%lu&bucket=1&saved=calibrated",
-                  static_cast<unsigned long>(traceId));
-    Esp32BaseWeb::redirectSeeOther(url);
-}
-
-void handleTraceDeleteApi() {
-    if (!Esp32BaseWeb::checkAuth() || !requireContext()) {
-        return;
-    }
-    if (!Esp32BaseWeb::isMethod(Esp32BaseWeb::METHOD_POST)) {
-        Esp32BaseWeb::sendJson(405, "{\"error\":\"method_not_allowed\"}");
-        return;
-    }
-    const bool fromCalibration = calibrationContextRequested();
-    const char* listPath = fromCalibration ? "/faucet/calibration" : "/faucet/records";
-    char busyUrl[80]{};
-    if (faucetWebWriteBusyRedirect(waterTaskActive(),
-                                   fromCalibration ? FaucetWebWriteTarget::Calibration : FaucetWebWriteTarget::Records,
-                                   busyUrl,
-                                   sizeof(busyUrl))) {
-        Esp32BaseWeb::redirectSeeOther(busyUrl);
-        return;
-    }
-    if (!ensureSavedPulseTracesReady()) {
-        char url[80]{};
-        std::snprintf(url, sizeof(url), "%s?error=save_failed", listPath);
-        Esp32BaseWeb::redirectSeeOther(url);
-        return;
-    }
-    char text[32]{};
-    std::uint32_t traceId = 0;
-    if (!getParam("trace", text, sizeof(text)) || !parseU32(text, traceId)) {
-        char url[80]{};
-        std::snprintf(url, sizeof(url), "%s?error=invalid_value", listPath);
-        Esp32BaseWeb::redirectSeeOther(url);
-        return;
-    }
-    if (!g_context.savedPulseTraces->remove(traceId)) {
-        char url[80]{};
-        std::snprintf(url, sizeof(url), "%s?error=save_failed", listPath);
-        Esp32BaseWeb::redirectSeeOther(url);
-        return;
-    }
-    char url[80]{};
-    std::snprintf(url, sizeof(url), "%s?saved=trace_deleted", listPath);
-    Esp32BaseWeb::redirectSeeOther(url);
-}
-
-void handleTraceSaveApi() {
-    if (!Esp32BaseWeb::checkAuth() || !requireContext()) {
-        return;
-    }
-    if (!Esp32BaseWeb::isMethod(Esp32BaseWeb::METHOD_POST)) {
-        Esp32BaseWeb::sendJson(405, "{\"error\":\"method_not_allowed\"}");
-        return;
-    }
-    const bool fromCalibration = calibrationContextRequested();
-    const char* listPath = fromCalibration ? "/faucet/calibration" : "/faucet/records";
-    char busyUrl[80]{};
-    if (faucetWebWriteBusyRedirect(waterTaskActive(),
-                                   fromCalibration ? FaucetWebWriteTarget::Calibration : FaucetWebWriteTarget::Records,
-                                   busyUrl,
-                                   sizeof(busyUrl))) {
-        Esp32BaseWeb::redirectSeeOther(busyUrl);
-        return;
-    }
-    char text[32]{};
-    std::uint32_t traceId = 0;
-    if (!getParam("trace", text, sizeof(text)) || !parseU32(text, traceId)) {
-        char url[80]{};
-        std::snprintf(url, sizeof(url), "%s?error=invalid_value", listPath);
-        Esp32BaseWeb::redirectSeeOther(url);
-        return;
-    }
-    std::uint32_t savedTraceId = 0;
-    WaterPulseTraceSaveStatus status = WaterPulseTraceSaveStatus::Ok;
-    const bool ok = saveRamTraceToDevice(traceId, &savedTraceId, &status);
-    if (ok) {
-        char url[120]{};
-        std::snprintf(url,
-                      sizeof(url),
-                      "%s/detail?%ssaved=1&trace=%lu&bucket=1",
-                      fromCalibration ? "/faucet/calibration" : "/faucet/records",
-                      fromCalibration ? "from=calibration&" : "",
-                      static_cast<unsigned long>(savedTraceId));
-        Esp32BaseWeb::redirectSeeOther(url);
-        return;
-    }
-    const char* error = status == WaterPulseTraceSaveStatus::LimitReached ? "trace_store_full"
-                        : status == WaterPulseTraceSaveStatus::CorruptStore ? "trace_store_corrupt"
-                                                                            : "save_failed";
-    char url[96]{};
-    std::snprintf(url, sizeof(url), "%s?error=%s", listPath, error);
-    Esp32BaseWeb::redirectSeeOther(url);
 }
 
 void handleFiltersApi() {

@@ -623,7 +623,8 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "推荐 3 条"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "最多 6 次"));
     TEST_ASSERT_NULL(std::strstr(buffer, "最多 5 次"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "const bool canStartSession = calibrationSessionInactive(snapshot.calibrationStatus);"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "const bool taskActive = waterTaskActive();"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "const bool canStartSession = calibrationSessionInactive(snapshot.calibrationStatus) && !taskActive;"));
     TEST_ASSERT_NULL(std::strstr(buffer, "title='校准存储未就绪'"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "计量方案"));
     TEST_ASSERT_NULL(std::strstr(buffer, "latest-record-table"));
@@ -1783,7 +1784,12 @@ void test_business_post_handlers_use_post_allowed_guard() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "Esp32BaseWeb::checkPostAllowed(\"faucet_filter_reset\")"));
 }
 
-void test_heavy_web_handlers_return_busy_while_water_task_active() {
+const char* findWithin(const char* begin, const char* end, const char* needle) {
+    const char* found = std::strstr(begin, needle);
+    return found && found < end ? found : nullptr;
+}
+
+void test_read_only_business_pages_do_not_return_busy_while_water_task_active() {
     FILE* file = std::fopen("src/web/FaucetWeb.cpp", "rb");
     TEST_ASSERT_NOT_NULL(file);
     static char buffer[420000]{};
@@ -1791,24 +1797,25 @@ void test_heavy_web_handlers_return_busy_while_water_task_active() {
     std::fclose(file);
     TEST_ASSERT_GREATER_THAN_size_t(0, read);
 
+    const char* statsPage = std::strstr(buffer, "void handleStatsPage()");
     const char* recordsPage = std::strstr(buffer, "void handleRecordsPage()");
     const char* calibrationPage = std::strstr(buffer, "void handleCalibrationPage()");
+    const char* meteringPage = std::strstr(buffer, "void handleMeteringPage()");
     const char* detailPage = std::strstr(buffer, "void handleRecordDetailPage()");
     const char* recordsApi = std::strstr(buffer, "void handleRecordsApi()");
+    TEST_ASSERT_NOT_NULL(statsPage);
     TEST_ASSERT_NOT_NULL(recordsPage);
     TEST_ASSERT_NOT_NULL(calibrationPage);
+    TEST_ASSERT_NOT_NULL(meteringPage);
     TEST_ASSERT_NOT_NULL(detailPage);
     TEST_ASSERT_NOT_NULL(recordsApi);
 
-    TEST_ASSERT_NOT_NULL(std::strstr(recordsPage, "sendBusyJson(\"records_page\")"));
-    TEST_ASSERT_NOT_NULL(std::strstr(calibrationPage, "sendBusyJson(\"calibration_page\")"));
-    TEST_ASSERT_NOT_NULL(std::strstr(detailPage, "sendBusyJson(\"record_detail\")"));
+    TEST_ASSERT_NULL(findWithin(statsPage, recordsPage, "waterTaskActive()"));
+    TEST_ASSERT_NULL(findWithin(recordsPage, calibrationPage, "sendBusyJson(\"records_page\")"));
+    TEST_ASSERT_NULL(findWithin(calibrationPage, meteringPage, "sendBusyJson(\"calibration_page\")"));
+    TEST_ASSERT_NULL(findWithin(meteringPage, detailPage, "sendBusyJson(\"metering_page\")"));
+    TEST_ASSERT_NOT_NULL(findWithin(detailPage, recordsApi, "sendBusyJson(\"record_detail\")"));
     TEST_ASSERT_NOT_NULL(std::strstr(recordsApi, "sendBusyJson(\"records_api\")"));
-}
-
-const char* findWithin(const char* begin, const char* end, const char* needle) {
-    const char* found = std::strstr(begin, needle);
-    return found && found < end ? found : nullptr;
 }
 
 void test_web_write_handlers_return_busy_before_trace_or_filter_runtime_writes() {
@@ -1946,7 +1953,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_presets_api_allows_next_preset_switch_actions);
     RUN_TEST(test_home_status_script_discards_stale_status_responses);
     RUN_TEST(test_business_post_handlers_use_post_allowed_guard);
-    RUN_TEST(test_heavy_web_handlers_return_busy_while_water_task_active);
+    RUN_TEST(test_read_only_business_pages_do_not_return_busy_while_water_task_active);
     RUN_TEST(test_web_write_handlers_return_busy_before_trace_or_filter_runtime_writes);
     RUN_TEST(test_incomplete_factory_reset_path_is_not_kept_as_dead_code);
     RUN_TEST(test_storage_status_and_persistence_retry_are_explicit);

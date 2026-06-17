@@ -592,7 +592,7 @@ void test_after_format_fs_notification_notifies_app_storage_rebuild() {
     TEST_ASSERT_EQUAL_UINT32(1, g_afterFormatFsNotifications);
 }
 
-void test_stats_page_initial_render_does_not_read_record_pages() {
+void test_stats_page_initial_render_shows_complete_report() {
     WebFixture fixture;
     CountingWaterRecordReader reader;
     fillCountingRecords(reader);
@@ -605,12 +605,14 @@ void test_stats_page_initial_render_does_not_read_record_pages() {
     TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch("/faucet/stats", Esp32BaseWeb::METHOD_GET));
 
     TEST_ASSERT_EQUAL(200, Esp32BaseWeb::nativeTestResponse().code);
-    TEST_ASSERT_NOT_EQUAL(std::string::npos, Esp32BaseWeb::nativeTestResponse().body.find("统计报表"));
-    TEST_ASSERT_EQUAL(std::string::npos, Esp32BaseWeb::nativeTestResponse().body.find("加载统计报表"));
-    TEST_ASSERT_EQUAL_UINT32(0, reader.readPageCalls);
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, Esp32BaseWeb::nativeTestResponse().body.find("最近 30 天出水量"));
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, Esp32BaseWeb::nativeTestResponse().body.find("按预设分布"));
+    TEST_ASSERT_EQUAL(std::string::npos, Esp32BaseWeb::nativeTestResponse().body.find("正在生成统计报表"));
+    TEST_ASSERT_EQUAL(std::string::npos, Esp32BaseWeb::nativeTestResponse().body.find("partial=report"));
+    TEST_ASSERT_GREATER_THAN_UINT32(0, reader.readPageCalls);
 }
 
-void test_calibration_page_initial_render_does_not_read_session_records() {
+void test_calibration_page_initial_render_shows_session_records() {
     WebFixture fixture;
     CalibrationSessionRecord session = makeCalibrationSession(88, testNowSeconds());
     CalibrationAttempt attempt{};
@@ -633,9 +635,10 @@ void test_calibration_page_initial_render_does_not_read_session_records() {
 
     TEST_ASSERT_EQUAL(200, Esp32BaseWeb::nativeTestResponse().code);
     TEST_ASSERT_NOT_EQUAL(std::string::npos, Esp32BaseWeb::nativeTestResponse().body.find("本次校准接水记录"));
-    TEST_ASSERT_EQUAL(std::string::npos, Esp32BaseWeb::nativeTestResponse().body.find("加载接水记录"));
-    TEST_ASSERT_EQUAL_UINT32(0, fixture.calibrationFiles.calibrationSessionReads);
-    TEST_ASSERT_EQUAL_UINT32(0, fixture.calibrationFiles.calibrationSessionTraceReads);
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, Esp32BaseWeb::nativeTestResponse().body.find("1.190 L"));
+    TEST_ASSERT_EQUAL(std::string::npos, Esp32BaseWeb::nativeTestResponse().body.find("正在读取本次接水记录"));
+    TEST_ASSERT_EQUAL(std::string::npos, Esp32BaseWeb::nativeTestResponse().body.find("data-autoload='1'"));
+    TEST_ASSERT_GREATER_THAN_UINT32(0, fixture.calibrationFiles.calibrationSessionReads);
 }
 
 void test_metering_page_initial_render_shows_scheme_list_and_sample_library() {
@@ -653,11 +656,13 @@ void test_metering_page_initial_render_shows_scheme_list_and_sample_library() {
     TEST_ASSERT_EQUAL(200, Esp32BaseWeb::nativeTestResponse().code);
     TEST_ASSERT_NOT_EQUAL(std::string::npos, Esp32BaseWeb::nativeTestResponse().body.find("计量方案列表"));
     TEST_ASSERT_NOT_EQUAL(std::string::npos, Esp32BaseWeb::nativeTestResponse().body.find("长期样本库"));
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, Esp32BaseWeb::nativeTestResponse().body.find("已保存 1 /"));
     TEST_ASSERT_EQUAL(std::string::npos, Esp32BaseWeb::nativeTestResponse().body.find("打开方案列表"));
     TEST_ASSERT_EQUAL(std::string::npos, Esp32BaseWeb::nativeTestResponse().body.find("打开生成面板"));
     TEST_ASSERT_EQUAL(std::string::npos, Esp32BaseWeb::nativeTestResponse().body.find("加载方案列表"));
     TEST_ASSERT_EQUAL(std::string::npos, Esp32BaseWeb::nativeTestResponse().body.find("加载样本库"));
-    TEST_ASSERT_EQUAL_UINT32(0, fixture.calibrationFiles.longTermSampleBulkReads);
+    TEST_ASSERT_EQUAL(std::string::npos, Esp32BaseWeb::nativeTestResponse().body.find("正在读取计量方案列表"));
+    TEST_ASSERT_EQUAL(std::string::npos, Esp32BaseWeb::nativeTestResponse().body.find("正在读取长期样本库"));
     TEST_ASSERT_LESS_OR_EQUAL_UINT32(3, fixture.calibrationFiles.meteringSchemeRecordReads);
 }
 
@@ -680,6 +685,37 @@ void test_metering_page_keeps_only_metering_description_collapsed() {
     }
     TEST_ASSERT_EQUAL_size_t(1, detailsCount);
     TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("查看计量说明"));
+}
+
+void test_running_water_allows_read_only_business_pages() {
+    WebFixture fixture;
+    CountingWaterRecordReader reader;
+    fillCountingRecords(reader);
+    fixture.installContext(reader);
+    setRunning(fixture.app);
+
+    struct PageCase {
+        const char* path;
+        const char* expected;
+    };
+    const PageCase pages[] = {
+        {"/faucet/records", "<h2>记录</h2>"},
+        {"/faucet/stats", "按预设分布"},
+        {"/faucet/calibration", "校准会话"},
+        {"/faucet/metering", "计量方案列表"},
+    };
+    for (const PageCase& page : pages) {
+        registerRoutes();
+        Esp32BaseWeb::nativeTestBeginRequest(Esp32BaseWeb::METHOD_GET, page.path);
+        Esp32BaseWeb::nativeTestSetAuthenticated(true);
+        Esp32BaseWeb::nativeTestSetSameOrigin(true);
+
+        TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch(page.path, Esp32BaseWeb::METHOD_GET));
+
+        TEST_ASSERT_EQUAL(200, Esp32BaseWeb::nativeTestResponse().code);
+        TEST_ASSERT_NOT_EQUAL(std::string::npos, Esp32BaseWeb::nativeTestResponse().body.find(page.expected));
+        TEST_ASSERT_EQUAL(std::string::npos, Esp32BaseWeb::nativeTestResponse().body.find("\"error\":\"busy\""));
+    }
 }
 
 void test_filter_reset_handler_rejects_missing_auth_before_context_work() {
@@ -964,10 +1000,11 @@ int main(int, char**) {
     RUN_TEST(test_stats_page_uses_runtime_period_totals_when_record_file_is_empty);
     RUN_TEST(test_after_format_fs_notification_resets_runtime_statistics);
     RUN_TEST(test_after_format_fs_notification_notifies_app_storage_rebuild);
-    RUN_TEST(test_stats_page_initial_render_does_not_read_record_pages);
-    RUN_TEST(test_calibration_page_initial_render_does_not_read_session_records);
+    RUN_TEST(test_stats_page_initial_render_shows_complete_report);
+    RUN_TEST(test_calibration_page_initial_render_shows_session_records);
     RUN_TEST(test_metering_page_initial_render_shows_scheme_list_and_sample_library);
     RUN_TEST(test_metering_page_keeps_only_metering_description_collapsed);
+    RUN_TEST(test_running_water_allows_read_only_business_pages);
     RUN_TEST(test_filter_reset_handler_rejects_missing_auth_before_context_work);
     RUN_TEST(test_filter_reset_handler_rejects_cross_origin_post);
     RUN_TEST(test_filter_reset_handler_returns_invalid_index_without_runtime_write);

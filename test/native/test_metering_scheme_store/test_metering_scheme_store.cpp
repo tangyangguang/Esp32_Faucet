@@ -2,6 +2,7 @@
 
 #include "app/MeteringSchemeStore.h"
 
+#include <cstdio>
 #include <cstring>
 #include <map>
 #include <string>
@@ -70,6 +71,7 @@ public:
     int failWriteAtCount = 0;
     std::size_t createSizedCalls = 0;
     std::size_t removeCalls = 0;
+    std::size_t recordReadAtCalls = 0;
 
     bool exists(const char* path) override {
         return files.find(path ? path : "") != files.end();
@@ -105,6 +107,10 @@ public:
     bool readAt(const char* path, std::size_t offset, std::uint8_t* out, std::size_t len) override {
         if (!out) {
             return false;
+        }
+        if (path && std::strcmp(path, "/schemes.bin") == 0 && offset >= sizeof(MeteringSchemeStoreHeader) &&
+            len >= sizeof(MeteringSchemeRecord)) {
+            ++recordReadAtCalls;
         }
         const auto it = files.find(path ? path : "");
         if (it == files.end() || offset + len > it->second.size()) {
@@ -212,6 +218,27 @@ void test_create_manual_lists_only_not_deleted_schemes_by_default() {
     MeteringSchemeRecord deleted{};
     TEST_ASSERT_TRUE(store.findById(firstId, deleted));
     TEST_ASSERT_TRUE(deleted.deleted);
+}
+
+void test_list_reads_scheme_records_in_one_bulk_operation() {
+    MemoryFileBackend backend;
+    MeteringSchemeStore store(backend, "/schemes.bin");
+    TEST_ASSERT_TRUE(store.begin());
+    for (std::size_t i = 1; i < kMeteringSchemeStoreSlotCount; ++i) {
+        char name[24]{};
+        std::snprintf(name, sizeof(name), "方案%u", static_cast<unsigned>(i + 1));
+        std::uint32_t id = 0;
+        TEST_ASSERT_TRUE(store.createManual(name, manualParams(360 + static_cast<std::uint32_t>(i)), 1770000000 + i, id));
+    }
+
+    MeteringSchemeRecord records[kMeteringSchemeStoreSlotCount]{};
+    backend.recordReadAtCalls = 0;
+    TEST_ASSERT_EQUAL_size_t(kMeteringSchemeStoreSlotCount,
+                             store.list(records, kMeteringSchemeStoreSlotCount, false));
+
+    TEST_ASSERT_EQUAL_size_t(1, backend.recordReadAtCalls);
+    TEST_ASSERT_EQUAL_UINT32(1, records[0].id);
+    TEST_ASSERT_EQUAL_UINT32(kMeteringSchemeStoreSlotCount, records[kMeteringSchemeStoreSlotCount - 1].id);
 }
 
 void test_set_active_scheme_updates_current_id_only_for_not_deleted_scheme() {
@@ -478,6 +505,7 @@ int main(int argc, char** argv) {
     UNITY_BEGIN();
     RUN_TEST(test_begin_initializes_default_scheme_file);
     RUN_TEST(test_create_manual_lists_only_not_deleted_schemes_by_default);
+    RUN_TEST(test_list_reads_scheme_records_in_one_bulk_operation);
     RUN_TEST(test_set_active_scheme_updates_current_id_only_for_not_deleted_scheme);
     RUN_TEST(test_mark_used_after_record_write_sets_used_once);
     RUN_TEST(test_current_scheme_cannot_be_deleted_but_any_other_scheme_can);

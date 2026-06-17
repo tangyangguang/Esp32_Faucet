@@ -177,8 +177,35 @@ std::size_t MeteringSchemeStore::list(MeteringSchemeRecord* output,
     if (!ready() || !output || outputCapacity == 0) {
         return 0;
     }
+    const std::size_t slotCount = static_cast<std::size_t>(header_.slotCount);
+    MeteringSchemeRecord* records = outputCapacity >= slotCount
+                                        ? output
+                                        : new (std::nothrow) MeteringSchemeRecord[slotCount]{};
+    if (records &&
+        backend_.readAt(path_,
+                        recordOffset(0),
+                        reinterpret_cast<std::uint8_t*>(records),
+                        slotCount * sizeof(MeteringSchemeRecord))) {
+        std::size_t copied = 0;
+        for (std::size_t slot = 0; slot < slotCount && copied < outputCapacity; ++slot) {
+            const MeteringSchemeRecord& record = records[slot];
+            if (record.recordUsed && (includeDeleted || !record.deleted)) {
+                if (&output[copied] != &record) {
+                    output[copied] = record;
+                }
+                ++copied;
+            }
+        }
+        if (records != output) {
+            delete[] records;
+        }
+        return copied;
+    }
+    if (records && records != output) {
+        delete[] records;
+    }
     std::size_t copied = 0;
-    for (std::size_t slot = 0; slot < header_.slotCount && copied < outputCapacity; ++slot) {
+    for (std::size_t slot = 0; slot < slotCount && copied < outputCapacity; ++slot) {
         MeteringSchemeRecord record{};
         if (!readRecord(slot, record)) {
             return copied;

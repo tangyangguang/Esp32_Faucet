@@ -4,7 +4,7 @@
 
 namespace faucet {
 
-constexpr std::uint32_t kButtonDebounceMs = 30;
+constexpr std::uint32_t kButtonDebounceMs = 10;
 constexpr std::uint32_t kButtonLongPressMs = 1000;
 enum class ButtonId : std::uint8_t {
     Cancel = 0,

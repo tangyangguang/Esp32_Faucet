@@ -39,6 +39,7 @@ enum class LocalUiMode : std::uint8_t {
     Normal = 0,
     Result = 1,
     Calibration = 2,
+    RecordCalibration = 3,
 };
 
 struct AppSnapshot {
@@ -178,6 +179,9 @@ private:
                              bool timeSynced,
                              std::uint32_t bootId);
     void exitResultDisplay(std::uint32_t nowMs);
+    void updateResultOkHold(const AppTickInput& input);
+    void enterLocalRecordCalibration();
+    void handleLocalRecordCalibrationEvent(ButtonEvent event, std::uint32_t nowSeconds);
     CalibrationApplyResult applyCalibrationFromRecordInternal(const WaterRecord& record,
                                                               std::uint32_t actualMl,
                                                               bool allowLocalCalibration,
@@ -247,8 +251,16 @@ private:
     BeepPattern pendingBeep_;
     std::uint32_t flowDroppedPulses_;
     std::uint32_t resultDisplayStartMs_;
+    std::uint32_t resultOkHoldStartMs_;
+    bool resultOkHoldActive_;
+    bool resultOkCalibrationEntered_;
     std::uint32_t adjustmentStepMl_;
     std::uint32_t timeAdjustmentStepSec_;
+    std::uint32_t localCalibrationActualMl_;
+    std::uint32_t localCalibrationStepMl_;
+    bool localCalibrationIgnoreOkUntilRelease_;
+    bool localCalibrationOkReleaseSeen_;
+    std::uint32_t localCalibrationOkReleaseStartMs_;
     bool lastResultRecordValid_;
     WaterRecord lastResultRecord_;
 };

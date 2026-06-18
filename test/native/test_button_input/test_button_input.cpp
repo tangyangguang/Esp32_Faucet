@@ -17,11 +17,19 @@ void test_cancel_down_emits_after_debounce_without_waiting_for_release() {
     ButtonInput input;
     updateAt(input, true, false, false, false, 10);
     TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(ButtonEventType::None),
-                            static_cast<unsigned>(updateAt(input, true, false, false, false, 20).type));
+                            static_cast<unsigned>(
+                                updateAt(input, true, false, false, false, 10 + kButtonDebounceMs - 1).type));
 
-    const ButtonEvent event = updateAt(input, true, false, false, false, 40);
+    const ButtonEvent event = updateAt(input, true, false, false, false, 10 + kButtonDebounceMs);
     TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(ButtonEventType::CancelDown), static_cast<unsigned>(event.type));
     TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(ButtonId::Cancel), static_cast<unsigned>(event.button));
+}
+
+void test_button_down_debounces_after_10ms() {
+    ButtonInput input;
+    updateAt(input, true, false, false, false, 100);
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(ButtonEventType::CancelDown),
+                            static_cast<unsigned>(updateAt(input, true, false, false, false, 110).type));
 }
 
 void test_cancel_short_emits_on_release() {
@@ -56,6 +64,24 @@ void test_ok_plus_and_minus_events() {
     updateAt(input, false, false, false, false, 3200);
     TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(ButtonEventType::MinusShort),
                             static_cast<unsigned>(updateAt(input, false, false, false, false, 3230).type));
+}
+
+void test_rapid_ok_presses_each_emit_short_event() {
+    ButtonInput input;
+
+    updateAt(input, false, true, false, false, 100);
+    updateAt(input, false, true, false, false, 100 + kButtonDebounceMs);
+    updateAt(input, false, false, false, false, 120);
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(ButtonEventType::OkShort),
+                            static_cast<unsigned>(
+                                updateAt(input, false, false, false, false, 120 + kButtonDebounceMs).type));
+
+    updateAt(input, false, true, false, false, 140);
+    updateAt(input, false, true, false, false, 140 + kButtonDebounceMs);
+    updateAt(input, false, false, false, false, 160);
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(ButtonEventType::OkShort),
+                            static_cast<unsigned>(
+                                updateAt(input, false, false, false, false, 160 + kButtonDebounceMs).type));
 }
 
 void test_ok_long_emits_when_threshold_is_reached_before_release() {
@@ -102,8 +128,10 @@ int main(int argc, char** argv) {
 
     UNITY_BEGIN();
     RUN_TEST(test_cancel_down_emits_after_debounce_without_waiting_for_release);
+    RUN_TEST(test_button_down_debounces_after_10ms);
     RUN_TEST(test_cancel_short_emits_on_release);
     RUN_TEST(test_ok_plus_and_minus_events);
+    RUN_TEST(test_rapid_ok_presses_each_emit_short_event);
     RUN_TEST(test_ok_long_emits_when_threshold_is_reached_before_release);
     RUN_TEST(test_bounce_shorter_than_debounce_is_ignored);
     RUN_TEST(test_debounce_survives_millis_wrap);

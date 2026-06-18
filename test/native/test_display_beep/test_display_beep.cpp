@@ -151,7 +151,30 @@ void test_display_result_page_shows_summary() {
 
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(DisplayPage::Result), static_cast<std::uint8_t>(frame.page));
     TEST_ASSERT_EQUAL_STRING("Done 7.50L  450P", frame.line1);
+    TEST_ASSERT_EQUAL_STRING("Hold OK Cal", frame.line2);
+    assertPulseLabelFixedRight(frame);
+    assertDisplayLinesFit(frame);
+
+    snapshot.calibrationReady = false;
+    frame = presenter.render(snapshot, 600);
     TEST_ASSERT_EQUAL_STRING("OK Back 02:43", frame.line2);
+    assertDisplayLinesFit(frame);
+}
+
+void test_display_record_calibration_page_shows_actual_and_step() {
+    DisplayPresenter presenter(30);
+    presenter.wake(0);
+    AppSnapshot snapshot = makeSnapshot(WaterState::Idle, 1500, 1500);
+    snapshot.localMode = LocalUiMode::RecordCalibration;
+    snapshot.calibrationActualMl = 1500;
+    snapshot.calibrationStepMl = 100;
+    snapshot.pulsePerLiter = 450;
+
+    DisplayFrame frame = presenter.render(snapshot, 500);
+
+    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(DisplayPage::Calibration), static_cast<std::uint8_t>(frame.page));
+    TEST_ASSERT_EQUAL_STRING("A1.50L      450P", frame.line1);
+    TEST_ASSERT_EQUAL_STRING("S0.10L +/- OK", frame.line2);
     assertPulseLabelFixedRight(frame);
     assertDisplayLinesFit(frame);
 }
@@ -365,6 +388,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_display_time_preset_shows_remaining_seconds_and_error_reason);
     RUN_TEST(test_display_confirm_and_pause_pages_are_short);
     RUN_TEST(test_display_result_page_shows_summary);
+    RUN_TEST(test_display_record_calibration_page_shows_actual_and_step);
     RUN_TEST(test_display_local_calibration_page_shows_session_state);
     RUN_TEST(test_display_omits_pulse_label_when_unavailable);
     RUN_TEST(test_idle_prefers_preset_page_before_sensor_rotation);

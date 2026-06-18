@@ -179,6 +179,20 @@ DisplayFrame DisplayPresenter::render(const AppSnapshot& snapshot, std::uint32_t
     }
     lastWaterState_ = snapshot.water.state;
 
+    if (snapshot.localMode == LocalUiMode::RecordCalibration) {
+        char line1[kDisplayLineLength]{};
+        char line2[kDisplayLineLength]{};
+        char actual[8]{};
+        char step[8]{};
+        formatLiters(actual, sizeof(actual), snapshot.calibrationActualMl);
+        formatLiters(step, sizeof(step), snapshot.calibrationStepMl);
+        char left[kDisplayLineLength]{};
+        std::snprintf(left, sizeof(left), "A%s", actual);
+        composeTopLine(line1, left, snapshot.pulsePerLiter);
+        std::snprintf(line2, sizeof(line2), "S%s +/- OK", step);
+        return makeFrame(DisplayPage::Calibration, true, line1, line2);
+    }
+
     if (snapshot.localMode == LocalUiMode::Result) {
         char line1[kDisplayLineLength]{};
         char line2[kDisplayLineLength]{};
@@ -187,9 +201,13 @@ DisplayFrame DisplayPresenter::render(const AppSnapshot& snapshot, std::uint32_t
         char left[kDisplayLineLength]{};
         std::snprintf(left, sizeof(left), "%s %s", stateText(snapshot.water.lastResult), volume);
         composeTopLine(line1, left, snapshot.pulsePerLiter);
-        char elapsed[8]{};
-        formatElapsed(elapsed, sizeof(elapsed), snapshot.water.elapsedSec);
-        std::snprintf(line2, sizeof(line2), "OK Back %s", elapsed);
+        if (snapshot.calibrationReady) {
+            std::snprintf(line2, sizeof(line2), "Hold OK Cal");
+        } else {
+            char elapsed[8]{};
+            formatElapsed(elapsed, sizeof(elapsed), snapshot.water.elapsedSec);
+            std::snprintf(line2, sizeof(line2), "OK Back %s", elapsed);
+        }
         return makeFrame(DisplayPage::Result, true, line1, line2);
     }
 

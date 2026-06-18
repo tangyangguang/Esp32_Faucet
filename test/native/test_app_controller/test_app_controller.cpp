@@ -573,6 +573,31 @@ void test_app_controller_starts_after_double_ok_and_opens_valve() {
     TEST_ASSERT_EQUAL_UINT8(100, app.snapshot().valve.dutyPercent);
 }
 
+void test_app_controller_cancel_raw_dominates_pending_ok_release() {
+    SystemConfig config = makeDefaultConfig();
+    StatisticsStore statistics;
+    statistics.reset({20260506, 202619, 202605});
+    FilterStore filters(config.filters);
+    MemoryRecordWriter records;
+    AppController app(config, statistics, filters, records);
+    applyTestMeteringScheme(app);
+
+    app.resetInputs({false, false, false, false}, 0);
+    pressAndReleaseOk(app, 100);
+    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(WaterState::Confirm),
+                            static_cast<std::uint8_t>(app.snapshot().water.state));
+
+    app.tick(input({false, true, false, false}, 300, 300000, 1714502400));
+    app.tick(input({false, true, false, false}, 300 + kButtonDebounceMs, 330000, 1714502400));
+    app.tick(input({false, false, false, false}, 360, 360000, 1714502400));
+    app.tick(input({true, false, false, false}, 380, 380000, 1714502400));
+    app.tick(input({true, false, false, false}, 390, 390000, 1714502400));
+
+    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(WaterState::Idle),
+                            static_cast<std::uint8_t>(app.snapshot().water.state));
+    TEST_ASSERT_FALSE(app.snapshot().valve.enabled);
+}
+
 void test_app_controller_confirm_and_running_start_volume_stays_zero_until_first_pulse() {
     SystemConfig config = makeDefaultConfig();
     StatisticsStore statistics;
@@ -1622,6 +1647,62 @@ void test_app_controller_result_display_exits_after_configured_timeout() {
                             static_cast<std::uint8_t>(app.snapshot().localMode));
 }
 
+void test_app_controller_result_ok_hold_enters_local_record_calibration_after_5s() {
+    SystemConfig config = makeDefaultConfig();
+    StatisticsStore statistics;
+    statistics.reset({20260506, 202619, 202605});
+    FilterStore filters(config.filters);
+    MemoryRecordWriter records;
+    MemoryCalibrationWriter calibrations;
+    AppController app(config, statistics, filters, records, nullptr, &calibrations);
+    applyTestMeteringScheme(app);
+
+    finishVolumeRun(app);
+    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(LocalUiMode::Result),
+                            static_cast<std::uint8_t>(app.snapshot().localMode));
+    TEST_ASSERT_TRUE(app.snapshot().calibrationReady);
+
+    app.tick(input({false, true, false, false}, 6000, 6000000, 1714502401));
+    app.tick(input({false, true, false, false}, 6000 + kButtonDebounceMs + kButtonLongPressMs,
+                   (6000 + kButtonDebounceMs + kButtonLongPressMs) * 1000UL,
+                   1714502402));
+    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(LocalUiMode::Result),
+                            static_cast<std::uint8_t>(app.snapshot().localMode));
+
+    app.tick(input({false, true, false, false}, 11000, 11000000, 1714502406));
+    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(LocalUiMode::RecordCalibration),
+                            static_cast<std::uint8_t>(app.snapshot().localMode));
+    TEST_ASSERT_EQUAL_UINT32(1500, app.snapshot().calibrationActualMl);
+    TEST_ASSERT_EQUAL_UINT32(100, app.snapshot().calibrationStepMl);
+}
+
+void test_app_controller_local_record_calibration_adjusts_and_saves_actual() {
+    SystemConfig config = makeDefaultConfig();
+    StatisticsStore statistics;
+    statistics.reset({20260506, 202619, 202605});
+    FilterStore filters(config.filters);
+    MemoryRecordWriter records;
+    MemoryCalibrationWriter calibrations;
+    AppController app(config, statistics, filters, records, nullptr, &calibrations);
+    applyTestMeteringScheme(app);
+
+    finishVolumeRun(app);
+    app.tick(input({false, true, false, false}, 6000, 6000000, 1714502401));
+    app.tick(input({false, true, false, false}, 11000, 11000000, 1714502406));
+
+    pressAndReleasePlus(app, 11200);
+    TEST_ASSERT_EQUAL_UINT32(1600, app.snapshot().calibrationActualMl);
+    pressAndReleaseMinus(app, 11400);
+    TEST_ASSERT_EQUAL_UINT32(1500, app.snapshot().calibrationActualMl);
+    pressAndReleasePlus(app, 11600);
+    pressAndReleaseOk(app, 11800);
+
+    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(LocalUiMode::Result),
+                            static_cast<std::uint8_t>(app.snapshot().localMode));
+    TEST_ASSERT_EQUAL_size_t(1, calibrations.calibrations.size());
+    TEST_ASSERT_EQUAL_UINT32(1600, calibrations.calibrations[0].actualMl);
+}
+
 void test_app_controller_snapshot_reports_current_flow_rate() {
     SystemConfig config = makeDefaultConfig();
     StatisticsStore statistics;
@@ -1694,6 +1775,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_app_controller_record_write_failure_does_not_mark_scheme_used);
     RUN_TEST(test_app_controller_record_write_success_locks_active_scheme_even_if_used_mark_persist_fails);
     RUN_TEST(test_app_controller_starts_after_double_ok_and_opens_valve);
+    RUN_TEST(test_app_controller_cancel_raw_dominates_pending_ok_release);
     RUN_TEST(test_app_controller_confirm_and_running_start_volume_stays_zero_until_first_pulse);
     RUN_TEST(test_app_controller_completion_writes_record_statistics_and_filters);
     RUN_TEST(test_app_controller_pushes_closed_valve_output_before_record_persistence);
@@ -1725,6 +1807,8 @@ int main(int argc, char** argv) {
     RUN_TEST(test_app_controller_pause_timeout_trace_is_not_marked_error_and_can_calibrate);
     RUN_TEST(test_app_controller_applies_calibration_from_pause_timeout_record);
     RUN_TEST(test_app_controller_result_display_exits_after_configured_timeout);
+    RUN_TEST(test_app_controller_result_ok_hold_enters_local_record_calibration_after_5s);
+    RUN_TEST(test_app_controller_local_record_calibration_adjusts_and_saves_actual);
     RUN_TEST(test_app_controller_snapshot_reports_current_flow_rate);
     RUN_TEST(test_app_controller_uses_window_flow_for_high_flow_safety);
     return UNITY_END();

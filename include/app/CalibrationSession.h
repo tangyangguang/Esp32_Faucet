@@ -8,8 +8,8 @@ namespace faucet {
 
 constexpr std::uint8_t kCalibrationMinQuickSamples = 2;
 constexpr std::uint8_t kCalibrationRecommendedSamples = 3;
-constexpr std::uint8_t kCalibrationMaxValidSamples = 3;
-constexpr std::uint8_t kCalibrationMaxAttempts = 6;
+constexpr std::uint8_t kCalibrationMaxValidSamples = 10;
+constexpr std::uint8_t kCalibrationMaxAttempts = 16;
 constexpr std::uint32_t kCalibrationIdleTimeoutSec = 30 * 60;
 constexpr std::uint32_t kCalibrationMinActualMl = 100;
 constexpr std::uint32_t kCalibrationMinVolumeSpanMl = 500;
@@ -32,6 +32,7 @@ enum class CalibrationAttemptStatus : std::uint8_t {
     Empty,
     PendingActual,
     Valid,
+    Removed,
     Skipped,
     Invalid,
 };

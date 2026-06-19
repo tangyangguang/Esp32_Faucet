@@ -10,6 +10,7 @@ CalibrationAttempt validAttempt(std::uint8_t index, std::uint32_t actualMl) {
     CalibrationAttempt attempt{};
     attempt.attemptIndex = index;
     attempt.actualMl = actualMl;
+    attempt.record.pulseCount = 1;
     attempt.status = CalibrationAttemptStatus::Valid;
     return attempt;
 }
@@ -54,20 +55,30 @@ void test_three_valid_samples_are_recommended() {
                             static_cast<unsigned>(calibrationCoverageQuality(session)));
 }
 
-void test_three_valid_samples_stop_new_runs() {
+void test_max_valid_samples_stop_new_runs() {
     CalibrationSessionRecord session = makeCalibrationSession(1, 1770000000);
 
     for (std::uint8_t i = 0; i < kCalibrationMaxValidSamples; ++i) {
         TEST_ASSERT_TRUE(appendCalibrationAttempt(session, validAttempt(i, 500 + static_cast<std::uint32_t>(i) * 500)));
     }
 
-    TEST_ASSERT_EQUAL_UINT8(3, kCalibrationMaxValidSamples);
-    TEST_ASSERT_EQUAL_UINT8(3, countValidCalibrationSamples(session));
+    TEST_ASSERT_EQUAL_UINT8(10, kCalibrationMaxValidSamples);
+    TEST_ASSERT_EQUAL_UINT8(10, countValidCalibrationSamples(session));
     TEST_ASSERT_FALSE(calibrationCanStartAttempt(session));
-    TEST_ASSERT_FALSE(appendCalibrationAttempt(session, validAttempt(3, 3500)));
+    TEST_ASSERT_FALSE(appendCalibrationAttempt(session, validAttempt(10, 3500)));
 }
 
-void test_six_attempts_stop_session_when_not_ready() {
+void test_session_allows_ten_valid_samples() {
+    CalibrationSessionRecord session = makeCalibrationSession(1, 1770000000);
+    for (std::uint8_t i = 0; i < 10; ++i) {
+        TEST_ASSERT_TRUE(appendCalibrationAttempt(session, validAttempt(i, 500 + static_cast<std::uint32_t>(i) * 250)));
+    }
+    TEST_ASSERT_EQUAL_UINT8(10, kCalibrationMaxValidSamples);
+    TEST_ASSERT_EQUAL_UINT8(10, countValidCalibrationSamples(session));
+    TEST_ASSERT_FALSE(calibrationCanStartAttempt(session));
+}
+
+void test_max_attempts_stop_session_when_not_ready() {
     CalibrationSessionRecord session = makeCalibrationSession(1, 1770000000);
 
     for (std::uint8_t i = 0; i < kCalibrationMaxAttempts; ++i) {
@@ -78,8 +89,8 @@ void test_six_attempts_stop_session_when_not_ready() {
         TEST_ASSERT_TRUE(appendCalibrationAttempt(session, attempt));
     }
 
-    TEST_ASSERT_EQUAL_UINT8(6, kCalibrationMaxAttempts);
-    TEST_ASSERT_EQUAL_UINT8(6, countCalibrationAttempts(session));
+    TEST_ASSERT_EQUAL_UINT8(16, kCalibrationMaxAttempts);
+    TEST_ASSERT_EQUAL_UINT8(16, countCalibrationAttempts(session));
     TEST_ASSERT_FALSE(calibrationCanStartAttempt(session));
     CalibrationAttempt extra{};
     extra.status = CalibrationAttemptStatus::Skipped;
@@ -96,6 +107,15 @@ void test_skipped_attempt_does_not_count_as_valid() {
     TEST_ASSERT_TRUE(appendCalibrationAttempt(session, skipped));
 
     TEST_ASSERT_EQUAL_UINT8(1, countCalibrationAttempts(session));
+    TEST_ASSERT_EQUAL_UINT8(0, countValidCalibrationSamples(session));
+    TEST_ASSERT_FALSE(calibrationCanQuickGenerate(session));
+}
+
+void test_removed_sample_does_not_count_as_valid() {
+    CalibrationSessionRecord session = makeCalibrationSession(1, 1770000000);
+    CalibrationAttempt attempt = validAttempt(0, 800);
+    attempt.status = CalibrationAttemptStatus::Removed;
+    TEST_ASSERT_TRUE(appendCalibrationAttempt(session, attempt));
     TEST_ASSERT_EQUAL_UINT8(0, countValidCalibrationSamples(session));
     TEST_ASSERT_FALSE(calibrationCanQuickGenerate(session));
 }
@@ -150,9 +170,11 @@ int main(int argc, char** argv) {
     RUN_TEST(test_new_session_starts_preparing);
     RUN_TEST(test_two_valid_samples_allow_quick_generation);
     RUN_TEST(test_three_valid_samples_are_recommended);
-    RUN_TEST(test_three_valid_samples_stop_new_runs);
-    RUN_TEST(test_six_attempts_stop_session_when_not_ready);
+    RUN_TEST(test_max_valid_samples_stop_new_runs);
+    RUN_TEST(test_session_allows_ten_valid_samples);
+    RUN_TEST(test_max_attempts_stop_session_when_not_ready);
     RUN_TEST(test_skipped_attempt_does_not_count_as_valid);
+    RUN_TEST(test_removed_sample_does_not_count_as_valid);
     RUN_TEST(test_paused_resume_attempt_is_invalid_for_generation);
     RUN_TEST(test_attempt_keeps_full_water_record_identity);
     return UNITY_END();

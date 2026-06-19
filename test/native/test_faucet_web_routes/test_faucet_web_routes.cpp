@@ -419,7 +419,7 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "样本覆盖"));
     TEST_ASSERT_NULL(std::strstr(buffer, "生成计量参数"));
     TEST_ASSERT_NULL(std::strstr(buffer, "<h3>计量方案生成</h3>"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "生成参数"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "辅助计算"));
     TEST_ASSERT_NULL(std::strstr(buffer, "<h3>参数生成</h3>"));
     TEST_ASSERT_NULL(std::strstr(buffer, "生成候选参数"));
     TEST_ASSERT_NULL(std::strstr(buffer, "明细存储"));
@@ -764,7 +764,7 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NULL(std::strstr(buffer, "handleSaveLatestTraceApi"));
     TEST_ASSERT_NULL(std::strstr(buffer, "明细文件"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "name='action' value='generate_segmented'"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "name='action' value='save_generated_scheme'"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "name='action' value='save_generated_scheme'"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "name='action' value='discard_generated_scheme'"));
     TEST_ASSERT_NULL(std::strstr(buffer, "name='action' value='save_candidate_scheme'"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "name='action' value='create_metering_scheme'"));
@@ -776,9 +776,10 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NULL(std::strstr(buffer, "value='保存槽位'"));
     TEST_ASSERT_NULL(std::strstr(buffer, "name='action' value='apply_segmented'"));
     TEST_ASSERT_NULL(std::strstr(buffer, "name='action' value='restore_segmented'"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "保存为新方案"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "放弃生成结果"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "生成结果"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "保存为新方案"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "放弃计算结果"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "计算结果"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "带入手工输入"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "class='form-actions generated-result-actions'"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, ".generated-result-actions{align-items:flex-end}"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "sample-coverage-compact"));
@@ -811,7 +812,7 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "calibration-generation-settings"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "generated-residual-table"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "误差偏大"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "重新生成"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "重新辅助计算"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "使用这组参数"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "createdScheme"));
     TEST_ASSERT_NULL(std::strstr(buffer, "faucetEstimateGeneratedScheme"));
@@ -864,7 +865,7 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "action='/faucet/calibration'"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "action='/faucet/calibration/flow'"));
     TEST_ASSERT_NULL(std::strstr(buffer, "<span class='status-pill status-muted'>手动执行</span>"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "手动生成只扫描满足有效样本条件的数据"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "辅助计算只扫描满足有效条件的数据"));
     TEST_ASSERT_NULL(std::strstr(buffer, "<section class='panel calibration-help-panel'>"));
     TEST_ASSERT_NULL(std::strstr(buffer, "<h3>计量说明</h3>"));
     TEST_ASSERT_NULL(std::strstr(buffer, "查看计量说明"));
@@ -1356,7 +1357,7 @@ void test_calibration_page_reports_specific_errors_and_hides_stale_generated_res
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "fetch('/faucet/calibration',{method:'POST',body:new FormData(f),cache:'no-store',credentials:'same-origin'}"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "faucetSubmitGenerationAction"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "校准已保存，但页面刷新失败，请手动刷新查看最新状态。"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "生成操作已完成，但页面刷新失败，请手动刷新查看最新状态。"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "辅助计算已完成，但页面刷新失败，请手动刷新查看最新状态。"));
     TEST_ASSERT_NULL(std::strstr(buffer, "alert('保存失败，请稍后重试。')"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "样本质量提醒"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "容量跨度不足"));
@@ -1374,7 +1375,7 @@ void test_calibration_page_reports_specific_errors_and_hides_stale_generated_res
     TEST_ASSERT_TRUE(requested < candidateReady);
     TEST_ASSERT_TRUE(candidateReady < nextFunction);
     TEST_ASSERT_NOT_NULL(std::strstr(panel, "generated-summary-grid"));
-    TEST_ASSERT_NOT_NULL(std::strstr(panel, "保存为新方案前不会改变当前出水估算"));
+    TEST_ASSERT_NOT_NULL(std::strstr(panel, "带入手工输入前不会改变当前计量参数"));
 }
 
 void test_pulse_trace_and_calibration_pages_keep_saved_and_ram_sources_consistent() {
@@ -1545,7 +1546,7 @@ void test_metering_samples_and_generation_are_combined() {
     const char* nextFunction = std::strstr(panel, "void sendCalibrationPageScript");
     TEST_ASSERT_NOT_NULL(nextFunction);
 
-    TEST_ASSERT_NOT_NULL(std::strstr(panel, "<h3>长期样本库与参数生成</h3>"));
+    TEST_ASSERT_NOT_NULL(std::strstr(panel, "<h3>高级样本库</h3>"));
     TEST_ASSERT_NOT_NULL(std::strstr(panel, "name='action' value='generate_segmented'"));
     TEST_ASSERT_NOT_NULL(std::strstr(panel, "sendLongTermSampleLibraryTable()"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "<th>时间</th><th>实测容量</th><th>总脉冲</th><th>数据点</th><th>样本状态</th>"));

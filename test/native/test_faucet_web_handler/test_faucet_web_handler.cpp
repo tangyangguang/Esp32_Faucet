@@ -838,6 +838,28 @@ void test_flow_calibration_manual_input_prefills_copied_parameters() {
     TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("value='2100'", stableFlowField));
 }
 
+void test_advanced_sample_library_does_not_present_primary_apply_flow() {
+    WebFixture fixture;
+    saveLongTermWebSample(fixture.sampleStore, 1200, 45, 360, 12);
+    saveLongTermWebSample(fixture.sampleStore, 3600, 45, 1080, 36);
+    registerRoutes();
+    Esp32BaseWeb::nativeTestBeginRequest(Esp32BaseWeb::METHOD_GET, "/faucet/calibration/flow");
+    Esp32BaseWeb::nativeTestSetAuthenticated(true);
+    Esp32BaseWeb::nativeTestSetSameOrigin(true);
+    Esp32BaseWeb::nativeTestSetParam("advanced", "samples");
+    Esp32BaseWeb::nativeTestSetParam("generated", "1");
+
+    TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch("/faucet/calibration/flow", Esp32BaseWeb::METHOD_GET));
+
+    TEST_ASSERT_EQUAL(200, Esp32BaseWeb::nativeTestResponse().code);
+    const std::string& body = Esp32BaseWeb::nativeTestResponse().body;
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("高级样本库"));
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("辅助计算"));
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("带入手工输入"));
+    TEST_ASSERT_EQUAL(std::string::npos, body.find("保存为新方案"));
+    TEST_ASSERT_EQUAL(std::string::npos, body.find("应用到当前参数"));
+}
+
 void test_flow_calibration_notice_uses_history_sample_language() {
     WebFixture fixture;
     registerRoutes();
@@ -1377,6 +1399,7 @@ int main(int, char**) {
     RUN_TEST(test_flow_calibration_center_initial_render_shows_current_parameter_workflow);
     RUN_TEST(test_flow_calibration_history_uses_parameter_language);
     RUN_TEST(test_flow_calibration_manual_input_prefills_copied_parameters);
+    RUN_TEST(test_advanced_sample_library_does_not_present_primary_apply_flow);
     RUN_TEST(test_flow_calibration_notice_uses_history_sample_language);
     RUN_TEST(test_flow_calibration_error_uses_history_sample_language);
     RUN_TEST(test_flow_calibration_center_uses_no_collapsed_sections);

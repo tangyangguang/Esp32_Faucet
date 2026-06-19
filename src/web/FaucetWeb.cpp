@@ -2474,12 +2474,12 @@ void sendGeneratedSampleResiduals(const MeteringSchemeCandidate& candidate,
 
 void sendCalibrationGenerationSummaryPanel() {
     const SegmentedCalibrationOptions options = calibrationOptionsForWeb();
-    Esp32BaseWeb::sendChunk("<section id='scheme-generation' class='panel'><div class='panel-head'><div><h3>长期样本库与参数生成</h3>"
-                            "<p class='hint'>长期样本默认显示；点击生成参数时才分析原始脉冲并生成计量方案。</p></div>"
+    Esp32BaseWeb::sendChunk("<section id='scheme-generation' class='panel'><div class='panel-head'><div><h3>高级样本库</h3>"
+                            "<p class='hint'>这里用于查看历史样本明细和做辅助计算；计算结果不会自动改变当前计量参数。</p></div>"
                             "<form method='post' action='/faucet/calibration/flow' onsubmit='return faucetSubmitGenerationAction(this)'>"
                             "<input type='hidden' name='action' value='generate_segmented'>"
                             "<input type='hidden' name='ajax' value='1'>"
-                            "<input class='primary' type='submit' value='生成参数'></form></div>"
+                            "<input class='primary' type='submit' value='辅助计算'></form></div>"
                             "<div class='calibration-generation-settings'>");
     sendFmt("<span>分析脉冲间隔 <b>%s</b></span>",
             options.pulseMinIntervalUsOverride == 0 ? "记录值" : "覆盖值");
@@ -2547,12 +2547,12 @@ void sendCalibrationGenerationPanel() {
             std::snprintf(sampleNeed, sizeof(sampleNeed), "%s", segmentedRejectReasonText(diagnostics.result.rejectReason));
         }
     }
-    Esp32BaseWeb::sendChunk("<section id='scheme-generation' class='panel'><div class='panel-head'><div><h3>长期样本库与参数生成</h3>"
-                            "<p class='hint'>这里展示长期样本库、样本覆盖统计和参数生成结果。手动生成只扫描满足有效样本条件的数据；保存为新方案前不会改变当前出水估算。</p></div>"
+    Esp32BaseWeb::sendChunk("<section id='scheme-generation' class='panel'><div class='panel-head'><div><h3>高级样本库</h3>"
+                            "<p class='hint'>这里展示历史样本、样本覆盖统计和辅助计算结果。辅助计算只扫描满足有效条件的数据；带入手工输入前不会改变当前计量参数。</p></div>"
                             "<form method='post' action='/faucet/calibration/flow' onsubmit='return faucetSubmitGenerationAction(this)'>"
                             "<input type='hidden' name='action' value='generate_segmented'>"
                             "<input type='hidden' name='ajax' value='1'>");
-    sendFmt("<input class='primary' type='submit' value='%s'></form></div>", candidateReady ? "重新生成参数" : "生成参数");
+    sendFmt("<input class='primary' type='submit' value='%s'></form></div>", candidateReady ? "重新辅助计算" : "辅助计算");
     Esp32BaseWeb::sendChunk("<div class='calibration-generation-settings'>");
     sendFmt("<span>分析脉冲间隔 <b>%s</b></span>",
             options.pulseMinIntervalUsOverride == 0 ? "记录值" : "覆盖值");
@@ -2586,7 +2586,7 @@ void sendCalibrationGenerationPanel() {
     Esp32BaseWeb::sendChunk("</div></section>");
     sendLongTermSampleLibraryTable();
     if (!canGenerate && diagnostics.validSampleCount >= kSegmentedCalibrationRequiredSamples) {
-        sendFmt("<p class='warn'>生成结果未保存：%s。请重校准异常样本、扩大容量覆盖，或谨慎调整计量生成高级参数后重新生成。</p>",
+        sendFmt("<p class='warn'>计算结果不可用：%s。请重校准异常样本、扩大容量覆盖，或谨慎调整辅助计算参数后重新计算。</p>",
                 segmentedRejectReasonText(diagnostics.result.rejectReason));
     }
     if (canGenerate && hasQualityWarnings) {
@@ -2604,7 +2604,7 @@ void sendCalibrationGenerationPanel() {
             Esp32BaseWeb::sendChunk(firstWarning ? "拟合误差偏大" : "；拟合误差偏大");
             firstWarning = false;
         }
-        Esp32BaseWeb::sendChunk("。已生成参数，但保存或启用前建议复核样本。</p>");
+        Esp32BaseWeb::sendChunk("。已完成辅助计算，带入手工输入前建议复核样本。</p>");
     }
     if (candidateReady) {
         char generatedStartupVolume[24]{};
@@ -2629,8 +2629,8 @@ void sendCalibrationGenerationPanel() {
                 static_cast<unsigned long>(candidate.params.stablePulsePerLiter),
                 static_cast<unsigned long>(candidate.params.startupDurationMs),
                 static_cast<unsigned long>(candidate.params.stableFlowMlPerMin));
-        Esp32BaseWeb::sendChunk("<div class='panel-head'><h3>生成结果</h3>"
-                                "<span class='status-pill status-warn'>已生成，待保存</span></div>"
+        Esp32BaseWeb::sendChunk("<div class='panel-head'><h3>计算结果</h3>"
+                                "<span class='status-pill status-warn'>已计算，待确认</span></div>"
                                 "<div class='generated-scheme-layout'><div class='generated-result-main'>"
                                 "<div class='generated-summary-grid'>");
         sendFmt("<div class='generated-summary-card'><span>启动段</span><strong>%luP / %s</strong></div>",
@@ -2648,18 +2648,21 @@ void sendCalibrationGenerationPanel() {
                 generatedError,
                 static_cast<unsigned>(candidate.maxErrorTenthPercent / 10U),
                 static_cast<unsigned>(candidate.maxErrorTenthPercent % 10U));
-        Esp32BaseWeb::sendChunk("</div><p class='generated-note'>生成结果为临时预览，保存为新方案后才会写入 Flash；保存前不会改变当前计量。</p>");
+        Esp32BaseWeb::sendChunk("</div><p class='generated-note'>计算结果为临时预览；带入手工输入后可自行保存为历史参数，带入前不会改变当前计量。</p>");
         sendGeneratedSampleResiduals(candidate, options);
-        Esp32BaseWeb::sendChunk("<div class='form-actions generated-result-actions'><form class='inline-form' method='post' action='/faucet/calibration/flow' onsubmit='return once(this)'>"
-                                "<input type='hidden' name='action' value='save_generated_scheme'>"
-                                "<label class='compact-field generated-name-field'><span>新方案名称</span><input name='name' maxlength='31' value='样本生成方案'></label>"
-                                "<input class='primary' type='submit' value='保存为新方案'></form>"
-                                "<form method='post' action='/faucet/calibration/flow' onsubmit='return faucetSubmitGenerationAction(this)'>"
+        Esp32BaseWeb::sendChunk("<div class='form-actions generated-result-actions'>");
+        sendFmt("<a class='btn-link primary' href='/faucet/calibration/flow?manual=1&startupPulseCount=%lu&startupVolumeMl=%lu&stablePulsePerLiter=%lu&startupDurationMs=%lu&stableFlowMlPerMin=%lu'>带入手工输入</a>",
+                static_cast<unsigned long>(candidate.params.startupPulseCount),
+                static_cast<unsigned long>(candidate.params.startupVolumeMl),
+                static_cast<unsigned long>(candidate.params.stablePulsePerLiter),
+                static_cast<unsigned long>(candidate.params.startupDurationMs),
+                static_cast<unsigned long>(candidate.params.stableFlowMlPerMin));
+        Esp32BaseWeb::sendChunk("<form method='post' action='/faucet/calibration/flow' onsubmit='return faucetSubmitGenerationAction(this)'>"
                                 "<input type='hidden' name='action' value='discard_generated_scheme'>"
                                 "<input type='hidden' name='ajax' value='1'>"
-                                "<input class='secondary' type='submit' value='放弃生成结果'></form></div></div>"
-                                "<div class='generated-measure-panel'><p class='generated-note'>使用生成结果参数进行容量或时间目标测算，仅用于核对。</p>");
-        sendMeteringTrialButton("生成结果", candidate.params, estimatorDefaultMl, 10);
+                                "<input class='secondary' type='submit' value='放弃计算结果'></form></div></div>"
+                                "<div class='generated-measure-panel'><p class='generated-note'>使用计算结果参数进行容量或时间目标测算，仅用于核对。</p>");
+        sendMeteringTrialButton("计算结果", candidate.params, estimatorDefaultMl, 10);
         Esp32BaseWeb::sendChunk("</div></div></section>");
     }
     Esp32BaseWeb::sendChunk("</section>");
@@ -2836,7 +2839,7 @@ void sendCalibrationPageScript() {
                             "function faucetReplaceCalibrationSection(id,url){return fetch(url,{cache:'no-store',credentials:'same-origin'}).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.text();}).then(function(html){var old=document.getElementById(id);if(!old)return;var box=document.createElement('div');box.innerHTML=html;var next=box.querySelector('#'+id);if(next)old.replaceWith(next);});}"
                             "function faucetRefreshCalibrationSamples(){return faucetReplaceCalibrationSection('calibration-samples','/faucet/calibration?partial=samples');}"
                             "function faucetSubmitSampleCalibration(f){if(typeof once==='function'&&!once(f))return false;fetch('/faucet/calibration',{method:'POST',body:new FormData(f),cache:'no-store',credentials:'same-origin'}).then(function(r){if(!r.ok)return faucetReadCalibrationError(r).then(function(code){throw new Error(code);});return r.json();}).then(function(){return faucetRefreshCalibrationSamples().catch(function(){faucetResetSampleCalibrationForm(f);alert('校准已保存，但页面刷新失败，请手动刷新查看最新状态。');});}).catch(function(e){faucetResetSampleCalibrationForm(f);alert('保存失败：'+faucetCalibrationErrorMessage(e.message));});return false;}"
-                            "function faucetSubmitGenerationAction(f){if(typeof once==='function'&&!once(f))return false;var fd=new FormData(f),action=String(fd.get('action')||'');fetch('/faucet/calibration/flow',{method:'POST',body:fd,cache:'no-store',credentials:'same-origin'}).then(function(r){if(!r.ok)return faucetReadCalibrationError(r).then(function(code){throw new Error(code);});return r.json();}).then(function(){var url='/faucet/calibration/flow?partial=generation'+(action==='generate_segmented'?'&generated=1':'');return faucetReplaceCalibrationSection('scheme-generation',url).catch(function(){alert('生成操作已完成，但页面刷新失败，请手动刷新查看最新状态。');});}).catch(function(e){f.dataset.busy='';var b=f.querySelector('[type=submit]');if(b)b.disabled=false;alert('操作失败：'+faucetCalibrationErrorMessage(e.message));});return false;}"
+                            "function faucetSubmitGenerationAction(f){if(typeof once==='function'&&!once(f))return false;var fd=new FormData(f),action=String(fd.get('action')||'');fetch('/faucet/calibration/flow',{method:'POST',body:fd,cache:'no-store',credentials:'same-origin'}).then(function(r){if(!r.ok)return faucetReadCalibrationError(r).then(function(code){throw new Error(code);});return r.json();}).then(function(){var url='/faucet/calibration/flow?partial=generation&advanced=samples'+(action==='generate_segmented'?'&generated=1':'');return faucetReplaceCalibrationSection('scheme-generation',url).catch(function(){alert('辅助计算已完成，但页面刷新失败，请手动刷新查看最新状态。');});}).catch(function(e){f.dataset.busy='';var b=f.querySelector('[type=submit]');if(b)b.disabled=false;alert('操作失败：'+faucetCalibrationErrorMessage(e.message));});return false;}"
                             "faucetStartCalibrationCountdown();"
                             "</script>");
 }
@@ -3093,8 +3096,8 @@ void sendNoticeFromQuery() {
         Esp32BaseWeb::sendChunk("<p class='ok'>");
         const bool longTermSample = std::strcmp(text, "long_term_sample") == 0;
         Esp32BaseWeb::sendChunk(actualOnly   ? "校准已保存。"
-                                : generated  ? "计量参数生成结果已生成。"
-                                : generatedDiscarded ? "生成结果已放弃。"
+                                : generated  ? "辅助计算已完成。"
+                                : generatedDiscarded ? "计算结果已放弃。"
                                 : restored           ? "已恢复上一套参数。"
                                 : sampleRemoved      ? "样本已移除。"
                                 : longTermSample     ? "样本已存入历史样本。"
@@ -4650,6 +4653,16 @@ void handleFlowCalibrationPage() {
             sendCalibrationGenerationPanel();
         }
         Esp32BaseWeb::endResponse();
+        return;
+    }
+    if (getParam("advanced", text, sizeof(text)) && std::strcmp(text, "samples") == 0) {
+        Esp32BaseWeb::sendHeader("高级样本库");
+        Esp32BaseWeb::sendChunk("<h2>高级样本库</h2><p><a class='btn-link' href='/faucet/calibration/flow'>返回流量计校准</a></p>");
+        sendNoticeFromQuery();
+        sendCalibrationGenerationPanel();
+        sendMeteringTrialModal();
+        sendCalibrationPageScript();
+        sendPageEnd();
         return;
     }
     if (getParam("manual", text, sizeof(text))) {

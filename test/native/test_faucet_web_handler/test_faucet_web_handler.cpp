@@ -760,6 +760,31 @@ void test_calibration_page_initial_render_shows_tds_controls() {
     TEST_ASSERT_EQUAL(std::string::npos, body.find("只接受 ppm"));
 }
 
+void test_tds_calibration_prioritizes_two_point_flow() {
+    WebFixture fixture;
+    enableTdsForFixture(fixture);
+    fixture.app.tick(appInput({false, false, false, false}, 1000, 1000000));
+    registerRoutes();
+    Esp32BaseWeb::nativeTestBeginRequest(Esp32BaseWeb::METHOD_GET, "/faucet/calibration");
+    Esp32BaseWeb::nativeTestSetAuthenticated(true);
+    Esp32BaseWeb::nativeTestSetSameOrigin(true);
+
+    TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch("/faucet/calibration", Esp32BaseWeb::METHOD_GET));
+
+    const std::string& body = Esp32BaseWeb::nativeTestResponse().body;
+    const std::size_t workflow = body.find("tds-workflow-card");
+    const std::size_t single = body.find("tds-single-panel");
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, workflow);
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, single);
+    TEST_ASSERT_TRUE(workflow < single);
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("两点校准", workflow));
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("保存两点结果", workflow));
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("单点校准", single));
+    TEST_ASSERT_EQUAL(std::string::npos, body.find("tds-advanced"));
+    TEST_ASSERT_EQUAL(std::string::npos, body.find("保存当前采样"));
+    TEST_ASSERT_EQUAL(std::string::npos, body.find("取消采样"));
+}
+
 void test_temperature_calibration_uses_simple_card_and_celsius_input() {
     WebFixture fixture;
     enableTdsForFixture(fixture);
@@ -1453,6 +1478,7 @@ int main(int, char**) {
     RUN_TEST(test_stats_page_initial_render_shows_complete_report);
     RUN_TEST(test_calibration_home_shows_three_expanded_sections_without_flow_tables);
     RUN_TEST(test_calibration_page_initial_render_shows_tds_controls);
+    RUN_TEST(test_tds_calibration_prioritizes_two_point_flow);
     RUN_TEST(test_temperature_calibration_uses_simple_card_and_celsius_input);
     RUN_TEST(test_temperature_calibration_disables_save_when_sensor_is_disabled);
     RUN_TEST(test_temperature_calibration_post_accepts_celsius_decimal_input);

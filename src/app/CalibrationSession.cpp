@@ -70,9 +70,6 @@ CalibrationCoverageQuality calibrationCoverageQuality(const CalibrationSessionRe
         return CalibrationCoverageQuality::Insufficient;
     }
     const std::uint32_t spanMl = validSampleSpanMl(session);
-    if (spanMl < kCalibrationMinVolumeSpanMl) {
-        return CalibrationCoverageQuality::Insufficient;
-    }
     if (spanMl < kCalibrationRecommendedVolumeSpanMl) {
         return CalibrationCoverageQuality::NarrowQuick;
     }

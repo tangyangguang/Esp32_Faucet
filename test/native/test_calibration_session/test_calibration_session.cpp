@@ -62,6 +62,20 @@ void test_two_valid_samples_allow_quick_generation() {
                             static_cast<unsigned>(calibrationCoverageQuality(session)));
 }
 
+void test_two_narrow_valid_samples_allow_quick_generation() {
+    CalibrationSessionRecord session = makeCalibrationSession(1, 1770000000);
+
+    TEST_ASSERT_TRUE(appendCalibrationAttempt(session, validAttempt(0, 500)));
+    TEST_ASSERT_TRUE(appendCalibrationAttempt(session, validAttempt(1, 600)));
+
+    TEST_ASSERT_EQUAL_UINT8(2, countValidCalibrationSamples(session));
+    TEST_ASSERT_TRUE(calibrationCanQuickGenerate(session));
+    TEST_ASSERT_NOT_EQUAL(static_cast<unsigned>(CalibrationCoverageQuality::Insufficient),
+                          static_cast<unsigned>(calibrationCoverageQuality(session)));
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationCoverageQuality::NarrowQuick),
+                            static_cast<unsigned>(calibrationCoverageQuality(session)));
+}
+
 void test_three_valid_samples_are_recommended() {
     CalibrationSessionRecord session = makeCalibrationSession(1, 1770000000);
 
@@ -191,6 +205,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_attempt_status_ordinals_keep_existing_values);
     RUN_TEST(test_one_valid_sample_is_insufficient_for_quick_generation);
     RUN_TEST(test_two_valid_samples_allow_quick_generation);
+    RUN_TEST(test_two_narrow_valid_samples_allow_quick_generation);
     RUN_TEST(test_three_valid_samples_are_recommended);
     RUN_TEST(test_max_valid_samples_stop_new_runs);
     RUN_TEST(test_session_allows_ten_valid_samples);

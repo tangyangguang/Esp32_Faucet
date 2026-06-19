@@ -2160,6 +2160,8 @@ const char* calibrationAttemptStatusText(CalibrationAttemptStatus status) {
             return "已放弃";
         case CalibrationAttemptStatus::Invalid:
             return "不可用于校准";
+        case CalibrationAttemptStatus::Removed:
+            return "已移除";
         case CalibrationAttemptStatus::Empty:
             break;
     }

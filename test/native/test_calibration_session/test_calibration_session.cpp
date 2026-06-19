@@ -29,6 +29,26 @@ void test_new_session_starts_preparing() {
     TEST_ASSERT_EQUAL_UINT8(0, session.validSampleCount);
 }
 
+void test_attempt_status_ordinals_keep_existing_values() {
+    TEST_ASSERT_EQUAL_UINT8(0, static_cast<unsigned>(CalibrationAttemptStatus::Empty));
+    TEST_ASSERT_EQUAL_UINT8(1, static_cast<unsigned>(CalibrationAttemptStatus::PendingActual));
+    TEST_ASSERT_EQUAL_UINT8(2, static_cast<unsigned>(CalibrationAttemptStatus::Valid));
+    TEST_ASSERT_EQUAL_UINT8(3, static_cast<unsigned>(CalibrationAttemptStatus::Skipped));
+    TEST_ASSERT_EQUAL_UINT8(4, static_cast<unsigned>(CalibrationAttemptStatus::Invalid));
+    TEST_ASSERT_EQUAL_UINT8(5, static_cast<unsigned>(CalibrationAttemptStatus::Removed));
+}
+
+void test_one_valid_sample_is_insufficient_for_quick_generation() {
+    CalibrationSessionRecord session = makeCalibrationSession(1, 1770000000);
+
+    TEST_ASSERT_TRUE(appendCalibrationAttempt(session, validAttempt(0, 500)));
+
+    TEST_ASSERT_EQUAL_UINT8(1, countValidCalibrationSamples(session));
+    TEST_ASSERT_FALSE(calibrationCanQuickGenerate(session));
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationCoverageQuality::Insufficient),
+                            static_cast<unsigned>(calibrationCoverageQuality(session)));
+}
+
 void test_two_valid_samples_allow_quick_generation() {
     CalibrationSessionRecord session = makeCalibrationSession(1, 1770000000);
 
@@ -168,6 +188,8 @@ int main(int argc, char** argv) {
     (void)argv;
     UNITY_BEGIN();
     RUN_TEST(test_new_session_starts_preparing);
+    RUN_TEST(test_attempt_status_ordinals_keep_existing_values);
+    RUN_TEST(test_one_valid_sample_is_insufficient_for_quick_generation);
     RUN_TEST(test_two_valid_samples_allow_quick_generation);
     RUN_TEST(test_three_valid_samples_are_recommended);
     RUN_TEST(test_max_valid_samples_stop_new_runs);

@@ -295,7 +295,7 @@ void test_pulse_observation_window_is_editable_in_app_config_page() {
 }
 
 void test_calibration_sample_stores_are_small_and_lazy_initialized() {
-    TEST_ASSERT_EQUAL_size_t(3, kCalibrationSessionTraceSlots);
+    TEST_ASSERT_EQUAL_size_t(10, kCalibrationSessionTraceSlots);
     TEST_ASSERT_EQUAL_size_t(5, kCalibrationLongTermSampleSlots);
 
     FILE* file = std::fopen("src/main.cpp", "rb");

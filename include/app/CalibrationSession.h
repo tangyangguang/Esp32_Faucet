@@ -32,9 +32,9 @@ enum class CalibrationAttemptStatus : std::uint8_t {
     Empty,
     PendingActual,
     Valid,
-    Removed,
     Skipped,
     Invalid,
+    Removed,
 };
 
 enum class CalibrationSkipReason : std::uint8_t {

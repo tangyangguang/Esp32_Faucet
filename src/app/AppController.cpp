@@ -1345,6 +1345,24 @@ bool AppController::beginCalibrationLocalRun(std::uint32_t nowMs,
     return true;
 }
 
+std::uint8_t AppController::selectCalibrationSessionTraceSlot() const {
+    bool occupied[kCalibrationSessionTraceSlots]{};
+    for (std::uint8_t i = 0; i < calibrationSession_.attemptCount && i < kCalibrationMaxAttempts; ++i) {
+        const CalibrationAttempt& attempt = calibrationSession_.attempts[i];
+        if ((attempt.status == CalibrationAttemptStatus::Valid ||
+             attempt.status == CalibrationAttemptStatus::PendingActual) &&
+            attempt.sessionTraceSlot < kCalibrationSessionTraceSlots) {
+            occupied[attempt.sessionTraceSlot] = true;
+        }
+    }
+    for (std::uint8_t slot = 0; slot < kCalibrationSessionTraceSlots; ++slot) {
+        if (!occupied[slot]) {
+            return slot;
+        }
+    }
+    return 255;
+}
+
 void AppController::persistCalibrationPendingAttempt(const WaterRecord& record, std::uint32_t nowSeconds) {
     if (localMode_ != LocalUiMode::Calibration ||
         calibrationSession_.status != CalibrationSessionStatus::Running ||
@@ -1353,13 +1371,24 @@ void AppController::persistCalibrationPendingAttempt(const WaterRecord& record, 
         return;
     }
 
-    const std::uint8_t slot = calibrationSession_.validSampleCount;
+    const std::uint8_t slot = selectCalibrationSessionTraceSlot();
     CalibrationAttempt attempt{};
     attempt.attemptIndex = calibrationSession_.attemptCount;
     attempt.sessionTraceSlot = slot;
     attempt.record = record;
     attempt.targetHintMl = record.targetValue;
     attempt.status = CalibrationAttemptStatus::PendingActual;
+
+    if (slot >= kCalibrationSessionTraceSlots) {
+        attempt.status = CalibrationAttemptStatus::Invalid;
+        attempt.invalidReason = CalibrationInvalidReason::StorageFailed;
+        appendCalibrationAttempt(calibrationSession_, attempt);
+        calibrationSession_.status = calibrationCanStartAttempt(calibrationSession_) ? CalibrationSessionStatus::WaitingLocalRun
+                                                                                    : CalibrationSessionStatus::Failed;
+        calibrationSession_.updatedAt = nowSeconds;
+        saveCalibrationSession();
+        return;
+    }
 
     const WaterPulseTrace* trace = pulseTraces_ ? pulseTraces_->findByRecord(record) : nullptr;
     if (!trace || trace->sampleCount == 0 || trace->sampleCount > kPulseTraceMaxRawEdgesPerTrace) {

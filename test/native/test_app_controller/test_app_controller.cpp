@@ -213,6 +213,13 @@ void pressAndReleaseOk(AppController& app, std::uint32_t baseMs) {
     app.tick(input({false, false, false, false}, baseMs + 60 + kButtonDebounceMs, (baseMs + 60 + kButtonDebounceMs) * 1000UL, 1000));
 }
 
+void pressAndReleaseOkAt(AppController& app, std::uint32_t baseMs, std::uint32_t nowSeconds) {
+    app.tick(input({false, true, false, false}, baseMs, baseMs * 1000UL, nowSeconds));
+    app.tick(input({false, true, false, false}, baseMs + kButtonDebounceMs, (baseMs + kButtonDebounceMs) * 1000UL, nowSeconds));
+    app.tick(input({false, false, false, false}, baseMs + 60, (baseMs + 60) * 1000UL, nowSeconds));
+    app.tick(input({false, false, false, false}, baseMs + 60 + kButtonDebounceMs, (baseMs + 60 + kButtonDebounceMs) * 1000UL, nowSeconds));
+}
+
 void longPressOk(AppController& app, std::uint32_t baseMs) {
     app.tick(input({false, true, false, false}, baseMs, baseMs * 1000UL, 1000));
     app.tick(input({false, true, false, false}, baseMs + kButtonDebounceMs, (baseMs + kButtonDebounceMs) * 1000UL, 1000));
@@ -432,6 +439,31 @@ void saveOneValidOnePendingSession(CalibrationAppFixture& fixture, std::uint32_t
     session.status = CalibrationSessionStatus::AwaitingActual;
     session.validSampleCount = countValidCalibrationSamples(session);
     TEST_ASSERT_TRUE(fixture.sessionStore.save(session));
+}
+
+void finishLocalCalibrationRun(CalibrationAppFixture& fixture,
+                               std::uint32_t baseMs,
+                               std::uint32_t nowSeconds,
+                               std::uint32_t pulseCount,
+                               std::uint32_t pulseIntervalUs = 5000) {
+    pressAndReleaseOkAt(*fixture.app, baseMs, nowSeconds);
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationSessionStatus::Running),
+                            static_cast<unsigned>(fixture.app->snapshot().calibrationStatus));
+
+    const std::uint32_t firstPulseUs = (baseMs + 200) * 1000UL;
+    for (std::uint32_t i = 0; i < pulseCount; ++i) {
+        fixture.app->onFlowPulse(firstPulseUs + i * pulseIntervalUs);
+    }
+    const std::uint32_t finishMs = baseMs + 2200 + (pulseCount * pulseIntervalUs) / 1000UL;
+    fixture.app->tick(input({false, false, false, false},
+                            finishMs,
+                            finishMs * 1000UL,
+                            nowSeconds + finishMs / 1000UL));
+
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationSessionStatus::AwaitingActual),
+                            static_cast<unsigned>(fixture.app->snapshot().calibrationStatus));
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(WaterState::Idle),
+                            static_cast<unsigned>(fixture.app->snapshot().water.state));
 }
 
 }  // namespace
@@ -1242,6 +1274,75 @@ void test_app_controller_pending_actual_sample_can_be_removed() {
                             static_cast<unsigned>(fixture.app->snapshot().calibrationStatus));
 }
 
+void test_app_controller_reuses_removed_trace_slot_without_overwriting_valid_sample() {
+    CalibrationAppFixture fixture;
+    fixture.config.presets[0].value = 8500;
+    CalibrationSessionRecord session = makeCalibrationSession(77, 1714502400);
+    saveCalibrationSessionSample(fixture.traceStore, session, 0, 1714502401, 1500, 40, 210, 6);
+    saveCalibrationSessionSample(fixture.traceStore, session, 1, 1714502410, 7500, 40, 1540, 11);
+    session.status = CalibrationSessionStatus::ReadyToGenerate;
+    session.validSampleCount = countValidCalibrationSamples(session);
+    TEST_ASSERT_TRUE(fixture.sessionStore.save(session));
+    fixture.createApp();
+    TEST_ASSERT_TRUE(fixture.app->generateCalibrationForWeb(1714502500));
+
+    CalibrationStoredTrace slot1Before{};
+    TEST_ASSERT_TRUE(fixture.traceStore.load(1, slot1Before));
+    TEST_ASSERT_TRUE(slot1Before.valid);
+    TEST_ASSERT_FALSE(slot1Before.pendingActual);
+    TEST_ASSERT_TRUE(fixture.app->removeCalibrationSessionSampleForWeb(0, 1714502550));
+
+    finishLocalCalibrationRun(fixture, 1000, 1714502600, 2000, 27000);
+
+    CalibrationStoredTrace slot1After{};
+    TEST_ASSERT_TRUE(fixture.traceStore.load(1, slot1After));
+    TEST_ASSERT_TRUE(slot1After.valid);
+    TEST_ASSERT_FALSE(slot1After.pendingActual);
+    TEST_ASSERT_EQUAL_UINT32(slot1Before.actualMl, slot1After.actualMl);
+    TEST_ASSERT_EQUAL_UINT32(slot1Before.trace.totalPulses, slot1After.trace.totalPulses);
+
+    CalibrationSessionRecord pending{};
+    TEST_ASSERT_TRUE(fixture.sessionStore.load(pending));
+    TEST_ASSERT_EQUAL_UINT8(3, pending.attemptCount);
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationAttemptStatus::PendingActual),
+                            static_cast<unsigned>(pending.attempts[2].status));
+    TEST_ASSERT_NOT_EQUAL_UINT8(pending.attempts[1].sessionTraceSlot, pending.attempts[2].sessionTraceSlot);
+    const WaterPulseTrace* pendingTrace = fixture.pulseTraces.findByRecord(pending.attempts[2].record);
+    TEST_ASSERT_NOT_NULL(pendingTrace);
+    TEST_ASSERT_FALSE(pendingTrace->truncated);
+    TEST_ASSERT_FALSE(pendingTrace->resumedAfterPause);
+    TEST_ASSERT_GREATER_THAN_size_t(0, pendingTrace->sampleCount);
+    TEST_ASSERT_GREATER_THAN_UINT32(0, pendingTrace->totalPulses);
+
+    TEST_ASSERT_TRUE(fixture.app->submitCalibrationActualForWeb(9500, 1714502670));
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationSessionStatus::Generated),
+                            static_cast<unsigned>(fixture.app->snapshot().calibrationStatus));
+    TEST_ASSERT_EQUAL_UINT8(2, fixture.app->snapshot().calibrationValidSampleCount);
+    TEST_ASSERT_TRUE(fixture.app->applyGeneratedCalibrationForWeb(1714502680));
+}
+
+void test_app_controller_remove_one_of_three_valid_samples_regenerates_candidate() {
+    CalibrationAppFixture fixture;
+    CalibrationSessionRecord session = makeCalibrationSession(78, 1714502400);
+    saveCalibrationSessionSample(fixture.traceStore, session, 0, 1714502401, 1500, 40, 210, 6);
+    saveCalibrationSessionSample(fixture.traceStore, session, 1, 1714502410, 7500, 40, 1540, 11);
+    saveCalibrationSessionSample(fixture.traceStore, session, 2, 1714502420, 9500, 40, 1900, 12);
+    session.status = CalibrationSessionStatus::ReadyToGenerate;
+    session.validSampleCount = countValidCalibrationSamples(session);
+    TEST_ASSERT_TRUE(fixture.sessionStore.save(session));
+    fixture.createApp();
+    TEST_ASSERT_TRUE(fixture.app->generateCalibrationForWeb(1714502500));
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationSessionStatus::Generated),
+                            static_cast<unsigned>(fixture.app->snapshot().calibrationStatus));
+
+    TEST_ASSERT_TRUE(fixture.app->removeCalibrationSessionSampleForWeb(1, 1714502550));
+
+    TEST_ASSERT_EQUAL_UINT8(2, fixture.app->snapshot().calibrationValidSampleCount);
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationSessionStatus::Generated),
+                            static_cast<unsigned>(fixture.app->snapshot().calibrationStatus));
+    TEST_ASSERT_TRUE(fixture.app->applyGeneratedCalibrationForWeb(1714502600));
+}
+
 void test_app_controller_applies_generated_session_scheme_and_keeps_old_scheme() {
     SystemConfig config = makeDefaultConfig();
     StatisticsStore statistics;
@@ -1946,6 +2047,8 @@ int main(int argc, char** argv) {
     RUN_TEST(test_app_controller_auto_generates_after_second_valid_calibration_sample);
     RUN_TEST(test_app_controller_removed_valid_sample_clears_generated_candidate);
     RUN_TEST(test_app_controller_pending_actual_sample_can_be_removed);
+    RUN_TEST(test_app_controller_reuses_removed_trace_slot_without_overwriting_valid_sample);
+    RUN_TEST(test_app_controller_remove_one_of_three_valid_samples_regenerates_candidate);
     RUN_TEST(test_app_controller_applies_generated_session_scheme_and_keeps_old_scheme);
     RUN_TEST(test_app_controller_applies_calibration_from_raw_record);
     RUN_TEST(test_app_controller_small_record_calibration_keeps_metering_parameters);

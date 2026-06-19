@@ -198,6 +198,7 @@ private:
                                   std::uint32_t nowSeconds,
                                   bool timeSynced,
                                   std::uint32_t bootId);
+    std::uint8_t selectCalibrationSessionTraceSlot() const;
     void persistCalibrationPendingAttempt(const WaterRecord& record, std::uint32_t nowSeconds);
     void syncFlow(std::uint32_t nowUs);
     void finishPulseTrace(const WaterRecord& record,

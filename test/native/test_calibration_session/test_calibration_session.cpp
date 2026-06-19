@@ -49,6 +49,35 @@ void test_one_valid_sample_is_insufficient_for_quick_generation() {
                             static_cast<unsigned>(calibrationCoverageQuality(session)));
 }
 
+void test_valid_status_below_min_actual_ml_does_not_count_for_quick_generation() {
+    CalibrationSessionRecord session = makeCalibrationSession(1, 1770000000);
+    CalibrationAttempt belowMin = validAttempt(0, kCalibrationMinActualMl - 1);
+
+    TEST_ASSERT_TRUE(appendCalibrationAttempt(session, belowMin));
+    TEST_ASSERT_TRUE(appendCalibrationAttempt(session, validAttempt(1, kCalibrationMinActualMl)));
+
+    TEST_ASSERT_EQUAL_UINT8(2, countCalibrationAttempts(session));
+    TEST_ASSERT_EQUAL_UINT8(1, countValidCalibrationSamples(session));
+    TEST_ASSERT_FALSE(calibrationCanQuickGenerate(session));
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationCoverageQuality::Insufficient),
+                            static_cast<unsigned>(calibrationCoverageQuality(session)));
+}
+
+void test_valid_status_zero_pulses_does_not_count_for_quick_generation() {
+    CalibrationSessionRecord session = makeCalibrationSession(1, 1770000000);
+    CalibrationAttempt zeroPulses = validAttempt(0, 500);
+    zeroPulses.record.pulseCount = 0;
+
+    TEST_ASSERT_TRUE(appendCalibrationAttempt(session, zeroPulses));
+    TEST_ASSERT_TRUE(appendCalibrationAttempt(session, validAttempt(1, 1000)));
+
+    TEST_ASSERT_EQUAL_UINT8(2, countCalibrationAttempts(session));
+    TEST_ASSERT_EQUAL_UINT8(1, countValidCalibrationSamples(session));
+    TEST_ASSERT_FALSE(calibrationCanQuickGenerate(session));
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationCoverageQuality::Insufficient),
+                            static_cast<unsigned>(calibrationCoverageQuality(session)));
+}
+
 void test_two_valid_samples_allow_quick_generation() {
     CalibrationSessionRecord session = makeCalibrationSession(1, 1770000000);
 
@@ -204,6 +233,8 @@ int main(int argc, char** argv) {
     RUN_TEST(test_new_session_starts_preparing);
     RUN_TEST(test_attempt_status_ordinals_keep_existing_values);
     RUN_TEST(test_one_valid_sample_is_insufficient_for_quick_generation);
+    RUN_TEST(test_valid_status_below_min_actual_ml_does_not_count_for_quick_generation);
+    RUN_TEST(test_valid_status_zero_pulses_does_not_count_for_quick_generation);
     RUN_TEST(test_two_valid_samples_allow_quick_generation);
     RUN_TEST(test_two_narrow_valid_samples_allow_quick_generation);
     RUN_TEST(test_three_valid_samples_are_recommended);

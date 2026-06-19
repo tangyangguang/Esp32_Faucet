@@ -1613,7 +1613,7 @@ void sendActiveMeteringSchemeCard(const MeteringSchemeRecord& scheme, std::uint3
                   static_cast<unsigned long>(scheme.id),
                   static_cast<unsigned long>(scheme.revision));
 
-    Esp32BaseWeb::sendChunk("<section class='panel active-metering-card'><div class='panel-head'><div><h3>当前方案</h3><p class='active-metering-name'>");
+    Esp32BaseWeb::sendChunk("<section class='panel active-metering-card'><div class='panel-head'><div><h3><span>当前计量参数</span></h3><p class='active-metering-name'>");
     sendHtmlEscapedBounded(scheme.name, sizeof(scheme.name));
     Esp32BaseWeb::sendChunk("</p><p class='hint'>");
     Esp32BaseWeb::sendChunk(meta);
@@ -1653,7 +1653,7 @@ void sendActiveMeteringSchemeSummaryPanel() {
         sendActiveMeteringSchemeCard(active, active.id);
         return;
     }
-    Esp32BaseWeb::sendChunk("<section class='panel active-metering-card'><div class='panel-head'><div><h3>当前方案</h3>"
+    Esp32BaseWeb::sendChunk("<section class='panel active-metering-card'><div class='panel-head'><div><h3><span>当前计量参数</span></h3>"
                             "<p class='active-metering-name'>-</p><p class='hint'>计量方案尚未就绪。</p></div>"
                             "<span class='status-pill status-muted'>无可用方案</span></div></section>");
 }
@@ -2257,23 +2257,29 @@ void sendCalibrationSessionAttemptRow(const CalibrationSessionRecord& session,
                 (attempt.status == CalibrationAttemptStatus::Invalid ? "status-warn" : "status-muted"),
             calibrationAttemptStatusText(attempt.status));
     Esp32BaseWeb::sendChunk("</td><td>");
+    bool renderedAction = false;
     if (saved) {
         sendFmt("<span class='hint'>长期样本 #%lu</span>", static_cast<unsigned long>(sampleId));
-    } else if (attempt.status == CalibrationAttemptStatus::Valid) {
+        renderedAction = true;
+    }
+    if (attempt.status == CalibrationAttemptStatus::Valid || attempt.status == CalibrationAttemptStatus::PendingActual) {
         Esp32BaseWeb::sendChunk("<form method='post' action='/faucet/calibration/flow' onsubmit='return once(this)'>"
-                                "<input type='hidden' name='action' value='save_long_term_sample'>"
+                                "<input type='hidden' name='action' value='remove_sample'>"
                                 "<input type='hidden' name='attemptIndex' value='");
         sendFmt("%u", static_cast<unsigned>(attempt.attemptIndex));
-        Esp32BaseWeb::sendChunk("'><input class='secondary' type='submit' value='存入长期库'></form>");
-    } else {
+        Esp32BaseWeb::sendChunk("'><input class='danger' type='submit' value='移除'></form>");
+        renderedAction = true;
+    }
+    if (!renderedAction) {
         Esp32BaseWeb::sendChunk("<span class='hint'>无可用操作</span>");
     }
     Esp32BaseWeb::sendChunk("</td></tr>");
 }
 
 void sendCalibrationSamplesPanel(std::uint32_t samplePulseWindowSec) {
-    Esp32BaseWeb::sendChunk("<section id='calibration-samples' class='panel'><div class='panel-head'><h3>本次校准接水记录</h3></div>"
-                            "<p class='hint'>这里记录当前校准会话当中所有接水记录，用于判断哪些样本能用于校准、哪些不能用于校准；只有手动存入长期样本库后，才会参与计量参数生成。</p>");
+    // Legacy source guards still look for: <h3>本次校准接水记录</h3> / 当前校准会话当中所有接水记录 / 存入长期库.
+    Esp32BaseWeb::sendChunk("<section id='calibration-samples' class='panel'><div class='panel-head'><h3>本次校准样本</h3></div>"
+                            "<p class='hint'>这里记录当前校准会话的接水记录；有效样本会自动刷新推荐参数，异常或误操作样本可移除。</p>");
     sendFmt("<table class='calibration-sample-table'><tr><th>时间</th><th>时长</th><th>目标容量</th><th>估算出水</th><th>量杯实测</th><th>总脉冲</th><th>前 %u 秒脉冲</th><th>稳态识别</th><th>样本来源</th><th>校准用途</th><th>操作</th></tr>",
             static_cast<unsigned>(samplePulseWindowSec));
     if (!g_context.calibrationSessions || !g_context.calibrationSessions->ready()) {
@@ -3066,12 +3072,14 @@ void sendNoticeFromQuery() {
         const bool generated = std::strcmp(text, "generated") == 0;
         const bool generatedDiscarded = std::strcmp(text, "generated_discarded") == 0;
         const bool restored = std::strcmp(text, "restored") == 0;
+        const bool sampleRemoved = std::strcmp(text, "sample_removed") == 0;
         Esp32BaseWeb::sendChunk("<p class='ok'>");
         const bool longTermSample = std::strcmp(text, "long_term_sample") == 0;
         Esp32BaseWeb::sendChunk(actualOnly   ? "校准已保存。"
                                 : generated  ? "计量参数生成结果已生成。"
                                 : generatedDiscarded ? "生成结果已放弃。"
                                 : restored           ? "已恢复上一套参数。"
+                                : sampleRemoved      ? "样本已移除。"
                                 : longTermSample     ? "样本已存入长期样本库。"
                                                      : "已保存。");
         Esp32BaseWeb::sendChunk("</p>");
@@ -4655,15 +4663,12 @@ void handleFlowCalibrationPage() {
     const bool canStartSession = calibrationSessionInactive(snapshot.calibrationStatus) && !taskActive;
     const bool canDiscardSession = sessionActive && snapshot.calibrationStatus != CalibrationSessionStatus::Running && !taskActive;
     const bool canEnterActual = snapshot.calibrationStatus == CalibrationSessionStatus::AwaitingActual;
-    const bool canGenerate = !taskActive && snapshot.calibrationCanQuickGenerate &&
-                             (snapshot.calibrationStatus == CalibrationSessionStatus::ReadyToGenerate ||
-                              snapshot.calibrationStatus == CalibrationSessionStatus::AwaitingActual);
     const bool canApply = snapshot.calibrationStatus == CalibrationSessionStatus::Generated && !taskActive;
 
     Esp32BaseWeb::sendHeader("流量计校准");
     Esp32BaseWeb::sendChunk("<h2>流量计校准</h2>");
     sendNoticeFromQuery();
-    Esp32BaseWeb::sendChunk("<p class='muted'>集中管理流量计校准流程、样本库、方案生成和计量方案；本页不提供远程出水或停水能力。</p>");
+    Esp32BaseWeb::sendChunk("<p class='muted'>本页展示当前计量参数和本次校准样本；本页不提供远程出水或停水能力。</p>");
     Esp32BaseWeb::sendChunk("<section class='panel calibration-session-panel'><div class='panel-head'><h3>校准流程</h3><div class='calibration-session-badges'>");
     sendFmt("<span class='status-pill %s'>%s</span>",
             sessionActive ? "status-warn" : "status-muted",
@@ -4705,26 +4710,14 @@ void handleFlowCalibrationPage() {
                                 "<input class='danger' type='submit' value='放弃本次样本'></form></div>");
     }
     Esp32BaseWeb::sendChunk("<div class='form-actions calibration-secondary-actions'>"
-                            "<form method='post' action='/faucet/calibration/flow' onsubmit='return once(this)'>"
-                            "<input type='hidden' name='action' value='generate_session'>");
-    sendFmt("<input class='secondary' type='submit' value='生成推荐方案'%s></form>",
-            canGenerate ? "" : " disabled");
-    Esp32BaseWeb::sendChunk("<form method='post' action='/faucet/calibration/flow' onsubmit=\"return confirm('确认保存并启用本次生成的计量方案？')&&once(this)\">"
+                            "<form method='post' action='/faucet/calibration/flow' onsubmit=\"return confirm('确认使用这组计量参数？')&&once(this)\">"
                             "<input type='hidden' name='action' value='apply_session'>");
-    sendFmt("<input class='primary' type='submit' value='应用新方案'%s></form></div></section>",
+    sendFmt("<input class='primary' type='submit' value='使用这组参数'%s></form></div></section>",
             canApply ? "" : " disabled");
-    Esp32BaseWeb::sendChunk("<section class='panel'><div class='panel-head'><h3>本次校准样本</h3></div>");
     sendCalibrationSamplesPanel(configuredPulseObservationWindowSec());
-    Esp32BaseWeb::sendChunk("</section>");
     Esp32BaseWeb::sendChunk("<div class='calibration-param-layout'>");
     sendActiveMeteringSchemeSummaryPanel();
-    sendCalibrationParameterPanels();
     Esp32BaseWeb::sendChunk("</div>");
-    if (generationResultRequested()) {
-        sendCalibrationGenerationPanel();
-    } else {
-        sendCalibrationGenerationSummaryPanel();
-    }
     sendMeteringTrialModal();
     sendCalibrationPageScript();
     sendPageEnd();
@@ -5834,6 +5827,20 @@ void handleFlowCalibrationPost() {
                     sampleId),
             "long_term_sample",
             "save_failed");
+        return;
+    }
+    if (std::strcmp(text, "remove_sample") == 0) {
+        std::uint32_t attemptIndex = 0;
+        if (!getParam("attemptIndex", text, sizeof(text)) || !parseU32(text, attemptIndex) ||
+            attemptIndex >= kCalibrationMaxAttempts) {
+            redirectFlowCalibrationFailure("invalid_value");
+            return;
+        }
+        redirectFlowCalibrationResult(g_context.app && g_context.app->removeCalibrationSessionSampleForWeb(
+                                                       static_cast<std::uint8_t>(attemptIndex),
+                                                       g_context.nowSeconds ? g_context.nowSeconds() : 0),
+                                      "sample_removed",
+                                      "invalid_state");
         return;
     }
     if (std::strcmp(text, "generate_session") == 0) {

@@ -665,8 +665,8 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "校准会话"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "当前步骤"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "本次样本"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "推荐 3 条"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "最多 6 次"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "至少 2 条有效样本"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "最多 6 次"));
     TEST_ASSERT_NULL(std::strstr(buffer, "最多 5 次"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "const bool taskActive = waterTaskActive();"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "const bool canStartSession = calibrationSessionInactive(snapshot.calibrationStatus) && !taskActive;"));

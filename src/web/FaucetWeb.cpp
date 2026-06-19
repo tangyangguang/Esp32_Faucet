@@ -2800,7 +2800,7 @@ void sendCalibrationPageScript() {
     Esp32BaseWeb::sendChunk("<script>"
                             "function faucetShowSampleCalibration(id){var rows=document.querySelectorAll('.sample-calibration-edit-row');for(var i=0;i<rows.length;i++)rows[i].classList.remove('is-open');var r=document.getElementById(id);if(r)r.classList.add('is-open');}"
                             "function faucetHideSampleCalibration(id){var r=document.getElementById(id);if(r)r.classList.remove('is-open');}"
-                            "function faucetCalibrationErrorMessage(code){var m={busy:'设备正在出水或确认中，请回到待机后再保存。',invalid_value:'实际出水量超出允许范围，请按量杯读数填写。',invalid_action:'操作无效，请刷新页面后重试。',invalid_state:'现在不允许执行这个操作，请刷新页面后按当前步骤继续。',calibration_storage_unavailable:'校准存储未就绪，请检查设备存储空间或重启后再试。',long_term_sample_full:'长期样本库已满，请先手动删除不需要的样本。',sample_not_enough:'可生成样本不足，至少需要两条长期样本库中有实测容量且稳态识别成功的样本。',no_calibration_record:'这条样本不可校准：没有可用脉冲明细或结束状态不适合校准。',calibration_mark_failed:'实测容量写入失败，可能是校准记录存储不可用或 Flash 写入失败。',save_failed:'样本入库失败，请检查长期样本库容量或存储状态。','HTTP 401':'认证已失效，请刷新页面重新登录。','HTTP 403':'认证被拒绝，请检查 Web 登录状态。','HTTP 404':'保存接口路径不存在，请刷新页面后重试。','HTTP 500':'设备端保存接口异常，请查看日志。','HTTP 503':'设备尚未就绪，请稍后重试。'};return m[code]||(code?'操作失败：'+code:'操作失败，请检查页面状态后重试。');}"
+                            "function faucetCalibrationErrorMessage(code){var m={busy:'设备正在出水或确认中，请回到待机后再保存。',invalid_value:'实际出水量超出允许范围，请按量杯读数填写。',invalid_action:'操作无效，请刷新页面后重试。',invalid_state:'现在不允许执行这个操作，请刷新页面后按当前步骤继续。',calibration_storage_unavailable:'校准存储未就绪，请检查设备存储空间或重启后再试。',long_term_sample_full:'样本存储已满，请先手动删除不需要的样本。',sample_not_enough:'可用样本不足，至少需要两条有效样本。',no_calibration_record:'这条样本不可校准：没有可用脉冲明细或结束状态不适合校准。',calibration_mark_failed:'实测容量写入失败，可能是校准记录存储不可用或 Flash 写入失败。',save_failed:'样本保存失败，请检查样本容量或存储状态。','HTTP 401':'认证已失效，请刷新页面重新登录。','HTTP 403':'认证被拒绝，请检查 Web 登录状态。','HTTP 404':'保存接口路径不存在，请刷新页面后重试。','HTTP 500':'设备端保存接口异常，请查看日志。','HTTP 503':'设备尚未就绪，请稍后重试。'};return m[code]||(code?'操作失败：'+code:'操作失败，请检查页面状态后重试。');}"
                             "function faucetReadCalibrationError(r){return r.text().then(function(t){try{return (JSON.parse(t)||{}).error||('HTTP '+r.status);}catch(e){return 'HTTP '+r.status;}});}"
                             "function faucetResetSampleCalibrationForm(f){f.dataset.busy='';var b=f.querySelector('[type=submit]');if(b)b.disabled=false;}"
                             "function faucetFormatEstimateSeconds(s){if(!isFinite(s)||s<=0)return '-';s=Math.max(1,Math.round(s));var m=Math.floor(s/60),r=s%60;return m>0?(m+'分'+r+'秒'):(r+'秒');}"
@@ -3124,9 +3124,9 @@ void sendNoticeFromQuery() {
     } else if (std::strcmp(text, "calibration_drift") == 0) {
         message = "新系数和旧系数偏差过大，请重新接水测量。";
     } else if (std::strcmp(text, "sample_not_enough") == 0) {
-        message = "可生成样本不足，至少需要两条长期样本库中有实测容量且稳态识别成功的样本。";
+        message = "可用样本不足，至少需要两条有效样本。";
     } else if (std::strcmp(text, "no_generated_result") == 0) {
-        message = "还没有可保存的生成结果，请先生成参数。";
+        message = "还没有可使用的参数，请先完成至少两条有效校准样本。";
     } else if (std::strcmp(text, "no_previous") == 0) {
         message = "没有可恢复的上一套参数。";
     }
@@ -4682,7 +4682,7 @@ void handleFlowCalibrationPage() {
         sendFmt("<span class='status-pill status-muted calibration-timeout-pill' data-calibration-countdown data-remaining='%lu'>非出水中 30 分钟无操作自动退出</span>",
                 static_cast<unsigned long>(remainingSec));
     }
-    Esp32BaseWeb::sendChunk("</div></div><p class='muted'>校准会话当前步骤会在这里显示；推荐 3 条有效样本，最多 6 次接水。进入流程后，到设备旁按 OK 接水；网页只负责记录实测容量和应用方案。</p><div class='form-actions calibration-primary-actions'>");
+    Esp32BaseWeb::sendChunk("</div></div><p class='muted'>至少 2 条有效样本后会自动生成参数；3 条以上更稳。到设备旁按 OK 接水，网页只记录实测容量和使用结果。</p><div class='form-actions calibration-primary-actions'>");
     if (!sessionActive) {
         Esp32BaseWeb::sendChunk("<form method='post' action='/faucet/calibration/flow' onsubmit='return once(this)'>"
                                 "<input type='hidden' name='action' value='start_session'>");

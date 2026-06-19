@@ -778,9 +778,11 @@ void test_flow_calibration_center_initial_render_shows_current_parameter_workflo
     TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("当前计量参数"));
     TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("本次校准样本"));
     TEST_ASSERT_EQUAL(std::string::npos, body.find("生成推荐方案"));
-    TEST_ASSERT_EQUAL(std::string::npos, body.find("生成参数"));
+    TEST_ASSERT_EQUAL(std::string::npos, body.find("请先生成参数"));
     TEST_ASSERT_EQUAL(std::string::npos, body.find("计量方案列表"));
     TEST_ASSERT_EQUAL(std::string::npos, body.find("长期样本库与参数生成"));
+    TEST_ASSERT_EQUAL(std::string::npos, body.find("长期样本库"));
+    TEST_ASSERT_EQUAL(std::string::npos, body.find("最多 6 次接水"));
     TEST_ASSERT_LESS_OR_EQUAL_UINT32(3, fixture.calibrationFiles.meteringSchemeRecordReads);
 }
 
@@ -985,6 +987,69 @@ void test_flow_calibration_remove_sample_redirects_success() {
 
     TEST_ASSERT_EQUAL(303, Esp32BaseWeb::nativeTestResponse().code);
     TEST_ASSERT_EQUAL_STRING("/faucet/calibration/flow?saved=sample_removed",
+                             Esp32BaseWeb::nativeTestResponseHeader("Location"));
+}
+
+void test_flow_calibration_remove_sample_redirects_invalid_value_for_bad_attempt_index() {
+    WebFixture fixture;
+    registerRoutes();
+    Esp32BaseWeb::nativeTestBeginRequest(Esp32BaseWeb::METHOD_POST, "/faucet/calibration/flow");
+    Esp32BaseWeb::nativeTestSetAuthenticated(true);
+    Esp32BaseWeb::nativeTestSetSameOrigin(true);
+    Esp32BaseWeb::nativeTestSetParam("action", "remove_sample");
+    Esp32BaseWeb::nativeTestSetParam("attemptIndex", "999");
+
+    TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch("/faucet/calibration/flow", Esp32BaseWeb::METHOD_POST));
+
+    TEST_ASSERT_EQUAL(303, Esp32BaseWeb::nativeTestResponse().code);
+    TEST_ASSERT_EQUAL_STRING("/faucet/calibration/flow?error=invalid_value",
+                             Esp32BaseWeb::nativeTestResponseHeader("Location"));
+}
+
+void test_flow_calibration_remove_sample_redirects_invalid_value_for_missing_attempt_index() {
+    WebFixture fixture;
+    registerRoutes();
+    Esp32BaseWeb::nativeTestBeginRequest(Esp32BaseWeb::METHOD_POST, "/faucet/calibration/flow");
+    Esp32BaseWeb::nativeTestSetAuthenticated(true);
+    Esp32BaseWeb::nativeTestSetSameOrigin(true);
+    Esp32BaseWeb::nativeTestSetParam("action", "remove_sample");
+
+    TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch("/faucet/calibration/flow", Esp32BaseWeb::METHOD_POST));
+
+    TEST_ASSERT_EQUAL(303, Esp32BaseWeb::nativeTestResponse().code);
+    TEST_ASSERT_EQUAL_STRING("/faucet/calibration/flow?error=invalid_value",
+                             Esp32BaseWeb::nativeTestResponseHeader("Location"));
+}
+
+void test_flow_calibration_remove_sample_redirects_invalid_state_when_sample_not_removable() {
+    WebFixture fixture;
+    CalibrationSessionRecord session = makeCalibrationSession(77, testNowSeconds());
+    session.status = CalibrationSessionStatus::WaitingLocalRun;
+    saveWebSessionAttempt(fixture.traceStore, session, 0, CalibrationAttemptStatus::Removed, 0);
+    TEST_ASSERT_TRUE(fixture.sessionStore.save(session));
+    AppController reloaded(fixture.config,
+                           fixture.statistics,
+                           fixture.filters,
+                           fixture.recordWriter,
+                           nullptr,
+                           &fixture.calibrations,
+                           &fixture.sessionStore,
+                           &fixture.traceStore,
+                           &fixture.sampleStore,
+                           &fixture.waterSensors);
+    applyTestMeteringScheme(reloaded);
+    fixture.installContext(reloaded, fixture.records);
+    registerRoutes();
+    Esp32BaseWeb::nativeTestBeginRequest(Esp32BaseWeb::METHOD_POST, "/faucet/calibration/flow");
+    Esp32BaseWeb::nativeTestSetAuthenticated(true);
+    Esp32BaseWeb::nativeTestSetSameOrigin(true);
+    Esp32BaseWeb::nativeTestSetParam("action", "remove_sample");
+    Esp32BaseWeb::nativeTestSetParam("attemptIndex", "0");
+
+    TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch("/faucet/calibration/flow", Esp32BaseWeb::METHOD_POST));
+
+    TEST_ASSERT_EQUAL(303, Esp32BaseWeb::nativeTestResponse().code);
+    TEST_ASSERT_EQUAL_STRING("/faucet/calibration/flow?error=invalid_state",
                              Esp32BaseWeb::nativeTestResponseHeader("Location"));
 }
 
@@ -1210,6 +1275,9 @@ int main(int, char**) {
     RUN_TEST(test_calibration_session_start_recovers_missing_session_file_after_format);
     RUN_TEST(test_calibration_session_start_rejects_duplicate_start_as_invalid_state);
     RUN_TEST(test_flow_calibration_remove_sample_redirects_success);
+    RUN_TEST(test_flow_calibration_remove_sample_redirects_invalid_value_for_bad_attempt_index);
+    RUN_TEST(test_flow_calibration_remove_sample_redirects_invalid_value_for_missing_attempt_index);
+    RUN_TEST(test_flow_calibration_remove_sample_redirects_invalid_state_when_sample_not_removable);
     RUN_TEST(test_flow_calibration_sample_table_only_shows_remove_for_active_samples);
     RUN_TEST(test_tds_calibration_start_redirects_busy_to_calibration_page);
     RUN_TEST(test_tds_calibration_start_redirects_success_from_idle);

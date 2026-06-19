@@ -61,6 +61,8 @@ public:
 class MemoryFileBackend : public WaterRecordFileBackend {
 public:
     int failWriteAtCount = 0;
+    const char* failWriteAtPath = nullptr;
+    int failWriteAtPathCount = 0;
 
     bool exists(const char* path) override {
         return files.find(path ? path : "") != files.end();
@@ -103,6 +105,10 @@ public:
 
     bool writeAt(const char* path, std::size_t offset, const std::uint8_t* data, std::size_t len) override {
         if (!path || (!data && len > 0)) {
+            return false;
+        }
+        if (failWriteAtPath && std::strcmp(path, failWriteAtPath) == 0 && failWriteAtPathCount > 0) {
+            --failWriteAtPathCount;
             return false;
         }
         if (failWriteAtCount > 0) {
@@ -391,6 +397,18 @@ struct CalibrationAppFixture {
                                 filters,
                                 records,
                                 schemes,
+                                &pulseTraces,
+                                &calibrations,
+                                &sessionStore,
+                                &traceStore,
+                                &sampleStore);
+    }
+
+    void createAppWithoutMeteringStore() {
+        app = new AppController(config,
+                                statistics,
+                                filters,
+                                records,
                                 &pulseTraces,
                                 &calibrations,
                                 &sessionStore,
@@ -1238,6 +1256,33 @@ void test_app_controller_auto_generates_after_second_valid_calibration_sample() 
     TEST_ASSERT_TRUE(fixture.app->applyGeneratedCalibrationForWeb(1714502600));
 }
 
+void test_app_controller_submit_actual_succeeds_when_auto_refresh_cannot_generate() {
+    CalibrationAppFixture fixture;
+    saveOneValidOnePendingSession(fixture, 1714502400);
+    fixture.createAppWithoutMeteringStore();
+
+    TEST_ASSERT_TRUE(fixture.app->submitCalibrationActualForWeb(7500, 1714502500));
+
+    const AppSnapshot snapshot = fixture.app->snapshot();
+    TEST_ASSERT_EQUAL_UINT8(2, snapshot.calibrationValidSampleCount);
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationSessionStatus::WaitingLocalRun),
+                            static_cast<unsigned>(snapshot.calibrationStatus));
+    TEST_ASSERT_EQUAL_size_t(1, fixture.calibrations.calibrations.size());
+
+    CalibrationStoredTrace valid{};
+    TEST_ASSERT_TRUE(fixture.traceStore.load(1, valid));
+    TEST_ASSERT_TRUE(valid.valid);
+    TEST_ASSERT_FALSE(valid.pendingActual);
+    TEST_ASSERT_EQUAL_UINT32(7500, valid.actualMl);
+
+    CalibrationSessionRecord persisted{};
+    TEST_ASSERT_TRUE(fixture.sessionStore.load(persisted));
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationSessionStatus::WaitingLocalRun),
+                            static_cast<unsigned>(persisted.status));
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationAttemptStatus::Valid),
+                            static_cast<unsigned>(persisted.attempts[1].status));
+}
+
 void test_app_controller_removed_valid_sample_clears_generated_candidate() {
     CalibrationAppFixture fixture;
     saveOneValidOnePendingSession(fixture, 1714502400);
@@ -1256,6 +1301,34 @@ void test_app_controller_removed_valid_sample_clears_generated_candidate() {
     TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationSessionStatus::WaitingLocalRun),
                             static_cast<unsigned>(fixture.app->snapshot().calibrationStatus));
     TEST_ASSERT_FALSE(fixture.app->applyGeneratedCalibrationForWeb(1714502600));
+}
+
+void test_app_controller_remove_sample_session_save_failure_keeps_original_trace() {
+    CalibrationAppFixture fixture;
+    saveOneValidOnePendingSession(fixture, 1714502400);
+    fixture.createApp();
+
+    CalibrationStoredTrace before{};
+    TEST_ASSERT_TRUE(fixture.traceStore.load(0, before));
+    TEST_ASSERT_TRUE(before.valid);
+    TEST_ASSERT_FALSE(before.pendingActual);
+
+    fixture.backend.failWriteAtPath = "/cal-session.bin";
+    fixture.backend.failWriteAtPathCount = 1;
+
+    TEST_ASSERT_FALSE(fixture.app->removeCalibrationSessionSampleForWeb(0, 1714502500));
+
+    CalibrationStoredTrace after{};
+    TEST_ASSERT_TRUE(fixture.traceStore.load(0, after));
+    TEST_ASSERT_TRUE(after.valid);
+    TEST_ASSERT_FALSE(after.pendingActual);
+    TEST_ASSERT_EQUAL_UINT32(before.actualMl, after.actualMl);
+    TEST_ASSERT_EQUAL_UINT32(before.trace.totalPulses, after.trace.totalPulses);
+
+    CalibrationSessionRecord persisted{};
+    TEST_ASSERT_TRUE(fixture.sessionStore.load(persisted));
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationAttemptStatus::Valid),
+                            static_cast<unsigned>(persisted.attempts[0].status));
 }
 
 void test_app_controller_pending_actual_sample_can_be_removed() {
@@ -2045,7 +2118,9 @@ int main(int argc, char** argv) {
     RUN_TEST(test_app_controller_local_ok_starts_calibration_run_and_completion_awaits_actual);
     RUN_TEST(test_app_controller_generates_calibration_session_candidate);
     RUN_TEST(test_app_controller_auto_generates_after_second_valid_calibration_sample);
+    RUN_TEST(test_app_controller_submit_actual_succeeds_when_auto_refresh_cannot_generate);
     RUN_TEST(test_app_controller_removed_valid_sample_clears_generated_candidate);
+    RUN_TEST(test_app_controller_remove_sample_session_save_failure_keeps_original_trace);
     RUN_TEST(test_app_controller_pending_actual_sample_can_be_removed);
     RUN_TEST(test_app_controller_reuses_removed_trace_slot_without_overwriting_valid_sample);
     RUN_TEST(test_app_controller_remove_one_of_three_valid_samples_regenerates_candidate);

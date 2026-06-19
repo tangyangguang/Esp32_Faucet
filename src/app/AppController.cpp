@@ -691,35 +691,50 @@ bool AppController::removeCalibrationSessionSampleForWeb(std::uint8_t attemptInd
         return false;
     }
 
-    CalibrationAttempt* selected = nullptr;
+    std::uint8_t selectedIndex = kCalibrationMaxAttempts;
     for (std::uint8_t i = 0; i < calibrationSession_.attemptCount && i < kCalibrationMaxAttempts; ++i) {
-        CalibrationAttempt& attempt = calibrationSession_.attempts[i];
+        const CalibrationAttempt& attempt = calibrationSession_.attempts[i];
         if (attempt.attemptIndex == attemptIndex) {
-            selected = &attempt;
+            selectedIndex = i;
             break;
         }
     }
+    const CalibrationAttempt* selected =
+        selectedIndex < kCalibrationMaxAttempts ? &calibrationSession_.attempts[selectedIndex] : nullptr;
     if (!selected || (selected->status != CalibrationAttemptStatus::Valid &&
                       selected->status != CalibrationAttemptStatus::PendingActual)) {
         return false;
     }
-    if (calibrationSessionTraces_ && selected->sessionTraceSlot < kCalibrationSessionTraceSlots &&
-        !calibrationSessionTraces_->invalidate(selected->sessionTraceSlot)) {
+    CalibrationSessionRecord nextSession = calibrationSession_;
+    CalibrationAttempt& nextAttempt = nextSession.attempts[selectedIndex];
+    nextAttempt.status = CalibrationAttemptStatus::Removed;
+    nextAttempt.skipReason = CalibrationSkipReason::None;
+    nextAttempt.invalidReason = CalibrationInvalidReason::None;
+    nextSession.validSampleCount = countValidCalibrationSamples(nextSession);
+    nextSession.updatedAt = nowSeconds;
+    const bool canQuickGenerateAfterRemove = calibrationCanQuickGenerate(nextSession);
+    nextSession.status = canQuickGenerateAfterRemove ? CalibrationSessionStatus::ReadyToGenerate
+                                                     : (calibrationCanStartAttempt(nextSession)
+                                                            ? CalibrationSessionStatus::WaitingLocalRun
+                                                            : CalibrationSessionStatus::Failed);
+
+    if (!calibrationSessions_ || !calibrationSessions_->ready() || !calibrationSessions_->save(nextSession)) {
         return false;
     }
 
+    const CalibrationSessionRecord originalSession = calibrationSession_;
+    if (calibrationSessionTraces_ && selected->sessionTraceSlot < kCalibrationSessionTraceSlots &&
+        !calibrationSessionTraces_->invalidate(selected->sessionTraceSlot)) {
+        calibrationSessions_->save(originalSession);
+        return false;
+    }
+
+    calibrationSession_ = nextSession;
     clearCalibrationCandidate();
-    selected->status = CalibrationAttemptStatus::Removed;
-    selected->skipReason = CalibrationSkipReason::None;
-    selected->invalidReason = CalibrationInvalidReason::None;
-    calibrationSession_.validSampleCount = countValidCalibrationSamples(calibrationSession_);
-    calibrationSession_.updatedAt = nowSeconds;
-    if (calibrationCanQuickGenerate(calibrationSession_)) {
+    if (canQuickGenerateAfterRemove) {
         return refreshCalibrationCandidate(nowSeconds);
     }
-    calibrationSession_.status = calibrationCanStartAttempt(calibrationSession_) ? CalibrationSessionStatus::WaitingLocalRun
-                                                                                : CalibrationSessionStatus::Failed;
-    return saveCalibrationSession();
+    return true;
 }
 
 bool AppController::skipCalibrationAttemptForWeb(CalibrationSkipReason reason, std::uint32_t nowSeconds) {
@@ -740,7 +755,9 @@ bool AppController::skipCalibrationAttemptForWeb(CalibrationSkipReason reason, s
 }
 
 bool AppController::generateCalibrationForWeb(std::uint32_t nowSeconds) {
-    return refreshCalibrationCandidate(nowSeconds);
+    return refreshCalibrationCandidate(nowSeconds) &&
+           calibrationSession_.status == CalibrationSessionStatus::Generated &&
+           calibrationCandidate_.ready;
 }
 
 bool AppController::refreshCalibrationCandidate(std::uint32_t nowSeconds) {
@@ -759,8 +776,7 @@ bool AppController::refreshCalibrationCandidate(std::uint32_t nowSeconds) {
         calibrationSession_.status = calibrationCanStartAttempt(calibrationSession_) ? CalibrationSessionStatus::WaitingLocalRun
                                                                                     : CalibrationSessionStatus::Failed;
         calibrationSession_.updatedAt = nowSeconds;
-        saveCalibrationSession();
-        return false;
+        return saveCalibrationSession();
     }
 
     SegmentedCalibrationSample samples[kCalibrationMaxValidSamples]{};
@@ -792,8 +808,7 @@ bool AppController::refreshCalibrationCandidate(std::uint32_t nowSeconds) {
         calibrationSession_.status = calibrationCanStartAttempt(calibrationSession_) ? CalibrationSessionStatus::WaitingLocalRun
                                                                                     : CalibrationSessionStatus::Failed;
         calibrationSession_.updatedAt = nowSeconds;
-        saveCalibrationSession();
-        return false;
+        return saveCalibrationSession();
     }
     MeteringSchemeCandidate candidate{};
     fillCandidateFromSegmentedResult(candidate,

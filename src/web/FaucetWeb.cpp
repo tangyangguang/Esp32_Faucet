@@ -117,6 +117,7 @@ void formatRecordTime(std::uint32_t seconds, char* out, std::size_t len);
 void formatFlowLitersPerMin(std::uint32_t flowMlPerMin, char* out, std::size_t len);
 void sendNoticeFromQuery();
 void sendPageEnd();
+void sendManualParameterLink(const char* label, const MeteringParameters& params);
 
 Esp32BaseWeb::Method toBaseMethod(FaucetWebMethod method) {
     switch (method) {
@@ -1632,10 +1633,7 @@ void sendActiveMeteringSchemeCard(const MeteringSchemeRecord& scheme, std::uint3
     Esp32BaseWeb::sendChunk("</div><div class='row-actions active-metering-actions'>");
     sendSchemeDetailButton(scheme, activeId);
     sendMeteringTrialButton(scheme.name[0] ? scheme.name : "当前计量方案", scheme.params, 1000, 10);
-    if (!meteringSchemeUsedEverForWeb(scheme)) {
-        sendFmt("<a class='btn-link' href='/faucet/calibration/flow?scheme=%lu'>编辑</a>",
-                static_cast<unsigned long>(scheme.id));
-    }
+    sendManualParameterLink("复制参数", scheme.params);
     Esp32BaseWeb::sendChunk("</div></section>");
 }
 
@@ -1680,6 +1678,16 @@ void sendMeteringTrialModal() {
                             "</form></div></div>");
 }
 
+void sendManualParameterLink(const char* label, const MeteringParameters& params) {
+    sendFmt("<a class='btn-link' href='/faucet/calibration/flow?manual=1&startupPulseCount=%lu&startupVolumeMl=%lu&stablePulsePerLiter=%lu&startupDurationMs=%lu&stableFlowMlPerMin=%lu'>%s</a>",
+            static_cast<unsigned long>(params.startupPulseCount),
+            static_cast<unsigned long>(params.startupVolumeMl),
+            static_cast<unsigned long>(params.stablePulsePerLiter),
+            static_cast<unsigned long>(params.startupDurationMs),
+            static_cast<unsigned long>(params.stableFlowMlPerMin),
+            label ? label : "复制参数");
+}
+
 void sendCalibrationParameterPanels() {
     MeteringSchemeRecord* schemes = new (std::nothrow) MeteringSchemeRecord[kMeteringSchemeStoreSlotCount]{};
     const bool ready = ensureMeteringSchemesReady();
@@ -1692,19 +1700,19 @@ void sendCalibrationParameterPanels() {
         parseU32(createdText, createdSchemeId);
     }
 
-    Esp32BaseWeb::sendChunk("<section id='metering-scheme-list' class='panel calibration-param-panel'><div class='panel-head'><h3>计量方案列表</h3>"
-                            "<a class='btn-link' href='/faucet/calibration/flow?scheme=new'>新建方案</a></div>"
-                            "<table class='calibration-slot-table metering-scheme-table'><tr><th>方案</th><th>状态</th><th>启动阶段</th><th>稳态阶段</th><th>样本与误差</th><th>操作</th></tr>");
+    Esp32BaseWeb::sendChunk("<section id='metering-scheme-list' class='panel calibration-param-panel'><div class='panel-head'><h3>历史参数</h3>"
+                            "<a class='btn-link' href='/faucet/calibration/flow?manual=1'>手工输入参数</a></div>"
+                            "<table class='calibration-slot-table metering-scheme-table'><tr><th>参数</th><th>状态</th><th>启动阶段</th><th>稳态阶段</th><th>样本与误差</th><th>操作</th></tr>");
     if (!ready) {
         const AppStorageStatus status =
             g_context.meteringSchemes ? g_context.meteringSchemes->status() : AppStorageStatus::Unavailable;
-        sendFmt("<tr><td colspan='6'>计量方案存储不可用：%s（%s）。</td></tr>",
+        sendFmt("<tr><td colspan='6'>历史参数存储不可用：%s（%s）。</td></tr>",
                 appStorageStatusMessage(status),
                 appStorageStatusCode(status));
     } else if (!schemes) {
-        Esp32BaseWeb::sendChunk("<tr><td colspan='6'>内存不足，无法加载方案列表。</td></tr>");
+        Esp32BaseWeb::sendChunk("<tr><td colspan='6'>内存不足，无法加载历史参数。</td></tr>");
     } else if (count == 0) {
-        Esp32BaseWeb::sendChunk("<tr><td colspan='6'>还没有计量方案。可以新建手工方案，或从长期样本库生成方案。</td></tr>");
+        Esp32BaseWeb::sendChunk("<tr><td colspan='6'>还没有历史参数。可以手工输入一组参数。</td></tr>");
     }
     for (std::size_t i = 0; i < count; ++i) {
         const MeteringSchemeRecord& scheme = schemes[i];
@@ -1731,7 +1739,7 @@ void sendCalibrationParameterPanels() {
         sendFmt("</b><small>rev %lu</small></td><td>",
                 static_cast<unsigned long>(scheme.revision));
         if (scheme.id == activeId) {
-            Esp32BaseWeb::sendChunk("<span class='status-pill status-ok'>当前方案</span>");
+            Esp32BaseWeb::sendChunk("<span class='status-pill status-ok'>正在使用</span>");
             if (scheme.id == createdSchemeId) {
                 Esp32BaseWeb::sendChunk(" <span class='status-pill status-warn'>刚保存</span>");
             }
@@ -1765,24 +1773,16 @@ void sendCalibrationParameterPanels() {
         Esp32BaseWeb::sendChunk("</div></td><td><div class='row-actions scheme-row-actions'>");
         sendSchemeDetailButton(scheme, activeId);
         sendMeteringTrialButton(scheme.name[0] ? scheme.name : "计量方案", scheme.params, 1000, 10);
-        if (!meteringSchemeUsedEverForWeb(scheme)) {
-            sendFmt("<a class='btn-link' href='/faucet/calibration/flow?scheme=%lu'>编辑</a>",
-                    static_cast<unsigned long>(scheme.id));
-        }
+        sendManualParameterLink("复制参数", scheme.params);
         if (scheme.id != activeId) {
-            sendFmt("<form method='post' action='/faucet/calibration/flow' onsubmit=\"return confirm('确认设为当前计量方案？')&&once(this)\"><input type='hidden' name='action' value='set_active_metering_scheme'><input type='hidden' name='id' value='%lu'><input class='primary' type='submit' value='%s'></form>",
-                    static_cast<unsigned long>(scheme.id),
-                    scheme.id == createdSchemeId ? "设为当前方案" : "设为当前");
-        }
-        if (canDeleteMeteringScheme(scheme, activeId)) {
-            sendFmt("<form method='post' action='/faucet/calibration/flow' onsubmit=\"return confirm('确认删除这个计量方案？')&&once(this)\"><input type='hidden' name='action' value='delete_metering_scheme'><input type='hidden' name='id' value='%lu'><input class='danger' type='submit' value='删除'></form>",
+            sendFmt("<form method='post' action='/faucet/calibration/flow' onsubmit=\"return confirm('确认使用这组计量参数？')&&once(this)\"><input type='hidden' name='action' value='set_active_metering_scheme'><input type='hidden' name='id' value='%lu'><input class='primary' type='submit' value='使用这组参数'></form>",
                     static_cast<unsigned long>(scheme.id));
         }
         Esp32BaseWeb::sendChunk("</div></td></tr>");
     }
     Esp32BaseWeb::sendChunk("</table>");
     if (ready && count == kMeteringSchemeStoreSlotCount) {
-        Esp32BaseWeb::sendChunk("<p class='muted'>方案槽位已满；新方案需要先删除一个非当前方案，之后会复用已删除槽位。</p>");
+        Esp32BaseWeb::sendChunk("<p class='muted'>历史参数数量已满；请先整理高级维护里的旧参数。</p>");
     }
     sendSchemeDetailModal();
     Esp32BaseWeb::sendChunk("</section>");
@@ -1790,11 +1790,12 @@ void sendCalibrationParameterPanels() {
 }
 
 void sendMeteringSchemeEditPage(bool creating, const MeteringSchemeRecord* scheme) {
-    const char* title = creating ? "新建计量方案" : "修改计量方案";
+    const char* title = creating ? "手工输入参数" : "复制参数";
     Esp32BaseWeb::sendHeader(title);
-    sendFmt("<h2>%s</h2><p><a class='btn-link' href='/faucet/calibration/flow'>返回计量方案</a></p>", title);
+    sendFmt("<h2>%s</h2><p><a class='btn-link' href='/faucet/calibration/flow'>返回校准</a></p>", title);
     sendNoticeFromQuery();
     const MeteringParameters params = scheme ? scheme->params : MeteringParameters{};
+    const bool hasValues = scheme != nullptr;
     const bool editingActive = !creating && scheme && ensureMeteringSchemesReady() &&
                                scheme->id == g_context.meteringSchemes->activeSchemeId();
     Esp32BaseWeb::sendChunk("<section class='panel calibration-param-panel scheme-edit-panel'><form class='scheme-edit-form' method='post' action='/faucet/calibration/flow' onsubmit='return once(this)'>");
@@ -1806,7 +1807,7 @@ void sendMeteringSchemeEditPage(bool creating, const MeteringSchemeRecord* schem
     if (editingActive) {
         Esp32BaseWeb::sendChunk("<p class='warn scheme-edit-warning'>当前方案：保存后会立即影响后续出水估算。</p>");
     }
-    Esp32BaseWeb::sendChunk("<div class='scheme-edit-section'><h3>方案信息</h3><div class='scheme-edit-grid'>");
+    Esp32BaseWeb::sendChunk("<div class='scheme-edit-section'><h3>参数信息</h3><div class='scheme-edit-grid'>");
     sendFmt("<label class='compact-field scheme-edit-field scheme-span-12'><span>名称</span><input name='name' maxlength='%u' required value='",
             static_cast<unsigned>(kMeteringSchemeNameLength - 1));
     if (scheme && scheme->name[0]) {
@@ -1822,16 +1823,16 @@ void sendMeteringSchemeEditPage(bool creating, const MeteringSchemeRecord* schem
     Esp32BaseWeb::sendChunk("</div></div><div class='scheme-edit-section'><h3>容量估算计量参数</h3><div class='scheme-edit-grid'>");
     sendFmt("<label class='compact-field scheme-edit-field scheme-span-4'><span>启动脉冲数</span><input name='startupPulseCount' type='number' min='0' max='%lu' step='1' required%s",
             static_cast<unsigned long>(kMaxSegmentedStartupPulseCount),
-            creating ? "" : " value='");
-    if (!creating) {
+            hasValues ? " value='" : "");
+    if (hasValues) {
         sendFmt("%lu'", static_cast<unsigned long>(params.startupPulseCount));
     }
     sendFmt("><small class='hint'>单位 P，范围 0-%lu</small></label>",
             static_cast<unsigned long>(kMaxSegmentedStartupPulseCount));
     sendFmt("<label class='compact-field scheme-edit-field scheme-span-4'><span>启动水量</span><input name='startupVolumeMl' type='number' min='0' max='%lu' step='1' required%s",
             static_cast<unsigned long>(kMaxSegmentedStartupVolumeMl),
-            creating ? "" : " value='");
-    if (!creating) {
+            hasValues ? " value='" : "");
+    if (hasValues) {
         sendFmt("%lu'", static_cast<unsigned long>(params.startupVolumeMl));
     }
     sendFmt("><small class='hint'>单位 ml，范围 0-%lu</small></label>",
@@ -1839,8 +1840,8 @@ void sendMeteringSchemeEditPage(bool creating, const MeteringSchemeRecord* schem
     sendFmt("<label class='compact-field scheme-edit-field scheme-span-4'><span>稳态 P/L</span><input name='stablePulsePerLiter' type='number' min='%lu' max='%lu' step='1' required%s",
             static_cast<unsigned long>(kMinSegmentedPulsePerLiter),
             static_cast<unsigned long>(kMaxSegmentedPulsePerLiter),
-            creating ? "" : " value='");
-    if (!creating) {
+            hasValues ? " value='" : "");
+    if (hasValues) {
         sendFmt("%lu'", static_cast<unsigned long>(params.stablePulsePerLiter));
     }
     sendFmt("><small class='hint'>单位 P/L，范围 %lu-%lu</small></label>",
@@ -1851,8 +1852,8 @@ void sendMeteringSchemeEditPage(bool creating, const MeteringSchemeRecord* schem
     formatStartupDurationSecondsInput(params.startupDurationMs, startupDurationSec, sizeof(startupDurationSec));
     sendFmt("<label class='compact-field scheme-edit-field scheme-span-4'><span>启动时长</span><input name='startupDurationSec' type='number' min='0' max='%lu' step='0.001' required%s",
             static_cast<unsigned long>(kMaxSegmentedStartupDurationMs / 1000U),
-            creating ? "" : " value='");
-    if (!creating) {
+            hasValues ? " value='" : "");
+    if (hasValues) {
         sendFmt("%s'", startupDurationSec);
     }
     sendFmt("><small class='hint'>单位 秒，范围 0-%lu，可精确到 0.001 秒</small></label>",
@@ -1860,18 +1861,35 @@ void sendMeteringSchemeEditPage(bool creating, const MeteringSchemeRecord* schem
     sendFmt("<label class='compact-field scheme-edit-field scheme-span-4'><span>预计稳态流速</span><input name='stableFlowMlPerMin' type='number' min='%lu' max='%lu' step='1' required%s",
             static_cast<unsigned long>(kMinStableFlowMlPerMin),
             static_cast<unsigned long>(kMaxStableFlowMlPerMin),
-            creating ? "" : " value='");
-    if (!creating) {
+            hasValues ? " value='" : "");
+    if (hasValues) {
         sendFmt("%lu'", static_cast<unsigned long>(params.stableFlowMlPerMin));
     }
     sendFmt("><small class='hint'>单位 ml/min，范围 %lu-%lu</small></label>",
             static_cast<unsigned long>(kMinStableFlowMlPerMin),
             static_cast<unsigned long>(kMaxStableFlowMlPerMin));
     Esp32BaseWeb::sendChunk("</div></div>");
-    Esp32BaseWeb::sendChunk(creating ? "<div class='form-actions scheme-edit-actions'><input class='primary' type='submit' value='保存为新方案'>"
-                                     : "<div class='form-actions scheme-edit-actions'><input class='primary' type='submit' value='保存修改'>");
+    Esp32BaseWeb::sendChunk(creating ? "<div class='form-actions scheme-edit-actions'><input class='primary' type='submit' value='保存参数'>"
+                                     : "<div class='form-actions scheme-edit-actions'><input class='primary' type='submit' value='保存参数'>");
     Esp32BaseWeb::sendChunk("<a class='btn-link' href='/faucet/calibration/flow'>取消</a></div></form></section>");
     sendPageEnd();
+}
+
+bool readMeteringManualPrefillFromQuery(MeteringParameters& params, bool& present) {
+    present = false;
+    char text[32]{};
+    if (!getParam("startupPulseCount", text, sizeof(text))) {
+        return true;
+    }
+    present = true;
+    if (!parseU32(text, params.startupPulseCount) ||
+        !getParam("startupVolumeMl", text, sizeof(text)) || !parseU32(text, params.startupVolumeMl) ||
+        !getParam("stablePulsePerLiter", text, sizeof(text)) || !parseU32(text, params.stablePulsePerLiter) ||
+        !getParam("startupDurationMs", text, sizeof(text)) || !parseU32(text, params.startupDurationMs) ||
+        !getParam("stableFlowMlPerMin", text, sizeof(text)) || !parseU32(text, params.stableFlowMlPerMin)) {
+        return false;
+    }
+    return validMeteringSchemeParameters(params);
 }
 
 
@@ -3113,7 +3131,7 @@ void sendNoticeFromQuery() {
     } else if (std::strcmp(text, "metering_storage_unavailable") == 0) {
         message = "计量方案存储不可用；请检查存储状态，系统不会自动删除原文件。";
     } else if (std::strcmp(text, "used_scheme_locked") == 0 || std::strcmp(text, "scheme_locked") == 0) {
-        message = "已使用或已删除的计量方案不能修改，请新建方案。";
+        message = "已使用或已删除的历史参数不能直接修改，请复制参数后另存。";
     } else if (std::strcmp(text, "no_calibration_record") == 0) {
         message = "最新记录没有可用的原始脉冲，不能用于校准。";
     } else if (std::strcmp(text, "calibration_mark_failed") == 0) {
@@ -4634,6 +4652,20 @@ void handleFlowCalibrationPage() {
         Esp32BaseWeb::endResponse();
         return;
     }
+    if (getParam("manual", text, sizeof(text))) {
+        MeteringParameters prefill{};
+        bool hasPrefill = false;
+        if (!readMeteringManualPrefillFromQuery(prefill, hasPrefill)) {
+            Esp32BaseWeb::redirectSeeOther("/faucet/calibration/flow?error=invalid_value");
+            return;
+        }
+        MeteringSchemeRecord draft{};
+        if (hasPrefill) {
+            initializeManualMeteringScheme(draft, 0, "手工参数", prefill, g_context.nowSeconds ? g_context.nowSeconds() : 0);
+        }
+        sendMeteringSchemeEditPage(true, hasPrefill ? &draft : nullptr);
+        return;
+    }
     if (getParam("scheme", text, sizeof(text))) {
         if (std::strcmp(text, "new") == 0) {
             sendMeteringSchemeEditPage(true, nullptr);
@@ -4641,15 +4673,12 @@ void handleFlowCalibrationPage() {
         }
         std::uint32_t id = 0;
         MeteringSchemeRecord scheme{};
-        if (!parseU32(text, id) || !ensureMeteringSchemesReady() || !g_context.meteringSchemes->findById(id, scheme)) {
+        if (!parseU32(text, id) || !ensureMeteringSchemesReady() || !g_context.meteringSchemes->findById(id, scheme) ||
+            scheme.deleted) {
             Esp32BaseWeb::redirectSeeOther("/faucet/calibration/flow?error=invalid_value");
             return;
         }
-        if (scheme.deleted || meteringSchemeUsedEverForWeb(scheme)) {
-            Esp32BaseWeb::redirectSeeOther("/faucet/calibration/flow?error=scheme_locked");
-            return;
-        }
-        sendMeteringSchemeEditPage(false, &scheme);
+        sendMeteringSchemeEditPage(true, &scheme);
         return;
     }
 
@@ -4717,6 +4746,7 @@ void handleFlowCalibrationPage() {
     Esp32BaseWeb::sendChunk("<div class='calibration-param-layout'>");
     sendActiveMeteringSchemeSummaryPanel();
     Esp32BaseWeb::sendChunk("</div>");
+    sendCalibrationParameterPanels();
     sendMeteringTrialModal();
     sendCalibrationPageScript();
     sendPageEnd();

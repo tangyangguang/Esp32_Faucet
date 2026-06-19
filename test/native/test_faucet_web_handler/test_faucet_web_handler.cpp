@@ -786,6 +786,58 @@ void test_flow_calibration_center_initial_render_shows_current_parameter_workflo
     TEST_ASSERT_LESS_OR_EQUAL_UINT32(3, fixture.calibrationFiles.meteringSchemeRecordReads);
 }
 
+void test_flow_calibration_history_uses_parameter_language() {
+    WebFixture fixture;
+    registerRoutes();
+    Esp32BaseWeb::nativeTestBeginRequest(Esp32BaseWeb::METHOD_GET, "/faucet/calibration/flow");
+    Esp32BaseWeb::nativeTestSetAuthenticated(true);
+    Esp32BaseWeb::nativeTestSetSameOrigin(true);
+
+    TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch("/faucet/calibration/flow", Esp32BaseWeb::METHOD_GET));
+
+    const std::string& body = Esp32BaseWeb::nativeTestResponse().body;
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("历史参数"));
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("手工输入参数"));
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("复制参数"));
+    TEST_ASSERT_EQUAL(std::string::npos, body.find("删除方案"));
+    TEST_ASSERT_EQUAL(std::string::npos, body.find("保存为新方案"));
+}
+
+void test_flow_calibration_manual_input_prefills_copied_parameters() {
+    WebFixture fixture;
+    registerRoutes();
+    Esp32BaseWeb::nativeTestBeginRequest(Esp32BaseWeb::METHOD_GET, "/faucet/calibration/flow");
+    Esp32BaseWeb::nativeTestSetAuthenticated(true);
+    Esp32BaseWeb::nativeTestSetSameOrigin(true);
+    Esp32BaseWeb::nativeTestSetParam("manual", "1");
+    Esp32BaseWeb::nativeTestSetParam("startupPulseCount", "12");
+    Esp32BaseWeb::nativeTestSetParam("startupVolumeMl", "345");
+    Esp32BaseWeb::nativeTestSetParam("stablePulsePerLiter", "1234");
+    Esp32BaseWeb::nativeTestSetParam("startupDurationMs", "3450");
+    Esp32BaseWeb::nativeTestSetParam("stableFlowMlPerMin", "2100");
+
+    TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch("/faucet/calibration/flow", Esp32BaseWeb::METHOD_GET));
+
+    TEST_ASSERT_EQUAL(200, Esp32BaseWeb::nativeTestResponse().code);
+    const std::string& body = Esp32BaseWeb::nativeTestResponse().body;
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("<h2>手工输入参数</h2>"));
+    const std::size_t startupPulseField = body.find("name='startupPulseCount'");
+    const std::size_t startupVolumeField = body.find("name='startupVolumeMl'");
+    const std::size_t stablePplField = body.find("name='stablePulsePerLiter'");
+    const std::size_t startupDurationField = body.find("name='startupDurationSec'");
+    const std::size_t stableFlowField = body.find("name='stableFlowMlPerMin'");
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, startupPulseField);
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, startupVolumeField);
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, stablePplField);
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, startupDurationField);
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, stableFlowField);
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("value='12'", startupPulseField));
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("value='345'", startupVolumeField));
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("value='1234'", stablePplField));
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("value='3.450'", startupDurationField));
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("value='2100'", stableFlowField));
+}
+
 void test_flow_calibration_notice_uses_history_sample_language() {
     WebFixture fixture;
     registerRoutes();
@@ -1323,6 +1375,8 @@ int main(int, char**) {
     RUN_TEST(test_calibration_home_shows_three_expanded_sections_without_flow_tables);
     RUN_TEST(test_calibration_page_initial_render_shows_tds_controls);
     RUN_TEST(test_flow_calibration_center_initial_render_shows_current_parameter_workflow);
+    RUN_TEST(test_flow_calibration_history_uses_parameter_language);
+    RUN_TEST(test_flow_calibration_manual_input_prefills_copied_parameters);
     RUN_TEST(test_flow_calibration_notice_uses_history_sample_language);
     RUN_TEST(test_flow_calibration_error_uses_history_sample_language);
     RUN_TEST(test_flow_calibration_center_uses_no_collapsed_sections);

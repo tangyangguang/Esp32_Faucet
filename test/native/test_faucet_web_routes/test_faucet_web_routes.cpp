@@ -771,8 +771,8 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "name='action' value='edit_metering_scheme'"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "name='action' value='set_active_metering_scheme'"));
     TEST_ASSERT_NULL(std::strstr(buffer, "handleDisableMeteringSchemeApi"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "name='action' value='delete_metering_scheme'"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "value='保存修改'"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "name='action' value='delete_metering_scheme'"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "value='保存参数'"));
     TEST_ASSERT_NULL(std::strstr(buffer, "value='保存槽位'"));
     TEST_ASSERT_NULL(std::strstr(buffer, "name='action' value='apply_segmented'"));
     TEST_ASSERT_NULL(std::strstr(buffer, "name='action' value='restore_segmented'"));
@@ -812,7 +812,7 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "generated-residual-table"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "误差偏大"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "重新生成"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "设为当前方案"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "使用这组参数"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "createdScheme"));
     TEST_ASSERT_NULL(std::strstr(buffer, "faucetEstimateGeneratedScheme"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "faucetSubmitGenerationAction"));
@@ -831,15 +831,15 @@ void test_web_page_source_contains_expected_ui_improvements() {
     const char* recordsApiActionBuffer = std::strstr(recordsApi, "char text[32]{};");
     TEST_ASSERT_NOT_NULL(recordsApiActionBuffer);
     TEST_ASSERT_TRUE(recordsApiActionBuffer < recordsApiEnd);
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "href='/faucet/calibration/flow?scheme=new'"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "href='/faucet/calibration/flow?scheme=%lu'"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "href='/faucet/calibration/flow?manual=1'"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "href='/faucet/calibration/flow?manual=1&startupPulseCount=%lu"));
     const char* schemeEditSource = std::strstr(buffer, "void sendMeteringSchemeEditPage");
     TEST_ASSERT_NOT_NULL(schemeEditSource);
     TEST_ASSERT_NULL(std::strstr(schemeEditSource, "scheme ? scheme->params : defaultMeteringParameters()"));
     TEST_ASSERT_NOT_NULL(std::strstr(schemeEditSource, "scheme ? scheme->params : MeteringParameters{}"));
-    TEST_ASSERT_NOT_NULL(std::strstr(schemeEditSource, "creating ? \"\" : \" value='"));
+    TEST_ASSERT_NOT_NULL(std::strstr(schemeEditSource, "hasValues ? \" value='\" : \"\""));
     TEST_ASSERT_NULL(std::strstr(schemeEditSource, "Esp32BaseWeb::sendChunk(\"手工方案\")"));
-    TEST_ASSERT_NOT_NULL(std::strstr(schemeEditSource, "方案信息"));
+    TEST_ASSERT_NOT_NULL(std::strstr(schemeEditSource, "参数信息"));
     TEST_ASSERT_NOT_NULL(std::strstr(schemeEditSource, "容量估算计量参数"));
     TEST_ASSERT_NOT_NULL(std::strstr(schemeEditSource, "时间估算计量参数"));
     TEST_ASSERT_NOT_NULL(std::strstr(schemeEditSource, "startupDurationSec"));
@@ -930,10 +930,10 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NULL(std::strstr(schemeList, "scheme-meta-lines"));
     TEST_ASSERT_NULL(std::strstr(schemeList, "meteringSchemeSourceName(scheme.sourceType)"));
     TEST_ASSERT_NOT_NULL(std::strstr(schemeList, "meteringSchemeUsedEverForWeb(scheme) ? \"已使用\" : \"未使用\""));
-    TEST_ASSERT_NOT_NULL(std::strstr(schemeList, "if (!meteringSchemeUsedEverForWeb(scheme))"));
+    TEST_ASSERT_NOT_NULL(std::strstr(schemeList, "sendManualParameterLink(\"复制参数\", scheme.params)"));
     TEST_ASSERT_NOT_NULL(std::strstr(schemeList, "sendSchemeDetailButton(scheme, activeId)"));
     TEST_ASSERT_NOT_NULL(std::strstr(schemeList, "sendMeteringTrialButton"));
-    TEST_ASSERT_NOT_NULL(std::strstr(schemeList, "canDeleteMeteringScheme(scheme, activeId)"));
+    TEST_ASSERT_NULL(std::strstr(schemeList, "canDeleteMeteringScheme(scheme, activeId)"));
     TEST_ASSERT_NULL(std::strstr(schemeList, "scheme.id != activeId && scheme.useCount == 0"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "scheme-detail-modal"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "faucetOpenSchemeDetail"));
@@ -1501,10 +1501,10 @@ void test_metering_scheme_page_uses_active_card_and_table_layout() {
 
     TEST_ASSERT_NOT_NULL(findWithin(summaryPanel, panel, "active-metering-card"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "active-metering-metrics"));
-    TEST_ASSERT_NOT_NULL(std::strstr(panel, "计量方案列表"));
+    TEST_ASSERT_NOT_NULL(std::strstr(panel, "历史参数"));
     TEST_ASSERT_NOT_NULL(std::strstr(panel, "metering-scheme-table"));
     TEST_ASSERT_NOT_NULL(std::strstr(panel, "<th>启动阶段</th><th>稳态阶段</th><th>样本与误差</th>"));
-    TEST_ASSERT_NOT_NULL(std::strstr(panel, "colspan='6'>还没有计量方案"));
+    TEST_ASSERT_NOT_NULL(std::strstr(panel, "colspan='6'>还没有历史参数"));
     TEST_ASSERT_NOT_NULL(std::strstr(panel, "scheme-param-lines"));
     TEST_ASSERT_NOT_NULL(std::strstr(panel, "formatStartupDurationSeconds"));
     TEST_ASSERT_NULL(std::strstr(panel, "历史使用："));
@@ -1617,8 +1617,8 @@ void test_calibration_requested_ui_adjustments_are_enforced() {
     TEST_ASSERT_NOT_NULL(schemeList);
     const char* schemeEdit = std::strstr(schemeList, "void sendMeteringSchemeEditPage");
     TEST_ASSERT_NOT_NULL(schemeEdit);
-    TEST_ASSERT_NOT_NULL(findWithin(schemeList, schemeEdit, "设为当前"));
-    TEST_ASSERT_NOT_NULL(findWithin(schemeList, schemeEdit, "确认设为当前计量方案？"));
+    TEST_ASSERT_NOT_NULL(findWithin(schemeList, schemeEdit, "使用这组参数"));
+    TEST_ASSERT_NOT_NULL(findWithin(schemeList, schemeEdit, "确认使用这组计量参数？"));
     TEST_ASSERT_NOT_NULL(findWithin(schemeList, schemeEdit, "if (scheme.id != activeId)"));
     TEST_ASSERT_NULL(findWithin(schemeList, schemeEdit, "if (scheme.id != activeId && scheme.enabled)"));
     TEST_ASSERT_NULL(findWithin(schemeList, schemeEdit, "if (scheme.id != activeId && scheme.state == MeteringSchemeState::Available)"));

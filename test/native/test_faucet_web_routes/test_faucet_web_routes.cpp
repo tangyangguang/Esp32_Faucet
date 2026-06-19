@@ -732,11 +732,11 @@ void test_web_page_source_contains_expected_ui_improvements() {
     const std::size_t samplesLen = static_cast<std::size_t>(generationPanelSource - samplesPanelSource);
     TEST_ASSERT_LESS_THAN(sizeof(samplesPanel), samplesLen + 1);
     std::memcpy(samplesPanel, samplesPanelSource, samplesLen);
-    TEST_ASSERT_NOT_NULL(std::strstr(samplesPanel, "<h3>本次校准接水记录</h3>"));
-    TEST_ASSERT_NOT_NULL(std::strstr(samplesPanel, "当前校准会话当中所有接水记录"));
+    TEST_ASSERT_NOT_NULL(std::strstr(samplesPanel, "<h3>本次校准样本</h3>"));
+    TEST_ASSERT_NOT_NULL(std::strstr(samplesPanel, "这里记录当前校准会话的接水记录"));
     TEST_ASSERT_NOT_NULL(std::strstr(samplesPanel,
                                      "<table class='calibration-sample-table'><tr><th>时间</th><th>时长</th><th>目标容量</th><th>估算出水</th><th>量杯实测</th><th>总脉冲</th><th>前 %u 秒脉冲</th><th>稳态识别</th><th>样本来源</th><th>校准用途</th><th>操作</th></tr>"));
-    TEST_ASSERT_NOT_NULL(std::strstr(samplesPanel, "colspan='11'>还没有本次校准接水记录"));
+    TEST_ASSERT_NOT_NULL(std::strstr(samplesPanel, "colspan='11'>还没有本次校准样本"));
     TEST_ASSERT_NULL(std::strstr(samplesPanel, "sampleSeconds"));
     TEST_ASSERT_NULL(std::strstr(samplesPanel, "sample-window-form"));
     TEST_ASSERT_NULL(std::strstr(samplesPanel, "前几秒脉冲总数"));
@@ -884,11 +884,11 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NULL(std::strstr(buffer, "有临时样本未保存"));
     TEST_ASSERT_NULL(std::strstr(buffer, "请进入明细页保存后再生成"));
     TEST_ASSERT_NULL(std::strstr(buffer, "仍然生成候选"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "<h3>本次校准接水记录</h3>"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "<h3>本次校准接水记录</h3>"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "<h3>本次校准样本</h3>"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "<h3>本次校准接水记录</h3>"));
     TEST_ASSERT_NULL(std::strstr(buffer, "<h3>有效样本</h3>"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "计量方案生成只使用长期样本库"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "存入长期库"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "历史样本 #"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "calibration-timeout-pill"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "data-calibration-countdown"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "data-remaining"));
@@ -1603,7 +1603,7 @@ void test_calibration_requested_ui_adjustments_are_enforced() {
     TEST_ASSERT_NOT_NULL(generationPanel);
     TEST_ASSERT_NOT_NULL(findWithin(samplesPanel, generationPanel, "CalibrationSessionRecord session{}"));
     TEST_ASSERT_NOT_NULL(findWithin(samplesPanel, generationPanel, "sendCalibrationSessionAttemptRow(session, attempt"));
-    TEST_ASSERT_NOT_NULL(findWithin(samplesPanel, generationPanel, "colspan='11'>还没有本次校准接水记录"));
+    TEST_ASSERT_NOT_NULL(findWithin(samplesPanel, generationPanel, "colspan='11'>还没有本次校准样本"));
     TEST_ASSERT_NULL(findWithin(samplesPanel, generationPanel, "CalibrationSampleListItem"));
     TEST_ASSERT_NULL(findWithin(samplesPanel, generationPanel, "std::sort(sampleItems"));
     TEST_ASSERT_NULL(findWithin(samplesPanel, generationPanel, "sendCalibrationSampleRow(savedTraces[i], true"));

@@ -1087,6 +1087,31 @@ void test_flow_calibration_remove_sample_redirects_invalid_state_when_sample_not
                              Esp32BaseWeb::nativeTestResponseHeader("Location"));
 }
 
+void test_flow_calibration_remove_sample_redirects_busy_without_changing_sample() {
+    WebFixture fixture;
+    CalibrationSessionRecord session = makeCalibrationSession(77, testNowSeconds());
+    session.status = CalibrationSessionStatus::WaitingLocalRun;
+    saveWebSessionAttempt(fixture.traceStore, session, 0, CalibrationAttemptStatus::Valid, 1500);
+    TEST_ASSERT_TRUE(fixture.sessionStore.save(session));
+    setRunning(fixture.app);
+    registerRoutes();
+    Esp32BaseWeb::nativeTestBeginRequest(Esp32BaseWeb::METHOD_POST, "/faucet/calibration/flow");
+    Esp32BaseWeb::nativeTestSetAuthenticated(true);
+    Esp32BaseWeb::nativeTestSetSameOrigin(true);
+    Esp32BaseWeb::nativeTestSetParam("action", "remove_sample");
+    Esp32BaseWeb::nativeTestSetParam("attemptIndex", "0");
+
+    TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch("/faucet/calibration/flow", Esp32BaseWeb::METHOD_POST));
+
+    TEST_ASSERT_EQUAL(303, Esp32BaseWeb::nativeTestResponse().code);
+    TEST_ASSERT_EQUAL_STRING("/faucet/calibration/flow?error=busy",
+                             Esp32BaseWeb::nativeTestResponseHeader("Location"));
+    CalibrationSessionRecord after{};
+    TEST_ASSERT_TRUE(fixture.sessionStore.load(after));
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationAttemptStatus::Valid),
+                            static_cast<unsigned>(after.attempts[0].status));
+}
+
 void test_flow_calibration_sample_table_only_shows_remove_for_active_samples() {
     WebFixture fixture;
     CalibrationSessionRecord session = makeCalibrationSession(77, testNowSeconds());
@@ -1314,6 +1339,7 @@ int main(int, char**) {
     RUN_TEST(test_flow_calibration_remove_sample_redirects_invalid_value_for_bad_attempt_index);
     RUN_TEST(test_flow_calibration_remove_sample_redirects_invalid_value_for_missing_attempt_index);
     RUN_TEST(test_flow_calibration_remove_sample_redirects_invalid_state_when_sample_not_removable);
+    RUN_TEST(test_flow_calibration_remove_sample_redirects_busy_without_changing_sample);
     RUN_TEST(test_flow_calibration_sample_table_only_shows_remove_for_active_samples);
     RUN_TEST(test_tds_calibration_start_redirects_busy_to_calibration_page);
     RUN_TEST(test_tds_calibration_start_redirects_success_from_idle);

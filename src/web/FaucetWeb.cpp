@@ -2259,7 +2259,7 @@ void sendCalibrationSessionAttemptRow(const CalibrationSessionRecord& session,
     Esp32BaseWeb::sendChunk("</td><td>");
     bool renderedAction = false;
     if (saved) {
-        sendFmt("<span class='hint'>长期样本 #%lu</span>", static_cast<unsigned long>(sampleId));
+        sendFmt("<span class='hint'>历史样本 #%lu</span>", static_cast<unsigned long>(sampleId));
         renderedAction = true;
     }
     if (attempt.status == CalibrationAttemptStatus::Valid || attempt.status == CalibrationAttemptStatus::PendingActual) {
@@ -2277,7 +2277,6 @@ void sendCalibrationSessionAttemptRow(const CalibrationSessionRecord& session,
 }
 
 void sendCalibrationSamplesPanel(std::uint32_t samplePulseWindowSec) {
-    // Legacy source guards still look for: <h3>本次校准接水记录</h3> / 当前校准会话当中所有接水记录 / 存入长期库.
     Esp32BaseWeb::sendChunk("<section id='calibration-samples' class='panel'><div class='panel-head'><h3>本次校准样本</h3></div>"
                             "<p class='hint'>这里记录当前校准会话的接水记录；有效样本会自动刷新推荐参数，异常或误操作样本可移除。</p>");
     sendFmt("<table class='calibration-sample-table'><tr><th>时间</th><th>时长</th><th>目标容量</th><th>估算出水</th><th>量杯实测</th><th>总脉冲</th><th>前 %u 秒脉冲</th><th>稳态识别</th><th>样本来源</th><th>校准用途</th><th>操作</th></tr>",
@@ -2288,7 +2287,7 @@ void sendCalibrationSamplesPanel(std::uint32_t samplePulseWindowSec) {
     }
     CalibrationSessionRecord session{};
     if (!g_context.calibrationSessions->load(session) || session.attemptCount == 0) {
-        Esp32BaseWeb::sendChunk("<tr><td colspan='11'>还没有本次校准接水记录。进入校准模式后，每次本地出水都会记录到这里。</td></tr></table></section>");
+        Esp32BaseWeb::sendChunk("<tr><td colspan='11'>还没有本次校准样本。进入校准模式后，每次本地出水都会记录到这里。</td></tr></table></section>");
         return;
     }
     bool rendered = false;
@@ -2301,7 +2300,7 @@ void sendCalibrationSamplesPanel(std::uint32_t samplePulseWindowSec) {
         rendered = true;
     }
     if (!rendered) {
-        Esp32BaseWeb::sendChunk("<tr><td colspan='11'>还没有本次校准接水记录。进入校准模式后，每次本地出水都会记录到这里。</td></tr>");
+        Esp32BaseWeb::sendChunk("<tr><td colspan='11'>还没有本次校准样本。进入校准模式后，每次本地出水都会记录到这里。</td></tr>");
     }
     Esp32BaseWeb::sendChunk("</table></section>");
 }
@@ -5834,6 +5833,10 @@ void handleFlowCalibrationPost() {
         if (!getParam("attemptIndex", text, sizeof(text)) || !parseU32(text, attemptIndex) ||
             attemptIndex >= kCalibrationMaxAttempts) {
             redirectFlowCalibrationFailure("invalid_value");
+            return;
+        }
+        if (waterTaskActive()) {
+            redirectFlowCalibrationFailure("busy");
             return;
         }
         redirectFlowCalibrationResult(g_context.app && g_context.app->removeCalibrationSessionSampleForWeb(

@@ -342,6 +342,98 @@ void saveCalibrationSessionSample(CalibrationSessionTraceStore& traceStore,
     TEST_ASSERT_TRUE(appendCalibrationAttempt(session, attempt));
 }
 
+struct CalibrationAppFixture {
+    SystemConfig config = makeDefaultConfig();
+    StatisticsStore statistics;
+    FilterStore filters;
+    MemoryRecordWriter records;
+    MemoryCalibrationWriter calibrations;
+    MemoryFileBackend backend;
+    MeteringSchemeStore schemes;
+    MeteringSchemeRecord active{};
+    CalibrationSessionFileStore sessionStore;
+    CalibrationSessionTraceStore traceStore;
+    CalibrationLongTermSampleStore sampleStore;
+    WaterPulseTrace ramTraces[4]{};
+    WaterPulseTraceSample ramSamples[4096]{};
+    WaterPulseTraceStore pulseTraces;
+    AppController* app = nullptr;
+
+    CalibrationAppFixture()
+        : filters(config.filters),
+          schemes(backend, "/schemes.bin"),
+          sessionStore(backend, "/cal-session.bin"),
+          traceStore(backend, "/cal-traces.bin"),
+          sampleStore(backend, "/cal-samples.bin"),
+          pulseTraces(ramTraces, 4, ramSamples, 4096, 4) {
+        statistics.reset({20260506, 202619, 202605});
+        TEST_ASSERT_TRUE(prepareMeteringScheme(schemes, 225, active));
+        TEST_ASSERT_TRUE(sessionStore.begin());
+        TEST_ASSERT_TRUE(traceStore.begin());
+        TEST_ASSERT_TRUE(sampleStore.begin());
+    }
+
+    ~CalibrationAppFixture() {
+        delete app;
+    }
+
+    void createApp() {
+        app = new AppController(config,
+                                active,
+                                statistics,
+                                filters,
+                                records,
+                                schemes,
+                                &pulseTraces,
+                                &calibrations,
+                                &sessionStore,
+                                &traceStore,
+                                &sampleStore);
+    }
+};
+
+void savePendingRamCalibrationAttempt(CalibrationAppFixture& fixture,
+                                      CalibrationSessionRecord& session,
+                                      std::uint8_t slot,
+                                      std::uint32_t startTime,
+                                      std::uint32_t actualMl,
+                                      std::uint32_t startupPulses,
+                                      std::uint32_t stablePulses,
+                                      std::uint32_t stableSeconds) {
+    WaterPulseTraceSample samples[2048]{};
+    const std::size_t sampleCount =
+        fillCalibrationSamples(samples, 2048, startupPulses, stablePulses, stableSeconds);
+    TEST_ASSERT_GREATER_THAN_size_t(0, sampleCount);
+    const std::uint32_t traceId = fixture.pulseTraces.beginTrace(startTime, kDefaultPulseMinIntervalUs);
+    TEST_ASSERT_NOT_EQUAL_UINT32(0, traceId);
+    for (std::size_t i = 0; i < sampleCount; ++i) {
+        TEST_ASSERT_TRUE(fixture.pulseTraces.appendRawEdge(traceId, samples[i].elapsedUs));
+    }
+
+    const std::uint32_t totalPulses = startupPulses + stablePulses;
+    WaterRecord record = calibrationRecord(startTime, totalPulses, actualMl);
+    record.durationSec = 5 + stableSeconds;
+    TEST_ASSERT_TRUE(fixture.pulseTraces.finishTrace(
+        traceId, record, WaterPulseTraceState::Completed, record.durationSec * 1000000UL));
+
+    CalibrationAttempt attempt{};
+    attempt.attemptIndex = slot;
+    attempt.sessionTraceSlot = slot;
+    attempt.record = record;
+    attempt.targetHintMl = actualMl;
+    attempt.status = CalibrationAttemptStatus::PendingActual;
+    TEST_ASSERT_TRUE(appendCalibrationAttempt(session, attempt));
+}
+
+void saveOneValidOnePendingSession(CalibrationAppFixture& fixture, std::uint32_t nowSeconds) {
+    CalibrationSessionRecord session = makeCalibrationSession(77, nowSeconds);
+    saveCalibrationSessionSample(fixture.traceStore, session, 0, nowSeconds + 1, 1500, 40, 210, 6);
+    savePendingRamCalibrationAttempt(fixture, session, 1, nowSeconds + 10, 7500, 40, 1540, 11);
+    session.status = CalibrationSessionStatus::AwaitingActual;
+    session.validSampleCount = countValidCalibrationSamples(session);
+    TEST_ASSERT_TRUE(fixture.sessionStore.save(session));
+}
+
 }  // namespace
 
 void test_app_controller_uses_active_scheme_parameters_for_flow_meter() {
@@ -1100,6 +1192,56 @@ void test_app_controller_generates_calibration_session_candidate() {
                             static_cast<unsigned>(app.snapshot().calibrationStatus));
 }
 
+void test_app_controller_auto_generates_after_second_valid_calibration_sample() {
+    CalibrationAppFixture fixture;
+    saveOneValidOnePendingSession(fixture, 1714502400);
+    fixture.createApp();
+
+    TEST_ASSERT_TRUE(fixture.app->submitCalibrationActualForWeb(7500, 1714502500));
+
+    const AppSnapshot snapshot = fixture.app->snapshot();
+    TEST_ASSERT_EQUAL_UINT8(2, snapshot.calibrationValidSampleCount);
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationSessionStatus::Generated),
+                            static_cast<unsigned>(snapshot.calibrationStatus));
+    TEST_ASSERT_TRUE(fixture.app->applyGeneratedCalibrationForWeb(1714502600));
+}
+
+void test_app_controller_removed_valid_sample_clears_generated_candidate() {
+    CalibrationAppFixture fixture;
+    saveOneValidOnePendingSession(fixture, 1714502400);
+    fixture.createApp();
+    TEST_ASSERT_TRUE(fixture.app->submitCalibrationActualForWeb(7500, 1714502500));
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationSessionStatus::Generated),
+                            static_cast<unsigned>(fixture.app->snapshot().calibrationStatus));
+
+    TEST_ASSERT_TRUE(fixture.app->removeCalibrationSessionSampleForWeb(1, 1714502550));
+
+    CalibrationSessionRecord persisted{};
+    TEST_ASSERT_TRUE(fixture.sessionStore.load(persisted));
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationAttemptStatus::Removed),
+                            static_cast<unsigned>(persisted.attempts[1].status));
+    TEST_ASSERT_EQUAL_UINT8(1, fixture.app->snapshot().calibrationValidSampleCount);
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationSessionStatus::WaitingLocalRun),
+                            static_cast<unsigned>(fixture.app->snapshot().calibrationStatus));
+    TEST_ASSERT_FALSE(fixture.app->applyGeneratedCalibrationForWeb(1714502600));
+}
+
+void test_app_controller_pending_actual_sample_can_be_removed() {
+    CalibrationAppFixture fixture;
+    saveOneValidOnePendingSession(fixture, 1714502400);
+    fixture.createApp();
+
+    TEST_ASSERT_TRUE(fixture.app->removeCalibrationSessionSampleForWeb(1, 1714502500));
+
+    CalibrationSessionRecord persisted{};
+    TEST_ASSERT_TRUE(fixture.sessionStore.load(persisted));
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationAttemptStatus::Removed),
+                            static_cast<unsigned>(persisted.attempts[1].status));
+    TEST_ASSERT_EQUAL_UINT8(1, fixture.app->snapshot().calibrationValidSampleCount);
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationSessionStatus::WaitingLocalRun),
+                            static_cast<unsigned>(fixture.app->snapshot().calibrationStatus));
+}
+
 void test_app_controller_applies_generated_session_scheme_and_keeps_old_scheme() {
     SystemConfig config = makeDefaultConfig();
     StatisticsStore statistics;
@@ -1801,6 +1943,9 @@ int main(int argc, char** argv) {
     RUN_TEST(test_app_controller_reboot_drops_awaiting_actual_when_ram_trace_missing);
     RUN_TEST(test_app_controller_local_ok_starts_calibration_run_and_completion_awaits_actual);
     RUN_TEST(test_app_controller_generates_calibration_session_candidate);
+    RUN_TEST(test_app_controller_auto_generates_after_second_valid_calibration_sample);
+    RUN_TEST(test_app_controller_removed_valid_sample_clears_generated_candidate);
+    RUN_TEST(test_app_controller_pending_actual_sample_can_be_removed);
     RUN_TEST(test_app_controller_applies_generated_session_scheme_and_keeps_old_scheme);
     RUN_TEST(test_app_controller_applies_calibration_from_raw_record);
     RUN_TEST(test_app_controller_small_record_calibration_keeps_metering_parameters);

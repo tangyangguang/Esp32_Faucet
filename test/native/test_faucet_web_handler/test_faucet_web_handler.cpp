@@ -760,6 +760,63 @@ void test_calibration_page_initial_render_shows_tds_controls() {
     TEST_ASSERT_EQUAL(std::string::npos, body.find("只接受 ppm"));
 }
 
+void test_temperature_calibration_uses_simple_card_and_celsius_input() {
+    WebFixture fixture;
+    enableTdsForFixture(fixture);
+    fixture.app.tick(appInput({false, false, false, false}, 1000, 1000000));
+    registerRoutes();
+    Esp32BaseWeb::nativeTestBeginRequest(Esp32BaseWeb::METHOD_GET, "/faucet/calibration");
+    Esp32BaseWeb::nativeTestSetAuthenticated(true);
+    Esp32BaseWeb::nativeTestSetSameOrigin(true);
+
+    TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch("/faucet/calibration", Esp32BaseWeb::METHOD_GET));
+
+    const std::string& body = Esp32BaseWeb::nativeTestResponse().body;
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("temperature-calibration-panel"));
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("temperature-calibration-summary"));
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("当前水温"));
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("校准状态"));
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("name='referenceC'"));
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("value='保存参考温度'"));
+    TEST_ASSERT_EQUAL(std::string::npos, body.find("name='referenceCentiC'"));
+    TEST_ASSERT_EQUAL(std::string::npos, body.find("0.01C"));
+}
+
+void test_temperature_calibration_disables_save_when_sensor_is_disabled() {
+    WebFixture fixture;
+    registerRoutes();
+    Esp32BaseWeb::nativeTestBeginRequest(Esp32BaseWeb::METHOD_GET, "/faucet/calibration");
+    Esp32BaseWeb::nativeTestSetAuthenticated(true);
+    Esp32BaseWeb::nativeTestSetSameOrigin(true);
+
+    TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch("/faucet/calibration", Esp32BaseWeb::METHOD_GET));
+
+    const std::string& body = Esp32BaseWeb::nativeTestResponse().body;
+    const std::size_t button = body.find("value='保存参考温度'");
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, button);
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("disabled", button));
+}
+
+void test_temperature_calibration_post_accepts_celsius_decimal_input() {
+    WebFixture fixture;
+    enableTdsForFixture(fixture);
+    fixture.app.tick(appInput({false, false, false, false}, 1000, 1000000));
+    registerRoutes();
+    Esp32BaseWeb::nativeTestBeginRequest(Esp32BaseWeb::METHOD_POST, "/faucet/calibration");
+    Esp32BaseWeb::nativeTestSetAuthenticated(true);
+    Esp32BaseWeb::nativeTestSetSameOrigin(true);
+    Esp32BaseWeb::nativeTestSetParam("action", "temperature_save");
+    Esp32BaseWeb::nativeTestSetParam("referenceC", "25.5");
+
+    TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch("/faucet/calibration", Esp32BaseWeb::METHOD_POST));
+
+    TEST_ASSERT_EQUAL(303, Esp32BaseWeb::nativeTestResponse().code);
+    TEST_ASSERT_EQUAL_STRING("/faucet/calibration?saved=temperature",
+                             Esp32BaseWeb::nativeTestResponseHeader("Location"));
+    TEST_ASSERT_TRUE(fixture.app.config().temperatureCalibrated);
+    TEST_ASSERT_TRUE(fixture.config.temperatureCalibrated);
+}
+
 void test_flow_calibration_center_initial_render_shows_current_parameter_workflow() {
     WebFixture fixture;
     saveLongTermWebSample(fixture.sampleStore, 1200, 45, 360, 12);
@@ -1396,6 +1453,9 @@ int main(int, char**) {
     RUN_TEST(test_stats_page_initial_render_shows_complete_report);
     RUN_TEST(test_calibration_home_shows_three_expanded_sections_without_flow_tables);
     RUN_TEST(test_calibration_page_initial_render_shows_tds_controls);
+    RUN_TEST(test_temperature_calibration_uses_simple_card_and_celsius_input);
+    RUN_TEST(test_temperature_calibration_disables_save_when_sensor_is_disabled);
+    RUN_TEST(test_temperature_calibration_post_accepts_celsius_decimal_input);
     RUN_TEST(test_flow_calibration_center_initial_render_shows_current_parameter_workflow);
     RUN_TEST(test_flow_calibration_history_uses_parameter_language);
     RUN_TEST(test_flow_calibration_manual_input_prefills_copied_parameters);

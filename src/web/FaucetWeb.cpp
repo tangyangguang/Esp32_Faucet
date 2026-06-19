@@ -3080,7 +3080,7 @@ void sendNoticeFromQuery() {
                                 : generatedDiscarded ? "生成结果已放弃。"
                                 : restored           ? "已恢复上一套参数。"
                                 : sampleRemoved      ? "样本已移除。"
-                                : longTermSample     ? "样本已存入长期样本库。"
+                                : longTermSample     ? "样本已存入历史样本。"
                                                      : "已保存。");
         Esp32BaseWeb::sendChunk("</p>");
         return;
@@ -3110,7 +3110,7 @@ void sendNoticeFromQuery() {
     } else if (std::strcmp(text, "save_failed") == 0) {
         message = "保存失败，请稍后重试。";
     } else if (std::strcmp(text, "long_term_sample_full") == 0) {
-        message = "长期样本库已满，请先手动删除不需要的样本。";
+        message = "历史样本已满，请先删除不需要的样本。";
     } else if (std::strcmp(text, "metering_storage_unavailable") == 0) {
         message = "计量方案存储不可用；请检查存储状态，系统不会自动删除原文件。";
     } else if (std::strcmp(text, "used_scheme_locked") == 0 || std::strcmp(text, "scheme_locked") == 0) {

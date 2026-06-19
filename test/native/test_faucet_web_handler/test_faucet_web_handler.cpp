@@ -786,6 +786,40 @@ void test_flow_calibration_center_initial_render_shows_current_parameter_workflo
     TEST_ASSERT_LESS_OR_EQUAL_UINT32(3, fixture.calibrationFiles.meteringSchemeRecordReads);
 }
 
+void test_flow_calibration_notice_uses_history_sample_language() {
+    WebFixture fixture;
+    registerRoutes();
+    Esp32BaseWeb::nativeTestBeginRequest(Esp32BaseWeb::METHOD_GET, "/faucet/calibration/flow");
+    Esp32BaseWeb::nativeTestSetAuthenticated(true);
+    Esp32BaseWeb::nativeTestSetSameOrigin(true);
+    Esp32BaseWeb::nativeTestSetParam("saved", "long_term_sample");
+
+    TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch("/faucet/calibration/flow", Esp32BaseWeb::METHOD_GET));
+
+    TEST_ASSERT_EQUAL(200, Esp32BaseWeb::nativeTestResponse().code);
+    const std::string& body = Esp32BaseWeb::nativeTestResponse().body;
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("样本已存入历史样本"));
+    TEST_ASSERT_EQUAL(std::string::npos, body.find("样本已存入长期样本库"));
+    TEST_ASSERT_EQUAL(std::string::npos, body.find("长期样本库已满"));
+}
+
+void test_flow_calibration_error_uses_history_sample_language() {
+    WebFixture fixture;
+    registerRoutes();
+    Esp32BaseWeb::nativeTestBeginRequest(Esp32BaseWeb::METHOD_GET, "/faucet/calibration/flow");
+    Esp32BaseWeb::nativeTestSetAuthenticated(true);
+    Esp32BaseWeb::nativeTestSetSameOrigin(true);
+    Esp32BaseWeb::nativeTestSetParam("error", "long_term_sample_full");
+
+    TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch("/faucet/calibration/flow", Esp32BaseWeb::METHOD_GET));
+
+    TEST_ASSERT_EQUAL(200, Esp32BaseWeb::nativeTestResponse().code);
+    const std::string& body = Esp32BaseWeb::nativeTestResponse().body;
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("历史样本已满"));
+    TEST_ASSERT_EQUAL(std::string::npos, body.find("长期样本库已满"));
+    TEST_ASSERT_EQUAL(std::string::npos, body.find("请先生成参数"));
+}
+
 void test_flow_calibration_center_uses_no_collapsed_sections() {
     WebFixture fixture;
     registerRoutes();
@@ -1264,6 +1298,8 @@ int main(int, char**) {
     RUN_TEST(test_calibration_home_shows_three_expanded_sections_without_flow_tables);
     RUN_TEST(test_calibration_page_initial_render_shows_tds_controls);
     RUN_TEST(test_flow_calibration_center_initial_render_shows_current_parameter_workflow);
+    RUN_TEST(test_flow_calibration_notice_uses_history_sample_language);
+    RUN_TEST(test_flow_calibration_error_uses_history_sample_language);
     RUN_TEST(test_flow_calibration_center_uses_no_collapsed_sections);
     RUN_TEST(test_running_water_allows_read_only_business_pages);
     RUN_TEST(test_filter_reset_handler_rejects_missing_auth_before_context_work);

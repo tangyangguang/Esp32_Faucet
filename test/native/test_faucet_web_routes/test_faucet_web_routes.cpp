@@ -1302,9 +1302,9 @@ void test_pulse_trace_and_calibration_pages_keep_saved_and_ram_sources_consisten
     const char* generationPanel = std::strstr(buffer, "void sendCalibrationGenerationPanel");
     TEST_ASSERT_NOT_NULL(samplesPanel);
     TEST_ASSERT_NOT_NULL(generationPanel);
-    const char* sessionLoad = std::strstr(samplesPanel, "g_context.calibrationSessions->load(session)");
-    const char* attemptLoop = std::strstr(samplesPanel, "session.attempts[i]");
-    const char* sessionRow = std::strstr(samplesPanel, "sendCalibrationSessionAttemptRow(session, attempt");
+    const char* sessionLoad = std::strstr(samplesPanel, "g_context.calibrationSessions->load(*session)");
+    const char* attemptLoop = std::strstr(samplesPanel, "session->attempts[i]");
+    const char* sessionRow = std::strstr(samplesPanel, "sendCalibrationSessionAttemptRow(*session, attempt");
     TEST_ASSERT_NOT_NULL(sessionLoad);
     TEST_ASSERT_NOT_NULL(attemptLoop);
     TEST_ASSERT_NOT_NULL(sessionRow);
@@ -1465,11 +1465,14 @@ void test_calibration_requested_ui_adjustments_are_enforced() {
     TEST_ASSERT_NOT_NULL(samplesPanel);
     const char* generationPanel = std::strstr(samplesPanel, "void sendGeneratedSampleResiduals");
     TEST_ASSERT_NOT_NULL(generationPanel);
-    TEST_ASSERT_NOT_NULL(findWithin(samplesPanel, generationPanel, "CalibrationSessionRecord session{}"));
-    TEST_ASSERT_NOT_NULL(findWithin(samplesPanel, generationPanel, "sendCalibrationSessionAttemptRow(session, attempt"));
+    TEST_ASSERT_NULL(findWithin(samplesPanel, generationPanel, "CalibrationSessionRecord session{}"));
+    TEST_ASSERT_NOT_NULL(findWithin(samplesPanel, generationPanel, "new (std::nothrow) CalibrationSessionRecord"));
+    TEST_ASSERT_NOT_NULL(findWithin(samplesPanel, generationPanel, "sendCalibrationSessionAttemptRow(*session, attempt"));
     TEST_ASSERT_NOT_NULL(findWithin(samplesPanel, generationPanel, "colspan='11'>还没有本次校准样本"));
     TEST_ASSERT_NULL(findWithin(samplesPanel, generationPanel, "CalibrationSampleListItem"));
     TEST_ASSERT_NULL(findWithin(samplesPanel, generationPanel, "std::sort(sampleItems"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "const WaterUsageSummary summary = aggregateWaterRecords"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "aggregateWaterRecordsInto"));
 
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "faucetRefreshCalibrationSamples"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "return faucetRefreshCalibrationSamples()"));
@@ -1685,6 +1688,53 @@ void test_status_json_avoids_filesystem_record_reads_on_web_request_stack() {
     TEST_ASSERT_NULL(findWithin(statusJson, nextFunction, "\n    char json[4096]{}"));
 }
 
+void test_web_record_and_calibration_paths_avoid_large_stack_buffers() {
+    FILE* file = std::fopen("src/web/FaucetWeb.cpp", "rb");
+    TEST_ASSERT_NOT_NULL(file);
+    static char buffer[420000]{};
+    const std::size_t read = std::fread(buffer, 1, sizeof(buffer) - 1, file);
+    std::fclose(file);
+    TEST_ASSERT_GREATER_THAN_size_t(0, read);
+
+    TEST_ASSERT_NULL(std::strstr(buffer, "WaterRecord records[kDefaultRecordPageSize]{}"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "CalibrationStoredTrace longTermSamples[kCalibrationLongTermSampleSlots]"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "CalibrationStoredTrace samples[kCalibrationLongTermSampleSlots]"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "new (std::nothrow) WaterRecord[kDefaultRecordPageSize]"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "new (std::nothrow) CalibrationStoredTrace[kCalibrationLongTermSampleSlots]"));
+}
+
+void test_main_enables_ota_mark_valid_after_runtime_health_check() {
+    FILE* ini = std::fopen("platformio.ini", "rb");
+    TEST_ASSERT_NOT_NULL(ini);
+    char iniBuffer[12000]{};
+    const std::size_t iniRead = std::fread(iniBuffer, 1, sizeof(iniBuffer) - 1, ini);
+    std::fclose(ini);
+    TEST_ASSERT_GREATER_THAN_size_t(0, iniRead);
+    TEST_ASSERT_NOT_NULL(std::strstr(iniBuffer, "-D ESP32BASE_OTA_REQUIRE_MARK_VALID=1"));
+    TEST_ASSERT_NOT_NULL(std::strstr(iniBuffer, "-D ESP32BASE_OTA_MARK_VALID_TIMEOUT_MS=30000"));
+
+    FILE* mainFile = std::fopen("src/main.cpp", "rb");
+    TEST_ASSERT_NOT_NULL(mainFile);
+    static char mainBuffer[120000]{};
+    const std::size_t mainRead = std::fread(mainBuffer, 1, sizeof(mainBuffer) - 1, mainFile);
+    std::fclose(mainFile);
+    TEST_ASSERT_GREATER_THAN_size_t(0, mainRead);
+
+    const char* loop = std::strstr(mainBuffer, "void loop()");
+    TEST_ASSERT_NOT_NULL(loop);
+    const char* tick = std::strstr(loop, "runApplicationTick()");
+    const char* handle = std::strstr(loop, "Esp32Base::handle()");
+    const char* mark = std::strstr(loop, "maybeMarkOtaValidAfterHealthCheck()");
+    TEST_ASSERT_NOT_NULL(tick);
+    TEST_ASSERT_NOT_NULL(handle);
+    TEST_ASSERT_NOT_NULL(mark);
+    TEST_ASSERT_TRUE(tick < handle);
+    TEST_ASSERT_TRUE(handle < mark);
+    TEST_ASSERT_NOT_NULL(std::strstr(mainBuffer, "ota_health_check begin"));
+    TEST_ASSERT_NOT_NULL(std::strstr(mainBuffer, "ota_mark_valid ok"));
+    TEST_ASSERT_NOT_NULL(std::strstr(mainBuffer, "ota_mark_valid failed"));
+}
+
 void test_home_status_script_discards_stale_status_responses() {
     FILE* file = std::fopen("src/web/FaucetWeb.cpp", "rb");
     TEST_ASSERT_NOT_NULL(file);
@@ -1877,6 +1927,8 @@ int main(int argc, char** argv) {
     RUN_TEST(test_web_config_writes_reload_current_config_before_persisting);
     RUN_TEST(test_presets_api_allows_next_preset_switch_actions);
     RUN_TEST(test_status_json_avoids_filesystem_record_reads_on_web_request_stack);
+    RUN_TEST(test_web_record_and_calibration_paths_avoid_large_stack_buffers);
+    RUN_TEST(test_main_enables_ota_mark_valid_after_runtime_health_check);
     RUN_TEST(test_home_status_script_discards_stale_status_responses);
     RUN_TEST(test_business_post_handlers_use_post_allowed_guard);
     RUN_TEST(test_read_only_business_pages_do_not_return_busy_while_water_task_active);

@@ -155,7 +155,7 @@ void test_session_store_ignores_trailing_bytes_when_header_is_current() {
     TEST_ASSERT_EQUAL_UINT32(9, output.sessionId);
 }
 
-void test_session_store_initialization_does_not_hold_session_file_on_stack_during_create() {
+void test_session_store_does_not_allocate_session_file_on_stack() {
     FILE* source = std::fopen("src/app/CalibrationSessionStore.cpp", "rb");
     TEST_ASSERT_NOT_NULL(source);
     static char buffer[12000]{};
@@ -163,13 +163,10 @@ void test_session_store_initialization_does_not_hold_session_file_on_stack_durin
     std::fclose(source);
     TEST_ASSERT_GREATER_THAN_size_t(0, read);
 
-    const char* init = std::strstr(buffer, "const auto initializeEmpty");
-    TEST_ASSERT_NOT_NULL(init);
-    const char* make = std::strstr(init, "SessionFile empty = makeFile");
-    const char* create = std::strstr(init, "backend_.createSized");
-    TEST_ASSERT_NOT_NULL(make);
-    TEST_ASSERT_NOT_NULL(create);
-    TEST_ASSERT_TRUE(create < make);
+    TEST_ASSERT_NULL(std::strstr(buffer, "SessionFile empty"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "SessionFile file"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "const SessionFile file"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "save(CalibrationSessionRecord{})"));
 }
 
 int main(int argc, char** argv) {
@@ -180,6 +177,6 @@ int main(int argc, char** argv) {
     RUN_TEST(test_session_store_rebuilds_corrupt_checksum_file_as_empty_session);
     RUN_TEST(test_session_store_rebuilds_too_small_file_as_empty_session);
     RUN_TEST(test_session_store_ignores_trailing_bytes_when_header_is_current);
-    RUN_TEST(test_session_store_initialization_does_not_hold_session_file_on_stack_during_create);
+    RUN_TEST(test_session_store_does_not_allocate_session_file_on_stack);
     return UNITY_END();
 }

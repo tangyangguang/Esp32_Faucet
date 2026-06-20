@@ -30,6 +30,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <memory>
 #include <new>
 
 #ifndef FAUCET_WEB_CSS_VERSION
@@ -517,8 +518,12 @@ std::uint32_t recentAverageFlowMlPerMin() {
     if (!g_context.records || !g_context.records->ready()) {
         return 0;
     }
-    WaterRecord records[kDefaultRecordPageSize]{};
-    const std::size_t read = g_context.records->readPage(0, kDefaultRecordPageSize, records, kDefaultRecordPageSize);
+    std::unique_ptr<WaterRecord[]> records(new (std::nothrow) WaterRecord[kDefaultRecordPageSize]{});
+    if (!records) {
+        return 0;
+    }
+    const std::size_t read =
+        g_context.records->readPage(0, kDefaultRecordPageSize, records.get(), kDefaultRecordPageSize);
     std::uint32_t totalMl = 0;
     std::uint32_t totalDurationSec = 0;
     for (std::size_t i = 0; i < read; ++i) {
@@ -882,9 +887,15 @@ SegmentedSampleDiagnostics collectSegmentedSampleDiagnostics(bool includeRam) {
     std::size_t sampleCount = 0;
 
     if (g_context.calibrationLongTermSamples && g_context.calibrationLongTermSamples->ready()) {
-        CalibrationStoredTrace longTermSamples[kCalibrationLongTermSampleSlots]{};
+        std::unique_ptr<CalibrationStoredTrace[]> longTermSamples(
+            new (std::nothrow) CalibrationStoredTrace[kCalibrationLongTermSampleSlots]{});
+        if (!longTermSamples) {
+            delete[] samples;
+            delete[] seenRecords;
+            return diagnostics;
+        }
         const std::size_t longTermCount =
-            g_context.calibrationLongTermSamples->list(longTermSamples, kCalibrationLongTermSampleSlots);
+            g_context.calibrationLongTermSamples->list(longTermSamples.get(), kCalibrationLongTermSampleSlots);
         diagnostics.longTermSampleCount = static_cast<std::uint16_t>(
             std::min<std::size_t>(longTermCount, static_cast<std::size_t>(UINT16_MAX)));
         for (std::size_t i = 0; i < longTermCount && sampleCount < kSegmentedCalibrationMaxSamples; ++i) {
@@ -1831,18 +1842,22 @@ void sendCalibrationSamplesPanel(std::uint32_t samplePulseWindowSec) {
         Esp32BaseWeb::sendChunk("<tr><td colspan='11'>校准会话存储未就绪，暂时不能读取本次接水记录。</td></tr></table></section>");
         return;
     }
-    CalibrationSessionRecord session{};
-    if (!g_context.calibrationSessions->load(session) || session.attemptCount == 0) {
+    std::unique_ptr<CalibrationSessionRecord> session(new (std::nothrow) CalibrationSessionRecord);
+    if (!session) {
+        Esp32BaseWeb::sendChunk("<tr><td colspan='11'>内存不足，暂时不能读取本次校准样本。</td></tr></table></section>");
+        return;
+    }
+    if (!g_context.calibrationSessions->load(*session) || session->attemptCount == 0) {
         Esp32BaseWeb::sendChunk("<tr><td colspan='11'>还没有本次校准样本。进入校准模式后，每次本地出水都会记录到这里。</td></tr></table></section>");
         return;
     }
     bool rendered = false;
-    for (std::uint8_t i = 0; i < session.attemptCount && i < kCalibrationMaxAttempts; ++i) {
-        const CalibrationAttempt& attempt = session.attempts[i];
+    for (std::uint8_t i = 0; i < session->attemptCount && i < kCalibrationMaxAttempts; ++i) {
+        const CalibrationAttempt& attempt = session->attempts[i];
         if (attempt.status == CalibrationAttemptStatus::Empty) {
             continue;
         }
-        sendCalibrationSessionAttemptRow(session, attempt, samplePulseWindowSec);
+        sendCalibrationSessionAttemptRow(*session, attempt, samplePulseWindowSec);
         rendered = true;
     }
     if (!rendered) {
@@ -1858,8 +1873,12 @@ bool findLongTermSampleForAttempt(std::uint32_t sessionId,
     if (!g_context.calibrationLongTermSamples || !g_context.calibrationLongTermSamples->ready()) {
         return false;
     }
-    CalibrationStoredTrace samples[kCalibrationLongTermSampleSlots]{};
-    const std::size_t count = g_context.calibrationLongTermSamples->list(samples, kCalibrationLongTermSampleSlots);
+    std::unique_ptr<CalibrationStoredTrace[]> samples(
+        new (std::nothrow) CalibrationStoredTrace[kCalibrationLongTermSampleSlots]{});
+    if (!samples) {
+        return false;
+    }
+    const std::size_t count = g_context.calibrationLongTermSamples->list(samples.get(), kCalibrationLongTermSampleSlots);
     for (std::size_t i = 0; i < count; ++i) {
         if (samples[i].sessionId == sessionId && samples[i].attemptIndex == attemptIndex) {
             sampleId = samples[i].sampleId;
@@ -1882,8 +1901,13 @@ void sendLongTermSampleLibraryTable() {
         return;
     }
 
-    CalibrationStoredTrace samples[kCalibrationLongTermSampleSlots]{};
-    const std::size_t count = g_context.calibrationLongTermSamples->list(samples, kCalibrationLongTermSampleSlots);
+    std::unique_ptr<CalibrationStoredTrace[]> samples(
+        new (std::nothrow) CalibrationStoredTrace[kCalibrationLongTermSampleSlots]{});
+    if (!samples) {
+        Esp32BaseWeb::sendChunk("<p class='warn'>内存不足，暂时不能读取长期样本库。</p>");
+        return;
+    }
+    const std::size_t count = g_context.calibrationLongTermSamples->list(samples.get(), kCalibrationLongTermSampleSlots);
     char maxBytes[24]{};
     const std::size_t approximateBytes =
         kCalibrationLongTermSampleSlots * static_cast<std::size_t>(kPulseTraceMaxRawEdgesPerTrace) *
@@ -1927,9 +1951,13 @@ void sendGeneratedSampleResiduals(const MeteringSchemeCandidate& candidate,
     if (!g_context.calibrationLongTermSamples || !g_context.calibrationLongTermSamples->ready()) {
         return;
     }
-    CalibrationStoredTrace samples[kCalibrationLongTermSampleSlots]{};
+    std::unique_ptr<CalibrationStoredTrace[]> samples(
+        new (std::nothrow) CalibrationStoredTrace[kCalibrationLongTermSampleSlots]{});
+    if (!samples) {
+        return;
+    }
     const std::size_t sampleCount =
-        g_context.calibrationLongTermSamples->list(samples, kCalibrationLongTermSampleSlots);
+        g_context.calibrationLongTermSamples->list(samples.get(), kCalibrationLongTermSampleSlots);
     bool opened = false;
     for (std::size_t i = 0; i < sampleCount; ++i) {
         const CalibrationStoredTrace& sample = samples[i];
@@ -3430,12 +3458,16 @@ TodayOverview collectTodayOverview(std::uint32_t now, std::uint32_t fallbackToda
     }
     overview.timeReady = true;
     const std::uint32_t todayStart = (now / 86400UL) * 86400UL;
-    WaterRecord records[kDefaultRecordPageSize]{};
+    std::unique_ptr<WaterRecord[]> records(new (std::nothrow) WaterRecord[kDefaultRecordPageSize]{});
+    if (!records) {
+        return overview;
+    }
     const std::size_t total = g_context.records->count();
     bool stopAfterPage = false;
     for (std::size_t offset = 0; offset < total && !stopAfterPage; offset += kDefaultRecordPageSize) {
         const std::size_t page = offset / kDefaultRecordPageSize;
-        const std::size_t read = g_context.records->readPage(page, kDefaultRecordPageSize, records, kDefaultRecordPageSize);
+        const std::size_t read =
+            g_context.records->readPage(page, kDefaultRecordPageSize, records.get(), kDefaultRecordPageSize);
         if (read == 0) {
             break;
         }
@@ -3798,7 +3830,13 @@ void handlePresetsPage() {
 
 void sendStatsReportPanel() {
     const std::uint32_t now = g_context.nowSeconds();
-    const WaterUsageSummary summary = aggregateWaterRecords(*g_context.records, now, kChartDays);
+    std::unique_ptr<WaterUsageSummary> summaryStorage(new (std::nothrow) WaterUsageSummary);
+    if (!summaryStorage ||
+        !aggregateWaterRecordsInto(*g_context.records, now, kChartDays, false, *summaryStorage)) {
+        Esp32BaseWeb::sendChunk("<section id='stats-report' class='stats-report'><p class='warn'>统计内存不足，请稍后重试。</p></section>");
+        return;
+    }
+    const WaterUsageSummary& summary = *summaryStorage;
     const AppSnapshot snapshot = g_context.app->snapshot();
     char today[24]{};
     char month[24]{};
@@ -5915,9 +5953,14 @@ void handleStatsApi() {
         Esp32BaseWeb::sendJson(500, "{\"error\":\"oom\"}");
         return;
     }
-    const WaterUsageSummary summary = aggregateWaterRecords(*g_context.records, g_context.nowSeconds(), kChartDays);
+    std::unique_ptr<WaterUsageSummary> summary(new (std::nothrow) WaterUsageSummary);
+    if (!summary || !aggregateWaterRecordsInto(*g_context.records, g_context.nowSeconds(), kChartDays, false, *summary)) {
+        delete[] json;
+        Esp32BaseWeb::sendJson(500, "{\"error\":\"oom\"}");
+        return;
+    }
     const std::uint32_t totalMl = g_context.app->snapshot().statistics.totalMl;
-    sendJsonBuffer(writeUsageSummaryJson(summary, totalMl, json, 32768), json);
+    sendJsonBuffer(writeUsageSummaryJson(*summary, totalMl, json, 32768), json);
     delete[] json;
 }
 

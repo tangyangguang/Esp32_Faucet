@@ -4,7 +4,10 @@
 #include "app/WaterSensors.h"
 
 #include <algorithm>
+#include <cstring>
 #include <limits>
+#include <memory>
+#include <new>
 
 namespace faucet {
 namespace {
@@ -208,14 +211,17 @@ std::size_t queryWaterRecords(const WaterRecordReader& reader,
     const std::size_t startOffset = pageIndex * static_cast<std::size_t>(sanitizedPageSize);
     const std::size_t limit = std::min<std::size_t>(sanitizedPageSize, outputCapacity);
     constexpr std::uint16_t kQueryPageSize = kDefaultRecordPageSize;
-    WaterRecord records[kQueryPageSize]{};
+    std::unique_ptr<WaterRecord[]> records(new (std::nothrow) WaterRecord[kQueryPageSize]{});
+    if (!records) {
+        return 0;
+    }
     std::size_t matched = 0;
     std::size_t copied = 0;
     const std::size_t total = reader.count();
     bool stop = false;
     for (std::size_t offset = 0; offset < total && !stop; offset += kQueryPageSize) {
         const std::size_t page = offset / kQueryPageSize;
-        const std::size_t count = reader.readPage(page, kQueryPageSize, records, kQueryPageSize);
+        const std::size_t count = reader.readPage(page, kQueryPageSize, records.get(), kQueryPageSize);
         if (count == 0) {
             break;
         }
@@ -243,14 +249,12 @@ std::size_t queryWaterRecords(const WaterRecordReader& reader,
     return copied;
 }
 
-WaterUsageSummary aggregateWaterRecords(const WaterRecordReader& reader,
-                                        std::uint32_t nowSeconds,
-                                        std::uint8_t dayCount,
-                                        bool includeUncalibratedSensors) {
-    WaterUsageSummary summary{};
-    std::int64_t dailyTempSums[kUsageSummaryMaxDays]{};
-    std::uint32_t dailyTdsSums[kUsageSummaryMaxDays]{};
-    std::uint32_t dailySensorSamples[kUsageSummaryMaxDays]{};
+bool aggregateWaterRecordsInto(const WaterRecordReader& reader,
+                               std::uint32_t nowSeconds,
+                               std::uint8_t dayCount,
+                               bool includeUncalibratedSensors,
+                               WaterUsageSummary& summary) {
+    std::memset(&summary, 0, sizeof(summary));
     if (dayCount == 0 || dayCount > kUsageSummaryMaxDays) {
         dayCount = kUsageSummaryMaxDays;
     }
@@ -265,15 +269,21 @@ WaterUsageSummary aggregateWaterRecords(const WaterRecordReader& reader,
         summary.days[i].dayIndex = firstDay + static_cast<std::uint32_t>(i);
     }
     if (!reader.ready()) {
-        return summary;
+        return true;
     }
 
     constexpr std::uint16_t kAggregationPageSize = kDefaultRecordPageSize;
-    WaterRecord records[kAggregationPageSize]{};
+    std::unique_ptr<std::int64_t[]> dailyTempSums(new (std::nothrow) std::int64_t[kUsageSummaryMaxDays]{});
+    std::unique_ptr<std::uint32_t[]> dailyTdsSums(new (std::nothrow) std::uint32_t[kUsageSummaryMaxDays]{});
+    std::unique_ptr<std::uint32_t[]> dailySensorSamples(new (std::nothrow) std::uint32_t[kUsageSummaryMaxDays]{});
+    std::unique_ptr<WaterRecord[]> records(new (std::nothrow) WaterRecord[kAggregationPageSize]{});
+    if (!dailyTempSums || !dailyTdsSums || !dailySensorSamples || !records) {
+        return false;
+    }
     const std::size_t total = reader.count();
     for (std::size_t offset = 0; offset < total; offset += kAggregationPageSize) {
         const std::size_t page = offset / kAggregationPageSize;
-        const std::size_t count = reader.readPage(page, kAggregationPageSize, records, kAggregationPageSize);
+        const std::size_t count = reader.readPage(page, kAggregationPageSize, records.get(), kAggregationPageSize);
         if (count == 0) {
             break;
         }
@@ -374,7 +384,21 @@ WaterUsageSummary aggregateWaterRecords(const WaterRecordReader& reader,
         summary.days[i].tdsAvgPpm = static_cast<std::uint16_t>(dailyTdsSums[i] / samples);
     }
     summary.last30DaysDailyAverageMl = (summary.last30DaysMl + 15UL) / 30UL;
-    return summary;
+    return true;
+}
+
+WaterUsageSummary aggregateWaterRecords(const WaterRecordReader& reader,
+                                        std::uint32_t nowSeconds,
+                                        std::uint8_t dayCount,
+                                        bool includeUncalibratedSensors) {
+    std::unique_ptr<WaterUsageSummary> summary(new (std::nothrow) WaterUsageSummary);
+    if (!summary) {
+        return WaterUsageSummary{};
+    }
+    if (!aggregateWaterRecordsInto(reader, nowSeconds, dayCount, includeUncalibratedSensors, *summary)) {
+        return *summary;
+    }
+    return *summary;
 }
 
 }  // namespace faucet

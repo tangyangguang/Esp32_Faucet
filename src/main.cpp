@@ -216,6 +216,15 @@ std::uint32_t g_lastLoopStartUs = 0;
 std::uint32_t g_maxLoopIntervalUs = 0;
 std::uint32_t g_maxAppTickUs = 0;
 std::uint32_t g_maxBaseHandleUs = 0;
+bool g_baseBeginComplete = false;
+bool g_littleFsInitComplete = false;
+bool g_configInitComplete = false;
+bool g_recordStoreInitComplete = false;
+bool g_traceStoreInitComplete = false;
+bool g_runtimeStateInitComplete = false;
+bool g_appControllerInitComplete = false;
+bool g_valveClosedApplied = false;
+bool g_otaMarkValidAttempted = false;
 
 void configureBase() {
     Esp32Base::setFirmwareInfo(kFirmwareName, kFirmwareVersion, __DATE__ " " __TIME__);
@@ -401,10 +410,12 @@ void initializeApplication() {
     ESP32BASE_LOG_I("app", "ads1115=%s address=0x48", ads1115Ready ? "present" : "absent");
     logSystemConfigStatus();
     logStartupPhase("config_ready");
+    g_configInitComplete = true;
     const std::uint32_t nowSeconds = currentSeconds();
-    g_waterRecordFile.begin();
+    const bool waterRecordReady = g_waterRecordFile.begin();
     g_records.setFileStore(&g_waterRecordFile);
-    g_recordCalibrations.setFileStore(g_recordCalibrationFile.begin() ? &g_recordCalibrationFile : nullptr);
+    const bool recordCalibrationReady = g_recordCalibrationFile.begin();
+    g_recordCalibrations.setFileStore(recordCalibrationReady ? &g_recordCalibrationFile : nullptr);
     const bool meteringSchemesReady = g_meteringSchemes.begin();
     if (!meteringSchemesReady) {
         ESP32BASE_LOG_W("app", "metering scheme store unavailable, using config fallback");
@@ -418,6 +429,7 @@ void initializeApplication() {
     if (!calibrationLongTermSamplesReady) {
         ESP32BASE_LOG_W("app", "calibration long-term sample library unavailable");
     }
+    g_recordStoreInitComplete = waterRecordReady && calibrationSessionReady;
     logStartupPhase("record_store_ready");
     g_pulseTraceRecords = new (std::nothrow) faucet::WaterPulseTrace[kPulseTraceCapacity]{};
     g_pulseTraceSamples = new (std::nothrow) faucet::WaterPulseTraceSample[kPulseTraceMaxSamples]{};
@@ -432,12 +444,14 @@ void initializeApplication() {
     if (!g_pulseTraces) {
         ESP32BASE_LOG_W("app", "pulse trace store allocation failed, trace diagnostics disabled");
     }
+    g_traceStoreInitComplete = g_pulseTraces && calibrationSessionTracesReady;
     logStartupPhase("trace_store_ready");
     checkFileSystemCapacity();
     faucet::PeriodKeys periodKeys{};
     currentPeriodKeys(nowSeconds, periodKeys);
     g_statistics = faucet::StatisticsStore(g_configStore.loadStatistics(periodKeys));
     g_configStore.loadFilterRuntime(g_config.filters);
+    g_runtimeStateInitComplete = true;
     logStartupPhase("runtime_state_ready");
     g_filters = new (std::nothrow) faucet::FilterStore(g_config.filters);
     if (!g_filters) {
@@ -478,6 +492,7 @@ void initializeApplication() {
         ESP32BASE_LOG_E("app", "app controller allocation failed");
         return;
     }
+    g_appControllerInitComplete = true;
     g_display = new (std::nothrow) faucet::DisplayPresenter(g_config.displaySleepSec);
     if (!g_display) {
         ESP32BASE_LOG_W("app", "display presenter allocation failed, lcd disabled");
@@ -513,6 +528,10 @@ void initializeApplication() {
     g_flowPulses.begin();
     g_valveHardware.begin();
     g_app->setValveOutputSink(applyValveOutput);
+    const faucet::ValveOutput startupValve = g_app->snapshot().valve;
+    g_valveHardware.apply(startupValve);
+    g_valveClosedApplied =
+        startupValve.state == faucet::ValveState::Closed && !startupValve.enabled && startupValve.dutyPercent == 0;
     g_beep.setEnabled(g_config.beepEnabled);
     g_beepHardware.begin();
     g_lcd.begin(g_config.lcdI2cAddress);
@@ -682,6 +701,35 @@ void runApplicationTick() {
     g_beep.tick(nowMs);
     g_beepHardware.apply(g_beep.output());
 }
+
+bool startupHealthReadyForOtaMarkValid() {
+    return g_baseBeginComplete &&
+           g_littleFsInitComplete &&
+           g_configInitComplete &&
+           g_recordStoreInitComplete &&
+           g_traceStoreInitComplete &&
+           g_runtimeStateInitComplete &&
+           g_appControllerInitComplete &&
+           g_valveClosedApplied;
+}
+
+void maybeMarkOtaValidAfterHealthCheck() {
+#if ESP32BASE_OTA_REQUIRE_MARK_VALID
+    if (g_otaMarkValidAttempted || !Esp32BaseOta::waitingForMarkValid()) {
+        return;
+    }
+    if (!startupHealthReadyForOtaMarkValid()) {
+        return;
+    }
+    ESP32BASE_LOG_I("app", "ota_health_check begin");
+    g_otaMarkValidAttempted = true;
+    if (Esp32BaseOta::markCurrentValid()) {
+        ESP32BASE_LOG_I("app", "ota_mark_valid ok");
+    } else {
+        ESP32BASE_LOG_E("app", "ota_mark_valid failed");
+    }
+#endif
+}
 }  // namespace
 
 void setup() {
@@ -691,9 +739,15 @@ void setup() {
     configureBase();
     Serial.println("[faucet] setup: base configured");
 
-    if (!Esp32Base::begin()) {
+    g_baseBeginComplete = Esp32Base::begin();
+    if (!g_baseBeginComplete) {
         ESP32BASE_LOG_E("app", "Esp32Base begin failed: %s", Esp32Base::lastError());
     }
+#if ESP32BASE_ENABLE_FS
+    g_littleFsInitComplete = Esp32BaseFs::isReady();
+#else
+    g_littleFsInitComplete = true;
+#endif
     Serial.println("[faucet] setup: base begin done");
     initializeApplication();
     Serial.println("[faucet] setup: app initialized");
@@ -713,5 +767,6 @@ void loop() {
     const std::uint32_t baseHandleStartUs = micros();
     Esp32Base::handle();
     g_maxBaseHandleUs = std::max(g_maxBaseHandleUs, faucet::elapsedSince(micros(), baseHandleStartUs));
+    maybeMarkOtaValidAfterHealthCheck();
     delay(1);
 }

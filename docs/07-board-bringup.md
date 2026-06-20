@@ -58,6 +58,16 @@ pio run -e esp32dev -t upload --upload-port <端口>
 
 当前主环境和 smoke 环境串口上传速度使用 `460800`，避免 `921600` 在部分 CH340 板子上切换波特率失败。
 
+注意：普通 `pio run -e esp32dev -t upload` 只按 `board_upload.offset_address = 0x20000` 写入 `ota_0`。如果设备刚通过 Web OTA 启动到 `ota_1`，普通 upload 不能保证覆盖当前正在启动的旧固件，也不会清除 bootloader 选择 OTA 分区用的 `otadata`。本项目自定义分区表中真实 `otadata` 位于 `0x19000`，不是 Arduino 默认布局。
+
+厨房设备 Web OTA 后无法启动、串口显示仍在运行 `ota_1` 时，推荐使用 Esp32Base 串口恢复脚本。脚本会读取本项目分区表，同时写入 `ota_0` 和 `ota_1`，并在同一次写 flash 流程中清除真实 `otadata`：
+
+```sh
+python3 ../Esp32Base/scripts/esp32base_serial_recover_ota.py -d . -e esp32dev --port <端口> --baud 115200
+```
+
+执行前关闭 `pio device monitor` 或其他串口监视器；如设备无法自动进入下载模式，按住 `BOOT` 开始命令后松开，必要时再按一次 `EN/RST`。
+
 用户日常调试可使用 Esp32Base 快速 Web OTA：
 
 ```sh

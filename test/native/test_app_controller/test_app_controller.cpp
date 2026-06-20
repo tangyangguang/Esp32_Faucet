@@ -2162,6 +2162,22 @@ void test_app_controller_uses_shared_run_flow_reset_helper() {
     TEST_ASSERT_EQUAL_size_t(1, count);
 }
 
+void test_app_controller_restore_session_does_not_allocate_loaded_session_on_stack() {
+    const std::string body = readAppControllerSource();
+    TEST_ASSERT_EQUAL(std::string::npos, body.find("CalibrationSessionRecord loaded{}"));
+    TEST_ASSERT_EQUAL(std::string::npos, body.find("calibrationSession_ = makeCalibrationSession"));
+    TEST_ASSERT_EQUAL(std::string::npos, body.find("CalibrationSessionRecord nextSession = calibrationSession_"));
+    TEST_ASSERT_EQUAL(std::string::npos, body.find("const CalibrationSessionRecord originalSession = calibrationSession_"));
+}
+
+void test_app_controller_calibration_paths_avoid_large_stack_arrays() {
+    const std::string body = readAppControllerSource();
+    TEST_ASSERT_EQUAL(std::string::npos, body.find("CalibrationStoredTrace existing[kCalibrationLongTermSampleSlots]"));
+    TEST_ASSERT_EQUAL(std::string::npos, body.find("SegmentedCalibrationSample samples[kCalibrationMaxValidSamples]"));
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("new (std::nothrow) CalibrationStoredTrace[kCalibrationLongTermSampleSlots]"));
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("new (std::nothrow) SegmentedCalibrationSample[kCalibrationMaxValidSamples]"));
+}
+
 int main(int argc, char** argv) {
     (void)argc;
     (void)argv;
@@ -2223,5 +2239,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_app_controller_snapshot_reports_current_flow_rate);
     RUN_TEST(test_app_controller_uses_window_flow_for_high_flow_safety);
     RUN_TEST(test_app_controller_uses_shared_run_flow_reset_helper);
+    RUN_TEST(test_app_controller_restore_session_does_not_allocate_loaded_session_on_stack);
+    RUN_TEST(test_app_controller_calibration_paths_avoid_large_stack_arrays);
     return UNITY_END();
 }

@@ -3,9 +3,28 @@
 #include "app/WaterRecordStore.h"
 #include "app/WaterSensors.h"
 
+#include <cstdio>
+#include <cstring>
+
 using namespace faucet;
 
 namespace {
+
+const char* findWithin(const char* begin, const char* end, const char* needle) {
+    if (!begin || !end || !needle || end < begin) {
+        return nullptr;
+    }
+    const std::size_t len = std::strlen(needle);
+    if (len == 0) {
+        return begin;
+    }
+    for (const char* cursor = begin; cursor + len <= end; ++cursor) {
+        if (std::memcmp(cursor, needle, len) == 0) {
+            return cursor;
+        }
+    }
+    return nullptr;
+}
 
 class SpyRecordReader : public WaterRecordReader {
 public:
@@ -390,6 +409,24 @@ void test_record_query_filters_real_records_by_time_range_and_paginates_matches(
     TEST_ASSERT_EQUAL_UINT32(831772800UL, page[0].startTime);
 }
 
+void test_record_aggregate_avoids_large_stack_locals_in_core_implementation() {
+    FILE* source = std::fopen("src/app/WaterRecordStore.cpp", "rb");
+    TEST_ASSERT_NOT_NULL(source);
+    static char buffer[24000]{};
+    const std::size_t read = std::fread(buffer, 1, sizeof(buffer) - 1, source);
+    std::fclose(source);
+    TEST_ASSERT_GREATER_THAN_size_t(0, read);
+
+    const char* aggregateInto = std::strstr(buffer, "bool aggregateWaterRecordsInto");
+    TEST_ASSERT_NOT_NULL(aggregateInto);
+    const char* aggregateReturn = std::strstr(buffer, "WaterUsageSummary aggregateWaterRecords");
+    TEST_ASSERT_NOT_NULL(aggregateReturn);
+    TEST_ASSERT_NULL(findWithin(aggregateInto, aggregateReturn, "WaterUsageSummary summary{}"));
+    TEST_ASSERT_NULL(findWithin(aggregateInto, aggregateReturn, "WaterRecord records[kAggregationPageSize]{}"));
+    TEST_ASSERT_NOT_NULL(findWithin(aggregateInto, aggregateReturn, "new (std::nothrow) WaterRecord"));
+    TEST_ASSERT_NOT_NULL(findWithin(aggregateInto, aggregateReturn, "new (std::nothrow) std::int64_t"));
+}
+
 int main(int argc, char** argv) {
     (void)argc;
     (void)argv;
@@ -410,5 +447,6 @@ int main(int argc, char** argv) {
     RUN_TEST(test_record_aggregate_reads_small_pages_for_web_stack_safety);
     RUN_TEST(test_record_aggregate_stops_after_records_older_than_window);
     RUN_TEST(test_record_query_filters_real_records_by_time_range_and_paginates_matches);
+    RUN_TEST(test_record_aggregate_avoids_large_stack_locals_in_core_implementation);
     return UNITY_END();
 }

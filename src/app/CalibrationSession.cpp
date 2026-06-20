@@ -35,12 +35,19 @@ std::uint32_t validSampleSpanMl(const CalibrationSessionRecord& session) {
 
 }  // namespace
 
-CalibrationSessionRecord makeCalibrationSession(std::uint32_t sessionId, std::uint32_t nowSeconds) {
-    CalibrationSessionRecord session{};
+void initializeCalibrationSessionRecord(CalibrationSessionRecord& session,
+                                        std::uint32_t sessionId,
+                                        std::uint32_t nowSeconds) {
+    session = CalibrationSessionRecord{};
     session.sessionId = sessionId;
     session.status = CalibrationSessionStatus::Preparing;
     session.startedAt = nowSeconds;
     session.updatedAt = nowSeconds;
+}
+
+CalibrationSessionRecord makeCalibrationSession(std::uint32_t sessionId, std::uint32_t nowSeconds) {
+    CalibrationSessionRecord session{};
+    initializeCalibrationSessionRecord(session, sessionId, nowSeconds);
     return session;
 }
 

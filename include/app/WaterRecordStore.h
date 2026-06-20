@@ -133,5 +133,10 @@ WaterUsageSummary aggregateWaterRecords(const WaterRecordReader& reader,
                                         std::uint32_t nowSeconds,
                                         std::uint8_t dayCount = kUsageSummaryMaxDays,
                                         bool includeUncalibratedSensors = false);
+bool aggregateWaterRecordsInto(const WaterRecordReader& reader,
+                               std::uint32_t nowSeconds,
+                               std::uint8_t dayCount,
+                               bool includeUncalibratedSensors,
+                               WaterUsageSummary& summary);
 
 }  // namespace faucet

@@ -87,6 +87,9 @@ struct CalibrationSessionRecord {
     CalibrationAttempt attempts[kCalibrationMaxAttempts]{};
 };
 
+void initializeCalibrationSessionRecord(CalibrationSessionRecord& session,
+                                        std::uint32_t sessionId,
+                                        std::uint32_t nowSeconds);
 CalibrationSessionRecord makeCalibrationSession(std::uint32_t sessionId, std::uint32_t nowSeconds);
 std::uint8_t countValidCalibrationSamples(const CalibrationSessionRecord& session);
 std::uint8_t countCalibrationAttempts(const CalibrationSessionRecord& session);

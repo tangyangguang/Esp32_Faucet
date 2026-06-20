@@ -150,6 +150,7 @@ public:
     bool saveCalibrationSessionSampleToLongTermForWeb(std::uint8_t attemptIndex,
                                                       std::uint32_t nowSeconds,
                                                       std::uint32_t& sampleId);
+    bool removeCalibrationSessionSampleForWeb(std::uint8_t attemptIndex, std::uint32_t nowSeconds);
     bool skipCalibrationAttemptForWeb(CalibrationSkipReason reason, std::uint32_t nowSeconds);
     bool generateCalibrationForWeb(std::uint32_t nowSeconds);
     bool applyGeneratedCalibrationForWeb(std::uint32_t nowSeconds);
@@ -190,11 +191,14 @@ private:
     void expireIdleCalibrationSession(std::uint32_t nowSeconds);
     bool invalidateAwaitingActualIfRamTraceMissing(std::uint32_t nowSeconds);
     bool saveCalibrationSession();
+    bool refreshCalibrationCandidate(std::uint32_t nowSeconds);
+    void clearCalibrationCandidate();
     bool beginCalibrationLocalRun(std::uint32_t nowMs,
                                   std::uint32_t nowUs,
                                   std::uint32_t nowSeconds,
                                   bool timeSynced,
                                   std::uint32_t bootId);
+    std::uint8_t selectCalibrationSessionTraceSlot() const;
     void persistCalibrationPendingAttempt(const WaterRecord& record, std::uint32_t nowSeconds);
     void syncFlow(std::uint32_t nowUs);
     void finishPulseTrace(const WaterRecord& record,

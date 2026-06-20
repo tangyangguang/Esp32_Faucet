@@ -7,8 +7,9 @@ namespace faucet {
 namespace {
 
 bool isValidSample(const CalibrationAttempt& attempt) {
-    return attempt.status == CalibrationAttemptStatus::Valid && attempt.actualMl > 0 && !attempt.resumedAfterPause &&
-           !attempt.truncated;
+    return attempt.status == CalibrationAttemptStatus::Valid &&
+           attempt.actualMl >= kCalibrationMinActualMl &&
+           attempt.record.pulseCount > 0;
 }
 
 std::uint32_t validSampleSpanMl(const CalibrationSessionRecord& session) {
@@ -69,9 +70,6 @@ CalibrationCoverageQuality calibrationCoverageQuality(const CalibrationSessionRe
         return CalibrationCoverageQuality::Insufficient;
     }
     const std::uint32_t spanMl = validSampleSpanMl(session);
-    if (spanMl < kCalibrationMinVolumeSpanMl) {
-        return CalibrationCoverageQuality::Insufficient;
-    }
     if (spanMl < kCalibrationRecommendedVolumeSpanMl) {
         return CalibrationCoverageQuality::NarrowQuick;
     }

@@ -101,7 +101,7 @@ void test_session_store_writes_and_reads_one_current_session() {
     TEST_ASSERT_EQUAL_UINT8(2, output.validSampleCount);
 }
 
-void test_session_store_preserves_corrupt_checksum_file() {
+void test_session_store_rebuilds_corrupt_checksum_file_as_empty_session() {
     MemoryFileBackend backend;
     CalibrationSessionFileStore store(backend, "/session.bin");
     TEST_ASSERT_TRUE(store.begin());
@@ -110,14 +110,66 @@ void test_session_store_preserves_corrupt_checksum_file() {
     backend.files["/session.bin"][sizeof(std::uint32_t) + sizeof(std::uint16_t) + sizeof(std::uint16_t)] ^= 0x7f;
 
     CalibrationSessionFileStore loaded(backend, "/session.bin");
-    TEST_ASSERT_FALSE(loaded.begin());
-    TEST_ASSERT_FALSE(loaded.ready());
-    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(AppStorageStatus::Corrupt),
+    TEST_ASSERT_TRUE(loaded.begin());
+    TEST_ASSERT_TRUE(loaded.ready());
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(AppStorageStatus::Ready),
                             static_cast<unsigned>(loaded.status()));
     TEST_ASSERT_TRUE(backend.exists("/session.bin"));
     TEST_ASSERT_EQUAL_size_t(0, backend.removeCalls);
     CalibrationSessionRecord output{};
-    TEST_ASSERT_FALSE(loaded.load(output));
+    TEST_ASSERT_TRUE(loaded.load(output));
+    TEST_ASSERT_EQUAL_UINT32(0, output.sessionId);
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationSessionStatus::Idle),
+                            static_cast<unsigned>(output.status));
+}
+
+void test_session_store_rebuilds_too_small_file_as_empty_session() {
+    MemoryFileBackend backend;
+    backend.files["/session.bin"] = std::vector<std::uint8_t>(7, 0x55);
+
+    CalibrationSessionFileStore loaded(backend, "/session.bin");
+    TEST_ASSERT_TRUE(loaded.begin());
+    TEST_ASSERT_TRUE(loaded.ready());
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(AppStorageStatus::Ready),
+                            static_cast<unsigned>(loaded.status()));
+    TEST_ASSERT_EQUAL_size_t(1, backend.removeCalls);
+    CalibrationSessionRecord output{};
+    TEST_ASSERT_TRUE(loaded.load(output));
+    TEST_ASSERT_EQUAL_UINT32(0, output.sessionId);
+}
+
+void test_session_store_ignores_trailing_bytes_when_header_is_current() {
+    MemoryFileBackend backend;
+    CalibrationSessionFileStore store(backend, "/session.bin");
+    TEST_ASSERT_TRUE(store.begin());
+    TEST_ASSERT_TRUE(store.save(makeCalibrationSession(9, 1770000000)));
+    backend.files["/session.bin"].resize(1380, 0xaa);
+
+    CalibrationSessionFileStore loaded(backend, "/session.bin");
+    TEST_ASSERT_TRUE(loaded.begin());
+    TEST_ASSERT_TRUE(loaded.ready());
+    TEST_ASSERT_EQUAL_size_t(0, backend.removeCalls);
+    TEST_ASSERT_EQUAL_size_t(1380, backend.files["/session.bin"].size());
+    CalibrationSessionRecord output{};
+    TEST_ASSERT_TRUE(loaded.load(output));
+    TEST_ASSERT_EQUAL_UINT32(9, output.sessionId);
+}
+
+void test_session_store_initialization_does_not_hold_session_file_on_stack_during_create() {
+    FILE* source = std::fopen("src/app/CalibrationSessionStore.cpp", "rb");
+    TEST_ASSERT_NOT_NULL(source);
+    static char buffer[12000]{};
+    const std::size_t read = std::fread(buffer, 1, sizeof(buffer) - 1, source);
+    std::fclose(source);
+    TEST_ASSERT_GREATER_THAN_size_t(0, read);
+
+    const char* init = std::strstr(buffer, "const auto initializeEmpty");
+    TEST_ASSERT_NOT_NULL(init);
+    const char* make = std::strstr(init, "SessionFile empty = makeFile");
+    const char* create = std::strstr(init, "backend_.createSized");
+    TEST_ASSERT_NOT_NULL(make);
+    TEST_ASSERT_NOT_NULL(create);
+    TEST_ASSERT_TRUE(create < make);
 }
 
 int main(int argc, char** argv) {
@@ -125,6 +177,9 @@ int main(int argc, char** argv) {
     (void)argv;
     UNITY_BEGIN();
     RUN_TEST(test_session_store_writes_and_reads_one_current_session);
-    RUN_TEST(test_session_store_preserves_corrupt_checksum_file);
+    RUN_TEST(test_session_store_rebuilds_corrupt_checksum_file_as_empty_session);
+    RUN_TEST(test_session_store_rebuilds_too_small_file_as_empty_session);
+    RUN_TEST(test_session_store_ignores_trailing_bytes_when_header_is_current);
+    RUN_TEST(test_session_store_initialization_does_not_hold_session_file_on_stack_during_create);
     return UNITY_END();
 }

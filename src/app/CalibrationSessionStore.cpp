@@ -58,9 +58,21 @@ bool CalibrationSessionFileStore::begin() {
         return false;
     }
     const auto initializeEmpty = [this]() {
+        if (!backend_.createSized(path_, sizeof(SessionFile))) {
+            return false;
+        }
         SessionFile empty = makeFile(CalibrationSessionRecord{});
-        return backend_.createSized(path_, sizeof(SessionFile)) &&
-               backend_.writeAt(path_, 0, reinterpret_cast<const std::uint8_t*>(&empty), sizeof(empty));
+        return backend_.writeAt(path_, 0, reinterpret_cast<const std::uint8_t*>(&empty), sizeof(empty));
+    };
+    const auto writeEmpty = [this]() {
+        SessionFile empty = makeFile(CalibrationSessionRecord{});
+        return backend_.writeAt(path_, 0, reinterpret_cast<const std::uint8_t*>(&empty), sizeof(empty));
+    };
+    const auto rebuildEmpty = [this, &initializeEmpty]() {
+        if (backend_.exists(path_) && !backend_.removeFile(path_)) {
+            return false;
+        }
+        return initializeEmpty();
     };
     if (!backend_.exists(path_)) {
         ready_ = initializeEmpty();
@@ -68,20 +80,19 @@ bool CalibrationSessionFileStore::begin() {
         return ready_;
     }
     SessionFile file{};
-    if (backend_.fileSize(path_) != static_cast<std::int64_t>(sizeof(SessionFile))) {
-        status_ = AppStorageStatus::Corrupt;
-        return false;
+    if (backend_.fileSize(path_) < static_cast<std::int64_t>(sizeof(SessionFile))) {
+        ready_ = rebuildEmpty();
+        status_ = ready_ ? AppStorageStatus::Ready : AppStorageStatus::BackendFailure;
+        return ready_;
     }
     if (!backend_.readAt(path_, 0, reinterpret_cast<std::uint8_t*>(&file), sizeof(file))) {
         status_ = AppStorageStatus::BackendFailure;
         return false;
     }
     if (!validFile(file)) {
-        status_ = (file.magic != kSessionMagic || file.version != kSessionVersion ||
-                   file.recordSize != sizeof(CalibrationSessionRecord))
-                      ? AppStorageStatus::IncompatibleFormat
-                      : AppStorageStatus::Corrupt;
-        return false;
+        ready_ = writeEmpty();
+        status_ = ready_ ? AppStorageStatus::Ready : AppStorageStatus::BackendFailure;
+        return ready_;
     }
     ready_ = true;
     status_ = AppStorageStatus::Ready;

@@ -608,13 +608,17 @@ bool AppController::submitCalibrationActualForWeb(std::uint32_t actualMl, std::u
     attempt.status = CalibrationAttemptStatus::Valid;
     attempt.invalidReason = CalibrationInvalidReason::None;
     calibrationSession_.validSampleCount = countValidCalibrationSamples(calibrationSession_);
-    calibrationSession_.status = calibrationCanQuickGenerate(calibrationSession_) ? CalibrationSessionStatus::ReadyToGenerate
-                                                                                  : CalibrationSessionStatus::WaitingLocalRun;
     calibrationSession_.updatedAt = nowSeconds;
     if (pulseTraces_) {
         pulseTraces_->setActualMlByRecord(attempt.record, actualMl);
     }
     pendingBeep_ = BeepPattern::Done;
+    if (calibrationCanQuickGenerate(calibrationSession_)) {
+        return refreshCalibrationCandidate(nowSeconds);
+    }
+    clearCalibrationCandidate();
+    calibrationSession_.status = calibrationCanStartAttempt(calibrationSession_) ? CalibrationSessionStatus::WaitingLocalRun
+                                                                                : CalibrationSessionStatus::Failed;
     return saveCalibrationSession();
 }
 
@@ -682,6 +686,57 @@ bool AppController::saveCalibrationSessionSampleToLongTermForWeb(std::uint8_t at
     return saveCalibrationSession();
 }
 
+bool AppController::removeCalibrationSessionSampleForWeb(std::uint8_t attemptIndex, std::uint32_t nowSeconds) {
+    if (water_.snapshot().state != WaterState::Idle) {
+        return false;
+    }
+
+    std::uint8_t selectedIndex = kCalibrationMaxAttempts;
+    for (std::uint8_t i = 0; i < calibrationSession_.attemptCount && i < kCalibrationMaxAttempts; ++i) {
+        const CalibrationAttempt& attempt = calibrationSession_.attempts[i];
+        if (attempt.attemptIndex == attemptIndex) {
+            selectedIndex = i;
+            break;
+        }
+    }
+    const CalibrationAttempt* selected =
+        selectedIndex < kCalibrationMaxAttempts ? &calibrationSession_.attempts[selectedIndex] : nullptr;
+    if (!selected || (selected->status != CalibrationAttemptStatus::Valid &&
+                      selected->status != CalibrationAttemptStatus::PendingActual)) {
+        return false;
+    }
+    CalibrationSessionRecord nextSession = calibrationSession_;
+    CalibrationAttempt& nextAttempt = nextSession.attempts[selectedIndex];
+    nextAttempt.status = CalibrationAttemptStatus::Removed;
+    nextAttempt.skipReason = CalibrationSkipReason::None;
+    nextAttempt.invalidReason = CalibrationInvalidReason::None;
+    nextSession.validSampleCount = countValidCalibrationSamples(nextSession);
+    nextSession.updatedAt = nowSeconds;
+    const bool canQuickGenerateAfterRemove = calibrationCanQuickGenerate(nextSession);
+    nextSession.status = canQuickGenerateAfterRemove ? CalibrationSessionStatus::ReadyToGenerate
+                                                     : (calibrationCanStartAttempt(nextSession)
+                                                            ? CalibrationSessionStatus::WaitingLocalRun
+                                                            : CalibrationSessionStatus::Failed);
+
+    if (!calibrationSessions_ || !calibrationSessions_->ready() || !calibrationSessions_->save(nextSession)) {
+        return false;
+    }
+
+    const CalibrationSessionRecord originalSession = calibrationSession_;
+    if (calibrationSessionTraces_ && selected->sessionTraceSlot < kCalibrationSessionTraceSlots &&
+        !calibrationSessionTraces_->invalidate(selected->sessionTraceSlot)) {
+        calibrationSessions_->save(originalSession);
+        return false;
+    }
+
+    calibrationSession_ = nextSession;
+    clearCalibrationCandidate();
+    if (canQuickGenerateAfterRemove) {
+        return refreshCalibrationCandidate(nowSeconds);
+    }
+    return true;
+}
+
 bool AppController::skipCalibrationAttemptForWeb(CalibrationSkipReason reason, std::uint32_t nowSeconds) {
     if (calibrationSession_.status != CalibrationSessionStatus::AwaitingActual ||
         calibrationSession_.attemptCount == 0) {
@@ -700,10 +755,28 @@ bool AppController::skipCalibrationAttemptForWeb(CalibrationSkipReason reason, s
 }
 
 bool AppController::generateCalibrationForWeb(std::uint32_t nowSeconds) {
+    return refreshCalibrationCandidate(nowSeconds) &&
+           calibrationSession_.status == CalibrationSessionStatus::Generated &&
+           calibrationCandidate_.ready;
+}
+
+bool AppController::refreshCalibrationCandidate(std::uint32_t nowSeconds) {
+    clearCalibrationCandidate();
+    calibrationSession_.validSampleCount = countValidCalibrationSamples(calibrationSession_);
+    if (calibrationSession_.sessionId == 0 ||
+        calibrationSession_.status == CalibrationSessionStatus::Idle ||
+        calibrationSession_.status == CalibrationSessionStatus::Applied ||
+        calibrationSession_.status == CalibrationSessionStatus::Discarded ||
+        calibrationSession_.status == CalibrationSessionStatus::Failed) {
+        return false;
+    }
     if (!meteringSchemes_ || !meteringSchemes_->ready() || !calibrationSessionTraces_ ||
         !calibrationSessionTraces_->ready() || !calibrationCanQuickGenerate(calibrationSession_) ||
         water_.snapshot().state != WaterState::Idle) {
-        return false;
+        calibrationSession_.status = calibrationCanStartAttempt(calibrationSession_) ? CalibrationSessionStatus::WaitingLocalRun
+                                                                                    : CalibrationSessionStatus::Failed;
+        calibrationSession_.updatedAt = nowSeconds;
+        return saveCalibrationSession();
     }
 
     SegmentedCalibrationSample samples[kCalibrationMaxValidSamples]{};
@@ -732,7 +805,10 @@ bool AppController::generateCalibrationForWeb(std::uint32_t nowSeconds) {
 
     SegmentedCalibrationResult result{};
     if (!computeSegmentedCalibration(samples, sampleCount, options, result) || !result.valid) {
-        return false;
+        calibrationSession_.status = calibrationCanStartAttempt(calibrationSession_) ? CalibrationSessionStatus::WaitingLocalRun
+                                                                                    : CalibrationSessionStatus::Failed;
+        calibrationSession_.updatedAt = nowSeconds;
+        return saveCalibrationSession();
     }
     MeteringSchemeCandidate candidate{};
     fillCandidateFromSegmentedResult(candidate,
@@ -747,6 +823,10 @@ bool AppController::generateCalibrationForWeb(std::uint32_t nowSeconds) {
     calibrationSession_.updatedAt = nowSeconds;
     pendingBeep_ = BeepPattern::Done;
     return saveCalibrationSession();
+}
+
+void AppController::clearCalibrationCandidate() {
+    calibrationCandidate_ = MeteringSchemeCandidate{};
 }
 
 bool AppController::applyGeneratedCalibrationForWeb(std::uint32_t nowSeconds) {
@@ -1280,6 +1360,24 @@ bool AppController::beginCalibrationLocalRun(std::uint32_t nowMs,
     return true;
 }
 
+std::uint8_t AppController::selectCalibrationSessionTraceSlot() const {
+    bool occupied[kCalibrationSessionTraceSlots]{};
+    for (std::uint8_t i = 0; i < calibrationSession_.attemptCount && i < kCalibrationMaxAttempts; ++i) {
+        const CalibrationAttempt& attempt = calibrationSession_.attempts[i];
+        if ((attempt.status == CalibrationAttemptStatus::Valid ||
+             attempt.status == CalibrationAttemptStatus::PendingActual) &&
+            attempt.sessionTraceSlot < kCalibrationSessionTraceSlots) {
+            occupied[attempt.sessionTraceSlot] = true;
+        }
+    }
+    for (std::uint8_t slot = 0; slot < kCalibrationSessionTraceSlots; ++slot) {
+        if (!occupied[slot]) {
+            return slot;
+        }
+    }
+    return 255;
+}
+
 void AppController::persistCalibrationPendingAttempt(const WaterRecord& record, std::uint32_t nowSeconds) {
     if (localMode_ != LocalUiMode::Calibration ||
         calibrationSession_.status != CalibrationSessionStatus::Running ||
@@ -1288,13 +1386,24 @@ void AppController::persistCalibrationPendingAttempt(const WaterRecord& record, 
         return;
     }
 
-    const std::uint8_t slot = calibrationSession_.validSampleCount;
+    const std::uint8_t slot = selectCalibrationSessionTraceSlot();
     CalibrationAttempt attempt{};
     attempt.attemptIndex = calibrationSession_.attemptCount;
     attempt.sessionTraceSlot = slot;
     attempt.record = record;
     attempt.targetHintMl = record.targetValue;
     attempt.status = CalibrationAttemptStatus::PendingActual;
+
+    if (slot >= kCalibrationSessionTraceSlots) {
+        attempt.status = CalibrationAttemptStatus::Invalid;
+        attempt.invalidReason = CalibrationInvalidReason::StorageFailed;
+        appendCalibrationAttempt(calibrationSession_, attempt);
+        calibrationSession_.status = calibrationCanStartAttempt(calibrationSession_) ? CalibrationSessionStatus::WaitingLocalRun
+                                                                                    : CalibrationSessionStatus::Failed;
+        calibrationSession_.updatedAt = nowSeconds;
+        saveCalibrationSession();
+        return;
+    }
 
     const WaterPulseTrace* trace = pulseTraces_ ? pulseTraces_->findByRecord(record) : nullptr;
     if (!trace || trace->sampleCount == 0 || trace->sampleCount > kPulseTraceMaxRawEdgesPerTrace) {

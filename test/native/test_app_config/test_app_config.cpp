@@ -294,8 +294,8 @@ void test_pulse_observation_window_is_editable_in_app_config_page() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "kDefaultPulseObservationWindowSec"));
 }
 
-void test_calibration_sample_stores_are_small_and_lazy_initialized() {
-    TEST_ASSERT_EQUAL_size_t(3, kCalibrationSessionTraceSlots);
+void test_calibration_sample_stores_are_small_and_initialized_after_record_store() {
+    TEST_ASSERT_EQUAL_size_t(10, kCalibrationSessionTraceSlots);
     TEST_ASSERT_EQUAL_size_t(5, kCalibrationLongTermSampleSlots);
 
     FILE* file = std::fopen("src/main.cpp", "rb");
@@ -332,6 +332,6 @@ int main(int argc, char** argv) {
     RUN_TEST(test_record_page_size_and_filter_life_helpers);
     RUN_TEST(test_recent_pulse_trace_count_is_not_editable_in_app_config_page);
     RUN_TEST(test_pulse_observation_window_is_editable_in_app_config_page);
-    RUN_TEST(test_calibration_sample_stores_are_small_and_lazy_initialized);
+    RUN_TEST(test_calibration_sample_stores_are_small_and_initialized_after_record_store);
     return UNITY_END();
 }

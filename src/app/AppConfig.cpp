@@ -182,7 +182,7 @@ void sanitizeConfig(SystemConfig& config) {
         config.tdsKind = TdsKind::AnalogTdsAo;
     }
     config.tdsEnabled = config.tdsKind != TdsKind::None;
-    if (!enumInRange(config.tdsCalibrationMode, TdsCalibrationMode::None, TdsCalibrationMode::TwoPoint)) {
+    if (!enumInRange(config.tdsCalibrationMode, TdsCalibrationMode::None, TdsCalibrationMode::MultiPoint)) {
         config.tdsCalibrationMode = TdsCalibrationMode::None;
     }
     if (!isfinite(config.tdsScale)) {

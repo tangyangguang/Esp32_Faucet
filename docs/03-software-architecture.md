@@ -131,7 +131,7 @@
 | 预设 | `/faucet/presets` | 9 组预设的启用、名称、类型和值 |
 | 记录 | `/faucet/records` | 分页查看最近出水记录，显示校准状态、实测量和脉冲明细入口 |
 | 记录详情 | `/faucet/records/detail` | 单条记录详情、RAM 或设备脉冲明细；隐藏路由，不进入导航 |
-| 校准 | `/faucet/calibration` | 校准首页，展开显示流量计校准入口、温度校准和 TDS 两点/单点校准 |
+| 校准 | `/faucet/calibration` | 校准首页，概览当前计量参数、温度状态和水质状态，并进入各校准详情 |
 | 流量计校准 | `/faucet/calibration/flow` | 流量校准流程、样本库、辅助计算、手工输入参数、历史参数和测算；隐藏路由，不进入顶层导航 |
 | 校准详情 | `/faucet/calibration/detail` | 校准样本详情、RAM 或长期样本脉冲明细；隐藏路由，不进入导航 |
 | 统计 | `/faucet/stats` | 今日、本周、本月、总累计、水温趋势和 TDS 趋势 |
@@ -148,7 +148,7 @@
 | POST | `/api/faucet/presets` | 保存预设配置；`select_previous`、`select_next`、`select` 只切换“下次预设”并返回最新状态，不启动或改变当前出水任务 |
 | GET | `/api/faucet/records` | 按时间范围筛选并分页查询出水记录；出水确认、运行和暂停期间返回 busy |
 | POST | `/api/faucet/records` | 通过 `action` 执行记录校准；危险 POST 必须通过同源校验；出水确认、运行和暂停期间返回 busy |
-| POST | `/faucet/calibration` | 温度校准、TDS 低值/高值/单点采样和保存；不提供远程出水/停水 |
+| POST | `/faucet/calibration` | 温度校准、TDS 校准点采样、删除、应用和放弃；不提供远程出水/停水 |
 | GET | `/faucet/calibration/flow` | 流量计校准中心页面；隐藏路由，不进入顶层导航 |
 | POST | `/faucet/calibration/flow` | 流量校准会话动作、长期样本入库、方案生成、保存/放弃生成结果、create/edit/enable/delete 方案；不提供远程出水/停水 |
 | GET | `/api/faucet/stats` | 查询统计，包含每日水温/TDS 摘要 |
@@ -244,10 +244,10 @@ struct StatisticsRecord {
 
 ## 校准与计量方案
 
-- 校准首页分为流量计校准、温度校准、水质校准三块，全部直接展开，不使用折叠区。
+- 校准首页分为当前计量参数、温度校准、水质校准三块，只做状态概览和入口；温度详情使用 `/faucet/calibration?view=temperature`，水质详情使用 `/faucet/calibration?view=tds`，不新增路由。
 - 流量计校准中心通过 `/faucet/calibration/flow` 进入，页面内同时展示校准流程、当前会话样本、计量方案列表、长期样本库、生成规则和测算工具；进入页面不会开始出水。
 - 校准会话最少 2 条有效样本可生成，推荐 3 条，有效样本最多 3 条，尝试最多 6 次；实际出水/停水只允许本地按键执行，Web 只录入实测容量、放弃样本、入库、生成和应用。
-- 温度校准在校准首页输入参考温度后保存偏移；TDS 校准在校准首页支持低值/高值两点校准和单点校准，未校准时仍可显示和记录但标记为未校准。
+- 温度校准详情页输入温度计读数后保存偏移；TDS 校准详情页以 1-5 个校准点作为统一模型，保存稳定采样点后自动生成候选参数，用户确认“使用这组参数”后才写入系统配置。未校准 TDS 仍可显示和记录，但标记为未校准。
 - 分段计量公式和流量计计量方案规则见 `docs/脉冲分段计量参数说明.md` 与 `docs/10-flow-meter-metering-schemes.md`。
 - 实时流速显示、窗口估算、显示平滑和平均流速区分规则见 `docs/11-realtime-flow-display.md`。
 - Web 校准页生成候选参数后不提供单独“保存方案/切换参数”流程；校准会话保存结果或手工输入保存后直接成为最新当前参数。长期样本库辅助计算结果只能带入手工输入页，确认保存前不会影响当前计量。

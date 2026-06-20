@@ -154,14 +154,12 @@ public:
     bool skipCalibrationAttemptForWeb(CalibrationSkipReason reason, std::uint32_t nowSeconds);
     bool generateCalibrationForWeb(std::uint32_t nowSeconds);
     bool applyGeneratedCalibrationForWeb(std::uint32_t nowSeconds);
-    bool startTdsSinglePointCalibrationForWeb(std::uint16_t referencePpm,
-                                              std::uint32_t nowSeconds);
-    bool startTdsTwoPointLowCalibrationForWeb(std::uint16_t referencePpm,
-                                              std::uint32_t nowSeconds);
-    bool startTdsTwoPointHighCalibrationForWeb(std::uint16_t referencePpm,
-                                               std::uint32_t nowSeconds);
-    bool cancelTdsCalibrationForWeb();
-    bool saveTdsCalibrationForWeb(std::uint32_t nowSeconds);
+    bool startTdsCalibrationSessionForWeb(std::uint32_t nowSeconds);
+    bool startTdsCalibrationPointForWeb(std::uint16_t referencePpm, std::uint32_t nowSeconds);
+    bool saveTdsCalibrationPointForWeb(std::uint32_t nowSeconds);
+    bool removeTdsCalibrationPointForWeb(std::uint8_t index, std::uint32_t nowSeconds);
+    bool discardTdsCalibrationForWeb();
+    bool applyTdsCalibrationForWeb(std::uint32_t nowSeconds);
     bool saveTemperatureCalibrationForWeb(std::int16_t referenceCentiC);
     TdsCalibrationSessionSnapshot tdsCalibrationSnapshot() const;
     const SystemConfig& config() const;

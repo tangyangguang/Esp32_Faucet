@@ -26,6 +26,16 @@ struct WaterSensorRunSummary {
     std::uint8_t tdsTempFallback25CAtRun = 0;
 };
 
+struct TdsCalibrationPointSnapshot {
+    bool valid = false;
+    bool tempFallback25C = false;
+    std::uint16_t referencePpm = 0;
+    std::uint16_t rawPpm = 0;
+    std::uint16_t voltageMv = 0;
+    std::int16_t temperatureCentiC = 0;
+    std::uint32_t sampledAt = 0;
+};
+
 struct TdsCalibrationSessionSnapshot {
     bool active = false;
     bool readyToSave = false;
@@ -37,6 +47,18 @@ struct TdsCalibrationSessionSnapshot {
     std::uint16_t referencePpm = 0;
     std::uint16_t rawAvgPpm = 0;
     std::uint16_t flags = 0;
+    bool sessionActive = false;
+    bool samplingActive = false;
+    bool candidateReady = false;
+    bool full = false;
+    std::uint8_t pointCount = 0;
+    std::uint16_t rawAveragePpm = 0;
+    std::uint16_t referenceSpanPpm = 0;
+    std::uint16_t rawSpanPpm = 0;
+    float candidateScale = 1.0f;
+    std::int16_t candidateOffsetPpm = 0;
+    TdsCalibrationMode candidateMode = TdsCalibrationMode::None;
+    TdsCalibrationPointSnapshot points[kTdsCalibrationMaxPoints]{};
 };
 
 class WaterSensorManager {
@@ -52,15 +74,14 @@ public:
     void sampleRun();
     WaterSensorRunSummary finishRun() const;
 
-    bool startTdsSinglePointCalibration(std::uint16_t referencePpm,
-                                        std::uint32_t nowSeconds);
-    bool startTdsTwoPointLow(std::uint16_t lowReferencePpm,
-                             std::uint32_t nowSeconds);
-    bool startTdsTwoPointHigh(std::uint16_t highReferencePpm,
-                              std::uint32_t nowSeconds);
-    bool cancelTdsCalibration();
     TdsCalibrationSessionSnapshot calibrationSnapshot() const;
-    bool saveReadyTdsCalibration(SystemConfig& config, std::uint32_t nowSeconds);
+    bool startTdsCalibrationSession(std::uint32_t nowSeconds);
+    bool startTdsCalibrationPoint(std::uint16_t referencePpm, std::uint32_t nowSeconds);
+    bool saveStableTdsCalibrationPoint(std::uint32_t nowSeconds);
+    bool removeTdsCalibrationPoint(std::uint8_t index, std::uint32_t nowSeconds);
+    bool discardTdsCalibrationSession();
+    bool expireTdsCalibrationSession(std::uint32_t nowSeconds);
+    bool applyReadyTdsCalibration(SystemConfig& config, std::uint32_t nowSeconds);
 
 private:
     static constexpr std::size_t kCalibrationMaxSamples = 32;
@@ -81,8 +102,6 @@ private:
     enum class CalibrationKind : std::uint8_t {
         None = 0,
         Single = 1,
-        Low = 2,
-        High = 3,
     };
 
     AdcReader& adc_;
@@ -98,17 +117,16 @@ private:
     Accumulator run_;
 
     CalibrationKind calibrationKind_;
-    std::uint32_t calibrationStartedSeconds_;
     std::uint16_t calibrationReferencePpm_;
     std::uint16_t calibrationReadings_[kCalibrationMaxSamples];
     std::uint8_t calibrationSampleCount_;
     bool calibrationTempFallback_;
     bool calibrationFailed_;
-    bool hasPendingLowPoint_;
-    std::uint16_t pendingLowReferencePpm_;
-    std::uint16_t pendingLowRawPpm_;
-    float pendingScale_;
-    std::int16_t pendingOffsetPpm_;
+    bool tdsCalibrationSessionActive_;
+    std::uint32_t tdsCalibrationUpdatedAt_;
+    TdsCalibrationPointSnapshot tdsCalibrationPoints_[kTdsCalibrationMaxPoints];
+    std::uint8_t tdsCalibrationPointCount_;
+    TdsCalibrationFitResult tdsCalibrationFit_;
 
     void sampleOnce();
     void updateOfflineState(std::uint8_t failureCount);
@@ -116,6 +134,7 @@ private:
     void accumulateCalibration(const TdsComputationResult& result);
     bool calibrationReady() const;
     std::uint16_t calibrationRawAverage() const;
+    bool refreshTdsCalibrationCandidate();
     void accumulateRunSample(const WaterSensorSnapshot& current);
 };
 

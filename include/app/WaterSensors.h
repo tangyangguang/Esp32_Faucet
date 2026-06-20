@@ -45,6 +45,28 @@ struct TdsComputationResult {
     std::uint16_t flags = 0;
 };
 
+constexpr std::uint8_t kTdsCalibrationMaxPoints = 5;
+constexpr std::uint16_t kTdsCalibrationMinReferenceSpanPpm = 50;
+constexpr std::uint16_t kTdsCalibrationMinRawSpanPpm = 30;
+constexpr float kTdsCalibrationMinScale = 0.05f;
+constexpr float kTdsCalibrationMaxScale = 20.0f;
+constexpr std::int16_t kTdsCalibrationMinOffsetPpm = -2000;
+constexpr std::int16_t kTdsCalibrationMaxOffsetPpm = 2000;
+
+struct TdsCalibrationPointInput {
+    std::uint16_t referencePpm = 0;
+    std::uint16_t rawPpm = 0;
+};
+
+struct TdsCalibrationFitResult {
+    bool valid = false;
+    std::uint8_t pointCount = 0;
+    float scale = 1.0f;
+    std::int16_t offsetPpm = 0;
+    std::uint16_t referenceSpanPpm = 0;
+    std::uint16_t rawSpanPpm = 0;
+};
+
 std::int16_t ntcCentiCFromDividerMv(std::uint16_t adcMv, std::uint16_t vrefMv, std::uint32_t pullupOhm);
 
 std::uint32_t inputVoltageMvFromDivider(std::uint16_t adcMv, std::uint32_t highOhm, std::uint32_t lowOhm);
@@ -59,6 +81,10 @@ bool computeTwoPointTdsCalibration(std::uint16_t lowReferencePpm,
                                    std::uint16_t highRawPpm,
                                    float& scaleOut,
                                    std::int16_t& offsetOut);
+
+bool computeTdsCalibrationFit(const TdsCalibrationPointInput* points,
+                              std::size_t count,
+                              TdsCalibrationFitResult& result);
 
 bool tdsReadingsStable(const std::uint16_t* readings, std::size_t count, std::uint16_t referencePpm, bool lowPoint);
 

@@ -42,6 +42,14 @@ std::uint16_t tdsRawPpmFromCompensatedVoltage(double voltageV) {
     return roundToU16(raw);
 }
 
+bool tdsFitOutputAllowed(float scale, std::int16_t offset) {
+    return isfinite(scale) &&
+           scale >= kTdsCalibrationMinScale &&
+           scale <= kTdsCalibrationMaxScale &&
+           offset >= kTdsCalibrationMinOffsetPpm &&
+           offset <= kTdsCalibrationMaxOffsetPpm;
+}
+
 }  // namespace
 
 std::int16_t ntcCentiCFromDividerMv(std::uint16_t adcMv, std::uint16_t vrefMv, std::uint32_t pullupOhm) {
@@ -123,6 +131,91 @@ bool computeTwoPointTdsCalibration(std::uint16_t lowReferencePpm,
     }
     offsetOut = roundToI16(static_cast<double>(lowReferencePpm) - static_cast<double>(scaleOut) * lowRawPpm);
     return true;
+}
+
+bool computeTdsCalibrationFit(const TdsCalibrationPointInput* points,
+                              std::size_t count,
+                              TdsCalibrationFitResult& result) {
+    result = TdsCalibrationFitResult{};
+    if (!points || count == 0 || count > kTdsCalibrationMaxPoints) {
+        return false;
+    }
+
+    std::uint16_t minReference = points[0].referencePpm;
+    std::uint16_t maxReference = points[0].referencePpm;
+    std::uint16_t minRaw = points[0].rawPpm;
+    std::uint16_t maxRaw = points[0].rawPpm;
+    double rawSum = 0.0;
+    double referenceSum = 0.0;
+
+    for (std::size_t i = 0; i < count; ++i) {
+        if (points[i].rawPpm == 0 || points[i].referencePpm > 2000 || points[i].rawPpm > 2000) {
+            return false;
+        }
+        minReference = std::min(minReference, points[i].referencePpm);
+        maxReference = std::max(maxReference, points[i].referencePpm);
+        minRaw = std::min(minRaw, points[i].rawPpm);
+        maxRaw = std::max(maxRaw, points[i].rawPpm);
+        rawSum += points[i].rawPpm;
+        referenceSum += points[i].referencePpm;
+
+        for (std::size_t j = i + 1; j < count; ++j) {
+            if (points[i].referencePpm == points[j].referencePpm &&
+                std::abs(static_cast<int>(points[i].rawPpm) - static_cast<int>(points[j].rawPpm)) > 30) {
+                return false;
+            }
+            if (points[i].rawPpm == points[j].rawPpm &&
+                std::abs(static_cast<int>(points[i].referencePpm) - static_cast<int>(points[j].referencePpm)) > 50) {
+                return false;
+            }
+        }
+    }
+
+    result.pointCount = static_cast<std::uint8_t>(count);
+    result.referenceSpanPpm = maxReference - minReference;
+    result.rawSpanPpm = maxRaw - minRaw;
+
+    if (count == 1) {
+        if (!computeSinglePointTdsCalibration(points[0].referencePpm, points[0].rawPpm, result.scale)) {
+            result = TdsCalibrationFitResult{};
+            return false;
+        }
+        result.offsetPpm = 0;
+        result.valid = tdsFitOutputAllowed(result.scale, result.offsetPpm);
+        if (!result.valid) {
+            result = TdsCalibrationFitResult{};
+        }
+        return result.valid;
+    }
+
+    if (result.referenceSpanPpm < kTdsCalibrationMinReferenceSpanPpm ||
+        result.rawSpanPpm < kTdsCalibrationMinRawSpanPpm) {
+        result = TdsCalibrationFitResult{};
+        return false;
+    }
+
+    const double rawMean = rawSum / static_cast<double>(count);
+    const double referenceMean = referenceSum / static_cast<double>(count);
+    double covariance = 0.0;
+    double rawVariance = 0.0;
+    for (std::size_t i = 0; i < count; ++i) {
+        const double rawDelta = static_cast<double>(points[i].rawPpm) - rawMean;
+        const double referenceDelta = static_cast<double>(points[i].referencePpm) - referenceMean;
+        covariance += rawDelta * referenceDelta;
+        rawVariance += rawDelta * rawDelta;
+    }
+    if (rawVariance <= 0.0) {
+        result = TdsCalibrationFitResult{};
+        return false;
+    }
+
+    result.scale = static_cast<float>(covariance / rawVariance);
+    result.offsetPpm = roundToI16(referenceMean - static_cast<double>(result.scale) * rawMean);
+    result.valid = tdsFitOutputAllowed(result.scale, result.offsetPpm);
+    if (!result.valid) {
+        result = TdsCalibrationFitResult{};
+    }
+    return result.valid;
 }
 
 bool tdsReadingsStable(const std::uint16_t* readings, std::size_t count, std::uint16_t referencePpm, bool lowPoint) {

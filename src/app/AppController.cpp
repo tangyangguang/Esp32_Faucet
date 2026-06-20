@@ -860,39 +860,38 @@ bool AppController::canUseTdsCalibration() const {
     return waterSensors_ && localMode_ == LocalUiMode::Normal && water_.snapshot().state == WaterState::Idle;
 }
 
-bool AppController::startTdsSinglePointCalibrationForWeb(std::uint16_t referencePpm,
-                                                         std::uint32_t nowSeconds) {
-    return canUseTdsCalibration() &&
-           waterSensors_->startTdsSinglePointCalibration(referencePpm, nowSeconds);
+bool AppController::startTdsCalibrationSessionForWeb(std::uint32_t nowSeconds) {
+    return canUseTdsCalibration() && waterSensors_->startTdsCalibrationSession(nowSeconds);
 }
 
-bool AppController::startTdsTwoPointLowCalibrationForWeb(std::uint16_t referencePpm,
-                                                         std::uint32_t nowSeconds) {
-    return canUseTdsCalibration() &&
-           waterSensors_->startTdsTwoPointLow(referencePpm, nowSeconds);
+bool AppController::startTdsCalibrationPointForWeb(std::uint16_t referencePpm, std::uint32_t nowSeconds) {
+    return canUseTdsCalibration() && waterSensors_->startTdsCalibrationPoint(referencePpm, nowSeconds);
 }
 
-bool AppController::startTdsTwoPointHighCalibrationForWeb(std::uint16_t referencePpm,
-                                                          std::uint32_t nowSeconds) {
-    return canUseTdsCalibration() &&
-           waterSensors_->startTdsTwoPointHigh(referencePpm, nowSeconds);
+bool AppController::saveTdsCalibrationPointForWeb(std::uint32_t nowSeconds) {
+    return canUseTdsCalibration() && waterSensors_->saveStableTdsCalibrationPoint(nowSeconds);
 }
 
-bool AppController::cancelTdsCalibrationForWeb() {
-    return canUseTdsCalibration() && waterSensors_->cancelTdsCalibration();
+bool AppController::removeTdsCalibrationPointForWeb(std::uint8_t index, std::uint32_t nowSeconds) {
+    return canUseTdsCalibration() && waterSensors_->removeTdsCalibrationPoint(index, nowSeconds);
 }
 
-bool AppController::saveTdsCalibrationForWeb(std::uint32_t nowSeconds) {
+bool AppController::discardTdsCalibrationForWeb() {
+    return canUseTdsCalibration() && waterSensors_->discardTdsCalibrationSession();
+}
+
+bool AppController::applyTdsCalibrationForWeb(std::uint32_t nowSeconds) {
     if (!canUseTdsCalibration()) {
         return false;
     }
     SystemConfig updated = config_;
-    if (!waterSensors_->saveReadyTdsCalibration(updated, nowSeconds)) {
+    if (!waterSensors_->applyReadyTdsCalibration(updated, nowSeconds)) {
         return false;
     }
     sanitizeConfig(updated);
     config_ = updated;
     water_.applyConfig(config_);
+    waterSensors_->configure(config_);
     pendingBeep_ = BeepPattern::Done;
     return true;
 }

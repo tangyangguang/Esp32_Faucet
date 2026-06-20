@@ -479,7 +479,7 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NULL(std::strstr(buffer, "样本总数"));
     TEST_ASSERT_NULL(std::strstr(buffer, "原始轨迹缓存"));
     TEST_ASSERT_NULL(std::strstr(buffer, "脉冲轨迹"));
-    TEST_ASSERT_NULL(std::strstr(buffer, "<h3>当前计量参数</h3>"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "<h3>当前计量参数</h3>"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "records-top-grid"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, ".records-top-grid .records-diagnostic-panel"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, ".diagnostic-metric-grid.three"));

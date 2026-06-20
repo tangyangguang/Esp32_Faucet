@@ -108,6 +108,7 @@ bool calibrationSessionStorageReady();
 void redirectCalibrationFailure(const char* error);
 void redirectCalibrationResult(bool ok, const char* success, const char* failure);
 void redirectFlowCalibrationFailure(const char* error);
+void sendCalibrationPageScript();
 void redirectFlowCalibrationResult(bool ok, const char* success, const char* failure);
 void formatWaterRecordTime(const WaterRecord& record, char* out, std::size_t len);
 void formatWaterRecordListTime(const WaterRecord& record, char* out, std::size_t len);
@@ -2719,90 +2720,137 @@ const char* tdsCalibrationModeText(TdsCalibrationMode mode) {
         case TdsCalibrationMode::None:
             return "未校准";
         case TdsCalibrationMode::SinglePoint:
-            return "单点校准";
+            return "单点";
         case TdsCalibrationMode::TwoPoint:
-            return "两点校准";
+            return "两点";
+        case TdsCalibrationMode::MultiPoint:
+            return "多点";
     }
     return "未知";
 }
 
-void sendTemperatureCalibrationPanel(const AppSnapshot& snapshot, const SystemConfig& config) {
+void sendCalibrationCenterFlowCard(const AppSnapshot& snapshot) {
+    MeteringSchemeRecord active{};
+    const bool activeReady = activeMeteringSchemeForWeb(active);
+    const MeteringParameters params = activeReady ? active.params : snapshot.meteringParams;
+    Esp32BaseWeb::sendChunk("<section class='panel calibration-center-card'><div class='panel-head'><h3>当前计量参数</h3>");
+    sendFmt("<span class='status-pill status-ok'>%s</span></div>",
+            activeReady && active.name[0] ? active.name : "默认参数");
+    Esp32BaseWeb::sendChunk("<div class='tds-calibration-summary'>");
+    sendFmt("<div><span>启动脉冲</span><strong>%lu P</strong></div>",
+            static_cast<unsigned long>(params.startupPulseCount));
+    sendFmt("<div><span>启动水量</span><strong>%lu ml</strong></div>",
+            static_cast<unsigned long>(params.startupVolumeMl));
+    sendFmt("<div><span>启动时长</span><strong>%lu ms</strong></div>",
+            static_cast<unsigned long>(params.startupDurationMs));
+    sendFmt("<div><span>稳态 P/L</span><strong>%lu</strong></div>",
+            static_cast<unsigned long>(params.stablePulsePerLiter));
+    sendFmt("<div><span>稳态流速</span><strong>%lu ml/min</strong></div>",
+            static_cast<unsigned long>(params.stableFlowMlPerMin));
+    Esp32BaseWeb::sendChunk("</div><div class='form-actions'>"
+                            "<a class='btn-link primary' href='/faucet/calibration/flow'>进入流量计校准</a>"
+                            "<a class='btn-link' href='/faucet/calibration/flow?manual=1'>手工修改参数</a>"
+                            "<a class='btn-link' href='/faucet/calibration/flow#metering-history'>历史参数</a>"
+                            "</div></section>");
+}
+
+void sendCalibrationCenterTemperatureCard(const AppSnapshot& snapshot, const SystemConfig& config) {
     char temperatureText[24]{};
     formatSensorTemperature(snapshot.sensors.temperatureCentiC, temperatureText, sizeof(temperatureText));
-    const bool enabled = snapshot.temperatureSensorEnabled && config.temperatureEnabled &&
-                         config.temperatureKind == TemperatureKind::Ntc50kB3950;
-    const char* statusClass = enabled ? (config.temperatureCalibrated ? "status-ok" : "status-warn") : "status-muted";
-    const char* statusText = enabled ? (config.temperatureCalibrated ? "已校准" : "未校准") : "未启用";
+    const bool enabled = config.temperatureEnabled && config.temperatureKind == TemperatureKind::Ntc50kB3950;
+    Esp32BaseWeb::sendChunk("<section class='panel calibration-center-card'><div class='panel-head'><h3>温度校准</h3>");
+    sendFmt("<span class='status-pill %s'>%s</span></div>",
+            enabled ? (config.temperatureCalibrated ? "status-ok" : "status-warn") : "status-muted",
+            enabled ? (config.temperatureCalibrated ? "已校准" : "未校准") : "未启用");
+    Esp32BaseWeb::sendChunk("<div class='tds-calibration-summary'>");
+    sendFmt("<div><span>当前水温</span><strong>%s</strong></div>", enabled ? temperatureText : "未启用");
+    sendFmt("<div><span>当前偏移</span><strong>%ld.%02ld C</strong></div>",
+            static_cast<long>(config.temperatureOffsetCentiC / 100),
+            static_cast<long>(std::abs(static_cast<int>(config.temperatureOffsetCentiC % 100))));
+    Esp32BaseWeb::sendChunk("</div><p><a class='btn-link primary' href='/faucet/calibration?view=temperature'>进入温度校准</a></p></section>");
+}
 
-    Esp32BaseWeb::sendChunk("<section class='panel temperature-calibration-panel'><div class='panel-head'><h3>温度校准</h3>");
-    sendFmt("<span class='status-pill %s'>%s</span></div>", statusClass, statusText);
-    Esp32BaseWeb::sendChunk("<div class='temperature-calibration-layout'><div class='temperature-calibration-summary'>");
-    sendFmt("<div><span>当前水温</span><strong>%s</strong><small>%s</small></div>",
-            enabled ? temperatureText : "未启用",
-            enabled ? "来自水温探头" : "请先在系统设置启用水温探头");
-    sendFmt("<div><span>校准状态</span><strong>%s</strong><small>%s</small></div>",
-            statusText,
-            config.temperatureCalibrated ? "已保存参考偏移" : "保存后用于温度显示和 TDS 补偿");
-    Esp32BaseWeb::sendChunk("</div><form class='temperature-calibration-form' method='post' action='/faucet/calibration' onsubmit='return once(this)'>"
+void sendCalibrationCenterTdsCard(const AppSnapshot& snapshot, const SystemConfig& config) {
+    char tdsText[24]{};
+    char voltageText[24]{};
+    char tempText[24]{};
+    formatSensorIntegerValue(snapshot.sensors.tdsPpm, "ppm", tdsText, sizeof(tdsText));
+    formatSensorIntegerValue(snapshot.sensors.tdsVoltageMv, "mV", voltageText, sizeof(voltageText));
+    formatSensorTemperature(snapshot.sensors.temperatureCentiC, tempText, sizeof(tempText));
+    const bool enabled = config.tdsEnabled && config.tdsKind == TdsKind::AnalogTdsAo;
+    Esp32BaseWeb::sendChunk("<section class='panel calibration-center-card'><div class='panel-head'><h3>水质校准</h3>");
+    sendFmt("<span class='status-pill %s'>%s</span></div>",
+            enabled ? (config.tdsCalibrated ? "status-ok" : "status-warn") : "status-muted",
+            enabled ? (config.tdsCalibrated ? tdsCalibrationModeText(config.tdsCalibrationMode) : "未校准") : "未启用");
+    Esp32BaseWeb::sendChunk("<div class='tds-calibration-summary'>");
+    sendFmt("<div><span>当前 TDS</span><strong>%s</strong></div>", enabled ? tdsText : "未启用");
+    sendFmt("<div><span>采样电压</span><strong>%s</strong></div>", enabled ? voltageText : "-");
+    sendFmt("<div><span>水温补偿</span><strong>%s</strong></div>",
+            config.tdsTemperatureCompensationEnabled ? tempText : "关闭");
+    sendFmt("<div><span>scale</span><strong>%.3f</strong></div>", static_cast<double>(config.tdsScale));
+    sendFmt("<div><span>offset</span><strong>%d ppm</strong></div>", static_cast<int>(config.tdsOffsetPpm));
+    Esp32BaseWeb::sendChunk("</div><p><a class='btn-link primary' href='/faucet/calibration?view=tds'>进入水质校准</a></p></section>");
+}
+
+void sendTdsCalibrationPointsTable(const TdsCalibrationSessionSnapshot& session) {
+    Esp32BaseWeb::sendChunk("<h4>已保存校准点</h4><table><tr><th>#</th><th>参考 ppm</th><th>原始 ppm</th><th>采样电压</th><th>操作</th></tr>");
+    if (session.pointCount == 0) {
+        Esp32BaseWeb::sendChunk("<tr><td colspan='5'>暂无校准点</td></tr>");
+    }
+    for (std::uint8_t i = 0; i < session.pointCount && i < kTdsCalibrationMaxPoints; ++i) {
+        const TdsCalibrationPointSnapshot& point = session.points[i];
+        sendFmt("<tr><td>%u</td><td>%u</td><td>%u</td><td>%u mV</td><td>"
+                "<form method='post' action='/faucet/calibration' onsubmit='return once(this)'>"
+                "<input type='hidden' name='action' value='tds_remove_point'>"
+                "<input type='hidden' name='index' value='%u'>"
+                "<input class='secondary' type='submit' value='删除'></form></td></tr>",
+                static_cast<unsigned>(i + 1U),
+                static_cast<unsigned>(point.referencePpm),
+                static_cast<unsigned>(point.rawPpm),
+                static_cast<unsigned>(point.voltageMv),
+                static_cast<unsigned>(i));
+    }
+    Esp32BaseWeb::sendChunk("</table>");
+}
+
+void handleTemperatureCalibrationPage() {
+    const AppSnapshot snapshot = g_context.app->snapshot();
+    const SystemConfig& config = *g_context.config;
+    char rawText[24]{};
+    char calibratedText[24]{};
+    formatSensorTemperature(snapshot.sensors.temperatureRawCentiC, rawText, sizeof(rawText));
+    formatSensorTemperature(snapshot.sensors.temperatureCentiC, calibratedText, sizeof(calibratedText));
+    const bool enabled = config.temperatureEnabled && config.temperatureKind == TemperatureKind::Ntc50kB3950;
+    Esp32BaseWeb::sendHeader("温度校准");
+    Esp32BaseWeb::sendChunk("<h2>温度校准</h2><p><a class='btn-link' href='/faucet/calibration'>返回校准中心</a></p>");
+    sendNoticeFromQuery();
+    Esp32BaseWeb::sendChunk("<section class='panel temperature-calibration-panel'><div class='panel-head'><h3>当前温度状态</h3>");
+    sendFmt("<span class='status-pill %s'>%s</span></div>",
+            enabled ? (config.temperatureCalibrated ? "status-ok" : "status-warn") : "status-muted",
+            enabled ? (config.temperatureCalibrated ? "已校准" : "未校准") : "未启用");
+    Esp32BaseWeb::sendChunk("<div class='temperature-calibration-summary'>");
+    sendFmt("<div><span>原始温度</span><strong>%s</strong></div>", enabled ? rawText : "未启用");
+    sendFmt("<div><span>当前水温</span><strong>%s</strong></div>", enabled ? calibratedText : "未启用");
+    sendFmt("<div><span>当前偏移</span><strong>%ld.%02ld C</strong></div>",
+            static_cast<long>(config.temperatureOffsetCentiC / 100),
+            static_cast<long>(std::abs(static_cast<int>(config.temperatureOffsetCentiC % 100))));
+    Esp32BaseWeb::sendChunk("</div><button class='btn-link primary' type='button'>开始校准</button>"
+                            "<form class='temperature-calibration-form' method='post' action='/faucet/calibration' onsubmit='return once(this)'>"
                             "<input type='hidden' name='action' value='temperature_save'>"
-                            "<label class='compact-field'><span>参考温度</span><span class='estimator-input-row'>"
+                            "<label class='compact-field'><span>温度计读数</span><span class='estimator-input-row'>"
                             "<input name='referenceC' type='number' step='0.1' min='0' max='90' required>"
                             "<span class='unit-label'>C</span></span></label>"
-                            "<div class='form-actions'>");
-    sendFmt("<input class='primary' type='submit' value='保存参考温度'%s>",
+                            "<p class='hint'>预览偏移只作辅助，保存时以后端当前原始温度重新计算。</p><div class='form-actions'>");
+    sendFmt("<input class='primary' type='submit' value='保存温度校准'%s>",
             enabled && snapshot.sensors.temperatureRawCentiC.valid ? "" : " disabled");
-    Esp32BaseWeb::sendChunk("</div></form></div></section>");
+    Esp32BaseWeb::sendChunk("<a class='btn-link' href='/faucet/calibration'>取消</a></div></form></section>");
+    sendCalibrationPageScript();
+    sendPageEnd();
 }
 
-void sendTdsCalibrationStepForm(const char* title,
-                                const char* body,
-                                const char* action,
-                                const char* inputLabel,
-                                std::uint16_t minPpm,
-                                const char* buttonText,
-                                bool enabled,
-                                const char* disabledHint) {
-    Esp32BaseWeb::sendChunk("<div class='tds-step'><div class='tds-step-copy'><h4>");
-    Esp32BaseWeb::sendChunk(title);
-    Esp32BaseWeb::sendChunk("</h4><p>");
-    Esp32BaseWeb::sendChunk(body);
-    Esp32BaseWeb::sendChunk("</p>");
-    if (!enabled && disabledHint && disabledHint[0]) {
-        Esp32BaseWeb::sendChunk("<small>");
-        Esp32BaseWeb::sendChunk(disabledHint);
-        Esp32BaseWeb::sendChunk("</small>");
-    }
-    Esp32BaseWeb::sendChunk("</div><form method='post' action='/faucet/calibration' onsubmit='return once(this)'>");
-    sendFmt("<input type='hidden' name='action' value='%s'>"
-            "<label><span>%s</span><span class='estimator-input-row'>"
-            "<input name='referencePpm' type='number' min='%u' max='2000' step='1' required>"
-            "<span class='unit-label'>ppm</span></span></label>",
-            action,
-            inputLabel,
-            static_cast<unsigned>(minPpm));
-    sendFmt("<input class='secondary' type='submit' value='%s'%s></form></div>",
-            buttonText,
-            enabled ? "" : " disabled");
-}
-
-void sendTdsSinglePointPanel(bool enabled, const char* disabledHint) {
-    Esp32BaseWeb::sendChunk("<div class='tds-single-panel'><div><h4>单点校准</h4>"
-                            "<p>只对齐当前水样，适合临时修正某一段读数。</p></div>"
-                            "<form method='post' action='/faucet/calibration' onsubmit='return once(this)'>"
-                            "<input type='hidden' name='action' value='tds_start_single'>"
-                            "<label><span>参考值</span><span class='estimator-input-row'>"
-                            "<input name='referencePpm' type='number' min='1' max='2000' step='1' required>"
-                            "<span class='unit-label'>ppm</span></span></label>");
-    if (!enabled && disabledHint && disabledHint[0]) {
-        Esp32BaseWeb::sendChunk("<small>");
-        Esp32BaseWeb::sendChunk(disabledHint);
-        Esp32BaseWeb::sendChunk("</small>");
-    }
-    sendFmt("<input class='secondary' type='submit' value='开始单点校准'%s></form></div>",
-            enabled ? "" : " disabled");
-}
-
-void sendTdsCalibrationPanel(const AppSnapshot& snapshot, const SystemConfig& config) {
+void handleTdsCalibrationPage() {
+    const AppSnapshot snapshot = g_context.app->snapshot();
+    const SystemConfig& config = *g_context.config;
     const TdsCalibrationSessionSnapshot session =
         g_context.app ? g_context.app->tdsCalibrationSnapshot() : TdsCalibrationSessionSnapshot{};
     char tdsText[24]{};
@@ -2811,66 +2859,65 @@ void sendTdsCalibrationPanel(const AppSnapshot& snapshot, const SystemConfig& co
     formatSensorIntegerValue(snapshot.sensors.tdsPpm, "ppm", tdsText, sizeof(tdsText));
     formatSensorIntegerValue(snapshot.sensors.tdsVoltageMv, "mV", voltageText, sizeof(voltageText));
     formatSensorTemperature(snapshot.sensors.temperatureCentiC, tempText, sizeof(tempText));
-    const bool tdsEnabled = config.tdsEnabled && config.tdsKind == TdsKind::AnalogTdsAo;
-    const bool canStart = tdsEnabled && !waterTaskActive() && !session.active;
-    const bool canStartHigh = canStart && session.hasPendingLowPoint;
-    const char* statusClass = "status-muted";
-    const char* statusText = "未启用";
-    if (tdsEnabled && session.active) {
-        statusClass = session.failed ? "status-error" : "status-warn";
-        statusText = session.failed ? "采样异常" : "采样中";
-    } else if (tdsEnabled && config.tdsCalibrated) {
-        statusClass = "status-ok";
-        statusText = tdsCalibrationModeText(config.tdsCalibrationMode);
-    } else if (tdsEnabled) {
-        statusClass = "status-warn";
-        statusText = "未校准";
-    }
+    const bool enabled = config.tdsEnabled && config.tdsKind == TdsKind::AnalogTdsAo;
+    const bool canWrite = enabled && !waterTaskActive();
 
-    Esp32BaseWeb::sendChunk("<section class='panel tds-calibration-panel'><div class='panel-head'><h3>水质校准</h3>");
-    sendFmt("<span class='status-pill %s'>%s</span></div>", statusClass, statusText);
-    Esp32BaseWeb::sendChunk("<p class='hint'>输入标准液或其他 TDS 笔测到的参考 ppm，参考值越准确，校准结果越可靠；系统用当前传感器读数生成校准参数。"
-                            "校准只影响水质显示和记录，不影响出水计量和安全停水。</p>"
-                            "<div class='tds-calibration-summary'>");
-    sendFmt("<div><span>当前 TDS</span><strong>%s</strong></div>", tdsEnabled ? tdsText : "未启用");
-    sendFmt("<div><span>采样电压</span><strong>%s</strong></div>", tdsEnabled ? voltageText : "-");
-    sendFmt("<div><span>水温补偿</span><strong>%s</strong><small>%s</small></div>",
-            config.tdsTemperatureCompensationEnabled ? tempText : "关闭",
-            snapshot.sensors.tdsTempFallback25C ? "当前按 25C 回退" : "");
-    sendFmt("<div><span>采样状态</span><strong>%u / 32</strong><small>%s%s</small></div>",
-            static_cast<unsigned>(session.sampleCount),
-            session.hasPendingLowPoint ? "低值已采集" : "先采低值",
-            session.readyToSave ? "，可保存" : "");
-    Esp32BaseWeb::sendChunk("</div><div class='tds-workflow-card'><div class='tds-workflow-head'><div><h4>两点校准</h4>"
-                            "<p>先低值、再高值，保存后作为当前水质参数。</p></div>"
-                            "<span class='status-pill status-ok'>推荐</span></div><div class='tds-calibration-flow'>");
-    sendTdsCalibrationStepForm("1. 低值校准",
-                               "用净水、蒸馏水或已测过的低 TDS 水。",
-                               "tds_start_low",
-                               "低值参考",
-                               0,
-                               "采集低值水样",
-                               canStart,
-                               tdsEnabled ? "等待当前采样结束后再操作。" : "先在系统设置启用 TDS 传感器。");
-    sendTdsCalibrationStepForm("2. 高值校准",
-                               "用自来水、井水或标准液采集第二个点。",
-                               "tds_start_high",
-                               "高值参考",
-                               1,
-                               "采集高值水样",
-                               canStartHigh,
-                               session.hasPendingLowPoint ? "等待当前采样结束后再操作。" : "请先完成并保存低值采样。");
-    Esp32BaseWeb::sendChunk("</div><div class='form-actions tds-save-actions'>"
-                            "<form method='post' action='/faucet/calibration' onsubmit='return once(this)'>"
-                            "<input type='hidden' name='action' value='tds_save'>");
-    sendFmt("<input class='primary' type='submit' value='保存两点结果'%s></form>",
-            session.readyToSave ? "" : " disabled");
+    Esp32BaseWeb::sendHeader("水质校准");
+    Esp32BaseWeb::sendChunk("<h2>水质校准</h2><p><a class='btn-link' href='/faucet/calibration'>返回校准中心</a></p>");
+    sendNoticeFromQuery();
+    Esp32BaseWeb::sendChunk("<section class='panel tds-calibration-panel'><div class='panel-head'><h3>当前水质状态</h3>");
+    sendFmt("<span class='status-pill %s'>%s</span></div>",
+            enabled ? (config.tdsCalibrated ? "status-ok" : "status-warn") : "status-muted",
+            enabled ? (config.tdsCalibrated ? tdsCalibrationModeText(config.tdsCalibrationMode) : "未校准") : "未启用");
+    Esp32BaseWeb::sendChunk("<div class='tds-calibration-summary'>");
+    sendFmt("<div><span>当前 TDS</span><strong>%s</strong></div>", enabled ? tdsText : "未启用");
+    sendFmt("<div><span>采样电压</span><strong>%s</strong></div>", enabled ? voltageText : "-");
+    sendFmt("<div><span>水温补偿</span><strong>%s</strong></div>",
+            config.tdsTemperatureCompensationEnabled ? tempText : "关闭");
+    sendFmt("<div><span>scale</span><strong>%.3f</strong></div>", static_cast<double>(config.tdsScale));
+    sendFmt("<div><span>offset</span><strong>%d ppm</strong></div>", static_cast<int>(config.tdsOffsetPpm));
+    Esp32BaseWeb::sendChunk("</div></section><section class='panel tds-point-session'><div class='panel-head'><h3>本次校准</h3>");
+    sendFmt("<span class='status-pill %s'>%s</span></div>",
+            session.samplingActive ? "status-warn" : (session.sessionActive ? "status-ok" : "status-muted"),
+            session.samplingActive ? "采样中" : (session.sessionActive ? "已开始" : "未开始"));
+    Esp32BaseWeb::sendChunk("<div class='form-actions'><form method='post' action='/faucet/calibration' onsubmit='return once(this)'>"
+                            "<input type='hidden' name='action' value='tds_start_session'>");
+    sendFmt("<input class='primary' type='submit' value='开始校准'%s></form>",
+            canWrite && !session.sessionActive ? "" : " disabled");
     Esp32BaseWeb::sendChunk("<form method='post' action='/faucet/calibration' onsubmit='return once(this)'>"
-                            "<input type='hidden' name='action' value='tds_cancel'>");
-    sendFmt("<input class='secondary' type='submit' value='取消当前采样'%s></form></div></div>",
-            session.active ? "" : " disabled");
-    sendTdsSinglePointPanel(canStart, tdsEnabled ? "等待当前采样结束后再操作。" : "先在系统设置启用 TDS 传感器。");
-    Esp32BaseWeb::sendChunk("</section>");
+                            "<input type='hidden' name='action' value='tds_start_point'>"
+                            "<label class='compact-field'><span>本次参考 ppm</span><span class='estimator-input-row'>"
+                            "<input name='referencePpm' type='number' min='0' max='2000' step='1' required>"
+                            "<span class='unit-label'>ppm</span></span></label>");
+    sendFmt("<input class='secondary' type='submit' value='采集这个点'%s></form>",
+            canWrite && session.sessionActive && !session.samplingActive && !session.full ? "" : " disabled");
+    Esp32BaseWeb::sendChunk("<form method='post' action='/faucet/calibration' onsubmit='return once(this)'>"
+                            "<input type='hidden' name='action' value='tds_save_point'>");
+    sendFmt("<input class='secondary' type='submit' value='保存为校准点'%s></form>",
+            canWrite && session.readyToSave ? "" : " disabled");
+    Esp32BaseWeb::sendChunk("</div>");
+    sendTdsCalibrationPointsTable(session);
+    Esp32BaseWeb::sendChunk("<div class='tds-workflow-card'><h4>自动生成结果</h4>");
+    if (session.candidateReady) {
+        sendFmt("<p>点数 %u，参考跨度 %u ppm，原始跨度 %u ppm，scale %.3f，offset %d ppm。</p>",
+                static_cast<unsigned>(session.pointCount),
+                static_cast<unsigned>(session.referenceSpanPpm),
+                static_cast<unsigned>(session.rawSpanPpm),
+                static_cast<double>(session.candidateScale),
+                static_cast<int>(session.candidateOffsetPpm));
+    } else {
+        Esp32BaseWeb::sendChunk("<p>保存至少一个稳定校准点后自动生成结果。</p>");
+    }
+    Esp32BaseWeb::sendChunk("<div class='form-actions'><form method='post' action='/faucet/calibration' onsubmit='return once(this)'>"
+                            "<input type='hidden' name='action' value='tds_apply_session'>");
+    sendFmt("<input class='primary' type='submit' value='使用这组参数'%s></form>",
+            canWrite && session.candidateReady ? "" : " disabled");
+    Esp32BaseWeb::sendChunk("<form method='post' action='/faucet/calibration' onsubmit='return once(this)'>"
+                            "<input type='hidden' name='action' value='tds_discard_session'>");
+    sendFmt("<input class='secondary' type='submit' value='丢弃本次校准'%s></form></div></div></section>",
+            canWrite && session.sessionActive ? "" : " disabled");
+    sendCalibrationPageScript();
+    sendPageEnd();
 }
 
 void sendCalibrationPageScript() {
@@ -3243,8 +3290,8 @@ void sendAppCss() {
     Esp32BaseWeb::sendChunk(".form-grid{display:grid;grid-template-columns:repeat(12,1fr);gap:10px 12px;align-items:start}.span-2{grid-column:span 2}.span-3{grid-column:span 3}.span-4{grid-column:span 4}.span-5{grid-column:span 5}.span-6{grid-column:span 6}.span-8{grid-column:span 8}.span-12{grid-column:1/-1}"
                             ".field span,.check-title{display:block;font-size:12px;color:var(--muted);font-weight:650;margin-bottom:4px}.field input,.field select{margin-bottom:0}.check-line{display:inline-flex;align-items:center;gap:6px;min-height:32px;padding:0 8px;border:1px solid var(--line);border-radius:6px;background:#fff;color:var(--text);font-size:14px;white-space:nowrap}.check-line input{margin:0}");
     Esp32BaseWeb::sendChunk(".form-actions{display:flex;align-items:center;justify-content:flex-start;gap:6px;margin-top:10px;flex-wrap:wrap}.form-actions form{margin:0}.form-actions a,.btn-link,.page-link,.page-current,.row-actions a{display:inline-flex;align-items:center;justify-content:center;min-height:32px;padding:0 10px;border:1px solid var(--line);border-radius:6px;background:#f7f9fa;color:#355e66;font:inherit;font-size:13px;line-height:1.2;box-sizing:border-box;text-decoration:none;cursor:pointer}input.secondary{background:#f7f9fa;border:1px solid var(--line);color:#4c565d}input.secondary:hover,input.secondary:focus-visible{background:#10574e;border-color:#10574e;color:#fff}.btn-link:hover,.btn-link:focus-visible,.form-actions a:hover,.form-actions a:focus-visible,.page-link:hover,.page-link:focus-visible,.row-actions a:hover,.row-actions a:focus-visible{background:#10574e;border-color:#10574e;color:#fff;text-decoration:none}.row-actions{display:flex;gap:5px;align-items:center;flex-wrap:wrap}.sample-actions{gap:6px}.sample-calibration-edit-row{display:none;background:#fbfcfb}.sample-calibration-edit-row.is-open{display:table-row}.sample-calibration-edit-row td{border-top:1px solid #dce8e5}.sample-calibration-form{display:grid;grid-template-columns:minmax(0,1fr) minmax(250px,320px);gap:12px 20px;align-items:start;max-width:900px;margin:0}.sample-calibration-info{display:grid;gap:4px;color:var(--muted);font-size:12px;line-height:1.4}.sample-calibration-info strong{color:var(--text);font-size:13px}.sample-calibration-inputs{min-width:0}.sample-volume-field{margin:0}.sample-volume-field .sample-volume-control{display:flex;align-items:stretch;width:100%;max-width:236px;margin:0;white-space:nowrap}.sample-volume-control input{flex:1 1 auto;min-width:0;width:auto;margin:0;text-align:right;border-top-right-radius:0;border-bottom-right-radius:0}.sample-volume-control .unit-label{display:inline-flex;align-items:center;justify-content:center;min-width:42px;margin:0;padding:0 9px;border:1px solid var(--line);border-left:0;border-radius:0 6px 6px 0;background:#f7f9fa;color:var(--muted);font-size:12px;font-weight:650;box-sizing:border-box}.sample-calibration-inputs .form-actions{margin-top:8px}.sample-window-form{display:flex;align-items:flex-end;gap:8px;flex-wrap:wrap;margin:8px 0 4px}.sample-window-field{margin:0}.sample-window-field input{width:96px;margin:0;text-align:right}.sample-status-pills{display:flex;align-items:center;gap:5px;flex-wrap:wrap}");
-    Esp32BaseWeb::sendChunk(".temperature-calibration-layout{display:grid;grid-template-columns:minmax(0,1fr) minmax(230px,300px);gap:10px;align-items:stretch}.temperature-calibration-summary{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.temperature-calibration-summary>div{min-width:0;padding:10px;border:1px solid #edf2f1;border-radius:6px;background:#fbfdfc}.temperature-calibration-summary span{display:block;color:var(--muted);font-size:12px;font-weight:650}.temperature-calibration-summary strong{display:block;margin-top:5px;color:var(--text);font-size:17px;line-height:1.2;font-weight:750;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}.temperature-calibration-summary small{display:block;margin-top:5px;color:#536068;font-size:11px;line-height:1.25}.temperature-calibration-form{display:grid;align-content:start;gap:8px;min-width:0;padding:10px;border:1px solid #edf2f1;border-radius:6px;background:#fff}.temperature-calibration-form .form-actions{margin-top:0}.temperature-calibration-form input[type=submit]{width:100%}"
-                            ".tds-calibration-panel .hint{max-width:820px}.tds-calibration-summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin:10px 0 12px}.tds-calibration-summary>div{min-width:0;padding:10px;border:1px solid #edf2f1;border-radius:6px;background:#fbfdfc}.tds-calibration-summary span{display:block;color:var(--muted);font-size:12px;font-weight:650}.tds-calibration-summary strong{display:block;margin-top:5px;color:var(--text);font-size:17px;line-height:1.2;font-weight:750;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}.tds-calibration-summary small{display:block;margin-top:5px;color:#7a520e;font-size:11px;line-height:1.25}.tds-workflow-card{padding:10px;border:1px solid #edf2f1;border-radius:6px;background:#fbfdfc}.tds-workflow-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin:0 0 10px}.tds-workflow-head h4,.tds-single-panel h4{margin:0;color:#2f3d45;font-size:14px;line-height:1.2}.tds-workflow-head p,.tds-single-panel p{margin:4px 0 0;color:#536068;font-size:12px;line-height:1.4}.tds-calibration-flow{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:0 0 10px}.tds-step{display:grid;grid-template-columns:minmax(0,1fr) minmax(230px,280px);gap:10px;align-items:start;min-width:0;padding:10px;border:1px solid #edf2f1;border-radius:6px;background:#fff}.tds-step h4{margin:0 0 5px;color:#2f3d45;font-size:14px;line-height:1.2}.tds-step p{margin:0;color:#536068;font-size:12px;line-height:1.45}.tds-step small{display:block;margin-top:6px;color:#7a520e;font-size:12px;line-height:1.35}.tds-step form,.tds-single-panel form{display:grid;gap:8px;margin:0}.tds-step label,.tds-single-panel label{margin:0}.tds-step label>span:first-child,.tds-single-panel label>span:first-child{display:block;margin:0 0 4px;color:var(--muted);font-size:12px;font-weight:650}.tds-step input[type=submit]{width:100%;margin:0}.tds-save-actions{margin-top:8px}.tds-single-panel{display:grid;grid-template-columns:minmax(0,1fr) minmax(230px,300px);gap:10px;align-items:start;margin-top:10px;padding:10px;border:1px solid #edf2f1;border-radius:6px;background:#fff}.tds-single-panel small{display:block;color:#7a520e;font-size:12px;line-height:1.35}.tds-single-panel input[type=submit]{width:100%;margin:0}");
+    Esp32BaseWeb::sendChunk(".temperature-calibration-summary{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:10px 0 12px}.temperature-calibration-summary>div{min-width:0;padding:10px;border:1px solid #edf2f1;border-radius:6px;background:#fbfdfc}.temperature-calibration-summary span{display:block;color:var(--muted);font-size:12px;font-weight:650}.temperature-calibration-summary strong{display:block;margin-top:5px;color:var(--text);font-size:17px;line-height:1.2;font-weight:750;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}.temperature-calibration-form{display:grid;gap:8px;min-width:0;margin-top:10px;padding:10px;border:1px solid #edf2f1;border-radius:6px;background:#fff}.temperature-calibration-form .form-actions{margin-top:0}.temperature-calibration-form input[type=submit]{width:100%}"
+                            ".tds-calibration-panel .hint{max-width:820px}.tds-calibration-summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin:10px 0 12px}.tds-calibration-summary>div{min-width:0;padding:10px;border:1px solid #edf2f1;border-radius:6px;background:#fbfdfc}.tds-calibration-summary span{display:block;color:var(--muted);font-size:12px;font-weight:650}.tds-calibration-summary strong{display:block;margin-top:5px;color:var(--text);font-size:17px;line-height:1.2;font-weight:750;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}.tds-workflow-card{margin-top:10px;padding:10px;border:1px solid #edf2f1;border-radius:6px;background:#fbfdfc}.tds-workflow-card h4{margin:0 0 6px;color:#2f3d45;font-size:14px}.tds-workflow-card p{margin:0 0 8px;color:#536068;font-size:12px;line-height:1.45}.tds-point-session .form-actions{align-items:flex-end}.tds-point-session table form{display:inline-flex;margin:0}");
     Esp32BaseWeb::sendChunk(".calibration-param-layout{display:grid;grid-template-columns:1fr;gap:12px;margin:0 0 12px}.calibration-param-layout .calibration-param-panel{margin:0}.calibration-param-panel{overflow-x:auto}.calibration-slot-table{table-layout:fixed;min-width:980px;margin:0;border:0;border-radius:0;box-shadow:none;background:transparent}.calibration-slot-table th:nth-child(1){width:160px}.calibration-slot-table th:nth-child(2){width:170px}.calibration-slot-table th:nth-child(3){width:170px}.calibration-slot-table th:nth-child(4){width:auto}.calibration-slot-table th:nth-child(5){width:92px}.calibration-slot-table th:nth-child(6){width:280px}.calibration-slot-index{font-weight:700}.calibration-slot-index .status-pill{display:inline-flex;margin:4px 4px 0 0}.calibration-slot-name{font-weight:650;white-space:normal}.calibration-slot-values{min-width:0}.scheme-param-table{width:100%;margin:0;border:0;border-radius:0;box-shadow:none;background:transparent;font-size:12px}.scheme-param-table th,.scheme-param-table td{padding:3px 0;border:0;background:transparent;white-space:nowrap}.scheme-param-table th{width:72px;color:var(--muted);font-weight:650}.scheme-param-table td{font-variant-numeric:tabular-nums}.calibration-slot-note{color:#536068;font-size:12px;line-height:1.35;overflow-wrap:anywhere}.scheme-use-count{font-variant-numeric:tabular-nums}.scheme-use-count b{font-size:18px;margin-right:3px}.scheme-use-count span{color:var(--muted)}.scheme-use-count .status-pill{display:flex;width:max-content;margin-top:5px}.calibration-slot-edit .row-actions{gap:5px}.calibration-generation-settings{display:flex;gap:5px 10px;flex-wrap:wrap;margin:6px 0 8px;color:var(--muted);font-size:12px}.calibration-generation-settings span{display:inline-flex;align-items:center;min-height:24px;padding:0 8px;border:1px solid #e2ebe8;border-radius:999px;background:#fbfdfc}.calibration-generation-settings b{margin-left:4px;color:#46545c}.sample-coverage-compact{margin:8px 0 10px;padding:8px 10px;border:1px solid #eef3f1;border-radius:6px;background:#fbfdfc}.sample-coverage-compact .diagnostic-head{margin-bottom:6px}.coverage-metric-row{display:grid;grid-template-columns:repeat(4,minmax(120px,1fr));gap:6px 10px}.coverage-metric-row .diagnostic-metric{padding:0}.coverage-metric-row .diagnostic-metric span{font-size:11px}.coverage-metric-row .diagnostic-metric strong{font-size:15px}.coverage-foot{display:flex;align-items:center;gap:4px 12px;flex-wrap:wrap;margin-top:6px;padding-top:6px;border-top:1px solid #eef3f1;color:var(--muted);font-size:11px;font-variant-numeric:tabular-nums}.coverage-foot b{color:#52616b;font-weight:650}.generated-scheme-result{margin-top:10px}.generated-scheme-layout{display:grid;grid-template-columns:minmax(0,1fr) minmax(230px,280px);gap:12px;align-items:start}.generated-result-main{min-width:0}.generated-scheme-table,.generated-residual-table{table-layout:fixed;margin:0 0 8px;border:0;border-radius:0;box-shadow:none;background:transparent}.generated-scheme-table th,.generated-scheme-table td,.generated-residual-table th,.generated-residual-table td{white-space:nowrap}.generated-note{margin:8px 0 0;color:#536068;font-size:12px;line-height:1.45}.generated-result-actions{align-items:flex-end}.generated-measure-panel,.metering-trial-form{display:grid;gap:8px;min-width:0;margin:0;padding:10px;border:1px solid #dce8e5;border-radius:6px;background:#fbfdfc}.metering-trial-modal,.scheme-detail-modal{display:none;position:fixed;inset:0;z-index:20;align-items:center;justify-content:center;padding:16px;background:rgba(15,31,35,.28)}.metering-trial-modal.is-open,.scheme-detail-modal.is-open{display:flex}.metering-trial-card,.scheme-detail-card{width:min(760px,100%);max-height:calc(100vh - 32px);overflow:auto;padding:12px;border:1px solid #dce8e5;border-radius:8px;background:#fff;box-shadow:0 8px 26px rgba(15,31,35,.18)}.scheme-detail-card{width:min(760px,100%)}.metering-trial-card .panel-head,.scheme-detail-card .panel-head{margin-bottom:8px}.trial-estimator-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.trial-estimator-panel{display:grid;gap:8px;min-width:0;padding:10px;border:1px solid #edf2f1;border-radius:6px;background:#fff}.trial-estimator-panel h4{margin:0;color:#2f3d45;font-size:14px;line-height:1.2}.estimator-input-row{display:flex!important;align-items:stretch;width:100%;margin:0!important}.estimator-input-row input{flex:1 1 auto;min-width:0;margin:0;text-align:right;border-top-right-radius:0;border-bottom-right-radius:0}.unit-label{display:inline-flex!important;align-items:center;justify-content:center;min-width:42px;margin:0!important;padding:0 9px;border:1px solid var(--line);border-left:0;border-radius:0 6px 6px 0;background:#f7f9fa;color:var(--muted);font-size:12px;font-weight:650;box-sizing:border-box}.estimate-results{display:grid;grid-template-columns:1fr;gap:6px}.estimate-results div{display:flex;align-items:baseline;justify-content:space-between;gap:8px;min-height:28px;padding:5px 8px;border:1px solid #edf2f1;border-radius:6px;background:#fff}.estimate-results span{color:var(--muted);font-size:12px;font-weight:650}.estimate-results strong{font-size:16px;font-weight:750;font-variant-numeric:tabular-nums;white-space:nowrap}.scheme-detail-kv{margin:0;border:0;border-radius:0;box-shadow:none}.scheme-detail-kv td{overflow-wrap:anywhere}.inline-form{display:flex;align-items:end;gap:6px;flex-wrap:wrap}.generated-name-field input{width:190px}.scheme-edit-panel{overflow:visible}.scheme-edit-form{display:block;margin:0;max-width:940px}.scheme-edit-warning{display:block;margin:0 0 12px}.scheme-edit-section{padding:0 0 12px;margin:0 0 14px;border-bottom:1px solid #eef2f1}.scheme-edit-section:last-of-type{margin-bottom:8px}.scheme-edit-section h3{margin:0 0 10px;padding:0;border:0}.scheme-edit-grid{display:grid;grid-template-columns:repeat(12,1fr);gap:10px 12px;align-items:start}.scheme-span-4{grid-column:span 4}.scheme-span-12{grid-column:1/-1}.scheme-edit-meta{display:flex;gap:6px;flex-wrap:wrap;color:var(--muted);font-size:12px}.scheme-edit-meta span{display:inline-flex;align-items:center;min-height:22px;padding:0 8px;border-radius:999px;background:#f3f6f5}.compact-field{display:block;margin:0}.compact-field span{display:block;margin:0 0 4px;color:var(--muted);font-size:12px;font-weight:650;line-height:1.15}.compact-field input{width:100%;height:34px;min-height:34px;margin:0;padding:0 8px;box-sizing:border-box;font:inherit}.scheme-edit-field input[type=number]{text-align:right}.scheme-edit-actions{padding-top:2px}");
     Esp32BaseWeb::sendChunk(".active-metering-card{overflow:visible}.active-metering-name{margin:2px 0 0;color:#22313a;font-size:18px;font-weight:750;line-height:1.25}.active-metering-metrics{grid-template-columns:repeat(auto-fit,minmax(96px,1fr));display:grid;gap:7px;margin-top:10px}.generated-summary-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(128px,1fr));gap:8px;margin-top:10px}.metering-metric,.generated-summary-card{min-width:0;padding:7px 8px;border:1px solid #e1ebe8;border-radius:6px;background:#fbfdfc}.metering-metric span,.generated-summary-card span{display:block;margin-bottom:3px;color:var(--muted);font-size:11px;font-weight:650}.metering-metric strong,.generated-summary-card strong{display:block;color:#22313a;font-size:14px;font-weight:760;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.generated-summary-card strong{white-space:normal;overflow-wrap:anywhere}.active-metering-actions{margin-top:10px}.metering-scheme-table{table-layout:auto;min-width:100%}.metering-scheme-table th:nth-child(1){width:20%}.metering-scheme-table th:nth-child(2){width:11%}.metering-scheme-table th:nth-child(3){width:17%}.metering-scheme-table th:nth-child(4){width:18%}.metering-scheme-table th:nth-child(5){width:20%}.metering-scheme-table th:nth-child(6){width:14%}.metering-scheme-table td{vertical-align:top;white-space:normal}.metering-scheme-table td:nth-child(3),.metering-scheme-table td:nth-child(4),.metering-scheme-table td:nth-child(5){font-size:12px;color:#3f4d54}.scheme-param-lines{display:grid;gap:3px}.scheme-param-lines span{display:block;white-space:nowrap}.metering-scheme-table small{display:block;margin-top:3px;color:var(--muted);font-size:11px}.metering-scheme-table tr.is-active td{background:#f7fcfa}.metering-scheme-table tr.scheme-created-row td{background:#fffaf0}.scheme-row-actions{flex-wrap:wrap;gap:5px}.scheme-row-actions form{display:inline-flex}.long-term-sample-table{margin-top:8px}.long-term-sample-table td,.long-term-sample-table th{white-space:nowrap}.generated-summary-grid{margin-bottom:8px}.generated-residual-table{table-layout:fixed;margin:8px 0;border:0;border-radius:0;box-shadow:none;background:transparent}.generated-residual-table th,.generated-residual-table td{white-space:nowrap}");
     Esp32BaseWeb::sendChunk("table{width:100%;border-collapse:separate;border-spacing:0;margin:0 0 12px;overflow:hidden;font-size:13px}td,th{padding:8px 10px;border-bottom:1px solid #edf1f0;text-align:left;vertical-align:middle}tr:last-child td{border-bottom:0}th{background:#f8faf9;color:var(--muted);font-weight:700}.filters-table th:first-child{width:22%}.filters-table th:last-child{width:150px}.kv th{width:26%}");
@@ -3252,7 +3299,7 @@ void sendAppCss() {
     Esp32BaseWeb::sendChunk(".scheme-created-row{background:#fffdf4}.disabled-row{background:#f7f8f8;color:#8a949b}.disabled-row td{color:#8a949b}.disabled-row .status-pill{background:#eef0f0;color:#7b858d}.disabled-row a{color:#6f7a82}"
                             "@media(max-width:1040px){.records-top-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.records-top-grid .records-diagnostic-panel{border-left:1px solid #edf2f1;border-top:1px solid #edf2f1}.records-top-grid .records-diagnostic-panel:nth-child(odd){border-left:0}.records-top-grid .records-diagnostic-panel:nth-child(-n+2){border-top:0}.calibration-session-layout{grid-template-columns:1fr}.metering-active-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}"
                             "@media(max-width:820px){.machine-main,.machine-main.compact,.today-layout{grid-template-columns:1fr}.machine-hero{min-height:0}.machine-hero strong{font-size:26px}.machine-hero-head{grid-template-columns:1fr;align-items:start;gap:5px}.machine-screen-footer{position:static;margin-top:8px}.machine-progress{margin-bottom:0}.machine-task-grid{grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}}"
-                            "@media(max-width:720px){body{padding:10px}.form-grid,.scheme-edit-grid,.generated-scheme-layout,.trial-estimator-grid,.temperature-calibration-layout,.temperature-calibration-summary,.tds-calibration-summary,.tds-calibration-flow,.tds-step,.tds-single-panel{grid-template-columns:1fr}.span-2,.span-3,.span-4,.span-5,.span-6,.span-8,.span-12,.scheme-span-4,.scheme-span-12{grid-column:1/-1}.usage-grid{grid-template-columns:1fr}.daily-chart svg{min-width:680px}}"
+                            "@media(max-width:720px){body{padding:10px}.form-grid,.scheme-edit-grid,.generated-scheme-layout,.trial-estimator-grid,.temperature-calibration-summary,.tds-calibration-summary{grid-template-columns:1fr}.span-2,.span-3,.span-4,.span-5,.span-6,.span-8,.span-12,.scheme-span-4,.scheme-span-12{grid-column:1/-1}.usage-grid{grid-template-columns:1fr}.daily-chart svg{min-width:680px}}"
                             "@media(max-width:620px){.records-top-grid{grid-template-columns:1fr}.records-top-grid .records-diagnostic-panel{border-left:0;border-top:1px solid #edf2f1}.records-top-grid .records-diagnostic-panel:first-child{border-top:0}.sample-calibration-form{grid-template-columns:1fr}.calibration-kpi-grid{grid-template-columns:1fr}.metering-active-grid{grid-template-columns:1fr}.metering-active-head{align-items:flex-start;flex-direction:column}}"
                             "@media(max-width:520px){.grid,.metric-grid,.diagnostic-metric-grid,.diagnostic-metric-grid.three,.coverage-metric-row,.filter-cards,.machine-task-grid{grid-template-columns:1fr}.metric-card{min-height:0}.pager{align-items:flex-start}.page-size{width:100%}.kv th{width:34%}}");
 }
@@ -4655,24 +4702,26 @@ void handleCalibrationPage() {
         handleCalibrationPost();
         return;
     }
+    char view[24]{};
+    if (getParam("view", view, sizeof(view))) {
+        if (std::strcmp(view, "temperature") == 0) {
+            handleTemperatureCalibrationPage();
+            return;
+        }
+        if (std::strcmp(view, "tds") == 0) {
+            handleTdsCalibrationPage();
+            return;
+        }
+    }
 
     const AppSnapshot snapshot = g_context.app->snapshot();
     Esp32BaseWeb::sendHeader("校准");
     Esp32BaseWeb::sendChunk("<h2>校准</h2>");
     sendNoticeFromQuery();
 
-    MeteringSchemeRecord active{};
-    const bool activeReady = activeMeteringSchemeForWeb(active);
-    const MeteringParameters params = activeReady ? active.params : snapshot.meteringParams;
-    Esp32BaseWeb::sendChunk("<section class='panel'><div class='panel-head'><h3>流量计校准</h3></div>");
-    sendFmt("<p class='muted'>当前参数：%s；稳态 %lu P/L。</p>",
-            activeReady && active.name[0] ? active.name : "默认计量参数",
-            static_cast<unsigned long>(params.stablePulsePerLiter));
-    Esp32BaseWeb::sendChunk("<p><a class='btn-link primary' href='/faucet/calibration/flow'>进入流量计校准</a></p></section>");
-
-    sendTemperatureCalibrationPanel(snapshot, *g_context.config);
-
-    sendTdsCalibrationPanel(snapshot, *g_context.config);
+    sendCalibrationCenterFlowCard(snapshot);
+    sendCalibrationCenterTemperatureCard(snapshot, *g_context.config);
+    sendCalibrationCenterTdsCard(snapshot, *g_context.config);
     sendCalibrationPageScript();
     sendPageEnd();
 }
@@ -5744,21 +5793,49 @@ bool readTemperatureCalibrationInput(std::int16_t& referenceCentiC) {
     return true;
 }
 
+void redirectTemperatureCalibrationResult(const char* saved) {
+    char url[96]{};
+    std::snprintf(url, sizeof(url), "/faucet/calibration?view=temperature&saved=%s", saved ? saved : "temperature");
+    Esp32BaseWeb::redirectSeeOther(url);
+}
+
+void redirectTemperatureCalibrationFailure(const char* error) {
+    char url[96]{};
+    std::snprintf(url, sizeof(url), "/faucet/calibration?view=temperature&error=%s", error ? error : "save_failed");
+    Esp32BaseWeb::redirectSeeOther(url);
+}
+
+void redirectTdsCalibrationResult(bool ok, const char* success, const char* failure) {
+    char url[96]{};
+    if (ok) {
+        std::snprintf(url, sizeof(url), "/faucet/calibration?view=tds&saved=%s", success ? success : "tds_saved");
+    } else {
+        std::snprintf(url, sizeof(url), "/faucet/calibration?view=tds&error=%s", failure ? failure : "save_failed");
+    }
+    Esp32BaseWeb::redirectSeeOther(url);
+}
+
+void redirectTdsCalibrationFailure(const char* error) {
+    char url[96]{};
+    std::snprintf(url, sizeof(url), "/faucet/calibration?view=tds&error=%s", error ? error : "save_failed");
+    Esp32BaseWeb::redirectSeeOther(url);
+}
+
 void persistTdsCalibrationResult(bool ok, const char* success, const char* failure) {
     if (!ok || !g_context.app || !g_context.config || !g_context.configStore) {
-        redirectCalibrationFailure(failure);
+        redirectTdsCalibrationFailure(failure);
         return;
     }
     const SystemConfig updated = g_context.app->config();
     if (!g_context.configStore->saveSystemConfig(updated)) {
-        redirectCalibrationFailure("save_failed");
+        redirectTdsCalibrationFailure("save_failed");
         return;
     }
     *g_context.config = updated;
     if (g_context.applySettings) {
         g_context.applySettings(*g_context.config);
     }
-    redirectCalibrationResult(true, success, failure);
+    redirectTdsCalibrationResult(true, success, failure);
 }
 
 void handleCalibrationPost() {
@@ -5777,72 +5854,82 @@ void handleCalibrationPost() {
     if (std::strcmp(text, "temperature_save") == 0) {
         std::int16_t reference = 0;
         if (!readTemperatureCalibrationInput(reference)) {
-            redirectCalibrationFailure("invalid_value");
+            redirectTemperatureCalibrationFailure("invalid_value");
             return;
         }
         const bool updated = g_context.app && g_context.app->saveTemperatureCalibrationForWeb(reference);
         if (!updated || !g_context.configStore->saveSystemConfig(g_context.app->config())) {
-            redirectCalibrationFailure("save_failed");
+            redirectTemperatureCalibrationFailure("save_failed");
             return;
         }
         *g_context.config = g_context.app->config();
         if (g_context.applySettings) {
             g_context.applySettings(*g_context.config);
         }
-        redirectCalibrationResult(true, "temperature", "save_failed");
+        redirectTemperatureCalibrationResult("temperature");
         return;
     }
-    if (std::strcmp(text, "tds_start_single") == 0) {
-        std::uint16_t referencePpm = 0;
-        if (!readTdsCalibrationInput(referencePpm, false)) {
-            redirectCalibrationFailure("invalid_value");
-            return;
-        }
-        redirectCalibrationResult(g_context.app &&
-                                      g_context.app->startTdsSinglePointCalibrationForWeb(
-                                          referencePpm,
-                                          g_context.nowSeconds ? g_context.nowSeconds() : 0),
-                                  "tds_calibration_started",
-                                  "busy");
+    if (std::strcmp(text, "tds_start_single") == 0 ||
+        std::strcmp(text, "tds_start_low") == 0 ||
+        std::strcmp(text, "tds_start_high") == 0 ||
+        std::strcmp(text, "tds_cancel") == 0 ||
+        std::strcmp(text, "tds_save") == 0) {
+        redirectTdsCalibrationFailure("invalid_action");
         return;
     }
-    if (std::strcmp(text, "tds_start_low") == 0) {
+    if (std::strcmp(text, "tds_start_session") == 0) {
+        redirectTdsCalibrationResult(g_context.app &&
+                                         g_context.app->startTdsCalibrationSessionForWeb(
+                                             g_context.nowSeconds ? g_context.nowSeconds() : 0),
+                                     "tds_started",
+                                     "busy");
+        return;
+    }
+    if (std::strcmp(text, "tds_start_point") == 0) {
         std::uint16_t referencePpm = 0;
         if (!readTdsCalibrationInput(referencePpm, true)) {
-            redirectCalibrationFailure("invalid_value");
+            redirectTdsCalibrationFailure("invalid_value");
             return;
         }
-        redirectCalibrationResult(g_context.app &&
-                                      g_context.app->startTdsTwoPointLowCalibrationForWeb(
-                                          referencePpm,
-                                          g_context.nowSeconds ? g_context.nowSeconds() : 0),
-                                  "tds_low_started",
-                                  "busy");
+        redirectTdsCalibrationResult(g_context.app &&
+                                         g_context.app->startTdsCalibrationPointForWeb(
+                                             referencePpm,
+                                             g_context.nowSeconds ? g_context.nowSeconds() : 0),
+                                     "tds_point_started",
+                                     "busy");
         return;
     }
-    if (std::strcmp(text, "tds_start_high") == 0) {
-        std::uint16_t referencePpm = 0;
-        if (!readTdsCalibrationInput(referencePpm, false)) {
-            redirectCalibrationFailure("invalid_value");
+    if (std::strcmp(text, "tds_save_point") == 0) {
+        redirectTdsCalibrationResult(g_context.app &&
+                                         g_context.app->saveTdsCalibrationPointForWeb(
+                                             g_context.nowSeconds ? g_context.nowSeconds() : 0),
+                                     "tds_point_saved",
+                                     "invalid_state");
+        return;
+    }
+    if (std::strcmp(text, "tds_remove_point") == 0) {
+        std::uint32_t index = 0;
+        if (!getParam("index", text, sizeof(text)) || !parseU32(text, index) || index >= kTdsCalibrationMaxPoints) {
+            redirectTdsCalibrationFailure("invalid_value");
             return;
         }
-        redirectCalibrationResult(g_context.app &&
-                                      g_context.app->startTdsTwoPointHighCalibrationForWeb(
-                                          referencePpm,
-                                          g_context.nowSeconds ? g_context.nowSeconds() : 0),
-                                  "tds_high_started",
-                                  "busy");
+        redirectTdsCalibrationResult(g_context.app &&
+                                         g_context.app->removeTdsCalibrationPointForWeb(
+                                             static_cast<std::uint8_t>(index),
+                                             g_context.nowSeconds ? g_context.nowSeconds() : 0),
+                                     "tds_point_removed",
+                                     "invalid_state");
         return;
     }
-    if (std::strcmp(text, "tds_cancel") == 0) {
-        redirectCalibrationResult(g_context.app && g_context.app->cancelTdsCalibrationForWeb(),
-                                  "tds_cancelled",
-                                  "invalid_state");
+    if (std::strcmp(text, "tds_discard_session") == 0) {
+        redirectTdsCalibrationResult(g_context.app && g_context.app->discardTdsCalibrationForWeb(),
+                                     "tds_discarded",
+                                     "invalid_state");
         return;
     }
-    if (std::strcmp(text, "tds_save") == 0) {
+    if (std::strcmp(text, "tds_apply_session") == 0) {
         persistTdsCalibrationResult(g_context.app &&
-                                        g_context.app->saveTdsCalibrationForWeb(
+                                        g_context.app->applyTdsCalibrationForWeb(
                                             g_context.nowSeconds ? g_context.nowSeconds() : 0),
                                     "tds_saved",
                                     "invalid_state");

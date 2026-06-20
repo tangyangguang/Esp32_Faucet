@@ -623,7 +623,40 @@ void test_app_rejects_tds_calibration_when_running() {
     pressAndReleaseOk(app, 100);
     pressAndReleaseOk(app, 300);
 
-    TEST_ASSERT_FALSE(app.startTdsSinglePointCalibrationForWeb(10, 1714502400));
+    TEST_ASSERT_FALSE(app.startTdsCalibrationSessionForWeb(1714502401));
+    TEST_ASSERT_FALSE(app.startTdsCalibrationPointForWeb(160, 1714502401));
+}
+
+void test_app_tds_point_calibration_apply_persists_to_config() {
+    SystemConfig config = enabledWaterSensorConfig();
+    StatisticsStore statistics;
+    statistics.reset({20260506, 202619, 202605});
+    FilterStore filters(config.filters);
+    MemoryRecordWriter records;
+    FakeAdcReader adc;
+    adc.values[0] = okMv(1091);
+    adc.values[1] = okMv(1650);
+    WaterSensorManager sensors(adc);
+    sensors.configure(config);
+    TEST_ASSERT_TRUE(sensors.begin());
+    AppController app(config, statistics, filters, records, nullptr, nullptr, nullptr, nullptr, nullptr, &sensors);
+
+    TEST_ASSERT_TRUE(app.startTdsCalibrationSessionForWeb(1714502400));
+    TEST_ASSERT_TRUE(app.startTdsCalibrationPointForWeb(160, 1714502401));
+    std::uint32_t nowMs = 0;
+    for (std::uint8_t i = 0; i < 16; ++i) {
+        adc.values[2] = okMv(420);
+        nowMs += 1000;
+        app.tick(input({false, false, false, false}, nowMs, nowMs * 1000UL, 1714502401));
+    }
+    TEST_ASSERT_TRUE(app.saveTdsCalibrationPointForWeb(1714502420));
+    TEST_ASSERT_TRUE(app.applyTdsCalibrationForWeb(1714502430));
+
+    const SystemConfig updated = app.config();
+    TEST_ASSERT_TRUE(updated.tdsCalibrated);
+    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(TdsCalibrationMode::SinglePoint),
+                            static_cast<std::uint8_t>(updated.tdsCalibrationMode));
+    TEST_ASSERT_EQUAL_UINT16(4, updated.tdsCalibrationRevision);
 }
 
 void test_app_controller_successful_record_writes_scheme_id_and_marks_scheme_used_once() {
@@ -2087,6 +2120,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_temperature_reference_calibration_rejects_disabled_temperature_sensor);
     RUN_TEST(test_app_records_sensor_summary_on_completed_run);
     RUN_TEST(test_app_rejects_tds_calibration_when_running);
+    RUN_TEST(test_app_tds_point_calibration_apply_persists_to_config);
     RUN_TEST(test_app_controller_successful_record_writes_scheme_id_and_marks_scheme_used_once);
     RUN_TEST(test_app_controller_record_write_failure_does_not_mark_scheme_used);
     RUN_TEST(test_app_controller_record_write_success_locks_active_scheme_even_if_used_mark_persist_fails);

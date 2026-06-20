@@ -69,6 +69,70 @@ void test_tds_two_point_rejects_low_reference_span() {
     TEST_ASSERT_FALSE(computeTwoPointTdsCalibration(0, 5, 160, 20, scale, offset));
 }
 
+void test_tds_multi_point_linear_fit_matches_two_point_line() {
+    TdsCalibrationPointInput points[3]{};
+    points[0] = TdsCalibrationPointInput{20, 30};
+    points[1] = TdsCalibrationPointInput{120, 130};
+    points[2] = TdsCalibrationPointInput{220, 230};
+
+    TdsCalibrationFitResult fit{};
+    TEST_ASSERT_TRUE(computeTdsCalibrationFit(points, 3, fit));
+    TEST_ASSERT_TRUE(fit.valid);
+    TEST_ASSERT_EQUAL_UINT8(3, fit.pointCount);
+    TEST_ASSERT_EQUAL_UINT16(200, fit.referenceSpanPpm);
+    TEST_ASSERT_EQUAL_UINT16(200, fit.rawSpanPpm);
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 1.0f, fit.scale);
+    TEST_ASSERT_EQUAL_INT16(-10, fit.offsetPpm);
+}
+
+void test_tds_fit_uses_single_point_scale_with_zero_offset() {
+    TdsCalibrationPointInput points[1]{};
+    points[0] = TdsCalibrationPointInput{160, 200};
+
+    TdsCalibrationFitResult fit{};
+    TEST_ASSERT_TRUE(computeTdsCalibrationFit(points, 1, fit));
+    TEST_ASSERT_TRUE(fit.valid);
+    TEST_ASSERT_EQUAL_UINT8(1, fit.pointCount);
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.8f, fit.scale);
+    TEST_ASSERT_EQUAL_INT16(0, fit.offsetPpm);
+}
+
+void test_tds_fit_rejects_low_span_for_multiple_points() {
+    TdsCalibrationPointInput points[2]{};
+    points[0] = TdsCalibrationPointInput{100, 100};
+    points[1] = TdsCalibrationPointInput{120, 150};
+
+    TdsCalibrationFitResult fit{};
+    TEST_ASSERT_FALSE(computeTdsCalibrationFit(points, 2, fit));
+
+    points[1] = TdsCalibrationPointInput{170, 120};
+    TEST_ASSERT_FALSE(computeTdsCalibrationFit(points, 2, fit));
+}
+
+void test_tds_fit_rejects_duplicate_conflicts() {
+    TdsCalibrationPointInput points[2]{};
+    points[0] = TdsCalibrationPointInput{100, 100};
+    points[1] = TdsCalibrationPointInput{100, 131};
+
+    TdsCalibrationFitResult fit{};
+    TEST_ASSERT_FALSE(computeTdsCalibrationFit(points, 2, fit));
+
+    points[1] = TdsCalibrationPointInput{151, 100};
+    TEST_ASSERT_FALSE(computeTdsCalibrationFit(points, 2, fit));
+}
+
+void test_tds_two_point_fit_is_order_independent() {
+    TdsCalibrationPointInput points[2]{};
+    points[0] = TdsCalibrationPointInput{160, 150};
+    points[1] = TdsCalibrationPointInput{0, 5};
+
+    TdsCalibrationFitResult fit{};
+    TEST_ASSERT_TRUE(computeTdsCalibrationFit(points, 2, fit));
+    TEST_ASSERT_TRUE(fit.valid);
+    TEST_ASSERT_FLOAT_WITHIN(0.01f, 1.10f, fit.scale);
+    TEST_ASSERT_INT_WITHIN(1, -6, fit.offsetPpm);
+}
+
 void test_tds_stability_windows() {
     const std::uint16_t ordinaryStable[] = {158, 159, 160, 161, 160, 159, 160, 161, 160, 159, 160, 161};
     const std::uint16_t ordinaryUnstable[] = {140, 160, 175, 151, 166, 170, 145, 160, 172, 155, 169, 150};
@@ -92,6 +156,11 @@ int main(int argc, char** argv) {
     RUN_TEST(test_tds_single_point_calibration);
     RUN_TEST(test_tds_two_point_calibration);
     RUN_TEST(test_tds_two_point_rejects_low_reference_span);
+    RUN_TEST(test_tds_multi_point_linear_fit_matches_two_point_line);
+    RUN_TEST(test_tds_fit_uses_single_point_scale_with_zero_offset);
+    RUN_TEST(test_tds_fit_rejects_low_span_for_multiple_points);
+    RUN_TEST(test_tds_fit_rejects_duplicate_conflicts);
+    RUN_TEST(test_tds_two_point_fit_is_order_independent);
     RUN_TEST(test_tds_stability_windows);
     return UNITY_END();
 }

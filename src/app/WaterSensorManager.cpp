@@ -13,7 +13,7 @@ constexpr std::uint8_t kOfflineThreshold = 3;
 constexpr std::uint8_t kRecoveryThreshold = 3;
 constexpr std::uint8_t kTdsDownshiftWindows = 8;
 constexpr std::uint8_t kCalibrationMinSamples = 12;
-constexpr std::uint16_t kTdsHighReferenceWarningPpm = 100;
+constexpr std::uint32_t kTdsCalibrationSessionTimeoutSec = 30UL * 60UL;
 
 std::uint16_t toU16(std::int32_t value) {
     if (value <= 0) {
@@ -40,6 +40,16 @@ bool enabledTds(const SystemConfig& config) {
     return config.tdsEnabled && config.tdsKind == TdsKind::AnalogTdsAo;
 }
 
+TdsCalibrationMode tdsModeForPointCount(std::uint8_t pointCount) {
+    if (pointCount == 1) {
+        return TdsCalibrationMode::SinglePoint;
+    }
+    if (pointCount == 2) {
+        return TdsCalibrationMode::TwoPoint;
+    }
+    return pointCount > 2 ? TdsCalibrationMode::MultiPoint : TdsCalibrationMode::None;
+}
+
 }  // namespace
 
 WaterSensorManager::WaterSensorManager(AdcReader& adc)
@@ -55,17 +65,16 @@ WaterSensorManager::WaterSensorManager(AdcReader& adc)
       discardNextTdsSample_(false),
       run_{},
       calibrationKind_(CalibrationKind::None),
-      calibrationStartedSeconds_(0),
       calibrationReferencePpm_(0),
       calibrationReadings_{},
       calibrationSampleCount_(0),
       calibrationTempFallback_(false),
       calibrationFailed_(false),
-      hasPendingLowPoint_(false),
-      pendingLowReferencePpm_(0),
-      pendingLowRawPpm_(0),
-      pendingScale_(1.0f),
-      pendingOffsetPpm_(0) {}
+      tdsCalibrationSessionActive_(false),
+      tdsCalibrationUpdatedAt_(0),
+      tdsCalibrationPoints_{},
+      tdsCalibrationPointCount_(0),
+      tdsCalibrationFit_{} {}
 
 void WaterSensorManager::configure(const SystemConfig& config) {
     config_ = config;
@@ -122,129 +131,148 @@ WaterSensorRunSummary WaterSensorManager::finishRun() const {
     return summary;
 }
 
-bool WaterSensorManager::startTdsSinglePointCalibration(std::uint16_t referencePpm,
-                                                        std::uint32_t nowSeconds) {
-    if (!enabledTds(config_) || referencePpm == 0 || calibrationKind_ != CalibrationKind::None) {
-        return false;
-    }
-    calibrationKind_ = CalibrationKind::Single;
-    calibrationStartedSeconds_ = nowSeconds;
-    calibrationReferencePpm_ = referencePpm;
-    calibrationSampleCount_ = 0;
-    calibrationTempFallback_ = false;
-    calibrationFailed_ = false;
-    pendingScale_ = 1.0f;
-    pendingOffsetPpm_ = 0;
-    return true;
-}
-
-bool WaterSensorManager::startTdsTwoPointLow(std::uint16_t lowReferencePpm,
-                                             std::uint32_t nowSeconds) {
-    if (!enabledTds(config_) || calibrationKind_ != CalibrationKind::None) {
-        return false;
-    }
-    calibrationKind_ = CalibrationKind::Low;
-    calibrationStartedSeconds_ = nowSeconds;
-    calibrationReferencePpm_ = lowReferencePpm;
-    calibrationSampleCount_ = 0;
-    calibrationTempFallback_ = false;
-    calibrationFailed_ = false;
-    return true;
-}
-
-bool WaterSensorManager::startTdsTwoPointHigh(std::uint16_t highReferencePpm,
-                                              std::uint32_t nowSeconds) {
-    if (!enabledTds(config_) || highReferencePpm == 0 || !hasPendingLowPoint_ ||
-        calibrationKind_ != CalibrationKind::None) {
-        return false;
-    }
-    calibrationKind_ = CalibrationKind::High;
-    calibrationStartedSeconds_ = nowSeconds;
-    calibrationReferencePpm_ = highReferencePpm;
-    calibrationSampleCount_ = 0;
-    calibrationTempFallback_ = false;
-    calibrationFailed_ = false;
-    return true;
-}
-
-bool WaterSensorManager::cancelTdsCalibration() {
-    const bool wasActive = calibrationKind_ != CalibrationKind::None;
-    calibrationKind_ = CalibrationKind::None;
-    calibrationSampleCount_ = 0;
-    calibrationFailed_ = false;
-    return wasActive;
-}
-
 TdsCalibrationSessionSnapshot WaterSensorManager::calibrationSnapshot() const {
     TdsCalibrationSessionSnapshot session{};
     session.active = calibrationKind_ != CalibrationKind::None;
+    session.samplingActive = session.active;
     session.failed = calibrationFailed_;
     session.tempFallback25C = calibrationTempFallback_;
     session.sampleCount = calibrationSampleCount_;
     session.referencePpm = calibrationReferencePpm_;
     session.rawAvgPpm = calibrationRawAverage();
+    session.rawAveragePpm = session.rawAvgPpm;
     session.flags = snapshot_.flags;
     session.readyToSave = calibrationReady();
-    session.hasPendingLowPoint = hasPendingLowPoint_;
-    session.highReferenceLowWarning =
-        calibrationKind_ == CalibrationKind::High && calibrationReferencePpm_ < kTdsHighReferenceWarningPpm;
+    session.hasPendingLowPoint = false;
+    session.highReferenceLowWarning = false;
+    session.sessionActive = tdsCalibrationSessionActive_;
+    session.pointCount = tdsCalibrationPointCount_;
+    session.full = tdsCalibrationPointCount_ >= kTdsCalibrationMaxPoints;
+    session.candidateReady = tdsCalibrationFit_.valid;
+    session.referenceSpanPpm = tdsCalibrationFit_.referenceSpanPpm;
+    session.rawSpanPpm = tdsCalibrationFit_.rawSpanPpm;
+    session.candidateScale = tdsCalibrationFit_.scale;
+    session.candidateOffsetPpm = tdsCalibrationFit_.offsetPpm;
+    session.candidateMode = tdsCalibrationFit_.valid ? tdsModeForPointCount(tdsCalibrationPointCount_) : TdsCalibrationMode::None;
+    for (std::uint8_t i = 0; i < tdsCalibrationPointCount_; ++i) {
+        session.points[i] = tdsCalibrationPoints_[i];
+    }
     return session;
 }
 
-bool WaterSensorManager::saveReadyTdsCalibration(SystemConfig& config, std::uint32_t nowSeconds) {
-    if (!calibrationReady()) {
+bool WaterSensorManager::startTdsCalibrationSession(std::uint32_t nowSeconds) {
+    if (!enabledTds(config_) || calibrationKind_ != CalibrationKind::None) {
         return false;
     }
-    const std::uint16_t rawAvg = calibrationRawAverage();
-    if (calibrationKind_ == CalibrationKind::Single) {
-        if (!computeSinglePointTdsCalibration(calibrationReferencePpm_, rawAvg, pendingScale_)) {
-            return false;
-        }
-        pendingOffsetPpm_ = 0;
-        config.tdsCalibrationMode = TdsCalibrationMode::SinglePoint;
-        config.tdsLowReferencePpm = 0;
-        config.tdsLowRawPpm = 0;
-        config.tdsHighReferencePpm = calibrationReferencePpm_;
-        config.tdsHighRawPpm = rawAvg;
-    } else if (calibrationKind_ == CalibrationKind::Low) {
-        pendingLowReferencePpm_ = calibrationReferencePpm_;
-        pendingLowRawPpm_ = rawAvg;
-        hasPendingLowPoint_ = true;
-        calibrationKind_ = CalibrationKind::None;
-        calibrationSampleCount_ = 0;
-        return true;
-    } else if (calibrationKind_ == CalibrationKind::High) {
-        if (!hasPendingLowPoint_ ||
-            !computeTwoPointTdsCalibration(pendingLowReferencePpm_,
-                                           pendingLowRawPpm_,
-                                           calibrationReferencePpm_,
-                                           rawAvg,
-                                           pendingScale_,
-                                           pendingOffsetPpm_)) {
-            return false;
-        }
-        config.tdsCalibrationMode = TdsCalibrationMode::TwoPoint;
-        config.tdsLowReferencePpm = pendingLowReferencePpm_;
-        config.tdsLowRawPpm = pendingLowRawPpm_;
-        config.tdsHighReferencePpm = calibrationReferencePpm_;
-        config.tdsHighRawPpm = rawAvg;
-    } else {
+    tdsCalibrationSessionActive_ = true;
+    tdsCalibrationUpdatedAt_ = nowSeconds;
+    for (auto& point : tdsCalibrationPoints_) {
+        point = {};
+    }
+    tdsCalibrationPointCount_ = 0;
+    tdsCalibrationFit_ = {};
+    calibrationFailed_ = false;
+    calibrationTempFallback_ = false;
+    return true;
+}
+
+bool WaterSensorManager::startTdsCalibrationPoint(std::uint16_t referencePpm, std::uint32_t nowSeconds) {
+    if (!enabledTds(config_) || !tdsCalibrationSessionActive_ || calibrationKind_ != CalibrationKind::None ||
+        tdsCalibrationPointCount_ >= kTdsCalibrationMaxPoints || referencePpm > 2000) {
         return false;
     }
-    config.tdsScale = pendingScale_;
-    config.tdsOffsetPpm = pendingOffsetPpm_;
-    config.tdsCalibrated = true;
-    config.tdsCalibrationRevision = static_cast<std::uint16_t>(config.tdsCalibrationRevision + 1U);
-    config.tdsCalibrationTime = nowSeconds;
-    config.tdsCalibrationTemperatureCentiC =
-        snapshot_.temperatureCentiC.valid ? toI16(snapshot_.temperatureCentiC.value) : 2500;
-    config.tdsCalibrationVoltageMv = snapshot_.tdsVoltageMv.valid ? toU16(snapshot_.tdsVoltageMv.value) : 0;
-    sanitizeConfig(config);
-    configure(config);
-    hasPendingLowPoint_ = false;
+    calibrationKind_ = CalibrationKind::Single;
+    calibrationReferencePpm_ = referencePpm;
+    calibrationSampleCount_ = 0;
+    calibrationTempFallback_ = false;
+    calibrationFailed_ = false;
+    tdsCalibrationUpdatedAt_ = nowSeconds;
+    return true;
+}
+
+bool WaterSensorManager::saveStableTdsCalibrationPoint(std::uint32_t nowSeconds) {
+    if (!tdsCalibrationSessionActive_ || !calibrationReady() || tdsCalibrationPointCount_ >= kTdsCalibrationMaxPoints) {
+        return false;
+    }
+
+    TdsCalibrationPointSnapshot point{};
+    point.valid = true;
+    point.tempFallback25C = calibrationTempFallback_;
+    point.referencePpm = calibrationReferencePpm_;
+    point.rawPpm = calibrationRawAverage();
+    point.voltageMv = snapshot_.tdsVoltageMv.valid ? toU16(snapshot_.tdsVoltageMv.value) : 0;
+    point.temperatureCentiC = snapshot_.temperatureCentiC.valid ? toI16(snapshot_.temperatureCentiC.value) : 2500;
+    point.sampledAt = nowSeconds;
+    tdsCalibrationPoints_[tdsCalibrationPointCount_++] = point;
+
     calibrationKind_ = CalibrationKind::None;
     calibrationSampleCount_ = 0;
+    calibrationReferencePpm_ = 0;
+    calibrationFailed_ = false;
+    calibrationTempFallback_ = false;
+    tdsCalibrationUpdatedAt_ = nowSeconds;
+    refreshTdsCalibrationCandidate();
     return true;
+}
+
+bool WaterSensorManager::removeTdsCalibrationPoint(std::uint8_t index, std::uint32_t nowSeconds) {
+    if (!tdsCalibrationSessionActive_ || calibrationKind_ != CalibrationKind::None || index >= tdsCalibrationPointCount_) {
+        return false;
+    }
+    for (std::uint8_t i = index; i + 1U < tdsCalibrationPointCount_; ++i) {
+        tdsCalibrationPoints_[i] = tdsCalibrationPoints_[i + 1U];
+    }
+    --tdsCalibrationPointCount_;
+    tdsCalibrationPoints_[tdsCalibrationPointCount_] = {};
+    tdsCalibrationUpdatedAt_ = nowSeconds;
+    refreshTdsCalibrationCandidate();
+    return true;
+}
+
+bool WaterSensorManager::discardTdsCalibrationSession() {
+    const bool wasActive = tdsCalibrationSessionActive_ || calibrationKind_ != CalibrationKind::None;
+    tdsCalibrationSessionActive_ = false;
+    tdsCalibrationUpdatedAt_ = 0;
+    for (auto& point : tdsCalibrationPoints_) {
+        point = {};
+    }
+    tdsCalibrationPointCount_ = 0;
+    tdsCalibrationFit_ = {};
+    calibrationKind_ = CalibrationKind::None;
+    calibrationSampleCount_ = 0;
+    calibrationFailed_ = false;
+    calibrationTempFallback_ = false;
+    return wasActive;
+}
+
+bool WaterSensorManager::expireTdsCalibrationSession(std::uint32_t nowSeconds) {
+    if (!tdsCalibrationSessionActive_ || nowSeconds - tdsCalibrationUpdatedAt_ < kTdsCalibrationSessionTimeoutSec) {
+        return false;
+    }
+    return discardTdsCalibrationSession();
+}
+
+bool WaterSensorManager::applyReadyTdsCalibration(SystemConfig& config, std::uint32_t nowSeconds) {
+    if (!tdsCalibrationSessionActive_ || !tdsCalibrationFit_.valid || tdsCalibrationPointCount_ == 0) {
+        return false;
+    }
+    config.tdsScale = tdsCalibrationFit_.scale;
+    config.tdsOffsetPpm = tdsCalibrationFit_.offsetPpm;
+    config.tdsCalibrated = true;
+    config.tdsCalibrationMode = tdsModeForPointCount(tdsCalibrationPointCount_);
+    config.tdsCalibrationRevision = static_cast<std::uint16_t>(config.tdsCalibrationRevision + 1U);
+    config.tdsCalibrationTime = nowSeconds;
+    const TdsCalibrationPointSnapshot& first = tdsCalibrationPoints_[0];
+    const TdsCalibrationPointSnapshot& last = tdsCalibrationPoints_[tdsCalibrationPointCount_ - 1U];
+    config.tdsLowReferencePpm = first.referencePpm;
+    config.tdsLowRawPpm = first.rawPpm;
+    config.tdsHighReferencePpm = last.referencePpm;
+    config.tdsHighRawPpm = last.rawPpm;
+    config.tdsCalibrationTemperatureCentiC = last.temperatureCentiC;
+    config.tdsCalibrationVoltageMv = last.voltageMv;
+    sanitizeConfig(config);
+    configure(config);
+    return discardTdsCalibrationSession();
 }
 
 void WaterSensorManager::sampleOnce() {
@@ -387,7 +415,7 @@ bool WaterSensorManager::calibrationReady() const {
     return tdsReadingsStable(calibrationReadings_,
                              calibrationSampleCount_,
                              calibrationReferencePpm_,
-                             calibrationKind_ == CalibrationKind::Low);
+                             false);
 }
 
 std::uint16_t WaterSensorManager::calibrationRawAverage() const {
@@ -399,6 +427,15 @@ std::uint16_t WaterSensorManager::calibrationRawAverage() const {
         sum += calibrationReadings_[i];
     }
     return static_cast<std::uint16_t>(sum / calibrationSampleCount_);
+}
+
+bool WaterSensorManager::refreshTdsCalibrationCandidate() {
+    TdsCalibrationPointInput points[kTdsCalibrationMaxPoints]{};
+    for (std::uint8_t i = 0; i < tdsCalibrationPointCount_; ++i) {
+        points[i].referencePpm = tdsCalibrationPoints_[i].referencePpm;
+        points[i].rawPpm = tdsCalibrationPoints_[i].rawPpm;
+    }
+    return computeTdsCalibrationFit(points, tdsCalibrationPointCount_, tdsCalibrationFit_);
 }
 
 void WaterSensorManager::accumulateRunSample(const WaterSensorSnapshot& current) {

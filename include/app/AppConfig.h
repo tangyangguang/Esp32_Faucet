@@ -85,6 +85,7 @@ enum class TdsCalibrationMode : std::uint8_t {
     None = 0,
     SinglePoint = 1,
     TwoPoint = 2,
+    MultiPoint = 3,
 };
 
 struct SystemConfig {

@@ -313,7 +313,7 @@ void test_config_save_and_load_round_trips_sensor_config() {
     config.temperatureCalibrated = true;
     config.tdsEnabled = true;
     config.tdsKind = TdsKind::AnalogTdsAo;
-    config.tdsCalibrationMode = TdsCalibrationMode::TwoPoint;
+    config.tdsCalibrationMode = TdsCalibrationMode::MultiPoint;
     config.tdsCalibrationRevision = 7;
     config.tdsScale = 1.234f;
     config.tdsOffsetPpm = -4;
@@ -347,7 +347,7 @@ void test_config_save_and_load_round_trips_sensor_config() {
     TEST_ASSERT_TRUE(loaded.tdsEnabled);
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(TdsKind::AnalogTdsAo),
                             static_cast<std::uint8_t>(loaded.tdsKind));
-    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(TdsCalibrationMode::TwoPoint),
+    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(TdsCalibrationMode::MultiPoint),
                             static_cast<std::uint8_t>(loaded.tdsCalibrationMode));
     TEST_ASSERT_EQUAL_UINT16(7, loaded.tdsCalibrationRevision);
     TEST_ASSERT_FLOAT_WITHIN(0.001f, 1.234f, loaded.tdsScale);

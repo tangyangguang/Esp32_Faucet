@@ -9,6 +9,5 @@ bool parseU32(const char* text, std::uint32_t& value);
 bool parseDate(const char* text, std::uint32_t& seconds);
 void formatDate(std::uint32_t seconds, char* out, std::size_t len);
 bool parseFloat(const char* text, float& value);
-bool parseLitersToMl(const char* text, std::uint32_t& value);
 
 }  // namespace faucet

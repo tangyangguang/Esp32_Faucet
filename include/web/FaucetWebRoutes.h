@@ -12,16 +12,34 @@ enum class FaucetWebMethod : std::uint8_t {
     Post = 1,
 };
 
-enum class FaucetWebRouteKind : std::uint8_t {
-    Page = 0,
-    Api = 1,
+enum class FaucetWebHandler : std::uint8_t {
+    HomePage = 0,
+    RecordsPage,
+    StatsPage,
+    PresetsPage,
+    FiltersPage,
+    CalibrationPage,
+    AppCss,
+    CalibrationPost,
+    FlowCalibrationPage,
+    FlowCalibrationPost,
+    CalibrationSamples,
+    FilterEditPage,
+    RecordDetailPage,
+    StatusApi,
+    TodayOverviewApi,
+    PresetsApi,
+    RecordsApi,
+    StatsApi,
+    FiltersApi,
+    FiltersResetApi,
 };
 
 struct FaucetWebRoute {
     const char* path;
     FaucetWebMethod method;
-    FaucetWebRouteKind kind;
     const char* title;
+    FaucetWebHandler handler;
 };
 
 const FaucetWebRoute* faucetWebRoutes();

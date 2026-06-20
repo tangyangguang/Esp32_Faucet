@@ -9,6 +9,7 @@
 #include "app/AppController.h"
 #include "app/AppConfig.h"
 #include "app/ConfigStore.h"
+#include "app/DateTimeUtils.h"
 #include "app/FilterStore.h"
 #include "app/MeteringSchemeStore.h"
 #include "app/WaterRecordCalibrationStore.h"
@@ -96,7 +97,6 @@ void handleCalibrationPage();
 void handleFlowCalibrationPage();
 void handleCalibrationPost();
 void handleFlowCalibrationPost();
-void handleRecordCalibrationApi();
 void handleGenerateSegmentedCalibrationApi();
 void handleDiscardGeneratedSchemeApi();
 void handleCreateMeteringSchemeApi();
@@ -158,9 +158,9 @@ void sendFmt(const char* fmt, ...) {
     Esp32BaseWeb::sendChunk(buffer);
 }
 
-void sendHtmlAttrEscaped(const char* text) {
-    for (const char* p = text ? text : ""; *p; ++p) {
-        switch (*p) {
+void sendHtmlEscapedInternal(const char* text, std::size_t maxLen) {
+    for (std::size_t i = 0; i < maxLen && text[i] != '\0'; ++i) {
+        switch (text[i]) {
             case '&':
                 Esp32BaseWeb::sendChunk("&amp;");
                 break;
@@ -177,66 +177,23 @@ void sendHtmlAttrEscaped(const char* text) {
                 Esp32BaseWeb::sendChunk("&#39;");
                 break;
             default:
-                sendFmt("%c", *p);
+                char ch[2] = {text[i], '\0'};
+                Esp32BaseWeb::sendChunk(ch);
                 break;
         }
     }
+}
+
+void sendHtmlAttrEscaped(const char* text) {
+    sendHtmlEscapedInternal(text ? text : "", static_cast<std::size_t>(-1));
 }
 
 void sendHtmlAttrEscapedBounded(const char* text, std::size_t maxLen) {
-    if (!text) {
-        return;
-    }
-    for (std::size_t i = 0; i < maxLen && text[i] != '\0'; ++i) {
-        switch (text[i]) {
-            case '&':
-                Esp32BaseWeb::sendChunk("&amp;");
-                break;
-            case '<':
-                Esp32BaseWeb::sendChunk("&lt;");
-                break;
-            case '>':
-                Esp32BaseWeb::sendChunk("&gt;");
-                break;
-            case '"':
-                Esp32BaseWeb::sendChunk("&quot;");
-                break;
-            case '\'':
-                Esp32BaseWeb::sendChunk("&#39;");
-                break;
-            default:
-                sendFmt("%c", text[i]);
-                break;
-        }
-    }
+    sendHtmlEscapedInternal(text ? text : "", maxLen);
 }
 
 void sendHtmlEscapedBounded(const char* text, std::size_t maxLen) {
-    if (!text) {
-        return;
-    }
-    for (std::size_t i = 0; i < maxLen && text[i] != '\0'; ++i) {
-        switch (text[i]) {
-            case '&':
-                Esp32BaseWeb::sendChunk("&amp;");
-                break;
-            case '<':
-                Esp32BaseWeb::sendChunk("&lt;");
-                break;
-            case '>':
-                Esp32BaseWeb::sendChunk("&gt;");
-                break;
-            case '"':
-                Esp32BaseWeb::sendChunk("&quot;");
-                break;
-            case '\'':
-                Esp32BaseWeb::sendChunk("&#39;");
-                break;
-            default:
-                sendFmt("%c", text[i]);
-                break;
-        }
-    }
+    sendHtmlEscapedInternal(text ? text : "", maxLen);
 }
 
 void formatLiters(std::uint32_t ml, char* out, std::size_t len) {
@@ -279,36 +236,6 @@ std::uint32_t chooseCountLabelY(std::uint32_t pointY, std::uint32_t barLabelY) {
     return pointY > 24UL ? pointY - 24UL : pointY + 24UL;
 }
 
-bool isLeapYear(std::uint16_t year) {
-    return (year % 4U == 0 && year % 100U != 0) || year % 400U == 0;
-}
-
-void dateFromDayIndex(std::uint32_t day, std::uint16_t& year, std::uint8_t& month, std::uint8_t& monthDay) {
-    year = 2000;
-    while (true) {
-        const std::uint16_t yearDays = isLeapYear(year) ? 366 : 365;
-        if (day < yearDays) {
-            break;
-        }
-        day -= yearDays;
-        ++year;
-    }
-    static constexpr std::uint8_t monthDays[] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
-    month = 1;
-    while (month <= 12) {
-        std::uint8_t days = monthDays[month - 1];
-        if (month == 2 && isLeapYear(year)) {
-            days = 29;
-        }
-        if (day < days) {
-            break;
-        }
-        day -= days;
-        ++month;
-    }
-    monthDay = static_cast<std::uint8_t>(day + 1);
-}
-
 void formatDayLabel(std::uint32_t day, char* out, std::size_t len) {
     std::uint16_t year = 0;
     std::uint8_t month = 0;
@@ -331,15 +258,6 @@ std::uint32_t filterFlowProgressPercent(const FilterRecord& filter) {
     }
     const std::uint64_t percent = (static_cast<std::uint64_t>(filter.usedMl) * 100ULL) / filter.lifeMl;
     return percent > 100ULL ? 100UL : static_cast<std::uint32_t>(percent);
-}
-
-const char* filterTriggerText(const FilterRecord& filter, std::uint32_t usedDays) {
-    const std::uint32_t dayProgress = filterProgressPercent(filter, usedDays);
-    const std::uint32_t flowProgress = filterFlowProgressPercent(filter);
-    if (dayProgress < 100UL && flowProgress < 100UL) {
-        return "正常";
-    }
-    return dayProgress >= flowProgress ? "天数到期" : "流量到期";
 }
 
 std::uint32_t daysToMonths(std::uint32_t days) {
@@ -439,26 +357,6 @@ void sendTargetValue(const WaterRecord& record) {
         return;
     }
     sendLiters(record.targetValue);
-}
-
-bool waterRecordCanCalibrate(const WaterRecord& record) {
-    return record.pulseCount > 0 && waterResultAllowsCalibration(record.result);
-}
-
-void sendMetricCard(const char* label, const char* value) {
-    Esp32BaseWeb::sendChunk("<section class='metric-card'><span>");
-    Esp32BaseWeb::sendChunk(label);
-    Esp32BaseWeb::sendChunk("</span><strong>");
-    Esp32BaseWeb::sendChunk(value);
-    Esp32BaseWeb::sendChunk("</strong></section>");
-}
-
-void sendMetricCardClass(const char* label, const char* value, const char* className) {
-    sendFmt("<section class='metric-card %s'><span>", className ? className : "");
-    Esp32BaseWeb::sendChunk(label);
-    Esp32BaseWeb::sendChunk("</span><strong>");
-    Esp32BaseWeb::sendChunk(value);
-    Esp32BaseWeb::sendChunk("</strong></section>");
 }
 
 void sendStatsMetricCard(const char* label, const char* value, const char* meta) {
@@ -572,14 +470,6 @@ std::uint32_t percentOf(std::uint32_t value, std::uint32_t total) {
     }
     const std::uint64_t percent = (static_cast<std::uint64_t>(value) * 100ULL) / total;
     return percent > 100ULL ? 100UL : static_cast<std::uint32_t>(percent);
-}
-
-void sendStatBar(const char* label, const char* value, std::uint32_t percent) {
-    sendFmt("<div class='stat-bar'><div class='stat-bar-head'><span>%s</span><strong>%s</strong></div>"
-            "<div class='progress'><span style='width:%lu%%'></span></div></div>",
-            label,
-            value,
-            static_cast<unsigned long>(percent));
 }
 
 void addSaturating(std::uint32_t& target, std::uint32_t value) {
@@ -792,33 +682,6 @@ std::uint32_t measuredPulsePerLiter(const WaterRecord& record, const WaterRecord
         calibration.actualMl);
 }
 
-bool saveRecordActualMeasurement(const WaterRecord& record, std::uint32_t actualMl) {
-    if (!g_context.config || !g_context.recordCalibrationWriter) {
-        return false;
-    }
-    WaterRecordCalibration calibration = makeWaterRecordCalibration(record);
-    calibration.actualMl = actualMl;
-    calibration.calibratedAt = g_context.nowSeconds ? g_context.nowSeconds() : 0;
-    MeteringSchemeRecord activeScheme{};
-    const MeteringParameters params =
-        activeMeteringSchemeForWeb(activeScheme) ? activeScheme.params : defaultMeteringParameters();
-    const float stablePulsePerMl = static_cast<float>(params.stablePulsePerLiter) / 1000.0f;
-    calibration.oldPulsePerMl = stablePulsePerMl;
-    calibration.newPulsePerMl = stablePulsePerMl;
-    calibration.oldStartupCompensationMl = 0;
-    calibration.newStartupCompensationMl = 0;
-    calibration.kind = WaterRecordCalibrationKind::PulsePerMl;
-    return g_context.recordCalibrationWriter->upsert(calibration);
-}
-
-bool syncTraceActualMeasurement(const WaterRecord& record, std::uint32_t actualMl) {
-    bool updated = false;
-    if (g_context.pulseTraces && g_context.pulseTraces->setActualMlByRecord(record, actualMl)) {
-        updated = true;
-    }
-    return updated;
-}
-
 bool copyRamTraceSamples(const WaterPulseTrace& trace, WaterPulseTraceSample* output, std::size_t outputCapacity) {
     if (!g_context.pulseTraces || !output || outputCapacity < trace.sampleCount) {
         return false;
@@ -877,30 +740,6 @@ float recentStablePulsePerSec() {
     g_stablePulseEstimateCache.ready = true;
     g_stablePulseEstimateCache.valid = false;
     return 0.0f;
-}
-
-bool firstSecondsPulseTotal(const WaterPulseTrace& trace,
-                            std::uint32_t seconds,
-                            std::uint32_t& totalPulses) {
-    totalPulses = 0;
-    if (seconds == 0 || trace.sampleCount == 0) {
-        return true;
-    }
-    WaterPulseTraceSample* samples = new (std::nothrow) WaterPulseTraceSample[trace.sampleCount]{};
-    if (!samples) {
-        return false;
-    }
-    const bool copied = copyRamTraceSamples(trace, samples, trace.sampleCount);
-    if (copied) {
-        std::size_t count = 0;
-        const std::uint32_t endUs = seconds * 1000000UL;
-        while (count < trace.sampleCount && samples[count].elapsedUs < endUs) {
-            ++count;
-        }
-        totalPulses = effectivePulseCount(trace, samples, count);
-    }
-    delete[] samples;
-    return copied;
 }
 
 bool segmentedSampleAlreadySeen(const WaterRecord* records, std::size_t count, const WaterRecord& record) {
@@ -1266,37 +1105,6 @@ bool generateSegmentedCalibrationResultFromSavedSamples() {
     return makeSegmentedCandidate(diagnostics.result, candidate);
 }
 
-void sendSignedLiters(std::int32_t ml) {
-    if (ml < 0) {
-        Esp32BaseWeb::sendChunk("-");
-        sendLiters(static_cast<std::uint32_t>(-ml));
-        return;
-    }
-    Esp32BaseWeb::sendChunk("+");
-    sendLiters(static_cast<std::uint32_t>(ml));
-}
-
-bool shouldShowTargetDelta(const WaterRecord& record) {
-    if (record.mode != WaterMode::Volume || record.targetValue == 0) {
-        return false;
-    }
-    const std::int32_t diff =
-        static_cast<std::int32_t>(record.volumeMl) - static_cast<std::int32_t>(record.targetValue);
-    const std::uint32_t absDiff = diff < 0 ? static_cast<std::uint32_t>(-diff) : static_cast<std::uint32_t>(diff);
-    return absDiff >= 100UL && absDiff * 100UL >= record.targetValue * 3UL;
-}
-
-void sendTargetDeltaHint(const WaterRecord& record) {
-    if (!shouldShowTargetDelta(record)) {
-        return;
-    }
-    const std::int32_t diff =
-        static_cast<std::int32_t>(record.volumeMl) - static_cast<std::int32_t>(record.targetValue);
-    Esp32BaseWeb::sendChunk("<small class='hint'>较目标 ");
-    sendSignedLiters(diff);
-    Esp32BaseWeb::sendChunk("</small>");
-}
-
 const char* traceStateText(WaterPulseTraceState state) {
     switch (state) {
         case WaterPulseTraceState::Running:
@@ -1402,74 +1210,6 @@ void formatKb(std::size_t bytes, char* out, std::size_t len) {
     const std::uint32_t tenths = static_cast<std::uint32_t>((bytes * 10U + 512U) / 1024U);
     std::snprintf(out, len, "%lu.%luKB", static_cast<unsigned long>(tenths / 10U),
                   static_cast<unsigned long>(tenths % 10U));
-}
-
-void sendSegmentedMeteringPanel() {
-    MeteringSchemeRecord activeScheme{};
-    const bool activeReady = activeMeteringSchemeForWeb(activeScheme);
-    const MeteringParameters active = activeReady ? activeScheme.params : defaultMeteringParameters();
-    char stable[24]{};
-    char startupPulse[24]{};
-    char startupVolume[24]{};
-    std::snprintf(stable, sizeof(stable), "%luP/L", static_cast<unsigned long>(active.stablePulsePerLiter));
-    std::snprintf(startupPulse, sizeof(startupPulse), "%luP", static_cast<unsigned long>(active.startupPulseCount));
-    formatLiters(active.startupVolumeMl, startupVolume, sizeof(startupVolume));
-    Esp32BaseWeb::sendChunk("<section class='panel metering-active-summary'><div class='metering-active-head'>"
-                            "<div><span class='section-label'>计量状态</span><span class='section-subtitle'>当前参数</span><h3>");
-    if (activeReady) {
-        sendHtmlEscapedBounded(activeScheme.name, sizeof(activeScheme.name));
-    } else {
-        Esp32BaseWeb::sendChunk("-");
-    }
-    sendFmt("</h3></div><span class='status-pill %s'>%s</span></div><div class='metering-active-grid'>",
-            activeReady ? "status-ok" : "status-muted",
-            activeReady ? "当前参数" : "无可用参数");
-    sendFmt("<div><span>稳态P/L</span><strong>%s</strong></div>", stable);
-    sendFmt("<div><span>启动脉冲数</span><strong>%s</strong></div>", startupPulse);
-    sendFmt("<div><span>启动水量</span><strong>%s</strong></div>", startupVolume);
-    if (activeReady) {
-        sendFmt("<div><span>方案标识</span><strong>#%lu</strong><small>修订 <b>rev %lu</b></small></div>",
-                static_cast<unsigned long>(activeScheme.id),
-                static_cast<unsigned long>(activeScheme.revision));
-    } else {
-        Esp32BaseWeb::sendChunk("<div><span>方案标识</span><strong>-</strong><small>修订 <b>-</b></small></div>");
-    }
-    Esp32BaseWeb::sendChunk("</div></section>");
-}
-
-void sendPulseTraceCachePanel() {
-    WaterPulseTraceStats stats{};
-    if (!g_context.pulseTraces) {
-        Esp32BaseWeb::sendChunk("<section class='panel records-diagnostic-panel trace-cache-diagnostic'><div class='diagnostic-head'><h3>RAM 最近明细</h3>"
-                                "<span class='status-pill status-error'>RAM 不可用</span></div>"
-                                "<div class='diagnostic-metric-grid'><div class='diagnostic-metric'><span>最近明细</span><strong>-</strong></div>"
-                                "<div class='diagnostic-metric'><span>RAM 数据点</span><strong>-</strong></div></div>"
-                                "<div class='diagnostic-foot'><span>RAM 占用 <b>-</b></span><span>单条上限 <b>-</b></span></div></section>");
-    } else {
-        stats = g_context.pulseTraces->stats();
-        char used[24]{};
-        formatKb(stats.usedBytes, used, sizeof(used));
-        char traces[24]{};
-        char samples[32]{};
-        std::snprintf(traces,
-                      sizeof(traces),
-                      "%lu / %lu 条",
-                      static_cast<unsigned long>(stats.traceCount),
-                      static_cast<unsigned long>(stats.traceCapacity));
-        std::snprintf(samples,
-                      sizeof(samples),
-                      "%lu / %lu 点",
-                      static_cast<unsigned long>(stats.sampleCount),
-                      static_cast<unsigned long>(stats.sampleCapacity));
-        Esp32BaseWeb::sendChunk("<section class='panel records-diagnostic-panel trace-cache-diagnostic'><div class='diagnostic-head'><h3>RAM 最近明细</h3>"
-                                "<span class='status-pill status-muted ram-badge'>RAM</span></div><div class='diagnostic-metric-grid'>");
-        sendFmt("<div class='diagnostic-metric'><span>最近明细</span><strong>%s</strong></div>", traces);
-        sendFmt("<div class='diagnostic-metric'><span>RAM 数据点</span><strong>%s</strong></div>", samples);
-        sendFmt("</div><div class='diagnostic-foot'><span>RAM 占用 <b>%s</b></span><span>单条上限 <b>%lu 点</b></span></div></section>",
-                used,
-                static_cast<unsigned long>(stats.sampleCapacityPerTrace));
-    }
-
 }
 
 void sendMeteringTrialButton(const char* label,
@@ -1931,72 +1671,6 @@ const char* segmentedRejectReasonText(SegmentedCalibrationRejectReason reason) {
     return "无法生成";
 }
 
-struct CalibrationSampleState {
-    std::uint32_t actualMl = 0;
-    std::uint32_t stableStartSec = 0;
-    bool stable = false;
-    bool qualityValid = false;
-    bool truncated = false;
-    bool resumedAfterPause = false;
-};
-
-CalibrationSampleState inspectCalibrationSample(const WaterPulseTrace& trace) {
-    CalibrationSampleState state{};
-    state.actualMl = actualMlForSegmentedSample(trace);
-    state.truncated = trace.truncated;
-    state.resumedAfterPause = trace.resumedAfterPause;
-    if (trace.truncated) {
-        return state;
-    }
-    if (trace.sampleCount < 6 || trace.totalPulses == 0) {
-        return state;
-    }
-    WaterPulseTraceSample* samples = new (std::nothrow) WaterPulseTraceSample[trace.sampleCount]{};
-    if (!samples) {
-        return state;
-    }
-    const bool copied = copyRamTraceSamples(trace, samples, trace.sampleCount);
-    if (copied) {
-        const WaterPulseTraceAnalysis analysis = analyzeWaterPulseTrace(trace, samples, trace.sampleCount);
-        state.stable = analysis.stable && analysis.stablePulseCount > 0;
-        state.stableStartSec = analysis.stableStartSec;
-        state.qualityValid = state.actualMl > 0 && state.stable;
-    }
-    delete[] samples;
-    return state;
-}
-
-void sendCalibrationSampleStatusPills(const CalibrationSampleState& state, const char* containerClass) {
-    sendFmt("<span class='%s'>", containerClass);
-    if (state.truncated) {
-        Esp32BaseWeb::sendChunk("<span class='status-pill status-warn'>明细已截断</span>"
-                                "<span class='status-pill status-muted'>不入库</span>");
-        Esp32BaseWeb::sendChunk("</span>");
-        return;
-    }
-    if (state.actualMl == 0) {
-        Esp32BaseWeb::sendChunk("<span class='status-pill status-muted'>待校准容量</span>");
-        if (state.resumedAfterPause) {
-            Esp32BaseWeb::sendChunk("<span class='status-pill status-warn'>暂停后恢复</span>");
-        }
-        Esp32BaseWeb::sendChunk("</span>");
-        return;
-    }
-    Esp32BaseWeb::sendChunk("<span class='status-pill status-ok'>容量已校准</span>");
-    if (state.resumedAfterPause) {
-        Esp32BaseWeb::sendChunk("<span class='status-pill status-warn'>暂停后恢复</span>");
-        Esp32BaseWeb::sendChunk("</span>");
-        return;
-    }
-    if (!state.stable) {
-        Esp32BaseWeb::sendChunk("<span class='status-pill status-warn'>稳态失败</span>");
-        Esp32BaseWeb::sendChunk("</span>");
-        return;
-    }
-    Esp32BaseWeb::sendChunk("<span class='status-pill status-muted'>RAM 明细</span>");
-    Esp32BaseWeb::sendChunk("</span>");
-}
-
 bool generationResultRequested() {
     char text[32]{};
     if (getParam("generated", text, sizeof(text)) && std::strcmp(text, "1") == 0) {
@@ -2016,172 +1690,6 @@ std::uint32_t configuredPulseObservationWindowSec() {
         g_context.config ? g_context.config->pulseObservationWindowSec : kDefaultPulseObservationWindowSec;
     return std::min<std::uint32_t>(std::max<std::uint32_t>(seconds, kMinPulseObservationWindowSec),
                                    kMaxPulseObservationWindowSec);
-}
-
-void sendTraceDetailLink(bool fromCalibration,
-                         std::uint32_t traceId,
-                         std::uint32_t bucket,
-                         const char* label,
-                         const char* className = "btn-link") {
-    const char* detailPath = fromCalibration ? "/faucet/calibration/detail" : "/faucet/records/detail";
-    sendFmt("<a class='%s' href='%s?%s%strace=%lu&bucket=%lu'>%s</a>",
-            className,
-            detailPath,
-            fromCalibration ? "from=calibration&" : "",
-            static_cast<unsigned long>(traceId),
-            static_cast<unsigned long>(bucket),
-            label);
-}
-
-bool readCalibrationTraceFromRequest(WaterPulseTrace& trace, std::uint32_t& traceId) {
-    char text[32]{};
-    trace = {};
-    traceId = 0;
-    if (!getParam("trace", text, sizeof(text)) || !parseU32(text, traceId) || traceId == 0) {
-        return false;
-    }
-    const WaterPulseTrace* ramTrace = g_context.pulseTraces ? g_context.pulseTraces->findById(traceId) : nullptr;
-    if (!ramTrace) {
-        return false;
-    }
-    trace = *ramTrace;
-    return trace.finished && trace.sampleCount > 0 && waterRecordCanCalibrate(trace.record);
-}
-
-bool markCalibrationTraceActual(std::uint32_t traceId,
-                                const WaterRecord& record,
-                                std::uint32_t actualMl) {
-    if (!g_context.pulseTraces || !g_context.pulseTraces->setActualMl(traceId, actualMl)) {
-        return false;
-    }
-    g_context.pulseTraces->setActualMlByRecord(record, actualMl);
-    return true;
-}
-
-void sendCalibrationSampleRow(const WaterPulseTrace& trace, std::uint32_t samplePulseWindowSec) {
-    char startTime[40]{};
-    char duration[24]{};
-    formatWaterRecordListTime(trace.record, startTime, sizeof(startTime));
-    formatSecondsValue(trace.record.durationSec, duration, sizeof(duration));
-    const CalibrationSampleState state = inspectCalibrationSample(trace);
-    WaterRecordCalibration calibration{};
-    const bool calibrated = findRecordCalibration(trace.record, calibration);
-    const std::uint32_t defaultActualMl = state.actualMl > 0 ? state.actualMl : trace.record.volumeMl;
-    std::uint32_t firstWindowPulses = 0;
-    const bool firstWindowReady = firstSecondsPulseTotal(trace, samplePulseWindowSec, firstWindowPulses);
-    const char* sourceValue = "ram";
-    char rowId[32]{};
-    std::snprintf(rowId,
-                  sizeof(rowId),
-                  "calibrate-%s-%lu",
-                  sourceValue,
-                  static_cast<unsigned long>(trace.traceId));
-    Esp32BaseWeb::sendChunk("<tr><td>");
-    Esp32BaseWeb::sendChunk(startTime);
-    Esp32BaseWeb::sendChunk("</td><td>");
-    Esp32BaseWeb::sendChunk(duration);
-    Esp32BaseWeb::sendChunk("</td><td>");
-    sendTargetValue(trace.record);
-    Esp32BaseWeb::sendChunk("</td><td>");
-    sendLiters(trace.record.volumeMl);
-    Esp32BaseWeb::sendChunk("</td><td>");
-    if (state.actualMl > 0) {
-        sendLitersMl(state.actualMl);
-    } else {
-        Esp32BaseWeb::sendChunk("-");
-    }
-    sendFmt("</td><td>%luP / %lu点</td><td>",
-            static_cast<unsigned long>(trace.totalPulses),
-            static_cast<unsigned long>(trace.sampleCount));
-    if (firstWindowReady) {
-        sendFmt("%luP", static_cast<unsigned long>(firstWindowPulses));
-    } else {
-        Esp32BaseWeb::sendChunk("-");
-    }
-    Esp32BaseWeb::sendChunk("</td><td>");
-    if (state.stable) {
-        sendFmt("第 %lus", static_cast<unsigned long>(state.stableStartSec));
-    } else {
-        Esp32BaseWeb::sendChunk("-");
-    }
-    Esp32BaseWeb::sendChunk("</td><td>");
-    sendTraceDetailLink(true,
-                        trace.traceId,
-                        1,
-                        "RAM 中",
-                        "trace-badge trace-source-link status-muted");
-    Esp32BaseWeb::sendChunk("</td><td>");
-    sendCalibrationSampleStatusPills(state, "sample-status-pills");
-    Esp32BaseWeb::sendChunk("</td><td><div class='row-actions sample-actions'>");
-    MeteringParameters trialParams{};
-    const bool trialParamsReady = meteringParamsForRecordTrend(trace.record, trialParams);
-    const std::uint32_t trialVolumeMl = state.actualMl > 0 ? state.actualMl : trace.record.volumeMl;
-    const std::uint32_t trialDefaultTargetMl =
-        trace.record.mode == WaterMode::Volume && trace.record.targetValue > 0 ? trace.record.targetValue : trialVolumeMl;
-    if (trialParamsReady) {
-        sendMeteringTrialButton("RAM 样本",
-                                trialParams,
-                                trialDefaultTargetMl,
-                                trace.record.durationSec);
-    }
-    if (!trace.truncated && waterRecordCanCalibrate(trace.record)) {
-        sendFmt("<button class='btn-link' type='button' onclick=\"faucetShowSampleCalibration('%s')\">%s</button>",
-                rowId,
-                calibrated || state.actualMl > 0 ? "重新校准" : "校准容量");
-    } else {
-        Esp32BaseWeb::sendChunk("<span class='status-pill status-muted'>不可入库</span>");
-    }
-    Esp32BaseWeb::sendChunk("</div></td></tr><tr id='");
-    Esp32BaseWeb::sendChunk(rowId);
-    Esp32BaseWeb::sendChunk("' class='sample-calibration-edit-row'><td colspan='11'>"
-                            "<form class='sample-calibration-form' method='post' action='/faucet/calibration' onsubmit='return faucetSubmitSampleCalibration(this)'>"
-                            "<input type='hidden' name='action' value='calibrate'>"
-                            "<input type='hidden' name='ajax' value='1'>"
-                            "<input type='hidden' name='trace' value='");
-    sendFmt("%lu", static_cast<unsigned long>(trace.traceId));
-    Esp32BaseWeb::sendChunk("'><div class='sample-calibration-info'><strong>校准容量</strong>"
-                            "<span>左侧样本来自本次脉冲明细，请按量杯读数填写右侧实测容量。</span>"
-                            "<span>保存后只更新这条明细的实测容量；计量方案生成只使用长期样本库。</span>"
-                            "<span>该操作只更新样本和校准记录，不会修改当前计量参数。</span>");
-    if (calibrated) {
-        char calibratedAt[40]{};
-        formatWaterRecordTime(WaterRecord{calibration.calibratedAt,
-                                          0,
-                                          0,
-                                          0,
-                                          0,
-                                          0,
-                                          WaterMode::Volume,
-                                          WaterResult::Completed,
-                                          0,
-                                          0,
-                                          0,
-                                          {0, 0, 0, 0}},
-                              calibratedAt,
-                              sizeof(calibratedAt));
-        const std::int32_t estimateDiff =
-            static_cast<std::int32_t>(trace.record.volumeMl) - static_cast<std::int32_t>(calibration.actualMl);
-        Esp32BaseWeb::sendChunk("<span>校准记录：第 ");
-        sendFmt("%u 次 / %s / 实测脉冲/升 %luP/L / 估算差 ",
-                static_cast<unsigned>(calibration.calibrationCount),
-                calibratedAt[0] ? calibratedAt : "未知",
-                static_cast<unsigned long>(measuredPulsePerLiter(trace.record, calibration)));
-        sendSignedLiters(estimateDiff);
-        Esp32BaseWeb::sendChunk("，当前计量参数未修改。</span>");
-    }
-    Esp32BaseWeb::sendChunk("</div><div class='sample-calibration-inputs'>"
-                            "<label class='field sample-volume-field'><span>量杯实测容量</span>"
-                            "<span class='sample-volume-input-row sample-volume-control'><input name='actualMl' type='number' min='");
-    sendFmt("%lu", static_cast<unsigned long>(kMinVolumePresetMl));
-    Esp32BaseWeb::sendChunk("' max='");
-    sendFmt("%lu", static_cast<unsigned long>(kMaxVolumePresetMl));
-    Esp32BaseWeb::sendChunk("' step='1' value='");
-    sendFmt("%lu", static_cast<unsigned long>(defaultActualMl));
-    Esp32BaseWeb::sendChunk("'><span class='unit-label'>ml</span></span></label>"
-                            "<div class='form-actions'><input type='submit' value='保存校准容量'>"
-                            "<button class='btn-link' type='button' onclick=\"faucetHideSampleCalibration('");
-    Esp32BaseWeb::sendChunk(rowId);
-    Esp32BaseWeb::sendChunk("')\">取消</button></div></div></form></td></tr>");
 }
 
 bool findLongTermSampleForAttempt(std::uint32_t sessionId,
@@ -3291,14 +2799,15 @@ void sendAppCss() {
     Esp32BaseWeb::sendChunk(".form-actions{display:flex;align-items:center;justify-content:flex-start;gap:6px;margin-top:10px;flex-wrap:wrap}.form-actions form{margin:0}.form-actions a,.btn-link,.page-link,.page-current,.row-actions a{display:inline-flex;align-items:center;justify-content:center;min-height:32px;padding:0 10px;border:1px solid var(--line);border-radius:6px;background:#f7f9fa;color:#355e66;font:inherit;font-size:13px;line-height:1.2;box-sizing:border-box;text-decoration:none;cursor:pointer}input.secondary{background:#f7f9fa;border:1px solid var(--line);color:#4c565d}input.secondary:hover,input.secondary:focus-visible{background:#10574e;border-color:#10574e;color:#fff}.btn-link:hover,.btn-link:focus-visible,.form-actions a:hover,.form-actions a:focus-visible,.page-link:hover,.page-link:focus-visible,.row-actions a:hover,.row-actions a:focus-visible{background:#10574e;border-color:#10574e;color:#fff;text-decoration:none}.row-actions{display:flex;gap:5px;align-items:center;flex-wrap:wrap}.sample-actions{gap:6px}.sample-calibration-edit-row{display:none;background:#fbfcfb}.sample-calibration-edit-row.is-open{display:table-row}.sample-calibration-edit-row td{border-top:1px solid #dce8e5}.sample-calibration-form{display:grid;grid-template-columns:minmax(0,1fr) minmax(250px,320px);gap:12px 20px;align-items:start;max-width:900px;margin:0}.sample-calibration-info{display:grid;gap:4px;color:var(--muted);font-size:12px;line-height:1.4}.sample-calibration-info strong{color:var(--text);font-size:13px}.sample-calibration-inputs{min-width:0}.sample-volume-field{margin:0}.sample-volume-field .sample-volume-control{display:flex;align-items:stretch;width:100%;max-width:236px;margin:0;white-space:nowrap}.sample-volume-control input{flex:1 1 auto;min-width:0;width:auto;margin:0;text-align:right;border-top-right-radius:0;border-bottom-right-radius:0}.sample-volume-control .unit-label{display:inline-flex;align-items:center;justify-content:center;min-width:42px;margin:0;padding:0 9px;border:1px solid var(--line);border-left:0;border-radius:0 6px 6px 0;background:#f7f9fa;color:var(--muted);font-size:12px;font-weight:650;box-sizing:border-box}.sample-calibration-inputs .form-actions{margin-top:8px}.sample-window-form{display:flex;align-items:flex-end;gap:8px;flex-wrap:wrap;margin:8px 0 4px}.sample-window-field{margin:0}.sample-window-field input{width:96px;margin:0;text-align:right}.sample-status-pills{display:flex;align-items:center;gap:5px;flex-wrap:wrap}");
     Esp32BaseWeb::sendChunk(".temperature-calibration-summary{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:10px 0 12px}.temperature-calibration-summary>div{min-width:0;padding:10px;border:1px solid #edf2f1;border-radius:6px;background:#fbfdfc}.temperature-calibration-summary span{display:block;color:var(--muted);font-size:12px;font-weight:650}.temperature-calibration-summary strong{display:block;margin-top:5px;color:var(--text);font-size:17px;line-height:1.2;font-weight:750;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}.temperature-calibration-form{display:grid;gap:8px;min-width:0;margin-top:10px;padding:10px;border:1px solid #edf2f1;border-radius:6px;background:#fff}.temperature-calibration-form .form-actions{margin-top:0}.temperature-calibration-form input[type=submit]{width:100%}"
                             ".tds-calibration-panel .hint{max-width:820px}.tds-calibration-summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin:10px 0 12px}.tds-calibration-summary>div{min-width:0;padding:10px;border:1px solid #edf2f1;border-radius:6px;background:#fbfdfc}.tds-calibration-summary span{display:block;color:var(--muted);font-size:12px;font-weight:650}.tds-calibration-summary strong{display:block;margin-top:5px;color:var(--text);font-size:17px;line-height:1.2;font-weight:750;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}.tds-workflow-card{margin-top:10px;padding:10px;border:1px solid #edf2f1;border-radius:6px;background:#fbfdfc}.tds-workflow-card h4{margin:0 0 6px;color:#2f3d45;font-size:14px}.tds-workflow-card p{margin:0 0 8px;color:#536068;font-size:12px;line-height:1.45}.tds-point-session .form-actions{align-items:flex-end}.tds-point-session table form{display:inline-flex;margin:0}");
-    Esp32BaseWeb::sendChunk(".calibration-param-layout{display:grid;grid-template-columns:1fr;gap:12px;margin:0 0 12px}.calibration-param-layout .calibration-param-panel{margin:0}.calibration-param-panel{overflow-x:auto}.calibration-slot-table{table-layout:fixed;min-width:980px;margin:0;border:0;border-radius:0;box-shadow:none;background:transparent}.calibration-slot-table th:nth-child(1){width:160px}.calibration-slot-table th:nth-child(2){width:170px}.calibration-slot-table th:nth-child(3){width:170px}.calibration-slot-table th:nth-child(4){width:auto}.calibration-slot-table th:nth-child(5){width:92px}.calibration-slot-table th:nth-child(6){width:280px}.calibration-slot-index{font-weight:700}.calibration-slot-index .status-pill{display:inline-flex;margin:4px 4px 0 0}.calibration-slot-name{font-weight:650;white-space:normal}.calibration-slot-values{min-width:0}.scheme-param-table{width:100%;margin:0;border:0;border-radius:0;box-shadow:none;background:transparent;font-size:12px}.scheme-param-table th,.scheme-param-table td{padding:3px 0;border:0;background:transparent;white-space:nowrap}.scheme-param-table th{width:72px;color:var(--muted);font-weight:650}.scheme-param-table td{font-variant-numeric:tabular-nums}.calibration-slot-note{color:#536068;font-size:12px;line-height:1.35;overflow-wrap:anywhere}.scheme-use-count{font-variant-numeric:tabular-nums}.scheme-use-count b{font-size:18px;margin-right:3px}.scheme-use-count span{color:var(--muted)}.scheme-use-count .status-pill{display:flex;width:max-content;margin-top:5px}.calibration-slot-edit .row-actions{gap:5px}.calibration-generation-settings{display:flex;gap:5px 10px;flex-wrap:wrap;margin:6px 0 8px;color:var(--muted);font-size:12px}.calibration-generation-settings span{display:inline-flex;align-items:center;min-height:24px;padding:0 8px;border:1px solid #e2ebe8;border-radius:999px;background:#fbfdfc}.calibration-generation-settings b{margin-left:4px;color:#46545c}.sample-coverage-compact{margin:8px 0 10px;padding:8px 10px;border:1px solid #eef3f1;border-radius:6px;background:#fbfdfc}.sample-coverage-compact .diagnostic-head{margin-bottom:6px}.coverage-metric-row{display:grid;grid-template-columns:repeat(4,minmax(120px,1fr));gap:6px 10px}.coverage-metric-row .diagnostic-metric{padding:0}.coverage-metric-row .diagnostic-metric span{font-size:11px}.coverage-metric-row .diagnostic-metric strong{font-size:15px}.coverage-foot{display:flex;align-items:center;gap:4px 12px;flex-wrap:wrap;margin-top:6px;padding-top:6px;border-top:1px solid #eef3f1;color:var(--muted);font-size:11px;font-variant-numeric:tabular-nums}.coverage-foot b{color:#52616b;font-weight:650}.generated-scheme-result{margin-top:10px}.generated-scheme-layout{display:grid;grid-template-columns:minmax(0,1fr) minmax(230px,280px);gap:12px;align-items:start}.generated-result-main{min-width:0}.generated-scheme-table,.generated-residual-table{table-layout:fixed;margin:0 0 8px;border:0;border-radius:0;box-shadow:none;background:transparent}.generated-scheme-table th,.generated-scheme-table td,.generated-residual-table th,.generated-residual-table td{white-space:nowrap}.generated-note{margin:8px 0 0;color:#536068;font-size:12px;line-height:1.45}.generated-result-actions{align-items:flex-end}.generated-measure-panel,.metering-trial-form{display:grid;gap:8px;min-width:0;margin:0;padding:10px;border:1px solid #dce8e5;border-radius:6px;background:#fbfdfc}.metering-trial-modal,.scheme-detail-modal{display:none;position:fixed;inset:0;z-index:20;align-items:center;justify-content:center;padding:16px;background:rgba(15,31,35,.28)}.metering-trial-modal.is-open,.scheme-detail-modal.is-open{display:flex}.metering-trial-card,.scheme-detail-card{width:min(760px,100%);max-height:calc(100vh - 32px);overflow:auto;padding:12px;border:1px solid #dce8e5;border-radius:8px;background:#fff;box-shadow:0 8px 26px rgba(15,31,35,.18)}.scheme-detail-card{width:min(760px,100%)}.metering-trial-card .panel-head,.scheme-detail-card .panel-head{margin-bottom:8px}.trial-estimator-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.trial-estimator-panel{display:grid;gap:8px;min-width:0;padding:10px;border:1px solid #edf2f1;border-radius:6px;background:#fff}.trial-estimator-panel h4{margin:0;color:#2f3d45;font-size:14px;line-height:1.2}.estimator-input-row{display:flex!important;align-items:stretch;width:100%;margin:0!important}.estimator-input-row input{flex:1 1 auto;min-width:0;margin:0;text-align:right;border-top-right-radius:0;border-bottom-right-radius:0}.unit-label{display:inline-flex!important;align-items:center;justify-content:center;min-width:42px;margin:0!important;padding:0 9px;border:1px solid var(--line);border-left:0;border-radius:0 6px 6px 0;background:#f7f9fa;color:var(--muted);font-size:12px;font-weight:650;box-sizing:border-box}.estimate-results{display:grid;grid-template-columns:1fr;gap:6px}.estimate-results div{display:flex;align-items:baseline;justify-content:space-between;gap:8px;min-height:28px;padding:5px 8px;border:1px solid #edf2f1;border-radius:6px;background:#fff}.estimate-results span{color:var(--muted);font-size:12px;font-weight:650}.estimate-results strong{font-size:16px;font-weight:750;font-variant-numeric:tabular-nums;white-space:nowrap}.scheme-detail-kv{margin:0;border:0;border-radius:0;box-shadow:none}.scheme-detail-kv td{overflow-wrap:anywhere}.inline-form{display:flex;align-items:end;gap:6px;flex-wrap:wrap}.generated-name-field input{width:190px}.scheme-edit-panel{overflow:visible}.scheme-edit-form{display:block;margin:0;max-width:940px}.scheme-edit-warning{display:block;margin:0 0 12px}.scheme-edit-section{padding:0 0 12px;margin:0 0 14px;border-bottom:1px solid #eef2f1}.scheme-edit-section:last-of-type{margin-bottom:8px}.scheme-edit-section h3{margin:0 0 10px;padding:0;border:0}.scheme-edit-grid{display:grid;grid-template-columns:repeat(12,1fr);gap:10px 12px;align-items:start}.scheme-span-4{grid-column:span 4}.scheme-span-12{grid-column:1/-1}.scheme-edit-meta{display:flex;gap:6px;flex-wrap:wrap;color:var(--muted);font-size:12px}.scheme-edit-meta span{display:inline-flex;align-items:center;min-height:22px;padding:0 8px;border-radius:999px;background:#f3f6f5}.compact-field{display:block;margin:0}.compact-field span{display:block;margin:0 0 4px;color:var(--muted);font-size:12px;font-weight:650;line-height:1.15}.compact-field input{width:100%;height:34px;min-height:34px;margin:0;padding:0 8px;box-sizing:border-box;font:inherit}.scheme-edit-field input[type=number]{text-align:right}.scheme-edit-actions{padding-top:2px}");
+    Esp32BaseWeb::sendChunk(".calibration-param-layout{display:grid;grid-template-columns:1fr;gap:12px;margin:0 0 12px}.calibration-param-layout .calibration-param-panel{margin:0}.calibration-param-panel{overflow-x:auto}.calibration-slot-table{table-layout:fixed;min-width:980px;margin:0;border:0;border-radius:0;box-shadow:none;background:transparent}.calibration-slot-table th:nth-child(1){width:160px}.calibration-slot-table th:nth-child(2){width:170px}.calibration-slot-table th:nth-child(3){width:170px}.calibration-slot-table th:nth-child(4){width:auto}.calibration-slot-table th:nth-child(5){width:92px}.calibration-slot-table th:nth-child(6){width:280px}.calibration-slot-index{font-weight:700}.calibration-slot-index .status-pill{display:inline-flex;margin:4px 4px 0 0}.calibration-slot-name{font-weight:650;white-space:normal}.calibration-slot-values{min-width:0}.scheme-param-table{width:100%;margin:0;border:0;border-radius:0;box-shadow:none;background:transparent;font-size:12px}.scheme-param-table th,.scheme-param-table td{padding:3px 0;border:0;background:transparent;white-space:nowrap}.scheme-param-table th{width:72px;color:var(--muted);font-weight:650}.scheme-param-table td{font-variant-numeric:tabular-nums}.calibration-slot-note{color:#536068;font-size:12px;line-height:1.35;overflow-wrap:anywhere}.scheme-use-count{font-variant-numeric:tabular-nums}.scheme-use-count b{font-size:18px;margin-right:3px}.scheme-use-count span{color:var(--muted)}.scheme-use-count .status-pill{display:flex;width:max-content;margin-top:5px}.calibration-slot-edit .row-actions{gap:5px}.calibration-generation-settings{display:flex;gap:5px 10px;flex-wrap:wrap;margin:6px 0 8px;color:var(--muted);font-size:12px}.calibration-generation-settings span{display:inline-flex;align-items:center;min-height:24px;padding:0 8px;border:1px solid #e2ebe8;border-radius:999px;background:#fbfdfc}.calibration-generation-settings b{margin-left:4px;color:#46545c}.sample-coverage-compact{margin:8px 0 10px;padding:8px 10px;border:1px solid #eef3f1;border-radius:6px;background:#fbfdfc}.sample-coverage-compact .diagnostic-head{margin-bottom:6px}.coverage-metric-row{display:grid;grid-template-columns:repeat(4,minmax(120px,1fr));gap:6px 10px}.coverage-metric-row .diagnostic-metric{padding:0}.coverage-metric-row .diagnostic-metric span{font-size:11px}.coverage-metric-row .diagnostic-metric strong{font-size:15px}.coverage-foot{display:flex;align-items:center;gap:4px 12px;flex-wrap:wrap;margin-top:6px;padding-top:6px;border-top:1px solid #eef3f1;color:var(--muted);font-size:11px;font-variant-numeric:tabular-nums}.coverage-foot b{color:#52616b;font-weight:650}.generated-scheme-result{margin-top:10px}.generated-scheme-layout{display:grid;grid-template-columns:1fr;gap:12px;align-items:start}.generated-result-main{min-width:0}.generated-scheme-table,.generated-residual-table{table-layout:fixed;margin:0 0 8px;border:0;border-radius:0;box-shadow:none;background:transparent}.generated-scheme-table th,.generated-scheme-table td,.generated-residual-table th,.generated-residual-table td{white-space:nowrap}.generated-note{margin:8px 0 0;color:#536068;font-size:12px;line-height:1.45}.generated-result-actions{align-items:flex-end}.inline-form{display:flex;align-items:end;gap:6px;flex-wrap:wrap}.generated-name-field input{width:190px}.scheme-edit-panel{overflow:visible}.scheme-edit-form{display:block;margin:0;max-width:940px}.scheme-edit-warning{display:block;margin:0 0 12px}.scheme-edit-section{padding:0 0 12px;margin:0 0 14px;border-bottom:1px solid #eef2f1}.scheme-edit-section:last-of-type{margin-bottom:8px}.scheme-edit-section h3{margin:0 0 10px;padding:0;border:0}.scheme-edit-grid{display:grid;grid-template-columns:repeat(12,1fr);gap:10px 12px;align-items:start}.scheme-span-4{grid-column:span 4}.scheme-span-12{grid-column:1/-1}.scheme-edit-meta{display:flex;gap:6px;flex-wrap:wrap;color:var(--muted);font-size:12px}.scheme-edit-meta span{display:inline-flex;align-items:center;min-height:22px;padding:0 8px;border-radius:999px;background:#f3f6f5}.compact-field{display:block;margin:0}.compact-field span{display:block;margin:0 0 4px;color:var(--muted);font-size:12px;font-weight:650;line-height:1.15}.compact-field input{width:100%;height:34px;min-height:34px;margin:0;padding:0 8px;box-sizing:border-box;font:inherit}.estimator-input-row{display:flex!important;align-items:stretch;width:100%;margin:0!important}.estimator-input-row input{flex:1 1 auto;min-width:0;margin:0;text-align:right;border-top-right-radius:0;border-bottom-right-radius:0}.unit-label{display:inline-flex!important;align-items:center;justify-content:center;min-width:42px;margin:0!important;padding:0 9px;border:1px solid var(--line);border-left:0;border-radius:0 6px 6px 0;background:#f7f9fa;color:var(--muted);font-size:12px;font-weight:650;box-sizing:border-box}.scheme-edit-field input[type=number]{text-align:right}.scheme-edit-actions{padding-top:2px}");
+    Esp32BaseWeb::sendChunk(".generated-scheme-layout{grid-template-columns:minmax(0,1fr) minmax(230px,280px)}.generated-measure-panel,.metering-trial-form{display:grid;gap:8px;min-width:0;margin:0;padding:10px;border:1px solid #dce8e5;border-radius:6px;background:#fbfdfc}.metering-trial-modal,.scheme-detail-modal{display:none;position:fixed;inset:0;z-index:20;align-items:center;justify-content:center;padding:16px;background:rgba(15,31,35,.28)}.metering-trial-modal.is-open,.scheme-detail-modal.is-open{display:flex}.metering-trial-card,.scheme-detail-card{width:min(760px,100%);max-height:calc(100vh - 32px);overflow:auto;padding:12px;border:1px solid #dce8e5;border-radius:8px;background:#fff;box-shadow:0 8px 26px rgba(15,31,35,.18)}.scheme-detail-card{width:min(760px,100%)}.metering-trial-card .panel-head,.scheme-detail-card .panel-head{margin-bottom:8px}.trial-estimator-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.trial-estimator-panel{display:grid;gap:8px;min-width:0;padding:10px;border:1px solid #edf2f1;border-radius:6px;background:#fff}.trial-estimator-panel h4{margin:0;color:#2f3d45;font-size:14px;line-height:1.2}.estimate-results{display:grid;grid-template-columns:1fr;gap:6px}.estimate-results div{display:flex;align-items:baseline;justify-content:space-between;gap:8px;min-height:28px;padding:5px 8px;border:1px solid #edf2f1;border-radius:6px;background:#fff}.estimate-results span{color:var(--muted);font-size:12px;font-weight:650}.estimate-results strong{font-size:16px;font-weight:750;font-variant-numeric:tabular-nums;white-space:nowrap}.scheme-detail-kv{margin:0;border:0;border-radius:0;box-shadow:none}.scheme-detail-kv td{overflow-wrap:anywhere}@media(max-width:720px){.trial-estimator-grid{grid-template-columns:1fr}}");
     Esp32BaseWeb::sendChunk(".active-metering-card{overflow:visible}.active-metering-name{margin:2px 0 0;color:#22313a;font-size:18px;font-weight:750;line-height:1.25}.active-metering-metrics{grid-template-columns:repeat(auto-fit,minmax(96px,1fr));display:grid;gap:7px;margin-top:10px}.generated-summary-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(128px,1fr));gap:8px;margin-top:10px}.metering-metric,.generated-summary-card{min-width:0;padding:7px 8px;border:1px solid #e1ebe8;border-radius:6px;background:#fbfdfc}.metering-metric span,.generated-summary-card span{display:block;margin-bottom:3px;color:var(--muted);font-size:11px;font-weight:650}.metering-metric strong,.generated-summary-card strong{display:block;color:#22313a;font-size:14px;font-weight:760;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.generated-summary-card strong{white-space:normal;overflow-wrap:anywhere}.active-metering-actions{margin-top:10px}.metering-scheme-table{table-layout:auto;min-width:100%}.metering-scheme-table th:nth-child(1){width:20%}.metering-scheme-table th:nth-child(2){width:11%}.metering-scheme-table th:nth-child(3){width:17%}.metering-scheme-table th:nth-child(4){width:18%}.metering-scheme-table th:nth-child(5){width:20%}.metering-scheme-table th:nth-child(6){width:14%}.metering-scheme-table td{vertical-align:top;white-space:normal}.metering-scheme-table td:nth-child(3),.metering-scheme-table td:nth-child(4),.metering-scheme-table td:nth-child(5){font-size:12px;color:#3f4d54}.scheme-param-lines{display:grid;gap:3px}.scheme-param-lines span{display:block;white-space:nowrap}.metering-scheme-table small{display:block;margin-top:3px;color:var(--muted);font-size:11px}.metering-scheme-table tr.is-active td{background:#f7fcfa}.metering-scheme-table tr.scheme-created-row td{background:#fffaf0}.scheme-row-actions{flex-wrap:wrap;gap:5px}.scheme-row-actions form{display:inline-flex}.long-term-sample-table{margin-top:8px}.long-term-sample-table td,.long-term-sample-table th{white-space:nowrap}.generated-summary-grid{margin-bottom:8px}.generated-residual-table{table-layout:fixed;margin:8px 0;border:0;border-radius:0;box-shadow:none;background:transparent}.generated-residual-table th,.generated-residual-table td{white-space:nowrap}");
     Esp32BaseWeb::sendChunk("table{width:100%;border-collapse:separate;border-spacing:0;margin:0 0 12px;overflow:hidden;font-size:13px}td,th{padding:8px 10px;border-bottom:1px solid #edf1f0;text-align:left;vertical-align:middle}tr:last-child td{border-bottom:0}th{background:#f8faf9;color:var(--muted);font-weight:700}.filters-table th:first-child{width:22%}.filters-table th:last-child{width:150px}.kv th{width:26%}");
     Esp32BaseWeb::sendChunk(".pager{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin:0 0 10px}.pager-links{display:flex;align-items:center;gap:5px;flex-wrap:wrap}.page-current{background:var(--accent-soft);color:#17635b;border-color:#cfe4dc}.page-disabled{color:#9aa3aa;background:#f4f6f6;pointer-events:none}.page-size{display:flex;align-items:center;gap:6px;color:var(--muted);font-size:13px;line-height:32px}.page-size select{width:auto;min-width:80px}.page-size select,.page-size input{height:32px;min-height:32px;margin:0;padding:0 9px;box-sizing:border-box;font:inherit;line-height:32px}.page-size input[name=pageNo]{width:58px;text-align:center}");
     Esp32BaseWeb::sendChunk(".scheme-created-row{background:#fffdf4}.disabled-row{background:#f7f8f8;color:#8a949b}.disabled-row td{color:#8a949b}.disabled-row .status-pill{background:#eef0f0;color:#7b858d}.disabled-row a{color:#6f7a82}"
                             "@media(max-width:1040px){.records-top-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.records-top-grid .records-diagnostic-panel{border-left:1px solid #edf2f1;border-top:1px solid #edf2f1}.records-top-grid .records-diagnostic-panel:nth-child(odd){border-left:0}.records-top-grid .records-diagnostic-panel:nth-child(-n+2){border-top:0}.calibration-session-layout{grid-template-columns:1fr}.metering-active-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}"
                             "@media(max-width:820px){.machine-main,.machine-main.compact,.today-layout{grid-template-columns:1fr}.machine-hero{min-height:0}.machine-hero strong{font-size:26px}.machine-hero-head{grid-template-columns:1fr;align-items:start;gap:5px}.machine-screen-footer{position:static;margin-top:8px}.machine-progress{margin-bottom:0}.machine-task-grid{grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}}"
-                            "@media(max-width:720px){body{padding:10px}.form-grid,.scheme-edit-grid,.generated-scheme-layout,.trial-estimator-grid,.temperature-calibration-summary,.tds-calibration-summary{grid-template-columns:1fr}.span-2,.span-3,.span-4,.span-5,.span-6,.span-8,.span-12,.scheme-span-4,.scheme-span-12{grid-column:1/-1}.usage-grid{grid-template-columns:1fr}.daily-chart svg{min-width:680px}}"
+                            "@media(max-width:720px){body{padding:10px}.form-grid,.scheme-edit-grid,.generated-scheme-layout,.temperature-calibration-summary,.tds-calibration-summary{grid-template-columns:1fr}.span-2,.span-3,.span-4,.span-5,.span-6,.span-8,.span-12,.scheme-span-4,.scheme-span-12{grid-column:1/-1}.usage-grid{grid-template-columns:1fr}.daily-chart svg{min-width:680px}}"
                             "@media(max-width:620px){.records-top-grid{grid-template-columns:1fr}.records-top-grid .records-diagnostic-panel{border-left:0;border-top:1px solid #edf2f1}.records-top-grid .records-diagnostic-panel:first-child{border-top:0}.sample-calibration-form{grid-template-columns:1fr}.calibration-kpi-grid{grid-template-columns:1fr}.metering-active-grid{grid-template-columns:1fr}.metering-active-head{align-items:flex-start;flex-direction:column}}"
                             "@media(max-width:520px){.grid,.metric-grid,.diagnostic-metric-grid,.diagnostic-metric-grid.three,.coverage-metric-row,.filter-cards,.machine-task-grid{grid-template-columns:1fr}.metric-card{min-height:0}.pager{align-items:flex-start}.page-size{width:100%}.kv th{width:34%}}");
 }
@@ -3359,10 +2868,6 @@ const char* resultText(WaterResult result) {
             return "暂停超时";
     }
     return "未知";
-}
-
-void sendTextInput(const char* label, const char* name, unsigned long value) {
-    sendFmt("<label class='field'><span>%s</span><input name='%s' value='%lu'></label>", label, name, value);
 }
 
 void sendVolumeInput(const char* label, const char* name, std::uint32_t value) {
@@ -3556,13 +3061,6 @@ void sendMachineStatusItemNote(const char* valueId, const char* noteId, const ch
             note);
 }
 
-void sendMachineStatusPlainItem(const char* valueId, const char* label, const char* value) {
-    sendFmt("<span class='machine-status-item'><span>%s</span><span id='%s' class='machine-status-value'>%s</span></span>",
-            label,
-            valueId,
-            value);
-}
-
 void sendMachineStatusNoteOnlyItem(const char* noteId, const char* label, const char* note) {
     sendFmt("<span class='machine-status-item machine-status-note-only'><span>%s</span><small id='%s' class='machine-status-note'>%s</small></span>",
             label,
@@ -3618,29 +3116,6 @@ void formatMillisecondsSecondsCompact(std::uint32_t durationMs, char* out, std::
                   "%lu.%02luS",
                   static_cast<unsigned long>(centiSeconds / 100U),
                   static_cast<unsigned long>(centiSeconds % 100U));
-}
-
-std::size_t enabledPresetCount(const SystemConfig& config) {
-    std::size_t count = 0;
-    for (std::size_t i = 0; i < kPresetCount; ++i) {
-        if (config.presets[i].enabled) {
-            ++count;
-        }
-    }
-    return count;
-}
-
-std::size_t enabledPresetOrdinal(const SystemConfig& config, std::size_t index) {
-    if (index >= kPresetCount || !config.presets[index].enabled) {
-        return 0;
-    }
-    std::size_t ordinal = 0;
-    for (std::size_t i = 0; i <= index && i < kPresetCount; ++i) {
-        if (config.presets[i].enabled) {
-            ++ordinal;
-        }
-    }
-    return ordinal;
 }
 
 void formatPresetEstimate(const PresetConfig& preset,
@@ -5776,19 +5251,11 @@ bool readTdsCalibrationInput(std::uint16_t& referencePpm, bool allowZero) {
 bool readTemperatureCalibrationInput(std::int16_t& referenceCentiC) {
     char text[32]{};
     float referenceC = 0.0f;
-    if (getParam("referenceC", text, sizeof(text))) {
-        if (!parseFloat(text, referenceC) || referenceC < 0.0f || referenceC > 90.0f) {
-            return false;
-        }
-        referenceCentiC = static_cast<std::int16_t>(referenceC * 100.0f + 0.5f);
-        return true;
-    }
-
-    std::uint32_t legacy = 0;
-    if (!getParam("referenceCentiC", text, sizeof(text)) || !parseU32(text, legacy) || legacy > 9000) {
+    if (!getParam("referenceC", text, sizeof(text)) || !parseFloat(text, referenceC) || referenceC < 0.0f ||
+        referenceC > 90.0f) {
         return false;
     }
-    referenceCentiC = static_cast<std::int16_t>(legacy);
+    referenceCentiC = static_cast<std::int16_t>(referenceC * 100.0f + 0.5f);
     return true;
 }
 
@@ -5868,14 +5335,6 @@ void handleCalibrationPost() {
         redirectTemperatureCalibrationResult("temperature");
         return;
     }
-    if (std::strcmp(text, "tds_start_single") == 0 ||
-        std::strcmp(text, "tds_start_low") == 0 ||
-        std::strcmp(text, "tds_start_high") == 0 ||
-        std::strcmp(text, "tds_cancel") == 0 ||
-        std::strcmp(text, "tds_save") == 0) {
-        redirectTdsCalibrationFailure("invalid_action");
-        return;
-    }
     if (std::strcmp(text, "tds_start_session") == 0) {
         if (!g_context.app || waterTaskActive()) {
             redirectTdsCalibrationFailure("busy");
@@ -5937,15 +5396,7 @@ void handleCalibrationPost() {
                                     "invalid_state");
         return;
     }
-    if (std::strcmp(text, "calibrate") == 0) {
-        handleRecordCalibrationApi();
-        return;
-    }
     if (std::strcmp(text, "generate_segmented") == 0) {
-        Esp32BaseWeb::redirectSeeOther("/faucet/calibration/flow?error=invalid_action");
-        return;
-    }
-    if (std::strcmp(text, "save_generated_scheme") == 0) {
         Esp32BaseWeb::redirectSeeOther("/faucet/calibration/flow?error=invalid_action");
         return;
     }
@@ -6062,10 +5513,6 @@ void handleFlowCalibrationPost() {
         handleGenerateSegmentedCalibrationApi();
         return;
     }
-    if (std::strcmp(text, "save_generated_scheme") == 0) {
-        Esp32BaseWeb::redirectSeeOther("/faucet/calibration/flow?error=invalid_action");
-        return;
-    }
     if (std::strcmp(text, "discard_generated_scheme") == 0) {
         handleDiscardGeneratedSchemeApi();
         return;
@@ -6076,10 +5523,6 @@ void handleFlowCalibrationPost() {
     }
     if (std::strcmp(text, "edit_metering_scheme") == 0) {
         handleEditMeteringSchemeApi();
-        return;
-    }
-    if (std::strcmp(text, "set_active_metering_scheme") == 0) {
-        Esp32BaseWeb::redirectSeeOther("/faucet/calibration/flow?error=invalid_action");
         return;
     }
     if (std::strcmp(text, "delete_metering_scheme") == 0) {
@@ -6225,16 +5668,6 @@ void redirectFlowCalibrationResult(bool ok, const char* success, const char* fai
     }
 }
 
-void redirectMeteringResult(bool ok, const char* success) {
-    if (ok) {
-        char url[96]{};
-        std::snprintf(url, sizeof(url), "/faucet/calibration/flow?saved=%s", success ? success : "1");
-        Esp32BaseWeb::redirectSeeOther(url);
-    } else {
-        Esp32BaseWeb::redirectSeeOther("/faucet/calibration/flow?error=invalid_value");
-    }
-}
-
 void handleStatusApi() {
     if (!Esp32BaseWeb::checkAuth() || !requireContext()) {
         return;
@@ -6368,16 +5801,8 @@ void handleRecordsApi() {
             Esp32BaseWeb::sendJson(400, "{\"error\":\"missing_action\"}");
             return;
         }
-        if (std::strcmp(text, "calibrate") == 0) {
-            handleRecordCalibrationApi();
-            return;
-        }
         if (std::strcmp(text, "generate_segmented") == 0) {
             handleGenerateSegmentedCalibrationApi();
-            return;
-        }
-        if (std::strcmp(text, "save_generated_scheme") == 0) {
-            Esp32BaseWeb::sendJson(400, "{\"error\":\"invalid_action\"}");
             return;
         }
         if (std::strcmp(text, "discard_generated_scheme") == 0) {
@@ -6390,10 +5815,6 @@ void handleRecordsApi() {
         }
         if (std::strcmp(text, "edit_metering_scheme") == 0) {
             handleEditMeteringSchemeApi();
-            return;
-        }
-        if (std::strcmp(text, "set_active_metering_scheme") == 0) {
-            Esp32BaseWeb::sendJson(400, "{\"error\":\"invalid_action\"}");
             return;
         }
         if (std::strcmp(text, "delete_metering_scheme") == 0) {
@@ -6498,69 +5919,6 @@ void handleStatsApi() {
     const std::uint32_t totalMl = g_context.app->snapshot().statistics.totalMl;
     sendJsonBuffer(writeUsageSummaryJson(summary, totalMl, json, 32768), json);
     delete[] json;
-}
-
-void handleRecordCalibrationApi() {
-    if (!Esp32BaseWeb::checkAuth() || !requireContext()) {
-        return;
-    }
-    if (!Esp32BaseWeb::isMethod(Esp32BaseWeb::METHOD_POST)) {
-        Esp32BaseWeb::sendJson(405, "{\"error\":\"method_not_allowed\"}");
-        return;
-    }
-    const bool ajax = Esp32BaseWeb::hasParam("ajax");
-    auto fail = [ajax](int status, const char* json, const char* redirectUrl) {
-        if (ajax) {
-            Esp32BaseWeb::sendJson(status, json);
-        } else {
-            Esp32BaseWeb::redirectSeeOther(redirectUrl);
-        }
-    };
-    auto ok = [ajax]() {
-        if (ajax) {
-            Esp32BaseWeb::sendJson(200, "{\"ok\":true}");
-        } else {
-            Esp32BaseWeb::redirectSeeOther("/faucet/calibration?saved=actual");
-        }
-    };
-    if (waterTaskActive()) {
-        fail(409, "{\"error\":\"busy\"}", "/faucet/calibration?error=busy");
-        return;
-    }
-
-    WaterPulseTrace trace{};
-    std::uint32_t traceId = 0;
-    if (!readCalibrationTraceFromRequest(trace, traceId)) {
-        fail(404, "{\"error\":\"no_calibration_record\"}", "/faucet/calibration?error=no_calibration_record");
-        return;
-    }
-
-    char text[32]{};
-    std::uint32_t actualMl = 0;
-    if (!getParam("actualMl", text, sizeof(text)) || !parseU32(text, actualMl)) {
-        fail(400, "{\"error\":\"invalid_value\"}", "/faucet/calibration?error=invalid_value");
-        return;
-    }
-    if (actualMl < kMinVolumePresetMl || actualMl > kMaxVolumePresetMl) {
-        fail(400, "{\"error\":\"invalid_value\"}", "/faucet/calibration?error=invalid_value");
-        return;
-    }
-    WaterRecord record = trace.record;
-    WaterRecordCalibration calibration{};
-    const bool calibrated = findRecordCalibration(record, calibration);
-    const std::uint32_t defaultActualMl = calibrated ? calibration.actualMl : trace.record.volumeMl;
-    (void)defaultActualMl;
-
-    if (!markCalibrationTraceActual(traceId, trace.record, actualMl)) {
-        fail(500, "{\"error\":\"save_failed\"}", "/faucet/calibration?error=save_failed");
-        return;
-    }
-    if (!saveRecordActualMeasurement(record, actualMl)) {
-        fail(500, "{\"error\":\"calibration_mark_failed\"}", "/faucet/calibration?error=calibration_mark_failed");
-        return;
-    }
-    syncTraceActualMeasurement(record, actualMl);
-    ok();
 }
 
 void handleGenerateSegmentedCalibrationApi() {
@@ -6847,69 +6205,46 @@ void handleFiltersResetApi() {
 }
 
 Esp32BaseWeb::Handler handlerFor(const FaucetWebRoute& route) {
-    if (route.kind == FaucetWebRouteKind::Page) {
-        if (std::strcmp(route.path, "/index") == 0) {
+    switch (route.handler) {
+        case FaucetWebHandler::HomePage:
             return handleFaucetPage;
-        }
-        if (std::strcmp(route.path, "/faucet/presets") == 0) {
-            return handlePresetsPage;
-        }
-        if (std::strcmp(route.path, "/faucet/records") == 0) {
+        case FaucetWebHandler::RecordsPage:
             return handleRecordsPage;
-        }
-        if (std::strcmp(route.path, "/faucet/calibration") == 0) {
-            return handleCalibrationPage;
-        }
-        if (std::strcmp(route.path, "/faucet/calibration/flow") == 0) {
-            return handleFlowCalibrationPage;
-        }
-        if (std::strcmp(route.path, "/faucet/stats") == 0) {
+        case FaucetWebHandler::StatsPage:
             return handleStatsPage;
-        }
-        if (std::strcmp(route.path, "/faucet/filters") == 0) {
+        case FaucetWebHandler::PresetsPage:
+            return handlePresetsPage;
+        case FaucetWebHandler::FiltersPage:
             return handleFiltersPage;
-        }
-        return handleFaucetPage;
-    }
-    if (std::strcmp(route.path, "/api/faucet/status") == 0) {
-        return handleStatusApi;
-    }
-    if (std::strcmp(route.path, "/api/faucet/today") == 0) {
-        return handleTodayOverviewApi;
-    }
-    if (std::strcmp(route.path, "/faucet/app.css") == 0) {
-        return handleAppCss;
-    }
-    if (std::strcmp(route.path, "/faucet/filters/edit") == 0) {
-        return handleFilterEditPage;
-    }
-    if (std::strcmp(route.path, "/faucet/records/detail") == 0 ||
-        std::strcmp(route.path, "/faucet/calibration/detail") == 0) {
-        return handleRecordDetailPage;
-    }
-    if (std::strcmp(route.path, "/faucet/calibration") == 0) {
-        return handleCalibrationPost;
-    }
-    if (std::strcmp(route.path, "/faucet/calibration/flow") == 0) {
-        return route.method == FaucetWebMethod::Get ? handleFlowCalibrationPage : handleFlowCalibrationPost;
-    }
-    if (std::strcmp(route.path, "/faucet/calibration/samples") == 0) {
-        return handleCalibrationPage;
-    }
-    if (std::strcmp(route.path, "/api/faucet/presets") == 0) {
-        return handlePresetsApi;
-    }
-    if (std::strcmp(route.path, "/api/faucet/records") == 0) {
-        return handleRecordsApi;
-    }
-    if (std::strcmp(route.path, "/api/faucet/stats") == 0) {
-        return handleStatsApi;
-    }
-    if (std::strcmp(route.path, "/api/faucet/filters") == 0) {
-        return handleFiltersApi;
-    }
-    if (std::strcmp(route.path, "/api/faucet/filters/reset") == 0) {
-        return handleFiltersResetApi;
+        case FaucetWebHandler::CalibrationPage:
+        case FaucetWebHandler::CalibrationSamples:
+            return handleCalibrationPage;
+        case FaucetWebHandler::AppCss:
+            return handleAppCss;
+        case FaucetWebHandler::CalibrationPost:
+            return handleCalibrationPost;
+        case FaucetWebHandler::FlowCalibrationPage:
+            return handleFlowCalibrationPage;
+        case FaucetWebHandler::FlowCalibrationPost:
+            return handleFlowCalibrationPost;
+        case FaucetWebHandler::FilterEditPage:
+            return handleFilterEditPage;
+        case FaucetWebHandler::RecordDetailPage:
+            return handleRecordDetailPage;
+        case FaucetWebHandler::StatusApi:
+            return handleStatusApi;
+        case FaucetWebHandler::TodayOverviewApi:
+            return handleTodayOverviewApi;
+        case FaucetWebHandler::PresetsApi:
+            return handlePresetsApi;
+        case FaucetWebHandler::RecordsApi:
+            return handleRecordsApi;
+        case FaucetWebHandler::StatsApi:
+            return handleStatsApi;
+        case FaucetWebHandler::FiltersApi:
+            return handleFiltersApi;
+        case FaucetWebHandler::FiltersResetApi:
+            return handleFiltersResetApi;
     }
     return handleApi;
 }
@@ -6936,7 +6271,7 @@ bool registerFaucetWeb() {
             ok = false;
             continue;
         }
-        if (routes[i].kind == FaucetWebRouteKind::Page && routes[i].method == FaucetWebMethod::Get) {
+        if (routes[i].title && routes[i].method == FaucetWebMethod::Get) {
             ok = Esp32BaseWeb::addPage(routes[i].path, routes[i].title, handlerFor(routes[i])) && ok;
         } else {
             ok = Esp32BaseWeb::addRoute(routes[i].path, toBaseMethod(routes[i].method), handlerFor(routes[i])) && ok;

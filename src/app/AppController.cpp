@@ -143,59 +143,18 @@ AppController::AppController(const SystemConfig& config,
                              CalibrationSessionTraceStore* calibrationSessionTraces,
                              CalibrationLongTermSampleStore* calibrationLongTermSamples,
                              WaterSensorManager* waterSensors)
-    : config_(config),
-      activeMeteringScheme_(defaultRuntimeMeteringScheme()),
-      water_(config_),
-      localMode_(LocalUiMode::Normal),
-      buttons_(),
-      flow_(activeMeteringScheme_.params, config_.pulseMinIntervalUs),
-      valve_(config_.valveFullPowerSec, config_.valveHoldDutyPercent),
-      statistics_(statistics),
-      filters_(filters),
-      records_(records),
-      recordCalibrations_(recordCalibrations),
-      meteringSchemes_(nullptr),
-      pulseTraces_(pulseTraces),
-      waterSensors_(waterSensors),
-      calibrationSessions_(calibrationSessions),
-      calibrationSessionTraces_(calibrationSessionTraces),
-      calibrationLongTermSamples_(calibrationLongTermSamples),
-      calibrationSession_{},
-      activeTraceId_(0),
-      activeTraceStartUs_(0),
-      lastFlowVolumeMl_(0),
-      currentFlowMlPerMin_(0),
-      instantFlowMlPerMin_(0),
-      windowFlowMlPerMin_(0),
-      displayFlowMlPerMin_(0),
-      runAverageFlowMlPerMin_(0),
-      activeStartTimeSec_(0),
-      activeStartTimeSynced_(false),
-      activeStartBootId_(0),
-      lastValveDesiredOpen_(false),
-      calibrationValveOpen_(false),
-      lastRecordWriteOk_(true),
-      valveOutputSink_(nullptr),
-      persistenceDirty_(false),
-      configDirty_(false),
-      pendingBeep_(BeepPattern::None),
-      flowDroppedPulses_(0),
-      resultDisplayStartMs_(0),
-      resultOkHoldStartMs_(0),
-      resultOkHoldActive_(false),
-      resultOkCalibrationEntered_(false),
-      adjustmentStepMl_(config_.volumeAdjustStepMl),
-      timeAdjustmentStepSec_(config_.timeAdjustStepSec),
-      localCalibrationActualMl_(0),
-      localCalibrationStepMl_(kLocalRecordCalibrationStepMl),
-      localCalibrationIgnoreOkUntilRelease_(false),
-      localCalibrationOkReleaseSeen_(false),
-      localCalibrationOkReleaseStartMs_(0),
-      lastResultRecordValid_(false),
-      lastResultRecord_{} {
-    sanitizeConfig(config_);
-    restoreCalibrationSession();
-}
+    : AppController(config,
+                    defaultRuntimeMeteringScheme(),
+                    statistics,
+                    filters,
+                    records,
+                    nullptr,
+                    pulseTraces,
+                    recordCalibrations,
+                    calibrationSessions,
+                    calibrationSessionTraces,
+                    calibrationLongTermSamples,
+                    waterSensors) {}
 
 AppController::AppController(const SystemConfig& config,
                              const MeteringSchemeRecord& activeScheme,
@@ -203,6 +162,31 @@ AppController::AppController(const SystemConfig& config,
                              FilterStore& filters,
                              WaterRecordWriter& records,
                              MeteringSchemeStore& meteringSchemes,
+                             WaterPulseTraceStore* pulseTraces,
+                             WaterRecordCalibrationWriter* recordCalibrations,
+                             CalibrationSessionFileStore* calibrationSessions,
+                             CalibrationSessionTraceStore* calibrationSessionTraces,
+                             CalibrationLongTermSampleStore* calibrationLongTermSamples,
+                             WaterSensorManager* waterSensors)
+    : AppController(config,
+                    activeScheme,
+                    statistics,
+                    filters,
+                    records,
+                    &meteringSchemes,
+                    pulseTraces,
+                    recordCalibrations,
+                    calibrationSessions,
+                    calibrationSessionTraces,
+                    calibrationLongTermSamples,
+                    waterSensors) {}
+
+AppController::AppController(const SystemConfig& config,
+                             const MeteringSchemeRecord& activeScheme,
+                             StatisticsStore& statistics,
+                             FilterStore& filters,
+                             WaterRecordWriter& records,
+                             MeteringSchemeStore* meteringSchemes,
                              WaterPulseTraceStore* pulseTraces,
                              WaterRecordCalibrationWriter* recordCalibrations,
                              CalibrationSessionFileStore* calibrationSessions,
@@ -220,7 +204,7 @@ AppController::AppController(const SystemConfig& config,
       filters_(filters),
       records_(records),
       recordCalibrations_(recordCalibrations),
-      meteringSchemes_(&meteringSchemes),
+      meteringSchemes_(meteringSchemes),
       pulseTraces_(pulseTraces),
       waterSensors_(waterSensors),
       calibrationSessions_(calibrationSessions),
@@ -260,7 +244,8 @@ AppController::AppController(const SystemConfig& config,
       lastResultRecordValid_(false),
       lastResultRecord_{} {
     sanitizeConfig(config_);
-    if (!activeMeteringScheme_.recordUsed || !validMeteringSchemeParameters(activeMeteringScheme_.params)) {
+    if (meteringSchemes_ &&
+        (!activeMeteringScheme_.recordUsed || !validMeteringSchemeParameters(activeMeteringScheme_.params))) {
         activeMeteringScheme_ = defaultRuntimeMeteringScheme();
         flow_.setMeteringParameters(activeMeteringScheme_.params);
     }
@@ -1136,16 +1121,7 @@ void AppController::startSelectedPreset(std::uint32_t nowMs,
         activeStartTimeSec_ = nowSeconds;
         activeStartTimeSynced_ = timeSynced;
         activeStartBootId_ = timeSynced ? 0 : bootId;
-        flow_.reset();
-        lastFlowVolumeMl_ = 0;
-        currentFlowMlPerMin_ = 0;
-        instantFlowMlPerMin_ = 0;
-        windowFlowMlPerMin_ = 0;
-        displayFlowMlPerMin_ = 0;
-        runAverageFlowMlPerMin_ = 0;
-        if (waterSensors_) {
-            waterSensors_->beginRun();
-        }
+        resetRunFlowState();
         pendingBeep_ = BeepPattern::Click;
     }
 }
@@ -1343,6 +1319,17 @@ bool AppController::beginCalibrationLocalRun(std::uint32_t nowMs,
     activeStartTimeSec_ = nowSeconds;
     activeStartTimeSynced_ = timeSynced;
     activeStartBootId_ = timeSynced ? 0 : bootId;
+    resetRunFlowState();
+    if (pulseTraces_) {
+        pulseTraces_->setRecentTraceLimit(kRecentPulseTraceCount);
+        activeTraceId_ = pulseTraces_->beginTrace(nowSeconds, config_.pulseMinIntervalUs);
+        activeTraceStartUs_ = nowUs;
+    }
+    pendingBeep_ = BeepPattern::Click;
+    return true;
+}
+
+void AppController::resetRunFlowState() {
     flow_.reset();
     lastFlowVolumeMl_ = 0;
     currentFlowMlPerMin_ = 0;
@@ -1353,13 +1340,6 @@ bool AppController::beginCalibrationLocalRun(std::uint32_t nowMs,
     if (waterSensors_) {
         waterSensors_->beginRun();
     }
-    if (pulseTraces_) {
-        pulseTraces_->setRecentTraceLimit(kRecentPulseTraceCount);
-        activeTraceId_ = pulseTraces_->beginTrace(nowSeconds, config_.pulseMinIntervalUs);
-        activeTraceStartUs_ = nowUs;
-    }
-    pendingBeep_ = BeepPattern::Click;
-    return true;
 }
 
 std::uint8_t AppController::selectCalibrationSessionTraceSlot() const {

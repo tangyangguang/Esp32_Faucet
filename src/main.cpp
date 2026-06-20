@@ -7,6 +7,7 @@
 #include "app/CalibrationSampleStore.h"
 #include "app/CalibrationSessionStore.h"
 #include "app/ConfigStore.h"
+#include "app/DateTimeUtils.h"
 #include "app/DisplayPresenter.h"
 #include "app/Esp32BaseConfigBackend.h"
 #include "app/Esp32BaseWaterRecordBackend.h"
@@ -290,27 +291,6 @@ void checkFileSystemCapacity() {
 #endif
 }
 
-bool isLeapYear(std::uint16_t year) {
-    return (year % 4U == 0 && year % 100U != 0) || year % 400U == 0;
-}
-
-std::uint16_t dayOfYear(std::uint16_t year, std::uint8_t month, std::uint8_t day) {
-    static constexpr std::uint16_t kDaysBeforeMonth[] = {0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334};
-    std::uint16_t value = kDaysBeforeMonth[month > 0 ? month - 1 : 0] + day - 1U;
-    if (month > 2 && isLeapYear(year)) {
-        ++value;
-    }
-    return value;
-}
-
-std::uint32_t daysSince2000(std::uint16_t year, std::uint8_t month, std::uint8_t day) {
-    std::uint32_t days = 0;
-    for (std::uint16_t y = 2000; y < year; ++y) {
-        days += isLeapYear(y) ? 366UL : 365UL;
-    }
-    return days + dayOfYear(year, month, day);
-}
-
 std::uint32_t localSecondsFromUnix(std::uint32_t timestamp) {
     time_t value = static_cast<time_t>(timestamp);
     struct tm localTime {};
@@ -318,8 +298,12 @@ std::uint32_t localSecondsFromUnix(std::uint32_t timestamp) {
     const std::uint16_t year = static_cast<std::uint16_t>(localTime.tm_year + 1900);
     const std::uint8_t month = static_cast<std::uint8_t>(localTime.tm_mon + 1);
     const std::uint8_t day = static_cast<std::uint8_t>(localTime.tm_mday);
-    return daysSince2000(year, month, day) * 86400UL + static_cast<std::uint32_t>(localTime.tm_hour) * 3600UL +
-           static_cast<std::uint32_t>(localTime.tm_min) * 60UL + static_cast<std::uint32_t>(localTime.tm_sec);
+    return faucet::secondsSince2000(year,
+                                    month,
+                                    day,
+                                    static_cast<std::uint8_t>(localTime.tm_hour),
+                                    static_cast<std::uint8_t>(localTime.tm_min),
+                                    static_cast<std::uint8_t>(localTime.tm_sec));
 }
 
 std::uint32_t currentSeconds() {
@@ -370,30 +354,11 @@ void applyRuntimeSettings(const faucet::SystemConfig& config) {
 
 bool currentPeriodKeys(std::uint32_t nowSeconds, faucet::PeriodKeys& keys) {
     if (nowSeconds >= faucet::kMinRealDateSeconds) {
-        std::uint32_t day = nowSeconds / 86400UL;
-        std::uint16_t year = 2000;
-        while (true) {
-            const std::uint16_t yearDays = isLeapYear(year) ? 366 : 365;
-            if (day < yearDays) {
-                break;
-            }
-            day -= yearDays;
-            ++year;
-        }
-        std::uint8_t month = 1;
-        static constexpr std::uint8_t kMonthDays[] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
-        while (month <= 12) {
-            std::uint8_t monthDays = kMonthDays[month - 1];
-            if (month == 2 && isLeapYear(year)) {
-                monthDays = 29;
-            }
-            if (day < monthDays) {
-                break;
-            }
-            day -= monthDays;
-            ++month;
-        }
-        const std::uint8_t monthDay = static_cast<std::uint8_t>(day + 1);
+        const std::uint32_t day = nowSeconds / 86400UL;
+        std::uint16_t year = 0;
+        std::uint8_t month = 0;
+        std::uint8_t monthDay = 0;
+        faucet::dateFromDayIndex(day, year, month, monthDay);
         const std::uint32_t dayKey =
             static_cast<std::uint32_t>(year) * 10000UL + static_cast<std::uint32_t>(month) * 100UL + monthDay;
         const std::uint32_t weekKey = nowSeconds / 86400UL / 7UL;
@@ -407,8 +372,7 @@ bool currentPeriodKeys(std::uint32_t nowSeconds, faucet::PeriodKeys& keys) {
         return false;
     }
     const std::uint32_t rtcSeconds =
-        daysSince2000(now.year, now.month, now.day) * 86400UL + static_cast<std::uint32_t>(now.hour) * 3600UL +
-        static_cast<std::uint32_t>(now.minute) * 60UL + static_cast<std::uint32_t>(now.second);
+        faucet::secondsSince2000(now.year, now.month, now.day, now.hour, now.minute, now.second);
     if (rtcSeconds < faucet::kMinRealDateSeconds) {
         keys = faucet::PeriodKeys{0, 0, 0};
         return false;
@@ -416,7 +380,7 @@ bool currentPeriodKeys(std::uint32_t nowSeconds, faucet::PeriodKeys& keys) {
 
     const std::uint32_t dayKey = static_cast<std::uint32_t>(now.year) * 10000UL +
                                  static_cast<std::uint32_t>(now.month) * 100UL + now.day;
-    const std::uint32_t weekKey = daysSince2000(now.year, now.month, now.day) / 7UL;
+    const std::uint32_t weekKey = faucet::daysSince2000(now.year, now.month, now.day) / 7UL;
     const std::uint32_t monthKey =
         static_cast<std::uint32_t>(now.year) * 100UL + static_cast<std::uint32_t>(now.month);
     keys = faucet::PeriodKeys{dayKey, weekKey, monthKey};

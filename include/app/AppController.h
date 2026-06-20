@@ -166,6 +166,19 @@ public:
     const MeteringSchemeRecord& activeMeteringScheme() const;
 
 private:
+    AppController(const SystemConfig& config,
+                  const MeteringSchemeRecord& activeScheme,
+                  StatisticsStore& statistics,
+                  FilterStore& filters,
+                  WaterRecordWriter& records,
+                  MeteringSchemeStore* meteringSchemes,
+                  WaterPulseTraceStore* pulseTraces,
+                  WaterRecordCalibrationWriter* recordCalibrations,
+                  CalibrationSessionFileStore* calibrationSessions,
+                  CalibrationSessionTraceStore* calibrationSessionTraces,
+                  CalibrationLongTermSampleStore* calibrationLongTermSamples,
+                  WaterSensorManager* waterSensors);
+
     void handleButtonEvent(ButtonEvent event,
                            std::uint32_t nowMs,
                            std::uint32_t nowUs,
@@ -196,6 +209,7 @@ private:
                                   std::uint32_t nowSeconds,
                                   bool timeSynced,
                                   std::uint32_t bootId);
+    void resetRunFlowState();
     std::uint8_t selectCalibrationSessionTraceSlot() const;
     void persistCalibrationPendingAttempt(const WaterRecord& record, std::uint32_t nowSeconds);
     void syncFlow(std::uint32_t nowUs);

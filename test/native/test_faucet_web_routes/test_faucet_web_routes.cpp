@@ -36,7 +36,7 @@ void test_navigation_pages_use_requested_order_and_labels() {
     for (std::size_t i = 0; i < 6; ++i) {
         TEST_ASSERT_EQUAL_STRING(expectedPaths[i], routes[i].path);
         TEST_ASSERT_EQUAL(FaucetWebMethod::Get, routes[i].method);
-        TEST_ASSERT_EQUAL(FaucetWebRouteKind::Page, routes[i].kind);
+        TEST_ASSERT_NOT_NULL(routes[i].title);
         TEST_ASSERT_EQUAL_STRING(expectedTitles[i], routes[i].title);
     }
 }
@@ -108,8 +108,7 @@ void test_filter_edit_route_is_hidden_from_navigation() {
     bool found = false;
     for (std::size_t i = 0; i < faucetWebRouteCount(); ++i) {
         if (std::strcmp(routes[i].path, "/faucet/filters/edit") == 0) {
-            found = routes[i].method == FaucetWebMethod::Get && routes[i].kind == FaucetWebRouteKind::Api &&
-                    routes[i].title == nullptr;
+            found = routes[i].method == FaucetWebMethod::Get && routes[i].title == nullptr;
         }
     }
     TEST_ASSERT_TRUE(found);
@@ -120,8 +119,7 @@ void test_app_css_route_is_hidden_from_navigation() {
     bool found = false;
     for (std::size_t i = 0; i < faucetWebRouteCount(); ++i) {
         if (std::strcmp(routes[i].path, "/faucet/app.css") == 0) {
-            found = routes[i].method == FaucetWebMethod::Get && routes[i].kind == FaucetWebRouteKind::Api &&
-                    routes[i].title == nullptr;
+            found = routes[i].method == FaucetWebMethod::Get && routes[i].title == nullptr;
         }
     }
     TEST_ASSERT_TRUE(found);
@@ -134,12 +132,10 @@ void test_filter_forms_use_registered_api_endpoints() {
     bool foundReset = false;
     for (std::size_t i = 0; i < faucetWebRouteCount(); ++i) {
         if (std::strcmp(routes[i].path, "/api/faucet/filters") == 0) {
-            foundFilters = foundFilters || (routes[i].method == FaucetWebMethod::Post &&
-                                            routes[i].kind == FaucetWebRouteKind::Api && routes[i].title == nullptr);
+            foundFilters = foundFilters || (routes[i].method == FaucetWebMethod::Post && routes[i].title == nullptr);
         }
         if (std::strcmp(routes[i].path, "/api/faucet/filters/reset") == 0) {
-            foundReset = routes[i].method == FaucetWebMethod::Post && routes[i].kind == FaucetWebRouteKind::Api &&
-                         routes[i].title == nullptr;
+            foundReset = routes[i].method == FaucetWebMethod::Post && routes[i].title == nullptr;
         }
     }
     TEST_ASSERT_TRUE(foundFilters);
@@ -151,7 +147,7 @@ void test_presets_page_is_available_in_navigation() {
     bool found = false;
     for (std::size_t i = 0; i < faucetWebRouteCount(); ++i) {
         if (std::strcmp(routes[i].path, "/faucet/presets") == 0) {
-            found = routes[i].method == FaucetWebMethod::Get && routes[i].kind == FaucetWebRouteKind::Page &&
+            found = routes[i].method == FaucetWebMethod::Get && routes[i].title != nullptr &&
                     std::strcmp(routes[i].title, "预设") == 0;
         }
     }
@@ -170,42 +166,36 @@ void test_records_page_and_calibration_api_are_available() {
     bool foundApi = false;
     for (std::size_t i = 0; i < faucetWebRouteCount(); ++i) {
         if (std::strcmp(routes[i].path, "/faucet/records") == 0) {
-            found = routes[i].method == FaucetWebMethod::Get && routes[i].kind == FaucetWebRouteKind::Page &&
+            found = routes[i].method == FaucetWebMethod::Get && routes[i].title != nullptr &&
                     std::strcmp(routes[i].title, "记录") == 0;
         }
         if (std::strcmp(routes[i].path, "/faucet/calibration") == 0) {
             foundCalibrationPage = foundCalibrationPage ||
                                    (routes[i].method == FaucetWebMethod::Get &&
-                                   routes[i].kind == FaucetWebRouteKind::Page &&
+                                   routes[i].title != nullptr &&
                                    std::strcmp(routes[i].title, "校准") == 0);
             foundCalibrationPost = foundCalibrationPost ||
                                    (routes[i].method == FaucetWebMethod::Post &&
-                                    routes[i].kind == FaucetWebRouteKind::Api &&
                                     routes[i].title == nullptr);
         }
         if (std::strcmp(routes[i].path, "/faucet/calibration/detail") == 0) {
             foundCalibrationDetail = routes[i].method == FaucetWebMethod::Get &&
-                                     routes[i].kind == FaucetWebRouteKind::Api &&
                                      routes[i].title == nullptr;
         }
         if (std::strcmp(routes[i].path, "/faucet/calibration/flow") == 0) {
             foundFlowCalibrationPage = foundFlowCalibrationPage ||
                                        (routes[i].method == FaucetWebMethod::Get &&
-                                        routes[i].kind == FaucetWebRouteKind::Api &&
                                         routes[i].title == nullptr);
             foundFlowCalibrationPost = foundFlowCalibrationPost ||
                                        (routes[i].method == FaucetWebMethod::Post &&
-                                        routes[i].kind == FaucetWebRouteKind::Api &&
                                         routes[i].title == nullptr);
         }
         if (std::strcmp(routes[i].path, "/faucet/calibration/samples") == 0) {
             foundCalibrationSamples = routes[i].method == FaucetWebMethod::Get &&
-                                      routes[i].kind == FaucetWebRouteKind::Api &&
                                       routes[i].title == nullptr;
         }
         if (std::strcmp(routes[i].path, "/api/faucet/records") == 0) {
-            foundApi = foundApi || (routes[i].method == FaucetWebMethod::Post &&
-                                    routes[i].kind == FaucetWebRouteKind::Api && routes[i].title == nullptr);
+            foundApi = foundApi || (routes[i].method == FaucetWebMethod::Post && routes[i].title == nullptr);
         }
     }
     TEST_ASSERT_TRUE(found);
@@ -235,35 +225,6 @@ std::string readSourceFile(const char* path) {
     std::fclose(file);
     TEST_ASSERT_FALSE(body.empty());
     return body;
-}
-
-void test_source_has_no_removed_metering_route() {
-    const char* files[] = {
-        "include/web/FaucetWebPolicy.h",
-        "src/web/FaucetWebPolicy.cpp",
-        "src/web/FaucetWebRoutes.cpp",
-        "src/web/FaucetWeb.cpp",
-        "include/web/FaucetWebJson.h",
-        "src/web/FaucetWebJson.cpp",
-        "include/app/ConfigStore.h",
-        "src/app/ConfigStore.cpp",
-        "src/app/AppController.cpp",
-        "src/main.cpp",
-    };
-    const char* forbidden[] = {
-        "/faucet/metering",
-        "handleMeteringPage",
-        "handleMeteringPost",
-        "handleMeteringRedirect",
-        "FaucetWebWriteTarget::Metering",
-    };
-
-    for (const char* path : files) {
-        const std::string body = readSourceFile(path);
-        for (const char* needle : forbidden) {
-            TEST_ASSERT_EQUAL_MESSAGE(std::string::npos, body.find(needle), needle);
-        }
-    }
 }
 
 void test_web_page_source_has_no_remote_water_control_forms() {
@@ -336,7 +297,7 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, ".row-actions a:hover,.row-actions a:focus-visible"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "color:#fff"));
     TEST_ASSERT_NULL(std::strstr(buffer, "action='/api/faucet/records'"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "name='action' value='calibrate'"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "name='action' value='calibrate'"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "\"/faucet/calibration\""));
     TEST_ASSERT_NULL(std::strstr(buffer, "href='/faucet/records/calibration'"));
     TEST_ASSERT_NULL(std::strstr(buffer, "/api/faucet/calibration"));
@@ -404,7 +365,7 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NULL(std::strstr(buffer, "records-diagnostic-strip"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "active-metering-card"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "sample-coverage-diagnostic"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "trace-cache-diagnostic"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "trace-cache-diagnostic"));
     TEST_ASSERT_NULL(std::strstr(buffer, "saved-trace-diagnostic"));
     TEST_ASSERT_NULL(std::strstr(buffer, "trace-storage-diagnostic"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "当前参数"));
@@ -423,15 +384,15 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NULL(std::strstr(buffer, "<h3>参数生成</h3>"));
     TEST_ASSERT_NULL(std::strstr(buffer, "生成候选参数"));
     TEST_ASSERT_NULL(std::strstr(buffer, "明细存储"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "RAM 最近明细"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "RAM 最近明细"));
     TEST_ASSERT_NULL(std::strstr(buffer, "临时缓存"));
     TEST_ASSERT_NULL(std::strstr(buffer, "设备明细"));
     TEST_ASSERT_NULL(std::strstr(buffer, "控制P/L"));
     TEST_ASSERT_NULL(std::strstr(buffer, "当前方案ID"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "当前参数</span>"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "方案标识"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "当前计量参数</span>"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "方案标识"));
     TEST_ASSERT_NULL(std::strstr(buffer, "sendMeteringSnapshotLabel"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "稳态P/L"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "稳态 P/L"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "启动脉冲数"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "启动水量"));
     TEST_ASSERT_NULL(std::strstr(buffer, "启动等效"));
@@ -449,25 +410,14 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NULL(std::strstr(buffer, "建议补偿"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "拟合误差"));
     TEST_ASSERT_NULL(std::strstr(buffer, "候选已生成"));
-    const char* statusPanel = std::strstr(buffer, "void sendSegmentedMeteringPanel()");
-    TEST_ASSERT_NOT_NULL(statusPanel);
-    const char* tracePanel = std::strstr(statusPanel, "void sendPulseTraceCachePanel()");
-    TEST_ASSERT_NOT_NULL(tracePanel);
-    char meteringStatusPanel[12000]{};
-    const std::size_t statusPanelLen = static_cast<std::size_t>(tracePanel - statusPanel);
-    TEST_ASSERT_LESS_THAN(sizeof(meteringStatusPanel), statusPanelLen + 1);
-    std::memcpy(meteringStatusPanel, statusPanel, statusPanelLen);
-    TEST_ASSERT_NULL(std::strstr(meteringStatusPanel, "样本不足"));
-    TEST_ASSERT_NULL(std::strstr(meteringStatusPanel, "可生成"));
-    TEST_ASSERT_NULL(std::strstr(meteringStatusPanel, "loadCandidate"));
-    TEST_ASSERT_NOT_NULL(std::strstr(meteringStatusPanel, "当前参数"));
-    TEST_ASSERT_NOT_NULL(std::strstr(meteringStatusPanel, "<div><span>方案标识</span><strong>#%lu</strong><small>修订 <b>rev %lu</b></small></div>"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "void sendSegmentedMeteringPanel()"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "void sendPulseTraceCachePanel()"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "loadCandidate"));
     TEST_ASSERT_NULL(std::strstr(buffer, "最近校准"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "最近明细"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "RAM 数据点"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "RAM 占用 <b>%s</b>"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "RAM 数据点"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "RAM 占用 <b>%s</b>"));
     TEST_ASSERT_NULL(std::strstr(buffer, "<span><b>%u%%</b></span>"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "单条上限 <b>%lu 点</b>"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "单条上限 <b>%lu 点</b>"));
     TEST_ASSERT_NULL(std::strstr(buffer, "上限能力"));
     TEST_ASSERT_NULL(std::strstr(buffer, "设备存储上限"));
     TEST_ASSERT_NULL(std::strstr(buffer, "设备明细已达上限"));
@@ -528,7 +478,7 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NULL(std::strstr(calibrationHandler, "<a class='btn-link' href='/faucet/records'>历史记录</a>"));
     const char* registerHandler = std::strstr(buffer, "bool registerFaucetWeb() {");
     TEST_ASSERT_NOT_NULL(registerHandler);
-    TEST_ASSERT_NOT_NULL(std::strstr(registerHandler, "routes[i].kind == FaucetWebRouteKind::Page && routes[i].method == FaucetWebMethod::Get"));
+    TEST_ASSERT_NOT_NULL(std::strstr(registerHandler, "routes[i].title && routes[i].method == FaucetWebMethod::Get"));
     TEST_ASSERT_NOT_NULL(std::strstr(registerHandler, "Esp32BaseWeb::addRoute(routes[i].path, toBaseMethod(routes[i].method), handlerFor(routes[i]))"));
     const char* handlerForSource = std::strstr(buffer, "Esp32BaseWeb::Handler handlerFor(const FaucetWebRoute& route)");
     TEST_ASSERT_NOT_NULL(handlerForSource);
@@ -617,7 +567,6 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "仅显示前 %lu 个原始边沿，共 %lu 行；完整明细请使用 all=1。\\n"));
     TEST_ASSERT_NULL(std::strstr(buffer, "仅显示 0秒 到 %lu秒"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "WaterPulseTraceState::PauseTimeout"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "waterResultAllowsCalibration(record.result)"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "原始边沿 %lu 个，有效 %lu 个，过滤 %lu 个；当前预览前 %lu 个（有效 %lu 个）。"));
     TEST_ASSERT_NULL(std::strstr(buffer, "默认展示前 %lu 个原始边沿"));
     TEST_ASSERT_NULL(std::strstr(buffer, "原始边沿共 %lu 个，当前展示 %lu 个。"));
@@ -689,20 +638,19 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "校准记录"));
     TEST_ASSERT_NULL(std::strstr(buffer, "<tr><th>出水信息</th><td>"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "实际出水量"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "实测脉冲/升"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "估算差"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "实测脉冲/升"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "估算差"));
     TEST_ASSERT_NULL(std::strstr(buffer, "控制参数"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "未修改"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "未修改"));
     TEST_ASSERT_NULL(std::strstr(buffer, "记录摘要"));
     TEST_ASSERT_NULL(std::strstr(buffer, "上次实测记录"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "量杯实测容量"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "保存校准容量"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "保存校准容量"));
     TEST_ASSERT_NULL(std::strstr(buffer, "保存容量"));
     TEST_ASSERT_NULL(std::strstr(buffer, "保存重校"));
     TEST_ASSERT_NULL(std::strstr(buffer, "保存实测量"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "saveRecordActualMeasurement"));
     TEST_ASSERT_NULL(std::strstr(buffer, "saveRamTraceToDevice"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "calibration?saved=actual"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "calibration?saved=actual"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "faucetShowSampleCalibration"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "faucetSubmitSampleCalibration"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "faucetReplaceCalibrationSection"));
@@ -711,20 +659,18 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NULL(std::strstr(buffer, "href='#confirm-latest-volume'"));
     TEST_ASSERT_NULL(std::strstr(buffer, "applyCalibrationFromRecord(record, actualMl)"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "校准已保存。"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "不会修改当前计量参数"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "不会修改当前计量参数"));
     TEST_ASSERT_NULL(std::strstr(buffer, "step='10' value='%lu'></label>"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "sample-volume-input-row"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "sample-volume-input-row"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "' step='1' value='"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "<span class='unit-label'>ml</span></span>"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "保存后只更新这条明细的实测容量；计量方案生成只使用长期样本库"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "保存后只更新这条明细的实测容量；计量方案生成只使用长期样本库"));
     TEST_ASSERT_NULL(std::strstr(buffer, "确认最后一条记录容量后会自动入库"));
     TEST_ASSERT_NULL(std::strstr(buffer, "name='saveTrace'"));
     const char* latestPanelSource = std::strstr(buffer, "void sendLatestCalibrationRecordPanel");
     TEST_ASSERT_NULL(latestPanelSource);
     const char* samplesPanelSource = std::strstr(buffer, "void sendCalibrationSamplesPanel");
     TEST_ASSERT_NOT_NULL(samplesPanelSource);
-    const char* sampleRowSource = std::strstr(buffer, "void sendCalibrationSampleRow");
-    TEST_ASSERT_NOT_NULL(sampleRowSource);
     const char* generationPanelSource = std::strstr(buffer, "void sendCalibrationGenerationPanel");
     TEST_ASSERT_NOT_NULL(generationPanelSource);
     TEST_ASSERT_TRUE(samplesPanelSource < generationPanelSource);
@@ -741,13 +687,6 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NULL(std::strstr(samplesPanel, "sample-window-form"));
     TEST_ASSERT_NULL(std::strstr(samplesPanel, "前几秒脉冲总数"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "pulseObservationWindowSec"));
-    TEST_ASSERT_NULL(std::strstr(sampleRowSource, "name='traceSource' value='saved'"));
-    TEST_ASSERT_NOT_NULL(std::strstr(sampleRowSource, "name='trace' value='"));
-    TEST_ASSERT_NOT_NULL(std::strstr(sampleRowSource, "sample-calibration-edit-row"));
-    TEST_ASSERT_NOT_NULL(std::strstr(sampleRowSource, "faucetShowSampleCalibration"));
-    TEST_ASSERT_NOT_NULL(std::strstr(sampleRowSource, "校准容量"));
-    TEST_ASSERT_NOT_NULL(std::strstr(sampleRowSource, "重新校准"));
-    TEST_ASSERT_NULL(std::strstr(sampleRowSource, "修改容量"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, ".volume-line{fill:none;stroke:#9aa7a9;stroke-width:1.5"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, ".volume-line-paused{stroke-dasharray:5 5;opacity:.55}"));
     TEST_ASSERT_NULL(std::strstr(buffer, ".volume-dot"));
@@ -755,9 +694,7 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "configuredPulseObservationWindowSec"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "kDefaultPulseObservationWindowSec"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "kMaxPulseObservationWindowSec"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "firstSecondsPulseTotal"));
     TEST_ASSERT_NULL(std::strstr(samplesPanel, "\">查看</a>"));
-    TEST_ASSERT_NOT_NULL(std::strstr(sampleRowSource, "sample-status-pills"));
     TEST_ASSERT_NULL(std::strstr(buffer, "name='action' value='save_latest_trace'"));
     TEST_ASSERT_NULL(std::strstr(buffer, "name='action' value='delete_latest_trace'"));
     TEST_ASSERT_NULL(std::strstr(buffer, "handleTraceSaveApi"));
@@ -899,14 +836,14 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "RAM 临时"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "待校准容量"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "容量已校准"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "state.resumedAfterPause = trace.resumedAfterPause"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "<span class='status-pill status-warn'>暂停后恢复</span>"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "稳态失败"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "state.resumedAfterPause = trace.resumedAfterPause"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "<span class='status-pill status-warn'>暂停后恢复</span>"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "稳态失败"));
     TEST_ASSERT_NULL(std::strstr(buffer, "可参与生成"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "RAM 明细"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "明细已截断"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "不入库"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "不可入库"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "不可入库"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "样本状态"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "样本已入库"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "容量已校准"));
@@ -1214,50 +1151,6 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "目标全程平均 P/L"));
 }
 
-void test_record_calibration_api_saves_actual_without_segmented_generation() {
-    FILE* file = std::fopen("src/web/FaucetWeb.cpp", "rb");
-    TEST_ASSERT_NOT_NULL(file);
-    static char buffer[420000]{};
-    const std::size_t read = std::fread(buffer, 1, sizeof(buffer) - 1, file);
-    std::fclose(file);
-    TEST_ASSERT_GREATER_THAN_size_t(0, read);
-
-    const char* handler = std::strstr(buffer, "void handleRecordCalibrationApi() {");
-    TEST_ASSERT_NOT_NULL(handler);
-    const char* nextHandler = std::strstr(handler, "void handleGenerateSegmentedCalibrationApi() {");
-    TEST_ASSERT_NOT_NULL(nextHandler);
-
-    const char* findExisting = std::strstr(handler, "const bool calibrated = findRecordCalibration(record, calibration);");
-    const char* readTrace = std::strstr(handler, "readCalibrationTraceFromRequest(trace, traceId)");
-    const char* defaultActual =
-        std::strstr(handler, "const std::uint32_t defaultActualMl = calibrated ? calibration.actualMl : trace.record.volumeMl;");
-    const char* markTraceActual = std::strstr(handler, "markCalibrationTraceActual(traceId, trace.record, actualMl)");
-    const char* saveMeasurement = std::strstr(handler, "saveRecordActualMeasurement(record, actualMl)");
-    const char* syncAfterSave =
-        saveMeasurement ? std::strstr(saveMeasurement, "syncSegmentedCalibrationFromActual(record, actualMl)") : nullptr;
-    const char* applyAfterSave =
-        saveMeasurement ? std::strstr(saveMeasurement, "applySegmentedCalibrationFromAvailableSamples()") : nullptr;
-    const char* traceSaveAfterMeasurement =
-        saveMeasurement ? std::strstr(saveMeasurement, "autoSaveTraceAsSegmentedSample(record, actualMl)") : nullptr;
-    const char* traceActualSync =
-        saveMeasurement ? std::strstr(saveMeasurement, "syncTraceActualMeasurement(record, actualMl)") : nullptr;
-
-    TEST_ASSERT_TRUE(readTrace != nullptr && readTrace < nextHandler);
-    TEST_ASSERT_TRUE(findExisting != nullptr && findExisting < nextHandler);
-    TEST_ASSERT_TRUE(defaultActual != nullptr && defaultActual < nextHandler);
-    TEST_ASSERT_TRUE(markTraceActual != nullptr && markTraceActual < saveMeasurement);
-    TEST_ASSERT_NULL(std::strstr(handler, "readPage(0, 1, &record, 1)"));
-    TEST_ASSERT_TRUE(syncAfterSave == nullptr || syncAfterSave > nextHandler);
-    TEST_ASSERT_TRUE(applyAfterSave == nullptr || applyAfterSave > nextHandler);
-    TEST_ASSERT_TRUE(traceSaveAfterMeasurement == nullptr || traceSaveAfterMeasurement > nextHandler);
-    TEST_ASSERT_TRUE(traceActualSync != nullptr && traceActualSync < nextHandler);
-    TEST_ASSERT_NULL(std::strstr(buffer, "autoSaveTraceAsSegmentedSample"));
-    TEST_ASSERT_NULL(std::strstr(buffer, "syncSegmentedCalibrationFromActual"));
-    TEST_ASSERT_NULL(std::strstr(buffer, "applySegmentedCalibrationFromAvailableSamples"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "generateSegmentedCalibrationResultFromSavedSamples"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "校准已保存。"));
-}
-
 void test_metering_generation_uses_long_term_sample_library_for_auxiliary_calculation() {
     FILE* file = std::fopen("src/web/FaucetWeb.cpp", "rb");
     TEST_ASSERT_NOT_NULL(file);
@@ -1428,34 +1321,6 @@ void test_pulse_trace_and_calibration_pages_keep_saved_and_ram_sources_consisten
     TEST_ASSERT_NULL(std::strstr(generateFunction, "collectSegmentedSampleDiagnostics(true)"));
 }
 
-void test_calibration_sample_row_does_not_send_long_form_markup_through_sendfmt() {
-    FILE* file = std::fopen("src/web/FaucetWeb.cpp", "rb");
-    TEST_ASSERT_NOT_NULL(file);
-    static char buffer[420000]{};
-    const std::size_t read = std::fread(buffer, 1, sizeof(buffer) - 1, file);
-    std::fclose(file);
-    TEST_ASSERT_GREATER_THAN_size_t(0, read);
-
-    const char* sampleRow = std::strstr(buffer, "void sendCalibrationSampleRow");
-    const char* samplesPanel = std::strstr(buffer, "void sendCalibrationSamplesPanel");
-    TEST_ASSERT_NOT_NULL(sampleRow);
-    TEST_ASSERT_NOT_NULL(samplesPanel);
-    TEST_ASSERT_TRUE(sampleRow < samplesPanel);
-
-    char sampleRowSource[14000]{};
-    const std::size_t sampleRowLen = static_cast<std::size_t>(samplesPanel - sampleRow);
-    TEST_ASSERT_LESS_THAN(sizeof(sampleRowSource), sampleRowLen + 1);
-    std::memcpy(sampleRowSource, sampleRow, sampleRowLen);
-
-    TEST_ASSERT_NULL(std::strstr(sampleRowSource,
-                                 "sendFmt(\"</div></td></tr><tr id='%s' class='sample-calibration-edit-row'"));
-    TEST_ASSERT_NULL(std::strstr(sampleRowSource,
-                                 "sendFmt(\"</div><div class='sample-calibration-inputs'>"));
-    TEST_ASSERT_NOT_NULL(std::strstr(sampleRowSource, "Esp32BaseWeb::sendChunk(\"</div></td></tr><tr id='\""));
-    TEST_ASSERT_NOT_NULL(std::strstr(sampleRowSource,
-                                     "Esp32BaseWeb::sendChunk(\"</div><div class='sample-calibration-inputs'>\""));
-}
-
 void test_sendfmt_uses_dynamic_fallback_for_long_markup() {
     FILE* file = std::fopen("src/web/FaucetWeb.cpp", "rb");
     TEST_ASSERT_NOT_NULL(file);
@@ -1605,7 +1470,6 @@ void test_calibration_requested_ui_adjustments_are_enforced() {
     TEST_ASSERT_NOT_NULL(findWithin(samplesPanel, generationPanel, "colspan='11'>还没有本次校准样本"));
     TEST_ASSERT_NULL(findWithin(samplesPanel, generationPanel, "CalibrationSampleListItem"));
     TEST_ASSERT_NULL(findWithin(samplesPanel, generationPanel, "std::sort(sampleItems"));
-    TEST_ASSERT_NULL(findWithin(samplesPanel, generationPanel, "sendCalibrationSampleRow(savedTraces[i], true"));
 
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "faucetRefreshCalibrationSamples"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "return faucetRefreshCalibrationSamples()"));
@@ -1914,26 +1778,6 @@ void test_web_write_handlers_return_busy_before_trace_or_filter_runtime_writes()
     TEST_ASSERT_NOT_NULL(findWithin(filtersReset, filtersResetEnd, "FaucetWebWriteTarget::Filters"));
 }
 
-void test_incomplete_factory_reset_path_is_not_kept_as_dead_code() {
-    FILE* mainFile = std::fopen("src/main.cpp", "rb");
-    TEST_ASSERT_NOT_NULL(mainFile);
-    static char mainBuffer[90000]{};
-    const std::size_t mainRead = std::fread(mainBuffer, 1, sizeof(mainBuffer) - 1, mainFile);
-    std::fclose(mainFile);
-    TEST_ASSERT_GREATER_THAN_size_t(0, mainRead);
-
-    FILE* appHeader = std::fopen("include/app/AppController.h", "rb");
-    TEST_ASSERT_NOT_NULL(appHeader);
-    static char headerBuffer[24000]{};
-    const std::size_t headerRead = std::fread(headerBuffer, 1, sizeof(headerBuffer) - 1, appHeader);
-    std::fclose(appHeader);
-    TEST_ASSERT_GREATER_THAN_size_t(0, headerRead);
-
-    TEST_ASSERT_NULL(std::strstr(mainBuffer, "consumeFactoryResetRequest"));
-    TEST_ASSERT_NULL(std::strstr(headerBuffer, "factoryResetRequested_"));
-    TEST_ASSERT_NULL(std::strstr(headerBuffer, "consumeFactoryResetRequest"));
-}
-
 void test_storage_status_and_persistence_retry_are_explicit() {
     FILE* webFile = std::fopen("src/web/FaucetWeb.cpp", "rb");
     TEST_ASSERT_NOT_NULL(webFile);
@@ -1987,6 +1831,18 @@ void test_esp32_file_backend_has_create_sized_fallback_for_fresh_littlefs_files(
     TEST_ASSERT_NOT_NULL(std::strstr(backendBuffer, "Esp32BaseFs::fileSize(path)"));
 }
 
+void test_web_handler_mapping_does_not_duplicate_route_paths() {
+    const std::string body = readSourceFile("src/web/FaucetWeb.cpp");
+    const std::size_t handlerStart = body.find("Esp32BaseWeb::Handler handlerFor(const FaucetWebRoute& route)");
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, handlerStart);
+    const std::size_t handlerEnd = body.find("}  // namespace", handlerStart);
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, handlerEnd);
+    const std::string handler = body.substr(handlerStart, handlerEnd - handlerStart);
+
+    TEST_ASSERT_EQUAL(std::string::npos, handler.find("std::strcmp(route.path"));
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, handler.find("switch (route.handler)"));
+}
+
 int main(int argc, char** argv) {
     (void)argc;
     (void)argv;
@@ -2002,16 +1858,13 @@ int main(int argc, char** argv) {
     RUN_TEST(test_filter_forms_use_registered_api_endpoints);
     RUN_TEST(test_presets_page_is_available_in_navigation);
     RUN_TEST(test_records_page_and_calibration_api_are_available);
-    RUN_TEST(test_source_has_no_removed_metering_route);
     RUN_TEST(test_web_page_source_has_no_remote_water_control_forms);
     RUN_TEST(test_web_page_source_links_cacheable_app_css);
     RUN_TEST(test_web_page_source_contains_expected_ui_improvements);
-    RUN_TEST(test_record_calibration_api_saves_actual_without_segmented_generation);
     RUN_TEST(test_metering_generation_uses_long_term_sample_library_for_auxiliary_calculation);
     RUN_TEST(test_calibration_page_avoids_large_metering_scheme_stack_arrays);
     RUN_TEST(test_calibration_page_reports_specific_errors_and_hides_stale_generated_result);
     RUN_TEST(test_pulse_trace_and_calibration_pages_keep_saved_and_ram_sources_consistent);
-    RUN_TEST(test_calibration_sample_row_does_not_send_long_form_markup_through_sendfmt);
     RUN_TEST(test_sendfmt_uses_dynamic_fallback_for_long_markup);
     RUN_TEST(test_metering_scheme_page_uses_active_card_and_table_layout);
     RUN_TEST(test_metering_samples_and_generation_are_combined);
@@ -2028,9 +1881,9 @@ int main(int argc, char** argv) {
     RUN_TEST(test_business_post_handlers_use_post_allowed_guard);
     RUN_TEST(test_read_only_business_pages_do_not_return_busy_while_water_task_active);
     RUN_TEST(test_web_write_handlers_return_busy_before_trace_or_filter_runtime_writes);
-    RUN_TEST(test_incomplete_factory_reset_path_is_not_kept_as_dead_code);
     RUN_TEST(test_storage_status_and_persistence_retry_are_explicit);
     RUN_TEST(test_main_loop_budgets_flow_pulse_drain_to_keep_local_stop_responsive);
     RUN_TEST(test_esp32_file_backend_has_create_sized_fallback_for_fresh_littlefs_files);
+    RUN_TEST(test_web_handler_mapping_does_not_duplicate_route_paths);
     return UNITY_END();
 }

@@ -1,5 +1,6 @@
 #include "app/WaterRecordStore.h"
 
+#include "app/DateTimeUtils.h"
 #include "app/WaterSensors.h"
 
 #include <algorithm>
@@ -7,48 +8,6 @@
 
 namespace faucet {
 namespace {
-
-bool isLeapYear(std::uint16_t year) {
-    return (year % 4U == 0 && year % 100U != 0) || year % 400U == 0;
-}
-
-std::uint8_t daysInMonth(std::uint16_t year, std::uint8_t month) {
-    static constexpr std::uint8_t days[] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
-    if (month == 2 && isLeapYear(year)) {
-        return 29;
-    }
-    return month >= 1 && month <= 12 ? days[month - 1] : 0;
-}
-
-void dateFromDayIndex(std::uint32_t day, std::uint16_t& year, std::uint8_t& month, std::uint8_t& monthDay) {
-    year = 2000;
-    while (true) {
-        const std::uint16_t yearDays = isLeapYear(year) ? 366 : 365;
-        if (day < yearDays) {
-            break;
-        }
-        day -= yearDays;
-        ++year;
-    }
-    month = 1;
-    while (month <= 12) {
-        const std::uint8_t monthDays = daysInMonth(year, month);
-        if (day < monthDays) {
-            break;
-        }
-        day -= monthDays;
-        ++month;
-    }
-    monthDay = static_cast<std::uint8_t>(day + 1U);
-}
-
-std::uint32_t monthStartDay(std::uint32_t day) {
-    std::uint16_t year = 0;
-    std::uint8_t month = 0;
-    std::uint8_t monthDay = 0;
-    dateFromDayIndex(day, year, month, monthDay);
-    return day - static_cast<std::uint32_t>(monthDay - 1U);
-}
 
 void addSaturating(std::uint32_t& target, std::uint32_t value) {
     const std::uint32_t max = std::numeric_limits<std::uint32_t>::max();

@@ -38,10 +38,6 @@ void formatLiters(char* out, std::size_t len, std::uint32_t ml) {
     formatLitersValue(out, len, ml, true);
 }
 
-void formatLitersNumber(char* out, std::size_t len, std::uint32_t ml) {
-    formatLitersValue(out, len, ml, false);
-}
-
 void formatLitersCompact(char* out, std::size_t len, std::uint32_t ml) {
     const std::uint32_t deciliters = (ml + 50UL) / 100UL;
     std::snprintf(out, len, "%lu.%luL", static_cast<unsigned long>(deciliters / 10UL),

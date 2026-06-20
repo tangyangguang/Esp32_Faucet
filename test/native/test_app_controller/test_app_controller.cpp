@@ -7,6 +7,7 @@
 #include "app/WaterSensorManager.h"
 #include "app/WaterRecordCalibrationStore.h"
 
+#include <cstdio>
 #include <cstring>
 #include <map>
 #include <string>
@@ -15,6 +16,25 @@
 using namespace faucet;
 
 namespace {
+
+std::string readAppControllerSource() {
+    FILE* file = std::fopen("src/app/AppController.cpp", "rb");
+    TEST_ASSERT_NOT_NULL(file);
+    std::string body;
+    char buffer[4096]{};
+    while (true) {
+        const std::size_t read = std::fread(buffer, 1, sizeof(buffer), file);
+        if (read > 0) {
+            body.append(buffer, read);
+        }
+        if (read < sizeof(buffer)) {
+            break;
+        }
+    }
+    std::fclose(file);
+    TEST_ASSERT_FALSE(body.empty());
+    return body;
+}
 
 class MemoryRecordWriter : public WaterRecordWriter {
 public:
@@ -2128,6 +2148,20 @@ void test_app_controller_uses_window_flow_for_high_flow_safety() {
                             static_cast<std::uint8_t>(app.snapshot().water.state));
 }
 
+void test_app_controller_uses_shared_run_flow_reset_helper() {
+    const std::string body = readAppControllerSource();
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("void AppController::resetRunFlowState()"));
+
+    const std::string needle = "lastFlowVolumeMl_ = 0;";
+    std::size_t count = 0;
+    std::size_t pos = body.find(needle);
+    while (pos != std::string::npos) {
+        ++count;
+        pos = body.find(needle, pos + needle.size());
+    }
+    TEST_ASSERT_EQUAL_size_t(1, count);
+}
+
 int main(int argc, char** argv) {
     (void)argc;
     (void)argv;
@@ -2188,5 +2222,6 @@ int main(int argc, char** argv) {
     RUN_TEST(test_app_controller_local_record_calibration_adjusts_and_saves_actual);
     RUN_TEST(test_app_controller_snapshot_reports_current_flow_rate);
     RUN_TEST(test_app_controller_uses_window_flow_for_high_flow_safety);
+    RUN_TEST(test_app_controller_uses_shared_run_flow_reset_helper);
     return UNITY_END();
 }

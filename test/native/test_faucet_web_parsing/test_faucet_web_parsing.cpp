@@ -2,8 +2,6 @@
 
 #include "web/FaucetWebParsing.h"
 
-#include <cstring>
-
 using namespace faucet;
 
 void test_parse_u32_accepts_digits_only_and_preserves_value_on_failure() {
@@ -43,9 +41,8 @@ void test_parse_date_is_strict_and_handles_leap_years() {
     TEST_ASSERT_FALSE(parseDate("2024-01-01x", seconds));
 }
 
-void test_parse_float_and_liters_reject_non_finite_or_malformed_values() {
+void test_parse_float_rejects_non_finite_or_malformed_values() {
     float f = 0.0f;
-    std::uint32_t ml = 77;
 
     TEST_ASSERT_TRUE(parseFloat("1.25", f));
     TEST_ASSERT_FLOAT_WITHIN(0.001f, 1.25f, f);
@@ -54,15 +51,6 @@ void test_parse_float_and_liters_reject_non_finite_or_malformed_values() {
     TEST_ASSERT_FALSE(parseFloat("inf", f));
     TEST_ASSERT_FALSE(parseFloat("1e9999", f));
     TEST_ASSERT_FALSE(parseFloat("1.2ml", f));
-
-    TEST_ASSERT_TRUE(parseLitersToMl("1.25", ml));
-    TEST_ASSERT_EQUAL_UINT32(1250, ml);
-    TEST_ASSERT_TRUE(parseLitersToMl("0", ml));
-    TEST_ASSERT_EQUAL_UINT32(0, ml);
-    TEST_ASSERT_FALSE(parseLitersToMl("-1", ml));
-    TEST_ASSERT_FALSE(parseLitersToMl("nan", ml));
-    TEST_ASSERT_FALSE(parseLitersToMl("4294968", ml));
-    TEST_ASSERT_EQUAL_UINT32(0, ml);
 }
 
 int main(int argc, char** argv) {
@@ -72,6 +60,6 @@ int main(int argc, char** argv) {
     UNITY_BEGIN();
     RUN_TEST(test_parse_u32_accepts_digits_only_and_preserves_value_on_failure);
     RUN_TEST(test_parse_date_is_strict_and_handles_leap_years);
-    RUN_TEST(test_parse_float_and_liters_reject_non_finite_or_malformed_values);
+    RUN_TEST(test_parse_float_rejects_non_finite_or_malformed_values);
     return UNITY_END();
 }

@@ -407,7 +407,7 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "trace-cache-diagnostic"));
     TEST_ASSERT_NULL(std::strstr(buffer, "saved-trace-diagnostic"));
     TEST_ASSERT_NULL(std::strstr(buffer, "trace-storage-diagnostic"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "当前方案"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "当前参数"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "计量方案"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "启动脉冲数"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "record.meteringSchemeId"));
@@ -428,7 +428,7 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NULL(std::strstr(buffer, "设备明细"));
     TEST_ASSERT_NULL(std::strstr(buffer, "控制P/L"));
     TEST_ASSERT_NULL(std::strstr(buffer, "当前方案ID"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "当前方案</span>"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "当前参数</span>"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "方案标识"));
     TEST_ASSERT_NULL(std::strstr(buffer, "sendMeteringSnapshotLabel"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "稳态P/L"));
@@ -460,7 +460,7 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NULL(std::strstr(meteringStatusPanel, "样本不足"));
     TEST_ASSERT_NULL(std::strstr(meteringStatusPanel, "可生成"));
     TEST_ASSERT_NULL(std::strstr(meteringStatusPanel, "loadCandidate"));
-    TEST_ASSERT_NOT_NULL(std::strstr(meteringStatusPanel, "当前方案"));
+    TEST_ASSERT_NOT_NULL(std::strstr(meteringStatusPanel, "当前参数"));
     TEST_ASSERT_NOT_NULL(std::strstr(meteringStatusPanel, "<div><span>方案标识</span><strong>#%lu</strong><small>修订 <b>rev %lu</b></small></div>"));
     TEST_ASSERT_NULL(std::strstr(buffer, "最近校准"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "最近明细"));
@@ -491,7 +491,7 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "scheme-edit-section"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "容量估算计量参数"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "时间估算计量参数"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "当前方案：保存后会立即影响后续出水估算。"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "当前参数：保存后会立即影响后续出水估算。"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, ".scheme-edit-grid{display:grid;grid-template-columns:repeat(12,1fr)"));
     TEST_ASSERT_NULL(std::strstr(buffer, ".calibration-slot-form{display:grid;grid-template-columns"));
     TEST_ASSERT_NULL(std::strstr(buffer, "<h3>候选方案</h3>"));
@@ -711,7 +711,7 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NULL(std::strstr(buffer, "href='#confirm-latest-volume'"));
     TEST_ASSERT_NULL(std::strstr(buffer, "applyCalibrationFromRecord(record, actualMl)"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "校准已保存。"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "不会修改当前计量方案"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "不会修改当前计量参数"));
     TEST_ASSERT_NULL(std::strstr(buffer, "step='10' value='%lu'></label>"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "sample-volume-input-row"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "' step='1' value='"));
@@ -769,7 +769,7 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NULL(std::strstr(buffer, "name='action' value='save_candidate_scheme'"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "name='action' value='create_metering_scheme'"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "name='action' value='edit_metering_scheme'"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "name='action' value='set_active_metering_scheme'"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "name='action' value='set_active_metering_scheme'"));
     TEST_ASSERT_NULL(std::strstr(buffer, "handleDisableMeteringSchemeApi"));
     TEST_ASSERT_NULL(std::strstr(buffer, "name='action' value='delete_metering_scheme'"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "value='保存参数'"));
@@ -1258,7 +1258,7 @@ void test_record_calibration_api_saves_actual_without_segmented_generation() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "校准已保存。"));
 }
 
-void test_metering_generation_uses_long_term_sample_library() {
+void test_metering_generation_uses_long_term_sample_library_for_auxiliary_calculation() {
     FILE* file = std::fopen("src/web/FaucetWeb.cpp", "rb");
     TEST_ASSERT_NOT_NULL(file);
     static char buffer[420000]{};
@@ -1276,11 +1276,9 @@ void test_metering_generation_uses_long_term_sample_library() {
     TEST_ASSERT_NOT_NULL(findWithin(helper, collectEnd, "readSamples(stored.sampleId"));
     TEST_ASSERT_NULL(findWithin(collect, collectEnd, "g_context.savedPulseTraces->list"));
 
-    const char* handleSaveGenerated = std::strstr(buffer, "void handleSaveGeneratedSchemeApi() {");
-    TEST_ASSERT_NOT_NULL(handleSaveGenerated);
-    const char* handleSaveGeneratedEnd = std::strstr(handleSaveGenerated, "void handleCreateMeteringSchemeApi() {");
-    TEST_ASSERT_NOT_NULL(handleSaveGeneratedEnd);
-    TEST_ASSERT_NOT_NULL(findWithin(handleSaveGenerated, handleSaveGeneratedEnd, "collectSegmentedSampleDiagnostics(false)"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "void handleSaveGeneratedSchemeApi() {"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "带入手工输入前不会改变当前计量"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "sendFmt(\"<a class='btn-link primary' href='/faucet/calibration/flow?manual=1"));
 }
 
 void test_calibration_page_avoids_large_metering_scheme_stack_arrays() {
@@ -1618,9 +1616,9 @@ void test_calibration_requested_ui_adjustments_are_enforced() {
     TEST_ASSERT_NOT_NULL(schemeList);
     const char* schemeEdit = std::strstr(schemeList, "void sendMeteringSchemeEditPage");
     TEST_ASSERT_NOT_NULL(schemeEdit);
-    TEST_ASSERT_NOT_NULL(findWithin(schemeList, schemeEdit, "使用这组参数"));
-    TEST_ASSERT_NOT_NULL(findWithin(schemeList, schemeEdit, "确认使用这组计量参数？"));
-    TEST_ASSERT_NOT_NULL(findWithin(schemeList, schemeEdit, "if (scheme.id != activeId)"));
+    TEST_ASSERT_NULL(findWithin(schemeList, schemeEdit, "使用这组参数"));
+    TEST_ASSERT_NULL(findWithin(schemeList, schemeEdit, "确认使用这组计量参数？"));
+    TEST_ASSERT_NULL(findWithin(schemeList, schemeEdit, "if (scheme.id != activeId)"));
     TEST_ASSERT_NULL(findWithin(schemeList, schemeEdit, "if (scheme.id != activeId && scheme.enabled)"));
     TEST_ASSERT_NULL(findWithin(schemeList, schemeEdit, "if (scheme.id != activeId && scheme.state == MeteringSchemeState::Available)"));
     TEST_ASSERT_NULL(findWithin(schemeList, schemeEdit, "value='禁用'"));
@@ -1975,6 +1973,20 @@ void test_main_loop_budgets_flow_pulse_drain_to_keep_local_stop_responsive() {
     TEST_ASSERT_NULL(std::strstr(mainBuffer, "while (g_flowPulses.pop(pulseUs))"));
 }
 
+void test_esp32_file_backend_has_create_sized_fallback_for_fresh_littlefs_files() {
+    FILE* backendFile = std::fopen("src/app/Esp32BaseWaterRecordBackend.cpp", "rb");
+    TEST_ASSERT_NOT_NULL(backendFile);
+    static char backendBuffer[16000]{};
+    const std::size_t backendRead = std::fread(backendBuffer, 1, sizeof(backendBuffer) - 1, backendFile);
+    std::fclose(backendFile);
+    TEST_ASSERT_GREATER_THAN_size_t(0, backendRead);
+
+    TEST_ASSERT_NOT_NULL(std::strstr(backendBuffer, "createSizedDirectly"));
+    TEST_ASSERT_NOT_NULL(std::strstr(backendBuffer, "LittleFS.open(path, FILE_WRITE, true)"));
+    TEST_ASSERT_NULL(std::strstr(backendBuffer, "Esp32BaseFs::createFixedFile"));
+    TEST_ASSERT_NOT_NULL(std::strstr(backendBuffer, "Esp32BaseFs::fileSize(path)"));
+}
+
 int main(int argc, char** argv) {
     (void)argc;
     (void)argv;
@@ -1995,7 +2007,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_web_page_source_links_cacheable_app_css);
     RUN_TEST(test_web_page_source_contains_expected_ui_improvements);
     RUN_TEST(test_record_calibration_api_saves_actual_without_segmented_generation);
-    RUN_TEST(test_metering_generation_uses_long_term_sample_library);
+    RUN_TEST(test_metering_generation_uses_long_term_sample_library_for_auxiliary_calculation);
     RUN_TEST(test_calibration_page_avoids_large_metering_scheme_stack_arrays);
     RUN_TEST(test_calibration_page_reports_specific_errors_and_hides_stale_generated_result);
     RUN_TEST(test_pulse_trace_and_calibration_pages_keep_saved_and_ram_sources_consistent);
@@ -2019,5 +2031,6 @@ int main(int argc, char** argv) {
     RUN_TEST(test_incomplete_factory_reset_path_is_not_kept_as_dead_code);
     RUN_TEST(test_storage_status_and_persistence_retry_are_explicit);
     RUN_TEST(test_main_loop_budgets_flow_pulse_drain_to_keep_local_stop_responsive);
+    RUN_TEST(test_esp32_file_backend_has_create_sized_fallback_for_fresh_littlefs_files);
     return UNITY_END();
 }

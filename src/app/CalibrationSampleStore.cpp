@@ -128,7 +128,7 @@ bool beginFixedStore(WaterRecordFileBackend& backend, const char* path, std::uin
         return false;
     }
     if (!backend.exists(path)) {
-        return true;
+        return initializeFile(backend, path, kind, slots);
     }
     if (backend.fileSize(path) != static_cast<std::int64_t>(fileSizeFor(slots))) {
         return false;
@@ -257,6 +257,13 @@ CalibrationSessionTraceStore::CalibrationSessionTraceStore(WaterRecordFileBacken
 
 bool CalibrationSessionTraceStore::begin() {
     ready_ = beginFixedStore(backend_, path_, kStoreKindSession, kCalibrationSessionTraceSlots);
+    if (!ready_ && validPath(path_)) {
+        if (backend_.exists(path_) && !backend_.removeFile(path_)) {
+            status_ = AppStorageStatus::BackendFailure;
+            return false;
+        }
+        ready_ = initializeFile(backend_, path_, kStoreKindSession, kCalibrationSessionTraceSlots);
+    }
     status_ = statusForFixedStore(backend_, path_, kStoreKindSession, kCalibrationSessionTraceSlots);
     return ready_;
 }

@@ -98,11 +98,9 @@ void handleCalibrationPost();
 void handleFlowCalibrationPost();
 void handleRecordCalibrationApi();
 void handleGenerateSegmentedCalibrationApi();
-void handleSaveGeneratedSchemeApi();
 void handleDiscardGeneratedSchemeApi();
 void handleCreateMeteringSchemeApi();
 void handleEditMeteringSchemeApi();
-void handleSetActiveMeteringSchemeApi();
 void handleDeleteMeteringSchemeApi();
 const char* calibrationSessionStatusText(CalibrationSessionStatus status);
 bool calibrationSessionInactive(CalibrationSessionStatus status);
@@ -1196,6 +1194,31 @@ bool activeMeteringSchemeForWeb(MeteringSchemeRecord& output) {
     return false;
 }
 
+bool setAndApplyActiveMeteringSchemeForWeb(std::uint32_t schemeId) {
+    if (!g_context.meteringSchemes || !g_context.app) {
+        return false;
+    }
+    MeteringSchemeRecord next{};
+    if (!g_context.meteringSchemes->findById(schemeId, next) || next.deleted ||
+        !validMeteringSchemeParameters(next.params)) {
+        return false;
+    }
+    const std::uint32_t previousId = g_context.meteringSchemes->activeSchemeId();
+    const MeteringSchemeRecord previous = g_context.app->activeMeteringScheme();
+    const std::uint32_t now = g_context.nowSeconds ? g_context.nowSeconds() : 0;
+    if (!g_context.meteringSchemes->setActiveScheme(schemeId, now)) {
+        return false;
+    }
+    if (g_context.app->applyActiveMeteringScheme(next)) {
+        return true;
+    }
+    if (previousId != 0 && previous.recordUsed) {
+        g_context.meteringSchemes->setActiveScheme(previousId, now);
+        g_context.app->applyActiveMeteringScheme(previous);
+    }
+    return false;
+}
+
 bool meteringSchemeUsedEverForWeb(const MeteringSchemeRecord& scheme) {
     if (scheme.usedEver) {
         return true;
@@ -1391,7 +1414,7 @@ void sendSegmentedMeteringPanel() {
     std::snprintf(startupPulse, sizeof(startupPulse), "%luP", static_cast<unsigned long>(active.startupPulseCount));
     formatLiters(active.startupVolumeMl, startupVolume, sizeof(startupVolume));
     Esp32BaseWeb::sendChunk("<section class='panel metering-active-summary'><div class='metering-active-head'>"
-                            "<div><span class='section-label'>计量状态</span><span class='section-subtitle'>当前方案</span><h3>");
+                            "<div><span class='section-label'>计量状态</span><span class='section-subtitle'>当前参数</span><h3>");
     if (activeReady) {
         sendHtmlEscapedBounded(activeScheme.name, sizeof(activeScheme.name));
     } else {
@@ -1399,7 +1422,7 @@ void sendSegmentedMeteringPanel() {
     }
     sendFmt("</h3></div><span class='status-pill %s'>%s</span></div><div class='metering-active-grid'>",
             activeReady ? "status-ok" : "status-muted",
-            activeReady ? "当前方案" : "无可用方案");
+            activeReady ? "当前参数" : "无可用参数");
     sendFmt("<div><span>稳态P/L</span><strong>%s</strong></div>", stable);
     sendFmt("<div><span>启动脉冲数</span><strong>%s</strong></div>", startupPulse);
     sendFmt("<div><span>启动水量</span><strong>%s</strong></div>", startupVolume);
@@ -1516,7 +1539,7 @@ void sendSchemeDetailButton(const MeteringSchemeRecord& scheme, std::uint32_t ac
     std::snprintf(status,
                   sizeof(status),
                   "%s / %s",
-                  scheme.id == activeId ? "当前方案" : (scheme.deleted ? "已删除" : "可用"),
+                  scheme.id == activeId ? "当前参数" : (scheme.deleted ? "已删除" : "可用"),
                   meteringSchemeUsedEverForWeb(scheme) ? "已使用" : "未使用");
 
     Esp32BaseWeb::sendChunk("<button class='btn-link' type='button' data-scheme-detail='1'");
@@ -1621,7 +1644,7 @@ void sendActiveMeteringSchemeCard(const MeteringSchemeRecord& scheme, std::uint3
     Esp32BaseWeb::sendChunk("</p></div>");
     sendFmt("<span class='status-pill %s'>%s</span></div><div class='active-metering-metrics'>",
             scheme.id == activeId ? "status-ok" : "status-warn",
-            scheme.id == activeId ? "当前方案" : "当前方案异常");
+            scheme.id == activeId ? "当前参数" : "当前参数异常");
     sendMeteringMetricCard("启动脉冲", startupPulses);
     sendMeteringMetricCard("启动水量", startupVolume);
     sendMeteringMetricCard("稳态 P/L", stablePpl);
@@ -1632,7 +1655,7 @@ void sendActiveMeteringSchemeCard(const MeteringSchemeRecord& scheme, std::uint3
     sendMeteringMetricCard("最大误差", maxError);
     Esp32BaseWeb::sendChunk("</div><div class='row-actions active-metering-actions'>");
     sendSchemeDetailButton(scheme, activeId);
-    sendMeteringTrialButton(scheme.name[0] ? scheme.name : "当前计量方案", scheme.params, 1000, 10);
+    sendMeteringTrialButton(scheme.name[0] ? scheme.name : "当前计量参数", scheme.params, 1000, 10);
     sendManualParameterLink("复制参数", scheme.params);
     Esp32BaseWeb::sendChunk("</div></section>");
 }
@@ -1653,7 +1676,7 @@ void sendActiveMeteringSchemeSummaryPanel() {
     }
     Esp32BaseWeb::sendChunk("<section class='panel active-metering-card'><div class='panel-head'><div><h3><span>当前计量参数</span></h3>"
                             "<p class='active-metering-name'>-</p><p class='hint'>计量方案尚未就绪。</p></div>"
-                            "<span class='status-pill status-muted'>无可用方案</span></div></section>");
+                            "<span class='status-pill status-muted'>无可用参数</span></div></section>");
 }
 
 void sendMeteringTrialModal() {
@@ -1774,10 +1797,6 @@ void sendCalibrationParameterPanels() {
         sendSchemeDetailButton(scheme, activeId);
         sendMeteringTrialButton(scheme.name[0] ? scheme.name : "计量方案", scheme.params, 1000, 10);
         sendManualParameterLink("复制参数", scheme.params);
-        if (scheme.id != activeId) {
-            sendFmt("<form method='post' action='/faucet/calibration/flow' onsubmit=\"return confirm('确认使用这组计量参数？')&&once(this)\"><input type='hidden' name='action' value='set_active_metering_scheme'><input type='hidden' name='id' value='%lu'><input class='primary' type='submit' value='使用这组参数'></form>",
-                    static_cast<unsigned long>(scheme.id));
-        }
         Esp32BaseWeb::sendChunk("</div></td></tr>");
     }
     Esp32BaseWeb::sendChunk("</table>");
@@ -1805,7 +1824,7 @@ void sendMeteringSchemeEditPage(bool creating, const MeteringSchemeRecord* schem
         sendFmt("<input type='hidden' name='id' value='%lu'>", static_cast<unsigned long>(scheme->id));
     }
     if (editingActive) {
-        Esp32BaseWeb::sendChunk("<p class='warn scheme-edit-warning'>当前方案：保存后会立即影响后续出水估算。</p>");
+        Esp32BaseWeb::sendChunk("<p class='warn scheme-edit-warning'>当前参数：保存后会立即影响后续出水估算。</p>");
     }
     Esp32BaseWeb::sendChunk("<div class='scheme-edit-section'><h3>参数信息</h3><div class='scheme-edit-grid'>");
     sendFmt("<label class='compact-field scheme-edit-field scheme-span-12'><span>名称</span><input name='name' maxlength='%u' required value='",
@@ -2122,7 +2141,7 @@ void sendCalibrationSampleRow(const WaterPulseTrace& trace, std::uint32_t sample
     Esp32BaseWeb::sendChunk("'><div class='sample-calibration-info'><strong>校准容量</strong>"
                             "<span>左侧样本来自本次脉冲明细，请按量杯读数填写右侧实测容量。</span>"
                             "<span>保存后只更新这条明细的实测容量；计量方案生成只使用长期样本库。</span>"
-                            "<span>该操作只更新样本和校准记录，不会修改当前计量方案。</span>");
+                            "<span>该操作只更新样本和校准记录，不会修改当前计量参数。</span>");
     if (calibrated) {
         char calibratedAt[40]{};
         formatWaterRecordTime(WaterRecord{calibration.calibratedAt,
@@ -2147,7 +2166,7 @@ void sendCalibrationSampleRow(const WaterPulseTrace& trace, std::uint32_t sample
                 calibratedAt[0] ? calibratedAt : "未知",
                 static_cast<unsigned long>(measuredPulsePerLiter(trace.record, calibration)));
         sendSignedLiters(estimateDiff);
-        Esp32BaseWeb::sendChunk("，当前计量方案未修改。</span>");
+        Esp32BaseWeb::sendChunk("，当前计量参数未修改。</span>");
     }
     Esp32BaseWeb::sendChunk("</div><div class='sample-calibration-inputs'>"
                             "<label class='field sample-volume-field'><span>量杯实测容量</span>"
@@ -4646,8 +4665,8 @@ void handleCalibrationPage() {
     const bool activeReady = activeMeteringSchemeForWeb(active);
     const MeteringParameters params = activeReady ? active.params : snapshot.meteringParams;
     Esp32BaseWeb::sendChunk("<section class='panel'><div class='panel-head'><h3>流量计校准</h3></div>");
-    sendFmt("<p class='muted'>当前方案：%s；稳态 %lu P/L。</p>",
-            activeReady && active.name[0] ? active.name : "默认计量方案",
+    sendFmt("<p class='muted'>当前参数：%s；稳态 %lu P/L。</p>",
+            activeReady && active.name[0] ? active.name : "默认计量参数",
             static_cast<unsigned long>(params.stablePulsePerLiter));
     Esp32BaseWeb::sendChunk("<p><a class='btn-link primary' href='/faucet/calibration/flow'>进入流量计校准</a></p></section>");
 
@@ -5955,7 +5974,7 @@ void handleFlowCalibrationPost() {
         return;
     }
     if (std::strcmp(text, "save_generated_scheme") == 0) {
-        handleSaveGeneratedSchemeApi();
+        Esp32BaseWeb::redirectSeeOther("/faucet/calibration/flow?error=invalid_action");
         return;
     }
     if (std::strcmp(text, "discard_generated_scheme") == 0) {
@@ -5971,7 +5990,7 @@ void handleFlowCalibrationPost() {
         return;
     }
     if (std::strcmp(text, "set_active_metering_scheme") == 0) {
-        handleSetActiveMeteringSchemeApi();
+        Esp32BaseWeb::redirectSeeOther("/faucet/calibration/flow?error=invalid_action");
         return;
     }
     if (std::strcmp(text, "delete_metering_scheme") == 0) {
@@ -6269,7 +6288,7 @@ void handleRecordsApi() {
             return;
         }
         if (std::strcmp(text, "save_generated_scheme") == 0) {
-            handleSaveGeneratedSchemeApi();
+            Esp32BaseWeb::sendJson(400, "{\"error\":\"invalid_action\"}");
             return;
         }
         if (std::strcmp(text, "discard_generated_scheme") == 0) {
@@ -6285,7 +6304,7 @@ void handleRecordsApi() {
             return;
         }
         if (std::strcmp(text, "set_active_metering_scheme") == 0) {
-            handleSetActiveMeteringSchemeApi();
+            Esp32BaseWeb::sendJson(400, "{\"error\":\"invalid_action\"}");
             return;
         }
         if (std::strcmp(text, "delete_metering_scheme") == 0) {
@@ -6489,47 +6508,6 @@ void handleGenerateSegmentedCalibrationApi() {
     ok();
 }
 
-void handleSaveGeneratedSchemeApi() {
-    if (!Esp32BaseWeb::checkAuth() || !requireContext()) {
-        return;
-    }
-    if (!Esp32BaseWeb::isMethod(Esp32BaseWeb::METHOD_POST)) {
-        Esp32BaseWeb::sendJson(405, "{\"error\":\"method_not_allowed\"}");
-        return;
-    }
-    if (waterTaskActive()) {
-        Esp32BaseWeb::redirectSeeOther("/faucet/calibration/flow?generated=1&error=busy");
-        return;
-    }
-    if (!ensureMeteringSchemesReady()) {
-        Esp32BaseWeb::redirectSeeOther("/faucet/calibration/flow?generated=1&error=metering_storage_unavailable");
-        return;
-    }
-    const SegmentedSampleDiagnostics diagnostics = collectSegmentedSampleDiagnostics(false);
-    MeteringSchemeCandidate candidate{};
-    if (!makeSegmentedCandidate(diagnostics.result, candidate)) {
-        Esp32BaseWeb::redirectSeeOther("/faucet/calibration/flow?error=no_generated_result");
-        return;
-    }
-    char name[kMeteringSchemeNameLength]{};
-    Esp32BaseWeb::getParam("name", name, sizeof(name));
-    if (name[0] == '\0') {
-        std::snprintf(name, sizeof(name), "样本生成方案");
-    }
-    std::uint32_t newId = 0;
-    if (!g_context.meteringSchemes->saveCandidateAsNew(
-            candidate, name, g_context.nowSeconds ? g_context.nowSeconds() : 0, newId)) {
-        Esp32BaseWeb::redirectSeeOther("/faucet/calibration/flow?generated=1&error=save_failed");
-        return;
-    }
-    char url[80]{};
-    std::snprintf(url,
-                  sizeof(url),
-                  "/faucet/calibration/flow?saved=scheme_created&createdScheme=%lu",
-                  static_cast<unsigned long>(newId));
-    Esp32BaseWeb::redirectSeeOther(url);
-}
-
 void handleDiscardGeneratedSchemeApi() {
     if (!Esp32BaseWeb::checkAuth() || !requireContext()) {
         return;
@@ -6595,6 +6573,10 @@ void handleCreateMeteringSchemeApi() {
         Esp32BaseWeb::redirectSeeOther("/faucet/calibration/flow?error=busy");
         return;
     }
+    if (!g_context.app || !g_context.app->canApplyConfig()) {
+        Esp32BaseWeb::redirectSeeOther("/faucet/calibration/flow?error=busy");
+        return;
+    }
     if (!ensureMeteringSchemesReady()) {
         Esp32BaseWeb::redirectSeeOther("/faucet/calibration/flow?error=metering_storage_unavailable");
         return;
@@ -6611,6 +6593,10 @@ void handleCreateMeteringSchemeApi() {
     }
     std::uint32_t newId = 0;
     if (!g_context.meteringSchemes->createManual(name, params, g_context.nowSeconds ? g_context.nowSeconds() : 0, newId)) {
+        Esp32BaseWeb::redirectSeeOther("/faucet/calibration/flow?error=save_failed");
+        return;
+    }
+    if (!setAndApplyActiveMeteringSchemeForWeb(newId)) {
         Esp32BaseWeb::redirectSeeOther("/faucet/calibration/flow?error=save_failed");
         return;
     }
@@ -6662,39 +6648,6 @@ void handleEditMeteringSchemeApi() {
         }
     }
     Esp32BaseWeb::redirectSeeOther("/faucet/calibration/flow?saved=scheme");
-}
-
-void handleSetActiveMeteringSchemeApi() {
-    if (!Esp32BaseWeb::checkAuth() || !requireContext()) {
-        return;
-    }
-    if (!Esp32BaseWeb::isMethod(Esp32BaseWeb::METHOD_POST)) {
-        Esp32BaseWeb::sendJson(405, "{\"error\":\"method_not_allowed\"}");
-        return;
-    }
-    if (waterTaskActive() || !g_context.app || !g_context.app->canApplyConfig()) {
-        Esp32BaseWeb::redirectSeeOther("/faucet/calibration/flow?error=busy");
-        return;
-    }
-    if (!ensureMeteringSchemesReady()) {
-        Esp32BaseWeb::redirectSeeOther("/faucet/calibration/flow?error=metering_storage_unavailable");
-        return;
-    }
-    std::uint32_t id = 0;
-    if (!readMeteringSchemeId(id)) {
-        Esp32BaseWeb::redirectSeeOther("/faucet/calibration/flow?error=invalid_value");
-        return;
-    }
-    if (!g_context.meteringSchemes->setActiveScheme(id, g_context.nowSeconds ? g_context.nowSeconds() : 0)) {
-        Esp32BaseWeb::redirectSeeOther("/faucet/calibration/flow?error=save_failed");
-        return;
-    }
-    MeteringSchemeRecord active{};
-    if (!g_context.meteringSchemes->activeScheme(active) || !g_context.app->applyActiveMeteringScheme(active)) {
-        Esp32BaseWeb::redirectSeeOther("/faucet/calibration/flow?error=save_failed");
-        return;
-    }
-    Esp32BaseWeb::redirectSeeOther("/faucet/calibration/flow?saved=scheme_active");
 }
 
 void handleDeleteMeteringSchemeApi() {

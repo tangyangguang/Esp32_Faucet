@@ -920,6 +920,33 @@ void test_flow_calibration_manual_input_prefills_copied_parameters() {
     TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("value='2100'", stableFlowField));
 }
 
+void test_flow_calibration_manual_save_becomes_active_parameter() {
+    WebFixture fixture;
+    TEST_ASSERT_TRUE(fixture.meteringSchemes.begin());
+    const std::uint32_t oldActiveId = fixture.meteringSchemes.activeSchemeId();
+    TEST_ASSERT_EQUAL_UINT32(99, fixture.app.activeMeteringScheme().id);
+    registerRoutes();
+    Esp32BaseWeb::nativeTestBeginRequest(Esp32BaseWeb::METHOD_POST, "/faucet/calibration/flow");
+    Esp32BaseWeb::nativeTestSetAuthenticated(true);
+    Esp32BaseWeb::nativeTestSetSameOrigin(true);
+    Esp32BaseWeb::nativeTestSetParam("action", "create_metering_scheme");
+    Esp32BaseWeb::nativeTestSetParam("name", "manual current");
+    Esp32BaseWeb::nativeTestSetParam("startupPulseCount", "12");
+    Esp32BaseWeb::nativeTestSetParam("startupVolumeMl", "345");
+    Esp32BaseWeb::nativeTestSetParam("stablePulsePerLiter", "1234");
+    Esp32BaseWeb::nativeTestSetParam("startupDurationSec", "3.450");
+    Esp32BaseWeb::nativeTestSetParam("stableFlowMlPerMin", "2100");
+
+    TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch("/faucet/calibration/flow", Esp32BaseWeb::METHOD_POST));
+
+    TEST_ASSERT_EQUAL(303, Esp32BaseWeb::nativeTestResponse().code);
+    TEST_ASSERT_NOT_EQUAL_UINT32(oldActiveId, fixture.meteringSchemes.activeSchemeId());
+    TEST_ASSERT_EQUAL_UINT32(fixture.meteringSchemes.activeSchemeId(), fixture.app.activeMeteringScheme().id);
+    TEST_ASSERT_EQUAL_UINT32(1234, fixture.app.activeMeteringScheme().params.stablePulsePerLiter);
+    TEST_ASSERT_EQUAL_STRING("/faucet/calibration/flow?saved=scheme_created",
+                             Esp32BaseWeb::nativeTestResponseHeader("Location"));
+}
+
 void test_advanced_sample_library_does_not_present_primary_apply_flow() {
     WebFixture fixture;
     saveLongTermWebSample(fixture.sampleStore, 1200, 45, 360, 12);
@@ -940,6 +967,51 @@ void test_advanced_sample_library_does_not_present_primary_apply_flow() {
     TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("带入手工输入"));
     TEST_ASSERT_EQUAL(std::string::npos, body.find("保存为新方案"));
     TEST_ASSERT_EQUAL(std::string::npos, body.find("应用到当前参数"));
+}
+
+void test_advanced_sample_library_rejects_old_save_generated_action() {
+    WebFixture fixture;
+    TEST_ASSERT_TRUE(fixture.meteringSchemes.begin());
+    MeteringSchemeRecord before[4]{};
+    const std::size_t beforeCount = fixture.meteringSchemes.list(before, 4, true);
+    saveLongTermWebSample(fixture.sampleStore, 1200, 45, 360, 12);
+    saveLongTermWebSample(fixture.sampleStore, 3600, 45, 1080, 36);
+    registerRoutes();
+    Esp32BaseWeb::nativeTestBeginRequest(Esp32BaseWeb::METHOD_POST, "/faucet/calibration/flow");
+    Esp32BaseWeb::nativeTestSetAuthenticated(true);
+    Esp32BaseWeb::nativeTestSetSameOrigin(true);
+    Esp32BaseWeb::nativeTestSetParam("action", "save_generated_scheme");
+
+    TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch("/faucet/calibration/flow", Esp32BaseWeb::METHOD_POST));
+
+    TEST_ASSERT_EQUAL(303, Esp32BaseWeb::nativeTestResponse().code);
+    TEST_ASSERT_EQUAL_STRING("/faucet/calibration/flow?error=invalid_action",
+                             Esp32BaseWeb::nativeTestResponseHeader("Location"));
+    MeteringSchemeRecord after[4]{};
+    TEST_ASSERT_EQUAL_size_t(beforeCount, fixture.meteringSchemes.list(after, 4, true));
+}
+
+void test_flow_calibration_rejects_old_set_active_action() {
+    WebFixture fixture;
+    TEST_ASSERT_TRUE(fixture.meteringSchemes.begin());
+    MeteringParameters params{12, 345, 1234, 3450, 2100};
+    std::uint32_t historyId = 0;
+    TEST_ASSERT_TRUE(fixture.meteringSchemes.createManual("history", params, testNowSeconds(), historyId));
+    const std::uint32_t activeBefore = fixture.meteringSchemes.activeSchemeId();
+    registerRoutes();
+    Esp32BaseWeb::nativeTestBeginRequest(Esp32BaseWeb::METHOD_POST, "/faucet/calibration/flow");
+    Esp32BaseWeb::nativeTestSetAuthenticated(true);
+    Esp32BaseWeb::nativeTestSetSameOrigin(true);
+    Esp32BaseWeb::nativeTestSetParam("action", "set_active_metering_scheme");
+    Esp32BaseWeb::nativeTestSetParam("id", "2");
+
+    TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch("/faucet/calibration/flow", Esp32BaseWeb::METHOD_POST));
+
+    TEST_ASSERT_EQUAL(303, Esp32BaseWeb::nativeTestResponse().code);
+    TEST_ASSERT_EQUAL_STRING("/faucet/calibration/flow?error=invalid_action",
+                             Esp32BaseWeb::nativeTestResponseHeader("Location"));
+    TEST_ASSERT_EQUAL_UINT32(activeBefore, fixture.meteringSchemes.activeSchemeId());
+    TEST_ASSERT_NOT_EQUAL_UINT32(historyId, fixture.app.activeMeteringScheme().id);
 }
 
 void test_flow_calibration_notice_uses_history_sample_language() {
@@ -1372,8 +1444,7 @@ void test_metering_scheme_write_redirects_busy_to_flow_center() {
     Esp32BaseWeb::nativeTestBeginRequest(Esp32BaseWeb::METHOD_POST, "/faucet/calibration/flow");
     Esp32BaseWeb::nativeTestSetAuthenticated(true);
     Esp32BaseWeb::nativeTestSetSameOrigin(true);
-    Esp32BaseWeb::nativeTestSetParam("action", "set_active_metering_scheme");
-    Esp32BaseWeb::nativeTestSetParam("id", "1");
+    Esp32BaseWeb::nativeTestSetParam("action", "create_metering_scheme");
 
     TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch("/faucet/calibration/flow", Esp32BaseWeb::METHOD_POST));
 
@@ -1485,7 +1556,10 @@ int main(int, char**) {
     RUN_TEST(test_flow_calibration_center_initial_render_shows_current_parameter_workflow);
     RUN_TEST(test_flow_calibration_history_uses_parameter_language);
     RUN_TEST(test_flow_calibration_manual_input_prefills_copied_parameters);
+    RUN_TEST(test_flow_calibration_manual_save_becomes_active_parameter);
     RUN_TEST(test_advanced_sample_library_does_not_present_primary_apply_flow);
+    RUN_TEST(test_advanced_sample_library_rejects_old_save_generated_action);
+    RUN_TEST(test_flow_calibration_rejects_old_set_active_action);
     RUN_TEST(test_flow_calibration_notice_uses_history_sample_language);
     RUN_TEST(test_flow_calibration_error_uses_history_sample_language);
     RUN_TEST(test_flow_calibration_center_uses_no_collapsed_sections);

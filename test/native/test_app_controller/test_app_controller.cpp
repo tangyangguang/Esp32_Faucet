@@ -659,6 +659,25 @@ void test_app_tds_point_calibration_apply_persists_to_config() {
     TEST_ASSERT_EQUAL_UINT16(4, updated.tdsCalibrationRevision);
 }
 
+void test_app_expires_idle_tds_calibration_session_from_tick() {
+    SystemConfig config = enabledWaterSensorConfig();
+    StatisticsStore statistics;
+    statistics.reset({20260506, 202619, 202605});
+    FilterStore filters(config.filters);
+    MemoryRecordWriter records;
+    FakeAdcReader adc;
+    WaterSensorManager sensors(adc);
+    sensors.configure(config);
+    TEST_ASSERT_TRUE(sensors.begin());
+    AppController app(config, statistics, filters, records, nullptr, nullptr, nullptr, nullptr, nullptr, &sensors);
+
+    TEST_ASSERT_TRUE(app.startTdsCalibrationSessionForWeb(1714502400));
+
+    app.tick(input({false, false, false, false}, 1000, 1000000UL, 1714502400 + 30UL * 60UL));
+
+    TEST_ASSERT_FALSE(app.tdsCalibrationSnapshot().sessionActive);
+}
+
 void test_app_controller_successful_record_writes_scheme_id_and_marks_scheme_used_once() {
     SystemConfig config = makeDefaultConfig();
     StatisticsStore statistics;
@@ -2121,6 +2140,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_app_records_sensor_summary_on_completed_run);
     RUN_TEST(test_app_rejects_tds_calibration_when_running);
     RUN_TEST(test_app_tds_point_calibration_apply_persists_to_config);
+    RUN_TEST(test_app_expires_idle_tds_calibration_session_from_tick);
     RUN_TEST(test_app_controller_successful_record_writes_scheme_id_and_marks_scheme_used_once);
     RUN_TEST(test_app_controller_record_write_failure_does_not_mark_scheme_used);
     RUN_TEST(test_app_controller_record_write_success_locks_active_scheme_even_if_used_mark_persist_fails);

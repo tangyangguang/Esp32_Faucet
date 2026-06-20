@@ -286,6 +286,9 @@ void AppController::tick(const AppTickInput& input) {
     if (input.buttons.cancelPressed && event.type != ButtonEventType::None && !isCancelButtonEvent(event.type)) {
         event = {ButtonEventType::CancelDown, ButtonId::Cancel};
     }
+    if (input.timeSynced && waterSensors_) {
+        waterSensors_->expireTdsCalibrationSession(input.nowSeconds);
+    }
     expireIdleCalibrationSession(input.timeSynced ? input.nowSeconds : 0);
     handleButtonEvent(event, input.nowMs, input.nowUs, input.nowSeconds, input.timeSynced, input.bootId);
     if (localMode_ == LocalUiMode::RecordCalibration && localCalibrationIgnoreOkUntilRelease_) {

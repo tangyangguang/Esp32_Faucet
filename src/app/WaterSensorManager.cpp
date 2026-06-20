@@ -161,7 +161,7 @@ TdsCalibrationSessionSnapshot WaterSensorManager::calibrationSnapshot() const {
 }
 
 bool WaterSensorManager::startTdsCalibrationSession(std::uint32_t nowSeconds) {
-    if (!enabledTds(config_) || calibrationKind_ != CalibrationKind::None) {
+    if (!enabledTds(config_) || tdsCalibrationSessionActive_ || calibrationKind_ != CalibrationKind::None) {
         return false;
     }
     tdsCalibrationSessionActive_ = true;
@@ -246,7 +246,8 @@ bool WaterSensorManager::discardTdsCalibrationSession() {
 }
 
 bool WaterSensorManager::expireTdsCalibrationSession(std::uint32_t nowSeconds) {
-    if (!tdsCalibrationSessionActive_ || nowSeconds - tdsCalibrationUpdatedAt_ < kTdsCalibrationSessionTimeoutSec) {
+    if (!tdsCalibrationSessionActive_ || nowSeconds < tdsCalibrationUpdatedAt_ ||
+        nowSeconds - tdsCalibrationUpdatedAt_ < kTdsCalibrationSessionTimeoutSec) {
         return false;
     }
     return discardTdsCalibrationSession();
@@ -262,12 +263,22 @@ bool WaterSensorManager::applyReadyTdsCalibration(SystemConfig& config, std::uin
     config.tdsCalibrationMode = tdsModeForPointCount(tdsCalibrationPointCount_);
     config.tdsCalibrationRevision = static_cast<std::uint16_t>(config.tdsCalibrationRevision + 1U);
     config.tdsCalibrationTime = nowSeconds;
-    const TdsCalibrationPointSnapshot& first = tdsCalibrationPoints_[0];
+    const TdsCalibrationPointSnapshot* low = &tdsCalibrationPoints_[0];
+    const TdsCalibrationPointSnapshot* high = &tdsCalibrationPoints_[0];
+    for (std::uint8_t i = 1; i < tdsCalibrationPointCount_; ++i) {
+        const TdsCalibrationPointSnapshot& point = tdsCalibrationPoints_[i];
+        if (point.referencePpm < low->referencePpm) {
+            low = &point;
+        }
+        if (point.referencePpm > high->referencePpm) {
+            high = &point;
+        }
+    }
     const TdsCalibrationPointSnapshot& last = tdsCalibrationPoints_[tdsCalibrationPointCount_ - 1U];
-    config.tdsLowReferencePpm = first.referencePpm;
-    config.tdsLowRawPpm = first.rawPpm;
-    config.tdsHighReferencePpm = last.referencePpm;
-    config.tdsHighRawPpm = last.rawPpm;
+    config.tdsLowReferencePpm = low->referencePpm;
+    config.tdsLowRawPpm = low->rawPpm;
+    config.tdsHighReferencePpm = high->referencePpm;
+    config.tdsHighRawPpm = high->rawPpm;
     config.tdsCalibrationTemperatureCentiC = last.temperatureCentiC;
     config.tdsCalibrationVoltageMv = last.voltageMv;
     sanitizeConfig(config);

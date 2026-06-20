@@ -2834,8 +2834,7 @@ void handleTemperatureCalibrationPage() {
     sendFmt("<div><span>当前偏移</span><strong>%ld.%02ld C</strong></div>",
             static_cast<long>(config.temperatureOffsetCentiC / 100),
             static_cast<long>(std::abs(static_cast<int>(config.temperatureOffsetCentiC % 100))));
-    Esp32BaseWeb::sendChunk("</div><button class='btn-link primary' type='button'>开始校准</button>"
-                            "<form class='temperature-calibration-form' method='post' action='/faucet/calibration' onsubmit='return once(this)'>"
+    Esp32BaseWeb::sendChunk("</div><form class='temperature-calibration-form' method='post' action='/faucet/calibration' onsubmit='return once(this)'>"
                             "<input type='hidden' name='action' value='temperature_save'>"
                             "<label class='compact-field'><span>温度计读数</span><span class='estimator-input-row'>"
                             "<input name='referenceC' type='number' step='0.1' min='0' max='90' required>"
@@ -5878,11 +5877,14 @@ void handleCalibrationPost() {
         return;
     }
     if (std::strcmp(text, "tds_start_session") == 0) {
-        redirectTdsCalibrationResult(g_context.app &&
-                                         g_context.app->startTdsCalibrationSessionForWeb(
-                                             g_context.nowSeconds ? g_context.nowSeconds() : 0),
+        if (!g_context.app || waterTaskActive()) {
+            redirectTdsCalibrationFailure("busy");
+            return;
+        }
+        redirectTdsCalibrationResult(g_context.app->startTdsCalibrationSessionForWeb(
+                                         g_context.nowSeconds ? g_context.nowSeconds() : 0),
                                      "tds_started",
-                                     "busy");
+                                     "invalid_state");
         return;
     }
     if (std::strcmp(text, "tds_start_point") == 0) {

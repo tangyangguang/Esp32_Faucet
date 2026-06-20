@@ -303,6 +303,31 @@ void test_tds_calibration_point_session_generates_after_one_point() {
                             static_cast<std::uint8_t>(session.candidateMode));
 }
 
+void test_tds_calibration_session_rejects_duplicate_start_without_clearing_points() {
+    FakeAdcReader adc;
+    SystemConfig config = enabledSensorConfig();
+    WaterSensorManager manager(adc);
+    manager.configure(config);
+    TEST_ASSERT_TRUE(manager.begin());
+
+    TEST_ASSERT_TRUE(manager.startTdsCalibrationSession(1720000000UL));
+    TEST_ASSERT_TRUE(manager.startTdsCalibrationPoint(160, 1720000001UL));
+    std::uint32_t nowMs = 0;
+    for (std::uint8_t i = 0; i < 16; ++i) {
+        adc.values[2] = okMv(420);
+        advanceSample(manager, nowMs);
+    }
+    TEST_ASSERT_TRUE(manager.saveStableTdsCalibrationPoint(1720000020UL));
+
+    TEST_ASSERT_FALSE(manager.startTdsCalibrationSession(1720000030UL));
+
+    const TdsCalibrationSessionSnapshot session = manager.calibrationSnapshot();
+    TEST_ASSERT_TRUE(session.sessionActive);
+    TEST_ASSERT_EQUAL_UINT8(1, session.pointCount);
+    TEST_ASSERT_TRUE(session.candidateReady);
+    TEST_ASSERT_EQUAL_UINT16(160, session.points[0].referencePpm);
+}
+
 void test_tds_calibration_point_session_multi_point_fit_and_apply() {
     FakeAdcReader adc;
     SystemConfig config = enabledSensorConfig();
@@ -332,6 +357,36 @@ void test_tds_calibration_point_session_multi_point_fit_and_apply() {
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(TdsCalibrationMode::TwoPoint),
                             static_cast<std::uint8_t>(config.tdsCalibrationMode));
     TEST_ASSERT_EQUAL_UINT16(5, config.tdsCalibrationRevision);
+}
+
+void test_tds_calibration_apply_saves_low_and_high_by_reference_not_entry_order() {
+    FakeAdcReader adc;
+    SystemConfig config = enabledSensorConfig();
+    WaterSensorManager manager(adc);
+    manager.configure(config);
+    TEST_ASSERT_TRUE(manager.begin());
+
+    TEST_ASSERT_TRUE(manager.startTdsCalibrationSession(1720000000UL));
+    std::uint32_t nowMs = 0;
+
+    TEST_ASSERT_TRUE(manager.startTdsCalibrationPoint(160, 1720000001UL));
+    for (std::uint8_t i = 0; i < 16; ++i) {
+        adc.values[2] = okMv(420);
+        advanceSample(manager, nowMs);
+    }
+    TEST_ASSERT_TRUE(manager.saveStableTdsCalibrationPoint(1720000020UL));
+
+    TEST_ASSERT_TRUE(manager.startTdsCalibrationPoint(20, 1720000030UL));
+    for (std::uint8_t i = 0; i < 16; ++i) {
+        adc.values[2] = okMv(160);
+        advanceSample(manager, nowMs);
+    }
+    TEST_ASSERT_TRUE(manager.saveStableTdsCalibrationPoint(1720000040UL));
+
+    TEST_ASSERT_TRUE(manager.applyReadyTdsCalibration(config, 1720000050UL));
+    TEST_ASSERT_EQUAL_UINT16(20, config.tdsLowReferencePpm);
+    TEST_ASSERT_EQUAL_UINT16(160, config.tdsHighReferencePpm);
+    TEST_ASSERT_TRUE(config.tdsLowRawPpm < config.tdsHighRawPpm);
 }
 
 void test_tds_calibration_point_removal_recomputes_candidate() {
@@ -370,7 +425,9 @@ int main(int argc, char** argv) {
     RUN_TEST(test_calibration_uses_25c_fallback_without_failing);
     RUN_TEST(test_two_point_calibration_saves_low_then_high_without_flash_progress_dependency);
     RUN_TEST(test_tds_calibration_point_session_generates_after_one_point);
+    RUN_TEST(test_tds_calibration_session_rejects_duplicate_start_without_clearing_points);
     RUN_TEST(test_tds_calibration_point_session_multi_point_fit_and_apply);
+    RUN_TEST(test_tds_calibration_apply_saves_low_and_high_by_reference_not_entry_order);
     RUN_TEST(test_tds_calibration_point_removal_recomputes_candidate);
     return UNITY_END();
 }

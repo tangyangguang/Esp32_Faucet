@@ -813,7 +813,7 @@ void test_temperature_calibration_uses_simple_card_and_celsius_input() {
     TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("temperature-calibration-summary"));
     TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("当前水温"));
     TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("当前偏移"));
-    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("开始校准"));
+    TEST_ASSERT_EQUAL(std::string::npos, body.find("开始校准"));
     TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("预览偏移"));
     TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("name='referenceC'"));
     TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("value='保存温度校准'"));
@@ -1413,6 +1413,24 @@ void test_tds_calibration_start_redirects_success_from_idle() {
     TEST_ASSERT_TRUE(fixture.app.tdsCalibrationSnapshot().sessionActive);
 }
 
+void test_tds_calibration_start_redirects_invalid_state_when_session_exists() {
+    WebFixture fixture;
+    enableTdsForFixture(fixture);
+    TEST_ASSERT_TRUE(fixture.app.startTdsCalibrationSessionForWeb(testNowSeconds()));
+    registerRoutes();
+    Esp32BaseWeb::nativeTestBeginRequest(Esp32BaseWeb::METHOD_POST, "/faucet/calibration");
+    Esp32BaseWeb::nativeTestSetAuthenticated(true);
+    Esp32BaseWeb::nativeTestSetSameOrigin(true);
+    Esp32BaseWeb::nativeTestSetParam("action", "tds_start_session");
+
+    TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch("/faucet/calibration", Esp32BaseWeb::METHOD_POST));
+
+    TEST_ASSERT_EQUAL(303, Esp32BaseWeb::nativeTestResponse().code);
+    TEST_ASSERT_EQUAL_STRING("/faucet/calibration?view=tds&error=invalid_state",
+                             Esp32BaseWeb::nativeTestResponseHeader("Location"));
+    TEST_ASSERT_TRUE(fixture.app.tdsCalibrationSnapshot().sessionActive);
+}
+
 void test_tds_old_split_actions_are_rejected() {
     WebFixture fixture;
     enableTdsForFixture(fixture);
@@ -1614,6 +1632,7 @@ int main(int, char**) {
     RUN_TEST(test_flow_calibration_sample_table_only_shows_remove_for_active_samples);
     RUN_TEST(test_tds_calibration_start_redirects_busy_to_calibration_page);
     RUN_TEST(test_tds_calibration_start_redirects_success_from_idle);
+    RUN_TEST(test_tds_calibration_start_redirects_invalid_state_when_session_exists);
     RUN_TEST(test_tds_old_split_actions_are_rejected);
     RUN_TEST(test_tds_calibration_save_persists_config_after_stable_samples);
     RUN_TEST(test_calibration_post_rejects_missing_action_as_invalid_action);

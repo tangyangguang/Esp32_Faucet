@@ -1,0 +1,755 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>0.91 OLED 中文界面高保真原型 v2</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #05080d;
+      --panel: #0b111a;
+      --edge: rgba(126, 232, 255, 0.18);
+      --ink: #effcff;
+      --muted: #8fb8c4;
+      --cyan: #79ecff;
+      --green: #7df5b1;
+      --amber: #ffd47a;
+      --red: #ff607a;
+      --violet: #9fa8ff;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 18% 8%, rgba(121, 236, 255, 0.1), transparent 25%),
+        radial-gradient(circle at 88% 16%, rgba(125, 245, 177, 0.07), transparent 22%),
+        linear-gradient(135deg, #05070b 0%, #0a0f16 55%, #04060a 100%);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      letter-spacing: 0;
+    }
+
+    .page {
+      width: min(1220px, calc(100vw - 40px));
+      margin: 0 auto;
+      padding: 42px 0 56px;
+    }
+
+    .hero {
+      display: grid;
+      grid-template-columns: minmax(0, 0.9fr) minmax(470px, 1.1fr);
+      gap: 30px;
+      align-items: end;
+      min-height: 366px;
+      border-bottom: 1px solid rgba(126, 232, 255, 0.14);
+      padding-bottom: 34px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 45px;
+      line-height: 1.04;
+      font-weight: 780;
+      letter-spacing: 0;
+    }
+
+    .lead {
+      max-width: 610px;
+      margin: 18px 0 0;
+      color: #accbd4;
+      font-size: 16px;
+      line-height: 1.75;
+    }
+
+    .meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 24px;
+    }
+
+    .pill {
+      border: 1px solid rgba(126, 232, 255, 0.18);
+      background: rgba(8, 15, 24, 0.74);
+      color: #c3f4ff;
+      border-radius: 999px;
+      padding: 7px 11px;
+      font-size: 12px;
+      white-space: nowrap;
+    }
+
+    .device-stage {
+      position: relative;
+      display: grid;
+      place-items: center;
+      min-height: 286px;
+      overflow: hidden;
+      border: 1px solid rgba(126, 232, 255, 0.16);
+      border-radius: 8px;
+      background:
+        linear-gradient(120deg, rgba(126, 232, 255, 0.05), rgba(125, 245, 177, 0.025)),
+        rgba(10, 16, 24, 0.84);
+      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.03), 0 24px 80px rgba(0, 0, 0, 0.34);
+    }
+
+    .device {
+      position: relative;
+      width: 462px;
+      height: 146px;
+      border-radius: 8px;
+      background: linear-gradient(145deg, #1d2630, #06090e 72%);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      box-shadow:
+        0 20px 42px rgba(0, 0, 0, 0.55),
+        inset 0 1px 0 rgba(255, 255, 255, 0.1),
+        inset 0 -1px 0 rgba(0, 0, 0, 0.72);
+      padding: 18px 28px;
+    }
+
+    .device::before,
+    .device::after {
+      content: "";
+      position: absolute;
+      top: 50%;
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      background: #05070b;
+      border: 1px solid rgba(255, 255, 255, 0.09);
+      transform: translateY(-50%);
+    }
+
+    .device::before { left: 10px; }
+    .device::after { right: 10px; }
+
+    .glass {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      border-radius: 5px;
+      padding: 13px 18px;
+      background:
+        linear-gradient(180deg, rgba(80, 255, 255, 0.06), rgba(255, 255, 255, 0)),
+        #020408;
+      border: 1px solid rgba(126, 232, 255, 0.32);
+      box-shadow:
+        0 0 25px rgba(60, 196, 255, 0.26),
+        inset 0 0 22px rgba(80, 210, 255, 0.08);
+      overflow: hidden;
+    }
+
+    .screen-large {
+      width: 512px;
+      max-width: 100%;
+      height: auto;
+      aspect-ratio: 4 / 1;
+    }
+
+    .gallery {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 18px;
+      margin-top: 28px;
+    }
+
+    .state-card {
+      min-width: 0;
+      border: 1px solid rgba(126, 232, 255, 0.14);
+      border-radius: 8px;
+      background: linear-gradient(145deg, rgba(15, 23, 34, 0.96), rgba(8, 12, 18, 0.96));
+      padding: 16px;
+    }
+
+    .state-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+
+    .state-title {
+      font-size: 14px;
+      font-weight: 750;
+      color: #e2fbff;
+    }
+
+    .state-note {
+      color: var(--muted);
+      font-size: 12px;
+      white-space: nowrap;
+    }
+
+    .oled-wrap {
+      border-radius: 7px;
+      background: #020408;
+      padding: 12px;
+      border: 1px solid rgba(126, 232, 255, 0.2);
+      box-shadow: inset 0 0 20px rgba(51, 200, 255, 0.08);
+      overflow: hidden;
+    }
+
+    .oled {
+      display: block;
+      width: 100%;
+      aspect-ratio: 4 / 1;
+      shape-rendering: geometricPrecision;
+      text-rendering: geometricPrecision;
+    }
+
+    .spec {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 16px;
+      margin-top: 28px;
+    }
+
+    .spec-card {
+      border: 1px solid rgba(126, 232, 255, 0.12);
+      border-radius: 8px;
+      background: rgba(10, 15, 22, 0.74);
+      padding: 18px;
+    }
+
+    .spec-card h2 {
+      margin: 0 0 10px;
+      font-size: 15px;
+      line-height: 1.2;
+    }
+
+    .spec-card p {
+      margin: 0;
+      color: #a9c8d0;
+      font-size: 13px;
+      line-height: 1.72;
+    }
+
+    svg .bg { fill: #020408; }
+    svg .grid {
+      stroke: rgba(126, 232, 255, 0.06);
+      stroke-width: 0.35;
+    }
+    svg .primary {
+      fill: #f2fdff;
+      filter: url(#glow);
+      font-family: Inter, "SF Pro Display", Arial, sans-serif;
+      font-weight: 820;
+    }
+    svg .secondary {
+      fill: #a5e4ef;
+      filter: url(#softGlow);
+      font-family: Inter, "SF Pro Text", Arial, sans-serif;
+      font-weight: 700;
+    }
+    svg .micro {
+      fill: #83bcc8;
+      font-family: Inter, "SF Pro Text", Arial, sans-serif;
+      font-weight: 720;
+    }
+    svg .line {
+      fill: none;
+      stroke: #79ecff;
+      stroke-width: 0.9;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      filter: url(#softGlow);
+    }
+    svg .dim-line {
+      fill: none;
+      stroke: rgba(126, 232, 255, 0.34);
+      stroke-width: 0.75;
+      stroke-linecap: round;
+    }
+    svg .bar-bg { fill: rgba(126, 232, 255, 0.12); }
+    svg .bar { fill: #79ecff; filter: url(#softGlow); }
+    svg .ok { fill: #7df5b1; filter: url(#greenGlow); }
+    svg .warn { fill: #ffd47a; filter: url(#amberGlow); }
+    svg .bad { fill: #ff607a; filter: url(#redGlow); }
+    svg .accent { fill: #79ecff; filter: url(#glow); }
+
+    .sparkline {
+      opacity: 0.95;
+    }
+
+    @media (max-width: 940px) {
+      .hero, .gallery, .spec { grid-template-columns: 1fr; }
+      .hero { min-height: auto; }
+      .device-stage { min-height: 230px; }
+      .device { width: min(462px, 100%); }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <section class="hero">
+      <div>
+        <h1>0.91 OLED 本地屏高保真原型 v2</h1>
+        <p class="lead">
+          这版不再照搬 LCD1602。OLED 信息层级按业务重新设计：大字只给目标值、已出水、剩余量和异常原因；
+          预设编号、按键说明、计量参数全部降级为辅助小字。待机页尽量一次展示目标、今日累计、水温和 TDS，不再用传感器轮播页。
+        </p>
+        <div class="meta">
+          <span class="pill">128x32 OLED 中文布局</span>
+          <span class="pill">主信息大字，操作提示小字</span>
+          <span class="pill">待机信息直接展示</span>
+          <span class="pill">运行页数据驱动图表</span>
+        </div>
+      </div>
+      <div class="device-stage">
+        <div class="device">
+          <div class="glass">
+            <svg class="screen-large run-chart" viewBox="0 0 128 32" role="img" aria-label="运行页 OLED 主视觉预览" data-volume="0.40" data-target="1.50" data-flow="1.8" data-samples="0.0,1.2,1.6,1.9,1.8,2.0,1.7">
+              <defs>
+                <filter id="glow" x="-35%" y="-70%" width="170%" height="240%">
+                  <feGaussianBlur stdDeviation="0.55" result="blur"></feGaussianBlur>
+                  <feMerge><feMergeNode in="blur"></feMergeNode><feMergeNode in="SourceGraphic"></feMergeNode></feMerge>
+                </filter>
+                <filter id="softGlow" x="-30%" y="-70%" width="160%" height="240%">
+                  <feGaussianBlur stdDeviation="0.3" result="blur"></feGaussianBlur>
+                  <feMerge><feMergeNode in="blur"></feMergeNode><feMergeNode in="SourceGraphic"></feMergeNode></feMerge>
+                </filter>
+                <filter id="greenGlow" x="-50%" y="-80%" width="200%" height="260%">
+                  <feGaussianBlur stdDeviation="0.55" result="blur"></feGaussianBlur>
+                  <feMerge><feMergeNode in="blur"></feMergeNode><feMergeNode in="SourceGraphic"></feMergeNode></feMerge>
+                </filter>
+                <filter id="amberGlow" x="-50%" y="-80%" width="200%" height="260%">
+                  <feGaussianBlur stdDeviation="0.55" result="blur"></feGaussianBlur>
+                  <feMerge><feMergeNode in="blur"></feMergeNode><feMergeNode in="SourceGraphic"></feMergeNode></feMerge>
+                </filter>
+                <filter id="redGlow" x="-50%" y="-80%" width="200%" height="260%">
+                  <feGaussianBlur stdDeviation="0.55" result="blur"></feGaussianBlur>
+                  <feMerge><feMergeNode in="blur"></feMergeNode><feMergeNode in="SourceGraphic"></feMergeNode></feMerge>
+                </filter>
+              </defs>
+              <rect class="bg" width="128" height="32"></rect>
+              <path class="grid" d="M0 8.5H128M0 24.5H128M32 0V32M64 0V32M96 0V32"></path>
+              <circle class="ok" cx="5" cy="5" r="2"></circle>
+              <text class="micro" x="10" y="7.4" font-size="6">运行 00:12</text>
+              <text class="micro" x="124" y="7.4" font-size="5.2" text-anchor="end">流速 1.8升/分</text>
+              <text class="primary" x="3" y="22.5" font-size="17">0.40</text>
+              <text class="secondary" x="47" y="22" font-size="6.5">升</text>
+              <text class="micro" x="4" y="28.8" font-size="4.8">已出</text>
+              <path class="dim-line" d="M62 10V27"></path>
+              <text class="micro" x="68" y="16" font-size="5.2">剩余</text>
+              <text class="primary" x="68" y="27" font-size="8.6">1.10升</text>
+              <path class="bar-bg" d="M4 30h72v1.5h-72z"></path>
+              <path class="bar progress-bar" d="M4 30h19v1.5h-19z"></path>
+              <path class="line sparkline" d="M104 27L107 22L111 20L114 18L118 19L121 16L124 20"></path>
+            </svg>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="gallery" aria-label="OLED 状态页面集">
+      <article class="state-card">
+        <div class="state-head">
+          <div class="state-title">01 待机：容量预设，信息一次展示</div>
+          <div class="state-note">目标值是主角</div>
+        </div>
+        <div class="oled-wrap">
+          <svg class="oled" viewBox="0 0 128 32" role="img" aria-label="容量待机页">
+            <defs>
+              <filter id="g1" x="-35%" y="-70%" width="170%" height="240%"><feGaussianBlur stdDeviation="0.5" result="b"></feGaussianBlur><feMerge><feMergeNode in="b"></feMergeNode><feMergeNode in="SourceGraphic"></feMergeNode></feMerge></filter>
+              <filter id="s1" x="-30%" y="-70%" width="160%" height="240%"><feGaussianBlur stdDeviation="0.25" result="b"></feGaussianBlur><feMerge><feMergeNode in="b"></feMergeNode><feMergeNode in="SourceGraphic"></feMergeNode></feMerge></filter>
+            </defs>
+            <rect class="bg" width="128" height="32"></rect>
+            <circle class="accent" cx="5" cy="5" r="2"></circle>
+            <text class="micro" x="10" y="7.4" font-size="6">待机</text>
+            <text class="micro" x="124" y="7.4" font-size="6" text-anchor="end">容量</text>
+            <text class="primary" x="3" y="24.5" font-size="20" filter="url(#g1)">1.50</text>
+            <text class="secondary" x="48" y="24" font-size="8" filter="url(#s1)">升</text>
+            <path class="dim-line" d="M60 10V28"></path>
+            <text class="micro" x="66" y="15" font-size="5.2">今日</text>
+            <text class="secondary" x="66" y="24" font-size="7.5" filter="url(#s1)">1.23L</text>
+            <path class="dim-line" d="M96 12V27"></path>
+            <text class="micro" x="101" y="15" font-size="5.2">水质</text>
+            <text class="secondary" x="101" y="24" font-size="7.5" filter="url(#s1)">8</text>
+            <text class="micro" x="116" y="24" font-size="4.7">ppm</text>
+            <text class="micro" x="66" y="31" font-size="4.7">25.3C</text>
+          </svg>
+        </div>
+      </article>
+
+      <article class="state-card">
+        <div class="state-head">
+          <div class="state-title">02 待机：时间预设</div>
+          <div class="state-note">秒数优先，不突出 P 编号</div>
+        </div>
+        <div class="oled-wrap">
+          <svg class="oled" viewBox="0 0 128 32" role="img" aria-label="时间待机页">
+            <rect class="bg" width="128" height="32"></rect>
+            <circle class="accent" cx="5" cy="5" r="2"></circle>
+            <text class="micro" x="10" y="7.4" font-size="6">待机</text>
+            <text class="micro" x="124" y="7.4" font-size="6" text-anchor="end">定时</text>
+            <text class="primary" x="3" y="24.5" font-size="20">60</text>
+            <text class="secondary" x="31" y="24" font-size="8">秒</text>
+            <path class="dim-line" d="M58 10V28"></path>
+            <text class="micro" x="64" y="15" font-size="5.2">预计</text>
+            <text class="secondary" x="64" y="24" font-size="7.5">1.92L</text>
+            <path class="dim-line" d="M96 12V27"></path>
+            <text class="micro" x="101" y="15" font-size="5.2">水质</text>
+            <text class="secondary" x="101" y="24" font-size="7.5">8</text>
+            <text class="micro" x="116" y="24" font-size="4.7">ppm</text>
+            <text class="micro" x="64" y="31" font-size="4.7">今日 1.23L  25.3C</text>
+          </svg>
+        </div>
+      </article>
+
+      <article class="state-card">
+        <div class="state-head">
+          <div class="state-title">03 确认：目标确认</div>
+          <div class="state-note">操作提示只做底部小字</div>
+        </div>
+        <div class="oled-wrap">
+          <svg class="oled" viewBox="0 0 128 32" role="img" aria-label="确认页">
+            <rect class="bg" width="128" height="32"></rect>
+            <circle class="warn" cx="5" cy="5" r="2"></circle>
+            <text class="micro" x="10" y="7.4" font-size="6">确认目标</text>
+            <text class="micro" x="124" y="7.4" font-size="6" text-anchor="end">+/- 0.10L</text>
+            <text class="primary" x="4" y="24.5" font-size="20">1.50</text>
+            <text class="secondary" x="49" y="24" font-size="8">升</text>
+            <path class="bar-bg" d="M64 14h55v2h-55z"></path>
+            <path class="bar" d="M64 14h34v2h-34z"></path>
+            <text class="secondary" x="64" y="26" font-size="6.2">约 47秒</text>
+            <text class="micro" x="124" y="30" font-size="4.8" text-anchor="end">确认启动  取消返回</text>
+          </svg>
+        </div>
+      </article>
+
+      <article class="state-card">
+        <div class="state-head">
+          <div class="state-title">04 运行：流速 + 进度</div>
+          <div class="state-note">曲线来自采样值</div>
+        </div>
+        <div class="oled-wrap">
+          <svg class="oled run-chart" viewBox="0 0 128 32" role="img" aria-label="容量运行页" data-volume="0.40" data-target="1.50" data-flow="1.8" data-samples="0.0,1.2,1.6,1.9,1.8,2.0,1.7">
+            <rect class="bg" width="128" height="32"></rect>
+            <circle class="ok" cx="5" cy="5" r="2"></circle>
+            <text class="micro" x="10" y="7.4" font-size="6">运行 00:12</text>
+            <text class="micro flow-label" x="124" y="7.4" font-size="5.2" text-anchor="end">流速 1.8升/分</text>
+            <text class="primary" x="3" y="22.5" font-size="17">0.40</text>
+            <text class="secondary" x="47" y="22" font-size="6.5">升</text>
+            <text class="micro" x="4" y="28.8" font-size="4.8">已出</text>
+            <path class="dim-line" d="M62 10V27"></path>
+            <text class="micro" x="68" y="16" font-size="5.2">剩余</text>
+            <text class="primary" x="68" y="27" font-size="8.6">1.10升</text>
+            <path class="bar-bg" d="M4 30h72v1.5h-72z"></path>
+            <path class="bar progress-bar" d="M4 30h19v1.5h-19z"></path>
+            <path class="line sparkline" d="M104 27L107 22L111 20L114 18L118 19L121 16L124 20"></path>
+          </svg>
+        </div>
+      </article>
+
+      <article class="state-card">
+        <div class="state-head">
+          <div class="state-title">05 运行：时间模式</div>
+          <div class="state-note">剩余秒数是主信息</div>
+        </div>
+        <div class="oled-wrap">
+          <svg class="oled" viewBox="0 0 128 32" role="img" aria-label="时间运行页">
+            <rect class="bg" width="128" height="32"></rect>
+            <circle class="ok" cx="5" cy="5" r="2"></circle>
+            <text class="micro" x="10" y="7.4" font-size="6">运行 00:12</text>
+            <text class="micro" x="124" y="7.4" font-size="5.2" text-anchor="end">流速 1.7升/分</text>
+            <text class="primary" x="4" y="24.5" font-size="20">48</text>
+            <text class="secondary" x="33" y="24" font-size="8">秒 剩余</text>
+            <path class="dim-line" d="M78 11V27"></path>
+            <text class="micro" x="84" y="16" font-size="5">已出</text>
+            <text class="secondary" x="84" y="25" font-size="7.2">0.35L</text>
+            <path class="line sparkline" data-samples="1.1,1.4,1.8,1.5,1.9,1.7,1.3" d="M104 25L108 21L112 17L116 20L120 15L124 18"></path>
+            <path class="bar-bg" d="M84 29h37v1.8h-37z"></path>
+            <path class="bar" d="M84 29h7.4v1.8h-7.4z"></path>
+          </svg>
+        </div>
+      </article>
+
+      <article class="state-card">
+        <div class="state-head">
+          <div class="state-title">06 暂停：状态主导，操作降级</div>
+          <div class="state-note">不放大按钮字</div>
+        </div>
+        <div class="oled-wrap">
+          <svg class="oled" viewBox="0 0 128 32" role="img" aria-label="暂停页">
+            <rect class="bg" width="128" height="32"></rect>
+            <circle class="warn" cx="5" cy="5" r="2"></circle>
+            <text class="micro" x="10" y="7.4" font-size="6">暂停</text>
+            <text class="micro" x="124" y="7.4" font-size="5.2" text-anchor="end">确认继续  取消停止</text>
+            <text class="primary" x="4" y="23.5" font-size="17">0.40</text>
+            <text class="secondary" x="46" y="23" font-size="7">升 已出</text>
+            <path class="dim-line" d="M74 11V27"></path>
+            <text class="secondary" x="82" y="19" font-size="7">剩余</text>
+            <text class="primary" x="82" y="29" font-size="9">1.10L</text>
+            <text class="micro" x="4" y="31" font-size="4.8">00:12</text>
+          </svg>
+        </div>
+      </article>
+
+      <article class="state-card">
+        <div class="state-head">
+          <div class="state-title">07 结果：完成摘要</div>
+          <div class="state-note">结果值最大</div>
+        </div>
+        <div class="oled-wrap">
+          <svg class="oled" viewBox="0 0 128 32" role="img" aria-label="结果页">
+            <rect class="bg" width="128" height="32"></rect>
+            <circle class="ok" cx="5" cy="5" r="2"></circle>
+            <text class="micro" x="10" y="7.4" font-size="6">完成</text>
+            <text class="micro" x="124" y="7.4" font-size="6" text-anchor="end">02:43</text>
+            <text class="primary" x="4" y="24.5" font-size="19">7.50</text>
+            <text class="secondary" x="50" y="24" font-size="8">升</text>
+            <path class="dim-line" d="M64 11V27"></path>
+            <text class="secondary" x="72" y="18" font-size="7">均速</text>
+            <text class="primary" x="72" y="28" font-size="8">2.8升/分</text>
+            <text class="micro" x="4" y="31" font-size="4.8">长按确认校准</text>
+          </svg>
+        </div>
+      </article>
+
+      <article class="state-card">
+        <div class="state-head">
+          <div class="state-title">08 异常：原因最大，动作明确</div>
+          <div class="state-note">先关阀后显示</div>
+        </div>
+        <div class="oled-wrap">
+          <svg class="oled" viewBox="0 0 128 32" role="img" aria-label="异常页">
+            <rect class="bg" width="128" height="32"></rect>
+            <circle class="bad" cx="5" cy="5" r="2"></circle>
+            <text class="micro" x="10" y="7.4" font-size="6">阀门已关</text>
+            <text class="micro" x="124" y="7.4" font-size="6" text-anchor="end">异常</text>
+            <path class="line" d="M6 27L17 12L28 27Z"></path>
+            <text class="primary" x="38" y="20" font-size="11">无水流</text>
+            <text class="secondary" x="38" y="29" font-size="7">检查水路</text>
+            <text class="micro" x="124" y="31" font-size="4.8" text-anchor="end">取消返回</text>
+          </svg>
+        </div>
+      </article>
+
+      <article class="state-card">
+        <div class="state-head">
+          <div class="state-title">09 校准：采样读数</div>
+          <div class="state-note">只放本地必要提示</div>
+        </div>
+        <div class="oled-wrap">
+          <svg class="oled" viewBox="0 0 128 32" role="img" aria-label="校准采样页">
+            <rect class="bg" width="128" height="32"></rect>
+            <circle class="accent" cx="5" cy="5" r="2"></circle>
+            <text class="micro" x="10" y="7.4" font-size="6">校准采样 2/3</text>
+            <text class="micro" x="124" y="7.4" font-size="6" text-anchor="end">248P</text>
+            <text class="primary" x="4" y="24.5" font-size="19">0.52</text>
+            <text class="secondary" x="50" y="24" font-size="8">升</text>
+            <path class="dim-line" d="M65 11V27"></path>
+            <text class="secondary" x="73" y="18" font-size="7">稳定</text>
+            <path class="line" d="M74 27L82 22L90 24L98 17L106 19L116 13"></path>
+            <text class="micro" x="4" y="31" font-size="4.8">确认出水</text>
+            <text class="micro" x="124" y="31" font-size="4.8" text-anchor="end">取消退出</text>
+          </svg>
+        </div>
+      </article>
+
+      <article class="state-card">
+        <div class="state-head">
+          <div class="state-title">10 校准录入：实测量调整</div>
+          <div class="state-note">当前值优先</div>
+        </div>
+        <div class="oled-wrap">
+          <svg class="oled" viewBox="0 0 128 32" role="img" aria-label="校准录入页">
+            <rect class="bg" width="128" height="32"></rect>
+            <circle class="accent" cx="5" cy="5" r="2"></circle>
+            <text class="micro" x="10" y="7.4" font-size="6">实测水量</text>
+            <text class="micro" x="124" y="7.4" font-size="6" text-anchor="end">步进 0.10L</text>
+            <text class="primary" x="4" y="24.5" font-size="20">1.50</text>
+            <text class="secondary" x="49" y="24" font-size="8">升</text>
+            <path class="dim-line" d="M64 11V27"></path>
+            <text class="secondary" x="72" y="18" font-size="7">原值</text>
+            <text class="primary" x="72" y="28" font-size="8">1.46L</text>
+            <text class="micro" x="4" y="31" font-size="4.8">加减调整</text>
+            <text class="micro" x="124" y="31" font-size="4.8" text-anchor="end">确认保存</text>
+          </svg>
+        </div>
+      </article>
+
+      <article class="state-card">
+        <div class="state-head">
+          <div class="state-title">11 系统提示：离线待机</div>
+          <div class="state-note">断网不影响本地出水</div>
+        </div>
+        <div class="oled-wrap">
+          <svg class="oled" viewBox="0 0 128 32" role="img" aria-label="离线待机页">
+            <rect class="bg" width="128" height="32"></rect>
+            <circle class="accent" cx="5" cy="5" r="2"></circle>
+            <text class="micro" x="10" y="7.4" font-size="6">待机</text>
+            <text class="micro warn" x="124" y="7.4" font-size="6" text-anchor="end">离线</text>
+            <text class="primary" x="3" y="24.5" font-size="20">1.50</text>
+            <text class="secondary" x="48" y="24" font-size="8">升</text>
+            <path class="dim-line" d="M60 10V28"></path>
+            <text class="micro" x="66" y="15" font-size="5.2">今日</text>
+            <text class="secondary" x="66" y="24" font-size="7.5">1.23L</text>
+            <path class="dim-line" d="M96 12V27"></path>
+            <text class="micro" x="101" y="15" font-size="5.2">水质</text>
+            <text class="secondary" x="101" y="24" font-size="7.5">8</text>
+            <text class="micro" x="116" y="24" font-size="4.7">ppm</text>
+            <text class="micro" x="66" y="31" font-size="4.7">Web 暂不可用</text>
+          </svg>
+        </div>
+      </article>
+
+      <article class="state-card">
+        <div class="state-head">
+          <div class="state-title">12 系统提示：配网模式</div>
+          <div class="state-note">只在待机显示</div>
+        </div>
+        <div class="oled-wrap">
+          <svg class="oled" viewBox="0 0 128 32" role="img" aria-label="配网页">
+            <rect class="bg" width="128" height="32"></rect>
+            <circle class="warn" cx="5" cy="5" r="2"></circle>
+            <text class="micro" x="10" y="7.4" font-size="6">配网</text>
+            <text class="micro" x="124" y="7.4" font-size="6" text-anchor="end">本地可用</text>
+            <text class="primary" x="4" y="22.5" font-size="15">配网中</text>
+            <path class="dim-line" d="M55 10V27"></path>
+            <text class="micro" x="62" y="16" font-size="5.4">热点</text>
+            <text class="secondary" x="62" y="25" font-size="6.8">water-faucet</text>
+            <text class="micro" x="4" y="31" font-size="4.8">出水按键仍可用</text>
+            <text class="micro" x="124" y="31" font-size="4.8" text-anchor="end">Web 配置 WiFi</text>
+          </svg>
+        </div>
+      </article>
+
+      <article class="state-card">
+        <div class="state-head">
+          <div class="state-title">13 系统异常：存储告警</div>
+          <div class="state-note">不覆盖水路安全异常</div>
+        </div>
+        <div class="oled-wrap">
+          <svg class="oled" viewBox="0 0 128 32" role="img" aria-label="系统异常页">
+            <rect class="bg" width="128" height="32"></rect>
+            <circle class="warn" cx="5" cy="5" r="2"></circle>
+            <text class="micro" x="10" y="7.4" font-size="6">系统提示</text>
+            <text class="micro" x="124" y="7.4" font-size="6" text-anchor="end">可出水</text>
+            <path class="line" d="M7 26L17 13L27 26Z"></path>
+            <text class="primary" x="38" y="19" font-size="10">存储异常</text>
+            <text class="secondary" x="38" y="28" font-size="6.4">记录可能丢失</text>
+            <text class="micro" x="124" y="31" font-size="4.8" text-anchor="end">请看 Web 日志</text>
+          </svg>
+        </div>
+      </article>
+
+      <article class="state-card">
+        <div class="state-head">
+          <div class="state-title">14 维护提示：滤芯建议更换</div>
+          <div class="state-note">只在待机/结果提醒</div>
+        </div>
+        <div class="oled-wrap">
+          <svg class="oled" viewBox="0 0 128 32" role="img" aria-label="滤芯提示页">
+            <rect class="bg" width="128" height="32"></rect>
+            <circle class="warn" cx="5" cy="5" r="2"></circle>
+            <text class="micro" x="10" y="7.4" font-size="6">维护提示</text>
+            <text class="micro" x="124" y="7.4" font-size="6" text-anchor="end">可出水</text>
+            <text class="primary" x="5" y="21" font-size="13">滤芯</text>
+            <path class="dim-line" d="M38 11V27"></path>
+            <text class="secondary" x="47" y="17" font-size="7">第1级</text>
+            <text class="primary" x="47" y="27" font-size="8">建议更换</text>
+            <path class="bar-bg" d="M96 17h25v2h-25z"></path>
+            <path class="warn" d="M96 17h22.5v2h-22.5z"></path>
+            <text class="micro" x="96" y="28" font-size="5.2">寿命 90%</text>
+          </svg>
+        </div>
+      </article>
+
+      <article class="state-card">
+        <div class="state-head">
+          <div class="state-title">15 传感器提示：水质未校准</div>
+          <div class="state-note">显示数值但标记可信度</div>
+        </div>
+        <div class="oled-wrap">
+          <svg class="oled" viewBox="0 0 128 32" role="img" aria-label="水质未校准提示页">
+            <rect class="bg" width="128" height="32"></rect>
+            <circle class="warn" cx="5" cy="5" r="2"></circle>
+            <text class="micro" x="10" y="7.4" font-size="6">传感器</text>
+            <text class="micro" x="124" y="7.4" font-size="6" text-anchor="end">需校准</text>
+            <text class="primary" x="4" y="24.5" font-size="17">8</text>
+            <text class="secondary" x="24" y="24" font-size="6.5">ppm</text>
+            <path class="dim-line" d="M48 11V27"></path>
+            <text class="secondary" x="56" y="18" font-size="7">水质仅供参考</text>
+            <text class="micro" x="56" y="28" font-size="5">Web 完成 TDS 校准</text>
+          </svg>
+        </div>
+      </article>
+    </section>
+
+    <section class="spec">
+      <div class="spec-card">
+        <h2>新的信息层级</h2>
+        <p>主字只用于业务值：目标水量/时间、已出水、剩余量、结果值、异常原因。预设编号最多作为小标签，不进入主视觉。</p>
+      </div>
+      <div class="spec-card">
+        <h2>待机页不轮播</h2>
+        <p>待机页直接展示目标、今日累计、水温和 TDS；输入电压不进 OLED，本地屏只放用户当下需要看的信息。</p>
+      </div>
+      <div class="spec-card">
+        <h2>图表落地方式</h2>
+        <p>运行页图表只表达真实状态：进度条来自已出水/目标值，曲线来自最近流速采样。固件里应限制刷新频率，避免阻塞控制 tick。</p>
+      </div>
+      <div class="spec-card">
+        <h2>网络状态角标</h2>
+        <p>正常联网不显示。离线、配网只在待机或结果页小字提示；出水中不抢占主信息，断网不作为出水异常。</p>
+      </div>
+      <div class="spec-card">
+        <h2>系统异常层级</h2>
+        <p>存储、RTC、传感器等属于系统提示，不覆盖无水流、高流量、超量等安全异常；安全异常仍使用大字页面。</p>
+      </div>
+      <div class="spec-card">
+        <h2>维护和可信度提示</h2>
+        <p>滤芯、未校准水质、传感器故障只在待机/结果页提示；运行中不抢占核心出水信息，避免影响停止和读数。</p>
+      </div>
+    </section>
+  </div>
+  <script>
+    (() => {
+      const parseSamples = (source) => (source || "")
+        .split(",")
+        .map((item) => Number(item.trim()))
+        .filter((value) => Number.isFinite(value));
+
+      const setProgress = (svg) => {
+        const volume = Number(svg.dataset.volume);
+        const target = Number(svg.dataset.target);
+        const progress = target > 0 ? Math.max(0, Math.min(1, volume / target)) : 0;
+        const bar = svg.querySelector(".progress-bar");
+        if (bar) {
+          const width = Math.max(1.5, 72 * progress);
+          bar.setAttribute("d", `M4 30h${width.toFixed(1)}v1.5h-${width.toFixed(1)}z`);
+        }
+      };
+
+      const setSparkline = (path, samples, box) => {
+        if (!path || samples.length < 2) {
+          return;
+        }
+        const min = Math.min(...samples);
+        const max = Math.max(...samples);
+        const span = Math.max(0.1, max - min);
+        const points = samples.map((value, index) => {
+          const x = box.x + (box.w * index) / (samples.length - 1);
+          const y = box.y + box.h - ((value - min) / span) * box.h;
+          return `${index === 0 ? "M" : "L"}${x.toFixed(1)} ${y.toFixed(1)}`;
+        });
+        path.setAttribute("d", points.join(""));
+      };
+
+      document.querySelectorAll(".run-chart").forEach((svg) => {
+        setProgress(svg);
+        setSparkline(svg.querySelector(".sparkline"), parseSamples(svg.dataset.samples), { x: 104, y: 15, w: 20, h: 12 });
+      });
+
+      document.querySelectorAll(".sparkline[data-samples]").forEach((path) => {
+        setSparkline(path, parseSamples(path.dataset.samples), { x: 104, y: 14, w: 20, h: 11 });
+      });
+    })();
+  </script>
+</body>
+</html>

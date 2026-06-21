@@ -434,9 +434,9 @@ BeepPattern AppController::consumeBeepPattern() {
 
 bool AppController::emergencyStop(std::uint32_t nowMs) {
     const WaterState state = water_.snapshot().state;
-    water_.stop(nowMs);
-    syncValve(nowMs);
     if (state == WaterState::Running || state == WaterState::Paused) {
+        water_.stop(nowMs);
+        syncValve(nowMs);
         pendingBeep_ = BeepPattern::Error;
         return true;
     }

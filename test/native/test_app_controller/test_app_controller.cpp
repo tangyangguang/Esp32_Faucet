@@ -787,6 +787,28 @@ void test_app_controller_starts_after_double_ok_and_opens_valve() {
     TEST_ASSERT_EQUAL_UINT8(100, app.snapshot().valve.dutyPercent);
 }
 
+void test_app_controller_stale_cancel_fast_path_does_not_block_confirm_ok_start() {
+    SystemConfig config = makeDefaultConfig();
+    StatisticsStore statistics;
+    statistics.reset({20260506, 202619, 202605});
+    FilterStore filters(config.filters);
+    MemoryRecordWriter records;
+    AppController app(config, statistics, filters, records);
+    applyTestMeteringScheme(app);
+
+    app.resetInputs({false, false, false, false}, 0);
+    pressAndReleaseOk(app, 100);
+    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(WaterState::Confirm),
+                            static_cast<std::uint8_t>(app.snapshot().water.state));
+
+    TEST_ASSERT_FALSE(app.emergencyStop(250));
+    pressAndReleaseOk(app, 300);
+
+    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(WaterState::Running),
+                            static_cast<std::uint8_t>(app.snapshot().water.state));
+    TEST_ASSERT_TRUE(app.snapshot().valve.enabled);
+}
+
 void test_app_controller_cancel_raw_dominates_pending_ok_release() {
     SystemConfig config = makeDefaultConfig();
     StatisticsStore statistics;
@@ -2195,6 +2217,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_app_controller_record_write_failure_does_not_mark_scheme_used);
     RUN_TEST(test_app_controller_record_write_success_locks_active_scheme_even_if_used_mark_persist_fails);
     RUN_TEST(test_app_controller_starts_after_double_ok_and_opens_valve);
+    RUN_TEST(test_app_controller_stale_cancel_fast_path_does_not_block_confirm_ok_start);
     RUN_TEST(test_app_controller_cancel_raw_dominates_pending_ok_release);
     RUN_TEST(test_app_controller_confirm_and_running_start_volume_stays_zero_until_first_pulse);
     RUN_TEST(test_app_controller_completion_writes_record_statistics_and_filters);

@@ -610,10 +610,8 @@ void runApplicationTick() {
     const std::uint32_t nowMs = millis();
     const std::uint32_t nowUs = micros();
     const faucet::ButtonLevels levels = g_buttons.read();
-    if (g_buttons.consumeCancelInterrupt() || levels.cancelPressed) {
-        g_app->emergencyStop(nowMs);
-        g_valveHardware.apply(g_app->snapshot().valve);
-    }
+    const bool cancelInterruptPending = g_buttons.consumeCancelInterrupt();
+    (void)cancelInterruptPending;
 
     std::uint32_t pulseUs = 0;
     std::size_t processedPulses = 0;

@@ -1867,6 +1867,21 @@ void test_main_loop_budgets_flow_pulse_drain_to_keep_local_stop_responsive() {
     TEST_ASSERT_NULL(std::strstr(mainBuffer, "while (g_flowPulses.pop(pulseUs))"));
 }
 
+void test_main_loop_routes_cancel_stop_through_debounced_button_input() {
+    FILE* mainFile = std::fopen("src/main.cpp", "rb");
+    TEST_ASSERT_NOT_NULL(mainFile);
+    static char mainBuffer[90000]{};
+    const std::size_t mainRead = std::fread(mainBuffer, 1, sizeof(mainBuffer) - 1, mainFile);
+    std::fclose(mainFile);
+    TEST_ASSERT_GREATER_THAN_size_t(0, mainRead);
+
+    TEST_ASSERT_NOT_NULL(std::strstr(mainBuffer, "const bool cancelInterruptPending = g_buttons.consumeCancelInterrupt();"));
+    TEST_ASSERT_NOT_NULL(std::strstr(mainBuffer, "(void)cancelInterruptPending;"));
+    TEST_ASSERT_NOT_NULL(std::strstr(mainBuffer, "g_app->tick(input);"));
+    TEST_ASSERT_NULL(std::strstr(mainBuffer, "g_app->emergencyStop(nowMs);"));
+    TEST_ASSERT_NULL(std::strstr(mainBuffer, "if (g_buttons.consumeCancelInterrupt() || levels.cancelPressed)"));
+}
+
 void test_esp32_file_backend_has_create_sized_fallback_for_fresh_littlefs_files() {
     FILE* backendFile = std::fopen("src/app/Esp32BaseWaterRecordBackend.cpp", "rb");
     TEST_ASSERT_NOT_NULL(backendFile);
@@ -1935,6 +1950,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_web_write_handlers_return_busy_before_trace_or_filter_runtime_writes);
     RUN_TEST(test_storage_status_and_persistence_retry_are_explicit);
     RUN_TEST(test_main_loop_budgets_flow_pulse_drain_to_keep_local_stop_responsive);
+    RUN_TEST(test_main_loop_routes_cancel_stop_through_debounced_button_input);
     RUN_TEST(test_esp32_file_backend_has_create_sized_fallback_for_fresh_littlefs_files);
     RUN_TEST(test_web_handler_mapping_does_not_duplicate_route_paths);
     return UNITY_END();

@@ -1579,6 +1579,8 @@ void test_app_config_source_uses_clear_business_labels_and_help() {
     TEST_ASSERT_NULL(std::strstr(buffer, "流量计脉冲系数"));
     TEST_ASSERT_NULL(std::strstr(buffer, "高级救援参数"));
     TEST_ASSERT_NULL(std::strstr(buffer, "pulse/ml"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "显示设备"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "LCD I2C 地址"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "保存后需重启，重启后重新探测 LCD。"));
     TEST_ASSERT_NULL(std::strstr(buffer, "仅保存在 RAM 中，重启会丢失；用于查看最近出水明细。"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "有效脉冲间隔阈值；最大频率 = 1000000 / 当前值 Hz。"));

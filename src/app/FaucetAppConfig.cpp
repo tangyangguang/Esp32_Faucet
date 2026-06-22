@@ -44,9 +44,7 @@ const char kKeyValveFullPower[] = "valve_s";
 const char kKeyValveHoldDuty[] = "hold_pct";
 const char kKeyDisplaySleep[] = "disp_s";
 const char kKeyResultDisplay[] = "result_s";
-const char kKeyLcdAddress[] = "lcd_addr";
 const char kKeyBeep[] = "beep";
-const char kKeyLcdSensorPage[] = "lcd_sensor_pg";
 const char kKeyTemperatureSensor[] = "temp_sensor";
 const char kKeyTdsSensor[] = "tds_sensor";
 const char kKeyTdsTemperatureCompensation[] = "tds_temp_comp";
@@ -159,11 +157,10 @@ bool addCoreFields() {
     ok = Esp32BaseAppConfig::addInt({kGroupValve, kConfigNs, kKeyValveFullPower, "阀门全功率时间", static_cast<std::int32_t>(kDefaultValveFullPowerSec), 1, 10, 1, "s", "开阀初段全功率吸合的持续时间。", false, nullptr}) && ok;
     ok = Esp32BaseAppConfig::addInt({kGroupValve, kConfigNs, kKeyValveHoldDuty, "阀门保持占空比", kDefaultValveHoldDutyPercent, kMinValveHoldDutyPercent, kMaxValveHoldDutyPercent, 1, "%", "100% 为全压保持；低于 100% 时启用降功耗 PWM 保持。", false, nullptr}) && ok;
 
-    ok = Esp32BaseAppConfig::addInt({kGroupLocal, kConfigNs, kKeyDisplaySleep, "LCD 熄屏时间", static_cast<std::int32_t>(kDefaultDisplaySleepSec), static_cast<std::int32_t>(kMinDisplaySleepSec), static_cast<std::int32_t>(kMaxDisplaySleepSec), 5, "s", "待机无操作超过该时间关闭背光。立即生效。", false, nullptr}) && ok;
+    ok = Esp32BaseAppConfig::addInt({kGroupLocal, kConfigNs, kKeyDisplaySleep, "本地屏熄屏时间", static_cast<std::int32_t>(kDefaultDisplaySleepSec), static_cast<std::int32_t>(kMinDisplaySleepSec), static_cast<std::int32_t>(kMaxDisplaySleepSec), 5, "s", "待机无操作超过该时间关闭 TFT 背光。立即生效。", false, nullptr}) && ok;
     ok = Esp32BaseAppConfig::addInt({kGroupLocal, kConfigNs, kKeyResultDisplay, "结果页显示时间", static_cast<std::int32_t>(kDefaultResultDisplaySec), 0, 60, 1, "s", "出水结束后结果页停留时间，0 表示立即返回。", false, nullptr}) && ok;
     ok = Esp32BaseAppConfig::addInt({kGroupLocal, kConfigNs, kKeyVolumeStep, "容量步进", static_cast<std::int32_t>(kDefaultVolumeAdjustStepMl), static_cast<std::int32_t>(kMinVolumeAdjustStepMl), static_cast<std::int32_t>(kMaxVolumeAdjustStepMl), 10, "ml", "按键确认页容量步进；Web 表单不受影响。", false, nullptr}) && ok;
     ok = Esp32BaseAppConfig::addInt({kGroupLocal, kConfigNs, kKeyTimeStep, "时间步进", static_cast<std::int32_t>(kDefaultTimeAdjustStepSec), static_cast<std::int32_t>(kMinTimeAdjustStepSec), static_cast<std::int32_t>(kMaxTimeAdjustStepSec), 1, "s", "按键确认页时间步进；Web 表单不受影响。", false, nullptr}) && ok;
-    ok = Esp32BaseAppConfig::addInt({kGroupLocal, kConfigNs, kKeyLcdAddress, "LCD I2C 地址", kDefaultLcdI2cAddress, 0x03, 0x77, 1, nullptr, "保存后需重启，重启后重新探测 LCD。", true, nullptr}) && ok;
     ok = Esp32BaseAppConfig::addBool({kGroupLocal, kConfigNs, kKeyBeep, "蜂鸣器提示音", true, "控制按键、完成和异常提示音。立即生效。", false, nullptr}) && ok;
 
     ok = Esp32BaseAppConfig::addInt({kGroupMetering, kConfigNs, kKeyCalibrationAnalysisPulseMinIntervalUs, "生成分析脉冲间隔", static_cast<std::int32_t>(kDefaultCalibrationAnalysisPulseMinIntervalUs), 0, static_cast<std::int32_t>(kMaxPulseMinIntervalUs), 100, "us", "0 使用样本记录间隔；非 0 按该间隔重新分析样本。", false, nullptr}) && ok;
@@ -174,7 +171,6 @@ bool addCoreFields() {
     ok = Esp32BaseAppConfig::addInt({kGroupMetering, kConfigNs, kKeyCalibrationMaxErrorMl, "生成最大拟合误差", static_cast<std::int32_t>(kDefaultCalibrationMaxErrorMl), static_cast<std::int32_t>(kMinCalibrationMaxErrorMl), static_cast<std::int32_t>(kMaxCalibrationMaxErrorMl), 10, "ml", "超过该绝对误差时作为样本质量提醒，仍允许生成结果。", false, nullptr}) && ok;
     ok = Esp32BaseAppConfig::addInt({kGroupMetering, kConfigNs, kKeyCalibrationMaxRelativeErrorTenthPercent, "生成最大相对误差", kDefaultCalibrationMaxRelativeErrorTenthPercent, kMinCalibrationMaxRelativeErrorTenthPercent, kMaxCalibrationMaxRelativeErrorTenthPercent, 1, "0.1%", "单位 0.1%；50 表示 5.0%。超过时作为样本质量提醒。", false, nullptr}) && ok;
 
-    ok = Esp32BaseAppConfig::addBool({kGroupSensors, kConfigNs, kKeyLcdSensorPage, "LCD 待机显示水温/TDS", false, "开启后仅在待机页轮换显示传感器信息。", false, nullptr}) && ok;
     ok = Esp32BaseAppConfig::addEnum({kGroupSensors, kConfigNs, kKeyTemperatureSensor, "水温传感器", "none", kTemperatureSensorOptions, 2, "A1 水温探头；50K B3950 NTC，51K 上拉。", false, nullptr}) && ok;
     ok = Esp32BaseAppConfig::addEnum({kGroupSensors, kConfigNs, kKeyTdsSensor, "TDS 传感器", "none", kTdsSensorOptions, 2, "ADS1115 A2；TDS Board V1.0 模拟输出。", false, nullptr}) && ok;
     ok = Esp32BaseAppConfig::addBool({kGroupSensors, kConfigNs, kKeyTdsTemperatureCompensation, "TDS 温度补偿", true, "启用后使用当前水温补偿 TDS；无有效水温时按 25C 回退并记录标志。", false, nullptr}) && ok;

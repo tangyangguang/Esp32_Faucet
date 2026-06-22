@@ -60,7 +60,6 @@ constexpr std::uint32_t kMinDisplaySleepSec = 60;
 constexpr std::uint32_t kDefaultDisplaySleepSec = 60;
 constexpr std::uint32_t kMaxDisplaySleepSec = 300;
 constexpr std::uint32_t kDefaultResultDisplaySec = 30;
-constexpr std::uint8_t kDefaultLcdI2cAddress = 0x27;
 constexpr std::uint16_t kDefaultRecordPageSize = 10;
 constexpr std::uint16_t kMaxRecordPageSize = 200;
 constexpr std::uint32_t kDaysPerLifeMonth = 30;
@@ -113,10 +112,8 @@ struct SystemConfig {
     std::uint8_t valveHoldDutyPercent;
     std::uint32_t displaySleepSec;
     std::uint32_t resultDisplaySec;
-    std::uint8_t lcdI2cAddress;
     bool beepEnabled;
     std::uint16_t sensorVrefMv;
-    bool lcdSensorPageEnabled;
     bool temperatureEnabled;
     TemperatureKind temperatureKind;
     std::int16_t temperatureOffsetCentiC;

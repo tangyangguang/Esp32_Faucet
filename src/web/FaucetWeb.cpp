@@ -3738,7 +3738,7 @@ void handleFaucetPage() {
     const FaucetDisplayStatus displayStatus =
         g_context.currentDisplayStatus
             ? g_context.currentDisplayStatus()
-            : FaucetDisplayStatus{DisplayFrame{DisplayPage::Sleep, false, {}, {}}, false};
+            : FaucetDisplayStatus{false};
     sendMachineStatusCard(snapshot, displayStatus.screenOn);
     sendTodayOverviewPlaceholder(snapshot.statistics.todayMl);
     sendFilterCards(g_context.nowSeconds());
@@ -5216,9 +5216,6 @@ void mergeChangedConfigFields(const SystemConfig& before, const SystemConfig& su
     if (submitted.resultDisplaySec != before.resultDisplaySec) {
         target.resultDisplaySec = submitted.resultDisplaySec;
     }
-    if (submitted.lcdI2cAddress != before.lcdI2cAddress) {
-        target.lcdI2cAddress = submitted.lcdI2cAddress;
-    }
     if (submitted.beepEnabled != before.beepEnabled) {
         target.beepEnabled = submitted.beepEnabled;
     }
@@ -5615,7 +5612,7 @@ void sendCurrentStatusJson() {
     const FaucetDisplayStatus displayStatus =
         g_context.currentDisplayStatus
             ? g_context.currentDisplayStatus()
-            : FaucetDisplayStatus{DisplayFrame{DisplayPage::Sleep, false, {}, {}}, false};
+            : FaucetDisplayStatus{false};
     const ConfigRuntimeStatus configStatus{
         configLoadStatusName(g_context.configStore->lastSystemConfigLoadStatus()),
         g_context.configStore->lastSystemConfigRawVersion(),

@@ -1,7 +1,5 @@
 #pragma once
 
-#include "app/DisplayPresenter.h"
-
 #include <cstdint>
 
 namespace faucet {
@@ -26,7 +24,6 @@ using FaucetApplySettings = void (*)(const SystemConfig&);
 using FaucetAfterFormatFs = void (*)();
 
 struct FaucetDisplayStatus {
-    DisplayFrame logicalFrame;
     bool screenOn;
 };
 

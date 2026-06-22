@@ -53,7 +53,6 @@ void test_default_config_matches_product_defaults() {
     TEST_ASSERT_EQUAL_UINT32(kDefaultDisplaySleepSec, config.displaySleepSec);
     TEST_ASSERT_EQUAL_UINT32(60, config.displaySleepSec);
     TEST_ASSERT_EQUAL_UINT32(kDefaultResultDisplaySec, config.resultDisplaySec);
-    TEST_ASSERT_EQUAL_UINT8(kDefaultLcdI2cAddress, config.lcdI2cAddress);
     TEST_ASSERT_TRUE(config.beepEnabled);
 }
 
@@ -108,7 +107,6 @@ void test_sensor_config_defaults_disabled() {
     const SystemConfig config = makeDefaultConfig();
 
     TEST_ASSERT_EQUAL_UINT16(3300, config.sensorVrefMv);
-    TEST_ASSERT_FALSE(config.lcdSensorPageEnabled);
     TEST_ASSERT_FALSE(config.temperatureEnabled);
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(TemperatureKind::None),
                             static_cast<std::uint8_t>(config.temperatureKind));
@@ -156,7 +154,6 @@ void test_sanitize_config_clamps_scalar_ranges() {
     config.valveHoldDutyPercent = 1;
     config.displaySleepSec = 999999;
     config.resultDisplaySec = 999999;
-    config.lcdI2cAddress = 0;
 
     sanitizeConfig(config);
 
@@ -183,7 +180,6 @@ void test_sanitize_config_clamps_scalar_ranges() {
     TEST_ASSERT_EQUAL_UINT8(kMinValveHoldDutyPercent, config.valveHoldDutyPercent);
     TEST_ASSERT_EQUAL_UINT32(300, config.displaySleepSec);
     TEST_ASSERT_EQUAL_UINT32(60, config.resultDisplaySec);
-    TEST_ASSERT_EQUAL_UINT8(0x03, config.lcdI2cAddress);
 
     config = makeDefaultConfig();
     config.displaySleepSec = 5;

@@ -13,7 +13,7 @@ namespace {
 constexpr const char* kConfigNs = "faucet_cfg";
 constexpr const char* kStatNs = "faucet_stat";
 constexpr const char* kRunNs = "faucet_run";
-constexpr std::int32_t kConfigVersion = 18;
+constexpr std::int32_t kConfigVersion = 19;
 constexpr std::int32_t kRuntimeVersion = 1;
 constexpr std::uint16_t kDefaultSensorVrefMv = 3300;
 constexpr const char* kSensorNone = "none";
@@ -138,11 +138,8 @@ void loadCommonSystemConfig(ConfigBackend& backend, SystemConfig& config) {
         static_cast<std::uint32_t>(backend.getInt(kConfigNs, "disp_s", toInt(config.displaySleepSec)));
     config.resultDisplaySec =
         static_cast<std::uint32_t>(backend.getInt(kConfigNs, "result_s", toInt(config.resultDisplaySec)));
-    config.lcdI2cAddress =
-        static_cast<std::uint8_t>(backend.getInt(kConfigNs, "lcd_addr", config.lcdI2cAddress));
     config.beepEnabled = backend.getBool(kConfigNs, "beep", config.beepEnabled);
     config.sensorVrefMv = kDefaultSensorVrefMv;
-    config.lcdSensorPageEnabled = backend.getBool(kConfigNs, "lcd_sensor_pg", config.lcdSensorPageEnabled);
     char sensorText[32]{};
     if (readStrKey(backend, kConfigNs, "temp_sensor", sensorText, sizeof(sensorText))) {
         applyTemperatureSensorConfigValue(config, sensorText);
@@ -277,9 +274,7 @@ bool ConfigStore::saveSystemConfig(const SystemConfig& config) {
     ok = okAll(ok, backend_.setInt(kConfigNs, "hold_pct", safe.valveHoldDutyPercent));
     ok = okAll(ok, backend_.setInt(kConfigNs, "disp_s", toInt(safe.displaySleepSec)));
     ok = okAll(ok, backend_.setInt(kConfigNs, "result_s", toInt(safe.resultDisplaySec)));
-    ok = okAll(ok, backend_.setInt(kConfigNs, "lcd_addr", safe.lcdI2cAddress));
     ok = okAll(ok, backend_.setBool(kConfigNs, "beep", safe.beepEnabled));
-    ok = okAll(ok, backend_.setBool(kConfigNs, "lcd_sensor_pg", safe.lcdSensorPageEnabled));
     ok = okAll(ok, backend_.setStr(kConfigNs, "temp_sensor", temperatureSensorConfigValue(safe)));
     ok = okAll(ok, backend_.setInt(kConfigNs, "temp_off_c", safe.temperatureOffsetCentiC));
     ok = okAll(ok, backend_.setBool(kConfigNs, "temp_cal", safe.temperatureCalibrated));

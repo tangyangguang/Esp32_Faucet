@@ -2,12 +2,12 @@
 
 ## 当前连接状态
 
-- 当前只连接 ESP32 核心板，未连接按键、电磁阀、流量计、LCD1602、蜂鸣器、DS3231 等外设。
+- 当前只连接 ESP32 核心板，未连接按键、电磁阀、流量计、240x240 ST7789 TFT、蜂鸣器、DS3231 等外设。
 - 当前电脑已枚举出 `/dev/cu.usbserial-130`，USB VID/PID 为 `1A86:7523`。
 - `esp32dev_smoke` 裸板自检固件已验证核心板、串口、Flash 和 Arduino 启动链路正常。
 - 已定位并修复分区表 `ota_0=0x20000` 与 PlatformIO 默认上传偏移 `0x10000` 不一致的问题。
 - 工程已通过 `board_upload.offset_address = 0x20000` 让串口上传位置与双 OTA 分区表一致。
-- 主固件已在裸板上启动成功：`rtc=absent`、`lcd=absent`、`records=file`，WiFi/Web/NTP 正常，设备端 mDNS 服务已启动，18 秒串口观察未出现 watchdog 或反复重启。
+- 主固件已在裸板上启动成功：`rtc=absent`、`records=file`，WiFi/Web/NTP 正常，设备端 mDNS 服务已启动，18 秒串口观察未出现 watchdog 或反复重启。
 
 ## 裸板验证目标
 
@@ -17,7 +17,7 @@
 - LittleFS 正常挂载。
 - Web、WiFi、OTA 基础能力正常。
 - DS3231 不存在时降级为 uptime 时间。
-- LCD1602 不存在时不影响主循环。
+- TFT 未连接或初始化失败时不影响主循环和本地控水。
 - 流量计无脉冲时不误计数。
 - 裸板未接流量计时不应出现持续的 `flow pulse buffer dropped pulses`；若出现，优先检查 GPIO32 是否悬空、流量计信号是否有稳定上拉和 3.3V 电平转换。
 - 四个按键未连接时不应触发出水、暂停、停止或调整。
@@ -103,7 +103,6 @@ pio device monitor -e esp32dev --port <端口> --baud 115200
 - 固件名为 `esp32-faucet`。
 - 应用初始化日志出现。
 - `rtc=absent` 合理，因为当前未接 DS3231。
-- `lcd=absent` 合理，因为当前未接 LCD1602。
 - `ads1115=absent` 或传感器状态无效在未焊接 ADS1115 时合理；焊接后应能在 0x48 读取。
 - `records=file` 优先，若 LittleFS 初始化异常则需要排查分区或文件系统。
 - 不应反复重启，不应出现 panic/backtrace。
@@ -111,8 +110,8 @@ pio device monitor -e esp32dev --port <端口> --baud 115200
 
 ## 逐步接线验证顺序
 
-1. I2C 总线：接 LCD1602、DS3231 和 ADS1115，确认地址 `0x27`、`0x68`、`0x48` 不冲突。
-2. LCD1602：验证背光、双行显示、空闲熄屏和按键唤醒；LCD 传感器页默认应不显示。
+1. TFT 本地屏：连接 ST7789，验证 SPI 引脚、背光、页面显示、空闲熄屏和按键唤醒。
+2. I2C 总线：接 DS3231 和 ADS1115，确认地址 `0x68`、`0x48` 不冲突。
 3. 四个按键：验证 `CANCEL=GPIO33`、`OK=GPIO25`、`PLUS=GPIO26`、`MINUS=GPIO27` 低电平有效、消抖和长按。
 4. 蜂鸣器：验证短提示、异常提示和 Web 关闭蜂鸣器配置。
 5. ADS1115 A0 输入电压：12V 输入时分压点约 1.09V，状态页输入电压约 12V；24V 输入时分压点约 2.18V。
@@ -130,7 +129,7 @@ pio device monitor -e esp32dev --port <端口> --baud 115200
 - `CANCEL` 软件停止响应时间。
 - 电磁阀关断时间。
 - 定量出水精度。
-- LCD1602 页面肉眼确认。
+- TFT 页面肉眼确认。
 - 蜂鸣器提示音。
 - 72 小时连续运行。
 
@@ -143,9 +142,11 @@ pio device monitor -e esp32dev --port <端口> --baud 115200
 - `pio device list` 可识别 CH340 串口。
 - 2026-06-17 代码侧复测：`pio test -e native` 通过，374 个 native 用例全部成功。
 - 2026-06-17 代码侧复测：`pio run -e esp32dev` 通过，主固件 RAM 约 27.0%，Flash 约 92.2%。
+- 2026-06-22 代码侧复测：`pio test -e native` 通过，430 个 native 用例全部成功。
+- 2026-06-22 代码侧复测：`pio run -e esp32dev` 通过，主固件 RAM 约 27.7%，Flash 约 96.9%。
 - 固件体积预算：当前双 OTA app 分区为 `0x160000`，Flash 使用率已超过 85% 预警线；继续增加 Web 页面、诊断或日志前，优先评估静态 HTML/CSS 字符串体积、可静态化资源迁移到 LittleFS，或重新评估分区表。
 - `pio run -e esp32dev_smoke` 通过。
-- 主固件串口启动正常：进入 `setup()`，`rtc=absent`、`lcd=absent`、`records=file`，WiFi 已连接，Web 服务就绪，NTP 已同步。
+- 主固件串口启动正常：进入 `setup()`，`rtc=absent`、`records=file`，WiFi 已连接，Web 服务就绪，NTP 已同步。
 - Web 首页 `http://192.168.2.112/index` 返回 200。
 - 未授权访问 `/index` 返回 401。
 - 状态 API 返回 `idle`、`valveOpen=false`、`waterControl=false`。

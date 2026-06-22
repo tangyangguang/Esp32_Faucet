@@ -10,7 +10,6 @@
 #include "app/CalibrationSessionStore.h"
 #include "app/ConfigStore.h"
 #include "app/DateTimeUtils.h"
-#include "app/DisplayPresenter.h"
 #include "app/Esp32BaseConfigBackend.h"
 #include "app/Esp32BaseWaterRecordBackend.h"
 #include "app/FaucetAppConfig.h"
@@ -26,7 +25,6 @@
 #include "drivers/BoardPins.h"
 #include "drivers/FlowPulseReader.h"
 #include "drivers/GpioButtonReader.h"
-#include "drivers/Lcd1602Display.h"
 #include "drivers/PwmBeepHardware.h"
 #include "drivers/PwmValveHardware.h"
 #include "drivers/RtcClock.h"
@@ -204,9 +202,6 @@ faucet::PwmValveHardware g_valveHardware(faucet::kPinValve, faucet::kLedcChannel
 faucet::BeepDriver g_beep;
 faucet::PwmBeepHardware g_beepHardware(faucet::kPinBeep, faucet::kLedcChannelBeep);
 faucet::RtcClock g_rtc(faucet::kPinI2cSda, faucet::kPinI2cScl);
-faucet::Lcd1602Display g_lcd(faucet::kPinI2cSda, faucet::kPinI2cScl);
-faucet::DisplayPresenter* g_display = nullptr;
-faucet::DisplayFrame g_lastDisplayFrame{faucet::DisplayPage::Sleep, false, {}, {}};
 faucet::St7789Display g_st7789(faucet::kPinSt7789Sclk,
                                 faucet::kPinSt7789Mosi,
                                 faucet::kPinSt7789Dc,
@@ -218,7 +213,6 @@ bool g_persistenceFailureLogged = false;
 bool g_runtimePersistenceRetryActive = false;
 bool g_rebuildRecordStoreAfterFormatFs = false;
 std::uint32_t g_lastRuntimePersistenceFailureMs = 0;
-std::uint32_t g_lastDisplayMs = 0;
 std::uint32_t g_lastColorDisplayMs = 0;
 std::uint32_t g_lastDroppedPulsesLogged = 0;
 std::uint32_t g_lastDroppedPulsesLogMs = 0;
@@ -347,7 +341,7 @@ std::uint32_t currentBootId() {
 }
 
 faucet::FaucetDisplayStatus currentDisplayStatus() {
-    return faucet::FaucetDisplayStatus{g_lastDisplayFrame, g_lastDisplayFrame.on};
+    return faucet::FaucetDisplayStatus{g_lastColorDisplayFrame.on};
 }
 
 faucet::FaucetRuntimeDiagnostics currentRuntimeDiagnostics() {
@@ -365,15 +359,10 @@ void requestRecordStoreRebuildAfterFormatFs() {
 void applyRuntimeSettings(const faucet::SystemConfig& config) {
     g_beep.setEnabled(config.beepEnabled);
     g_waterSensors.configure(config);
-    if (g_display) {
-        g_display->configure(config.displaySleepSec);
-        g_display->wake(millis());
-    }
     if (g_colorDisplay) {
         g_colorDisplay->configure(config.displaySleepSec);
         g_colorDisplay->wake(millis());
     }
-    g_lcd.begin(config.lcdI2cAddress);
     g_st7789.begin();
 }
 
@@ -509,10 +498,6 @@ void initializeApplication() {
         return;
     }
     g_appControllerInitComplete = true;
-    g_display = new (std::nothrow) faucet::DisplayPresenter(g_config.displaySleepSec);
-    if (!g_display) {
-        ESP32BASE_LOG_W("app", "display presenter allocation failed, lcd disabled");
-    }
     g_colorDisplay = new (std::nothrow) faucet::ColorDisplayPresenter(g_config.displaySleepSec);
     if (!g_colorDisplay) {
         ESP32BASE_LOG_W("app", "color display presenter allocation failed, st7789 disabled");
@@ -554,15 +539,10 @@ void initializeApplication() {
         startupValve.state == faucet::ValveState::Closed && !startupValve.enabled && startupValve.dutyPercent == 0;
     g_beep.setEnabled(g_config.beepEnabled);
     g_beepHardware.begin();
-    g_lcd.begin(g_config.lcdI2cAddress);
     g_st7789.begin();
     logStartupPhase("hardware_ready");
 
     g_app->resetInputs(g_buttons.read(), millis());
-    if (g_display) {
-        g_display->wake(millis());
-        g_lastDisplayFrame = g_display->render(g_app->snapshot(), millis());
-    }
     if (g_colorDisplay) {
         g_colorDisplay->wake(millis());
         g_lastColorDisplayFrame = g_colorDisplay->render(g_app->snapshot(), millis(), Esp32BaseWiFi::isConnected());
@@ -571,9 +551,8 @@ void initializeApplication() {
     logStartupPhase("display_ready");
 
     ESP32BASE_LOG_I("app",
-                    "application initialized rtc=%s lcd=%s st7789=%s records=%s",
+                    "application initialized rtc=%s st7789=%s records=%s",
                     g_rtc.present() ? "present" : "absent",
-                    g_lcd.present() ? "present" : "absent",
                     g_st7789.present() ? "present" : "absent",
                     g_waterRecordFile.ready() ? "file" : "ram");
 }
@@ -682,17 +661,6 @@ void runApplicationTick() {
 
     const bool userActivity =
         levels.cancelPressed || levels.okPressed || levels.plusPressed || levels.minusPressed;
-    if (g_display) {
-        if (userActivity || snapshot.water.state != faucet::WaterState::Idle ||
-            snapshot.localMode != faucet::LocalUiMode::Normal) {
-            g_display->wake(nowMs);
-        }
-        if (faucet::elapsedAtLeast(nowMs, g_lastDisplayMs, 200UL)) {
-            g_lastDisplayFrame = g_display->render(snapshot, nowMs);
-            g_lcd.apply(g_lastDisplayFrame, userActivity);
-            g_lastDisplayMs = nowMs;
-        }
-    }
     if (g_colorDisplay && (userActivity || snapshot.water.state != faucet::WaterState::Idle ||
                            snapshot.localMode != faucet::LocalUiMode::Normal)) {
         g_colorDisplay->wake(nowMs);

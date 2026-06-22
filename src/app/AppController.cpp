@@ -394,7 +394,6 @@ AppSnapshot AppController::snapshot() const {
     if (waterSensors_) {
         snapshot.sensors = waterSensors_->snapshot();
     }
-    snapshot.lcdSensorPageEnabled = config_.lcdSensorPageEnabled;
     snapshot.temperatureSensorEnabled = config_.temperatureEnabled;
     snapshot.tdsSensorEnabled = config_.tdsEnabled;
     return snapshot;

@@ -246,7 +246,6 @@ void test_config_save_and_load_round_trips_system_config() {
     config.beepEnabled = false;
     config.displaySleepSec = 75;
     config.resultDisplaySec = 12;
-    config.lcdI2cAddress = 0x3F;
     config.volumeAdjustStepMl = 250;
     config.timeAdjustStepSec = 15;
     config.pulseMinIntervalUs = 2500;
@@ -275,7 +274,6 @@ void test_config_save_and_load_round_trips_system_config() {
     TEST_ASSERT_FALSE(loaded.beepEnabled);
     TEST_ASSERT_EQUAL_UINT32(75, loaded.displaySleepSec);
     TEST_ASSERT_EQUAL_UINT32(12, loaded.resultDisplaySec);
-    TEST_ASSERT_EQUAL_UINT8(0x3F, loaded.lcdI2cAddress);
     TEST_ASSERT_EQUAL_UINT32(250, loaded.volumeAdjustStepMl);
     TEST_ASSERT_EQUAL_UINT32(15, loaded.timeAdjustStepSec);
     TEST_ASSERT_EQUAL_UINT32(2500, loaded.pulseMinIntervalUs);
@@ -306,7 +304,6 @@ void test_config_save_and_load_round_trips_sensor_config() {
     ConfigStore store(backend);
     SystemConfig config = makeDefaultConfig();
     config.sensorVrefMv = 3275;
-    config.lcdSensorPageEnabled = true;
     config.temperatureEnabled = true;
     config.temperatureKind = TemperatureKind::Ntc50kB3950;
     config.temperatureOffsetCentiC = -35;
@@ -329,7 +326,7 @@ void test_config_save_and_load_round_trips_sensor_config() {
 
     TEST_ASSERT_TRUE(store.saveSystemConfig(config));
 
-    TEST_ASSERT_EQUAL_INT32(18, backend.getInt("faucet_cfg", "ver", 0));
+    TEST_ASSERT_EQUAL_INT32(19, backend.getInt("faucet_cfg", "ver", 0));
     TEST_ASSERT_EQUAL_INT32(1234, backend.getInt("faucet_cfg", "tds_scale_milli", 0));
     char sensorText[32]{};
     TEST_ASSERT_TRUE(backend.getStr("faucet_cfg", "temp_sensor", sensorText, sizeof(sensorText), ""));
@@ -338,7 +335,6 @@ void test_config_save_and_load_round_trips_sensor_config() {
     TEST_ASSERT_EQUAL_STRING("tds_board_v1", sensorText);
     const SystemConfig loaded = store.loadSystemConfig();
     TEST_ASSERT_EQUAL_UINT16(3300, loaded.sensorVrefMv);
-    TEST_ASSERT_TRUE(loaded.lcdSensorPageEnabled);
     TEST_ASSERT_TRUE(loaded.temperatureEnabled);
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(TemperatureKind::Ntc50kB3950),
                             static_cast<std::uint8_t>(loaded.temperatureKind));

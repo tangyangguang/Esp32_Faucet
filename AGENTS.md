@@ -10,7 +10,6 @@
   - `docs/01-product-requirements.md`
   - `docs/03-software-architecture.md`
   - `docs/05-test-plan.md`
-  - `docs/06-implementation-plan.md`
   - `docs/07-board-bringup.md`
 - 正式项目文档只放在 `docs/`，过程性设计稿和历史文档不作为当前实现入口。
 - 所有新项目文档放入 `docs/`；根目录只保留必要工程文件和本规则文件。

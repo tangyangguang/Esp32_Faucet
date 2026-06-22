@@ -84,10 +84,8 @@ SystemConfig makeDefaultConfig() {
     config.valveHoldDutyPercent = kDefaultValveHoldDutyPercent;
     config.displaySleepSec = kDefaultDisplaySleepSec;
     config.resultDisplaySec = kDefaultResultDisplaySec;
-    config.lcdI2cAddress = kDefaultLcdI2cAddress;
     config.beepEnabled = true;
     config.sensorVrefMv = kDefaultSensorVrefMv;
-    config.lcdSensorPageEnabled = false;
     config.temperatureEnabled = false;
     config.temperatureKind = TemperatureKind::None;
     config.temperatureOffsetCentiC = 0;
@@ -165,7 +163,6 @@ void sanitizeConfig(SystemConfig& config) {
     config.displaySleepSec =
         clampValue<std::uint32_t>(config.displaySleepSec, kMinDisplaySleepSec, kMaxDisplaySleepSec);
     config.resultDisplaySec = clampValue<std::uint32_t>(config.resultDisplaySec, 0, 60);
-    config.lcdI2cAddress = clampValue<std::uint8_t>(config.lcdI2cAddress, 0x03, 0x77);
     config.sensorVrefMv = clampValue<std::uint16_t>(config.sensorVrefMv, kMinSensorVrefMv, kMaxSensorVrefMv);
     if (!enumInRange(config.temperatureKind, TemperatureKind::None, TemperatureKind::Ntc50kB3950)) {
         config.temperatureKind = TemperatureKind::None;

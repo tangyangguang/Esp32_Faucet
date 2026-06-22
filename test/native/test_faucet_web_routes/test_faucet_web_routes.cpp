@@ -1505,9 +1505,8 @@ void test_main_source_uses_cached_display_frame_for_web_status() {
     TEST_ASSERT_NOT_NULL(displayStatus);
     const char* diagnostics = std::strstr(displayStatus, "faucet::FaucetRuntimeDiagnostics currentRuntimeDiagnostics()");
     TEST_ASSERT_NOT_NULL(diagnostics);
-    TEST_ASSERT_NOT_NULL(findWithin(displayStatus, diagnostics, "return faucet::FaucetDisplayStatus{g_lastDisplayFrame, g_lastDisplayFrame.on}"));
-    TEST_ASSERT_NULL(findWithin(displayStatus, diagnostics, "faucet::DisplayPresenter awakePresenter(0)"));
-    TEST_ASSERT_NULL(findWithin(displayStatus, diagnostics, "g_display->render(snapshot, nowMs)"));
+    TEST_ASSERT_NOT_NULL(findWithin(displayStatus, diagnostics, "return faucet::FaucetDisplayStatus{g_lastColorDisplayFrame.on}"));
+    TEST_ASSERT_NULL(findWithin(displayStatus, diagnostics, "awakePresenter(0)"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "Esp32BaseWeb::setDeviceName(\"首页\")"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "Esp32BaseWeb::setHomePath(\"/index\")"));
     TEST_ASSERT_NULL(std::strstr(buffer, "Esp32BaseWeb::setHomePath(\"/faucet\")"));
@@ -1520,7 +1519,6 @@ void test_main_source_uses_cached_display_frame_for_web_status() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "startup_phase=%s"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "logStartupPhase(\"hardware_ready\")"));
     TEST_ASSERT_NULL(std::strstr(buffer, "Esp32BaseWeb::setDeviceName(\"智能出水\")"));
-    TEST_ASSERT_NULL(std::strstr(buffer, "return g_lastDisplayFrame;"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "return fileStore_->upsert(calibration);"));
     TEST_ASSERT_NULL(std::strstr(buffer, "fileStore_ && fileStore_->ready() && fileStore_->upsert(calibration)"));
 }
@@ -1580,8 +1578,7 @@ void test_app_config_source_uses_clear_business_labels_and_help() {
     TEST_ASSERT_NULL(std::strstr(buffer, "高级救援参数"));
     TEST_ASSERT_NULL(std::strstr(buffer, "pulse/ml"));
     TEST_ASSERT_NULL(std::strstr(buffer, "显示设备"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "LCD I2C 地址"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "保存后需重启，重启后重新探测 LCD。"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "本地屏熄屏时间"));
     TEST_ASSERT_NULL(std::strstr(buffer, "仅保存在 RAM 中，重启会丢失；用于查看最近出水明细。"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "有效脉冲间隔阈值；最大频率 = 1000000 / 当前值 Hz。"));
     TEST_ASSERT_NULL(std::strstr(buffer, "实时计量和明细分析的有效脉冲判定阈值；最大有效频率 = 1000000 / 当前值 Hz。"));

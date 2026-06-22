@@ -12,7 +12,7 @@
 
 - Application：`src/main.cpp`，负责固件信息、Esp32Base 生命周期、Web 默认认证、业务模块初始化和主循环调度。
 - Business：承载出水状态机、配置模型、日志、统计、滤芯、Web 业务 API。
-- Drivers：承载电磁阀、流量计、四键、LCD1602、蜂鸣器、RTC。
+- Drivers：承载电磁阀、流量计、四键、ST7789 TFT、本地蜂鸣器、RTC。
 - Base：Esp32Base 提供 Log、Config、System、Bus、Watchdog、Sleep、Fs、FileLog、Health、WiFi、DNS、NTP、mDNS、Web、OTA。
 
 ## 调度模型
@@ -36,7 +36,7 @@
 | `WaterSensorManager` | 1s 采样、ADS1115 故障降级、TDS 自动量程、实时快照和出水摘要聚合 |
 | `ValveDriver` | 电磁阀开关、全压吸合、PWM 保持 |
 | `ButtonInput` | 四键消抖、短按/长按 |
-| `DisplayPresenter` | LCD1602 页面模型和刷新节流 |
+| `ColorDisplayPresenter` | 240x240 TFT 页面模型、状态摘要和刷新节流 |
 | `BeepDriver` | 操作、完成、异常提示 |
 | `WaterRecordStore` | 出水记录写入、滚动、分页 |
 | `StatisticsStore` | 今日、本周、本月、总累计 |
@@ -53,7 +53,7 @@
 - `RUNNING`：出水中，持续检查容量、时间和异常。
 - `PAUSED`：暂停关阀，等待继续或超时停止。
 - `ERROR`：异常提示，阀门保持关闭。
-- `SLEEP`：LCD 熄屏或低功耗状态。
+- `SLEEP`：本地屏背光熄灭或低功耗状态。
 
 优先级从高到低：
 
@@ -80,7 +80,7 @@
 | `NoFlowTimeout` | `FlowMeter` | 开阀后无流量 |
 | `HighFlowTimeout` | `FlowMeter` | 异常大流量持续超时 |
 | `ResultDisplayTimeout` | timer | 本次出水结果显示结束 |
-| `DisplaySleepTimeout` | timer | LCD 熄屏 |
+| `DisplaySleepTimeout` | timer | 本地屏背光熄灭 |
 | `WebConfigChanged` | Web | 配置保存后生效 |
 
 ### 出水结果

@@ -85,7 +85,6 @@ struct AppSnapshot {
     std::uint32_t maxAppTickUs = 0;
     std::uint32_t maxBaseHandleUs = 0;
     WaterSensorSnapshot sensors;
-    bool lcdSensorPageEnabled = false;
     bool temperatureSensorEnabled = false;
     bool tdsSensorEnabled = false;
 };

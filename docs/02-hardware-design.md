@@ -18,7 +18,7 @@
 | 传感器 ADC | ADS1115，I2C 地址 0x48；A0 输入电压，A1 水温，A2 TDS，A3 预留 |
 | 水温 | MH-01 50K B3950 NTC，板上 51K 1% 上拉分压 |
 | TDS | MH-01 红蓝电极线接外部 TDS Board V1.0，模块 AO 接 ADS1115 |
-| LCD | LCD1602 I2C 显示屏，PCF8574T 背包，默认地址 0x27 |
+| 本地屏 | 240x240 ST7789 TFT，SPI 接入，背光 GPIO 控制 |
 | 按键 | `CANCEL`、`OK`、`PLUS`、`MINUS` 四个独立按键，低电平有效，软件启用内部上拉，硬件仍建议预留外部 10K 上拉 |
 | 蜂鸣器 | 5V 无源蜂鸣器，PWM 控制，可 Web 开关 |
 | RTC | DS3231 自动检测支持；未焊接时软件降级 |
@@ -35,8 +35,13 @@
 | GPIO26 | `PLUS` | 输入，启用内部上拉；切换下一个预设或增加本次目标水量 |
 | GPIO27 | `MINUS` | 输入，启用内部上拉；切换上一个预设或减少本次目标水量 |
 | GPIO17 | 蜂鸣器 PWM | 输出 |
-| GPIO21 | I2C SDA | LCD1602、DS3231、ADS1115 |
-| GPIO22 | I2C SCL | LCD1602、DS3231、ADS1115 |
+| GPIO18 | TFT SCLK | ST7789 SPI 时钟 |
+| GPIO23 | TFT MOSI | ST7789 SPI 数据 |
+| GPIO19 | TFT DC | ST7789 数据/命令选择 |
+| GPIO14 | TFT RST | ST7789 复位 |
+| GPIO13 | TFT BL | ST7789 背光控制 |
+| GPIO21 | I2C SDA | DS3231、ADS1115 |
+| GPIO22 | I2C SCL | DS3231、ADS1115 |
 | ADS1115 A0 | 输入电压检测 | VIN 通过 100K/10K 1% 分压，软件按 11:1 换算 |
 | ADS1115 A1 | 水温检测 | 51K 1% 上拉到 3.3V_A，MH-01 绿色温度线通过内部 50K B3950 NTC 到公共 GND |
 | ADS1115 A2 | TDS 检测 | TDS Board V1.0 AO，模块 3.3V 供电 |

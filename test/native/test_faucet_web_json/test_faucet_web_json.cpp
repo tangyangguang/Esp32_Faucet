@@ -114,14 +114,14 @@ void test_status_json_uses_configured_valve_pwm_values() {
 void test_status_json_can_include_config_runtime_status() {
     char json[4096]{};
     SystemConfig config = makeDefaultConfig();
-    const ConfigRuntimeStatus status{"loaded_current", 18, 18};
+    const ConfigRuntimeStatus status{"loaded_current", 19, 19};
 
     TEST_ASSERT_TRUE(writeStatusJson(makeSnapshot(), true, config, &status, json, sizeof(json)));
 
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"config\""));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"status\":\"loaded_current\""));
-    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"rawVersion\":18"));
-    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"currentVersion\":18"));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"rawVersion\":19"));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"currentVersion\":19"));
     TEST_ASSERT_NULL(std::strstr(json, "readOnly"));
     TEST_ASSERT_NULL(std::strstr(json, "password"));
 }

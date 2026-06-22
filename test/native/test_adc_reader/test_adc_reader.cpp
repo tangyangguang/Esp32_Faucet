@@ -1,6 +1,7 @@
 #include <unity.h>
 
 #include "app/AdcReader.h"
+#include "drivers/Esp32AnalogAdcReader.h"
 
 using namespace faucet;
 
@@ -49,6 +50,12 @@ void test_adc_raw_to_millivolts_marks_full_scale_overflow() {
     TEST_ASSERT_EQUAL_INT16(255, result.millivolts);
 }
 
+void test_esp32_adc_reader_maps_water_sensor_channels_to_adc1_pins() {
+    TEST_ASSERT_EQUAL_UINT8(35, Esp32AnalogAdcReader::defaultPinForChannel(AdcChannel::A1));
+    TEST_ASSERT_EQUAL_UINT8(34, Esp32AnalogAdcReader::defaultPinForChannel(AdcChannel::A2));
+    TEST_ASSERT_EQUAL_UINT8(255, Esp32AnalogAdcReader::defaultPinForChannel(AdcChannel::A0));
+}
+
 int main(int argc, char** argv) {
     (void)argc;
     (void)argv;
@@ -58,5 +65,6 @@ int main(int argc, char** argv) {
     RUN_TEST(test_adc_range_steps_are_bounded);
     RUN_TEST(test_adc_raw_to_millivolts_rejects_negative_single_ended_values);
     RUN_TEST(test_adc_raw_to_millivolts_marks_full_scale_overflow);
+    RUN_TEST(test_esp32_adc_reader_maps_water_sensor_channels_to_adc1_pins);
     return UNITY_END();
 }

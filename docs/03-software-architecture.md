@@ -31,9 +31,9 @@
 | `WaterController` | 出水状态机、安全兜底、命令处理 |
 | `ConfigStore` | 应用配置默认值、钳位、读写 |
 | `FlowMeter` | 脉冲计数、容量换算、实时流速窗口估算和诊断瞬时流速 |
-| `AdcReader` / `Ads1115Reader` | ADS1115 抽象与实机 I2C 读取，native 测试使用 fake ADC |
+| `AdcReader` / `Esp32AnalogAdcReader` | ADC 抽象与 ESP32 原生 ADC1 读取，native 测试使用 fake ADC |
 | `WaterSensors` | 输入电压、50K B3950 NTC 和 TDS AO 的纯算法换算 |
-| `WaterSensorManager` | 1s 采样、ADS1115 故障降级、TDS 自动量程、实时快照和出水摘要聚合 |
+| `WaterSensorManager` | 1s 采样、ADC 故障降级、TDS 自动量程、实时快照和出水摘要聚合 |
 | `ValveDriver` | 电磁阀开关、全压吸合、PWM 保持 |
 | `ButtonInput` | 四键消抖、短按/长按 |
 | `ColorDisplayPresenter` | 240x240 TFT 页面模型、状态摘要和刷新节流 |
@@ -43,7 +43,7 @@
 | `FilterStore` | 最多 6 个滤芯的配置、已用天数、已用流量和重置 |
 | `FaucetWeb` | 业务页面和 `/api/faucet/...` API |
 
-水温、TDS 和输入电压只进入实时状态、出水记录、统计和诊断页面，不进入 `FlowMeter`、`WaterController` 或安全关阀判断。ADS1115 读取失败只影响传感器状态，不得阻塞按键、关阀、流量计量或 Web 轻量状态查询。
+水温、TDS 和输入电压只进入实时状态、出水记录、统计和诊断页面，不进入 `FlowMeter`、`WaterController` 或安全关阀判断。ADC 读取失败只影响传感器状态，不得阻塞按键、关阀、流量计量或 Web 轻量状态查询。
 
 ## 状态机
 

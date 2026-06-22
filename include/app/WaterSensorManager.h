@@ -63,7 +63,7 @@ struct TdsCalibrationSessionSnapshot {
 
 class WaterSensorManager {
 public:
-    explicit WaterSensorManager(AdcReader& adc);
+    explicit WaterSensorManager(AdcReader& adc, bool sampleInputVoltage = true);
 
     void configure(const SystemConfig& config);
     bool begin();
@@ -105,6 +105,7 @@ private:
     };
 
     AdcReader& adc_;
+    bool sampleInputVoltage_;
     SystemConfig config_;
     WaterSensorSnapshot snapshot_;
     std::uint32_t lastSampleMs_;

@@ -18,6 +18,8 @@ constexpr std::uint8_t kPinSt7789Mosi = 23;
 constexpr std::uint8_t kPinSt7789Dc = 19;
 constexpr std::uint8_t kPinSt7789Rst = 14;
 constexpr std::uint8_t kPinSt7789Backlight = 13;
+constexpr std::uint8_t kPinTemperatureAdc = 35;
+constexpr std::uint8_t kPinTdsAdc = 34;
 
 constexpr std::uint8_t kLedcChannelValve = 0;
 constexpr std::uint8_t kLedcChannelBeep = 1;

@@ -103,7 +103,7 @@ pio device monitor -e esp32dev --port <端口> --baud 115200
 - 固件名为 `esp32-faucet`。
 - 应用初始化日志出现。
 - `rtc=absent` 合理，因为当前未接 DS3231。
-- `ads1115=absent` 或传感器状态无效在未焊接 ADS1115 时合理；焊接后应能在 0x48 读取。
+- `water_sensor_adc=ready temp_gpio=35 tds_gpio=34` 表示原生 ADC 初始化完成；水温/TDS 未接线或未启用时传感器值无效是合理状态。
 - `records=file` 优先，若 LittleFS 初始化异常则需要排查分区或文件系统。
 - 不应反复重启，不应出现 panic/backtrace。
 - LittleFS 使用 Arduino ESP32 默认 `spiffs` 分区 label 承载，这是当前 PlatformIO/Arduino 文件系统命名兼容约定；维护时以 `board_build.filesystem = littlefs` 为实际文件系统口径。
@@ -111,12 +111,12 @@ pio device monitor -e esp32dev --port <端口> --baud 115200
 ## 逐步接线验证顺序
 
 1. TFT 本地屏：连接 ST7789，验证 SPI 引脚、背光、页面显示、空闲熄屏和按键唤醒。
-2. I2C 总线：接 DS3231 和 ADS1115，确认地址 `0x68`、`0x48` 不冲突。
+2. I2C 总线：接 DS3231，确认地址 `0x68`；当前水温/TDS 不依赖 ADS1115。
 3. 四个按键：验证 `CANCEL=GPIO33`、`OK=GPIO25`、`PLUS=GPIO26`、`MINUS=GPIO27` 低电平有效、消抖和长按。
 4. 蜂鸣器：验证短提示、异常提示和 Web 关闭蜂鸣器配置。
-5. ADS1115 A0 输入电压：12V 输入时分压点约 1.09V，状态页输入电压约 12V；24V 输入时分压点约 2.18V。
-6. ADS1115 A1 水温：接 MH-01 前先用万用表测绿色温度线到黑色 GND 室温约 40K-70K；接入后状态页水温应接近环境水温。
-7. ADS1115 A2 TDS：TDS 模块使用 3.3V 供电，红蓝电极接模块探针口，AO 接 A2；先用纯水/净水/自来水验证趋势，再保存校准。
+5. 输入电压：当前原生 ADC 接线阶段暂不验证 VIN 诊断。
+6. GPIO35 水温：接 MH-01 前先用万用表测绿色温度线到黑色 GND 室温约 40K-70K；接入 51K 上拉分压后状态页水温应接近环境水温。
+7. GPIO34 TDS：TDS 模块使用 3.3V 供电，红蓝电极接模块探针口，AO 接 GPIO34；先用纯水/净水/自来水验证趋势，再保存校准。
 8. DS3231：验证自动检测、时间读取、断开后降级。
 9. 流量计：先用手动脉冲或低频信号验证 GPIO32 计数，再接水路验证定量误差。
 10. 电磁阀：先不接水验证 PWM 输出和 `CANCEL` 关断，再接水做安全验证。

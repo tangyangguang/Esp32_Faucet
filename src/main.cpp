@@ -21,8 +21,8 @@
 #include "app/WaterRecordFileStore.h"
 #include "app/WaterRecordStore.h"
 #include "app/WaterPulseTraceStore.h"
-#include "drivers/Ads1115Reader.h"
 #include "drivers/BoardPins.h"
+#include "drivers/Esp32AnalogAdcReader.h"
 #include "drivers/FlowPulseReader.h"
 #include "drivers/GpioButtonReader.h"
 #include "drivers/PwmBeepHardware.h"
@@ -196,8 +196,8 @@ faucet::GpioButtonReader g_buttons(faucet::kPinButtonCancel,
                                    faucet::kPinButtonPlus,
                                    faucet::kPinButtonMinus);
 faucet::FlowPulseReader g_flowPulses(faucet::kPinFlow);
-faucet::Ads1115Reader g_ads1115(0x48);
-faucet::WaterSensorManager g_waterSensors(g_ads1115);
+faucet::Esp32AnalogAdcReader g_waterSensorAdc;
+faucet::WaterSensorManager g_waterSensors(g_waterSensorAdc, false);
 faucet::PwmValveHardware g_valveHardware(faucet::kPinValve, faucet::kLedcChannelValve);
 faucet::BeepDriver g_beep;
 faucet::PwmBeepHardware g_beepHardware(faucet::kPinBeep, faucet::kLedcChannelBeep);
@@ -411,8 +411,12 @@ void initializeApplication() {
     logStartupPhase("rtc_ready");
     g_config = g_configStore.loadSystemConfig();
     g_waterSensors.configure(g_config);
-    const bool ads1115Ready = g_waterSensors.begin();
-    ESP32BASE_LOG_I("app", "ads1115=%s address=0x48", ads1115Ready ? "present" : "absent");
+    const bool waterSensorAdcReady = g_waterSensors.begin();
+    ESP32BASE_LOG_I("app",
+                    "water_sensor_adc=%s temp_gpio=%u tds_gpio=%u",
+                    waterSensorAdcReady ? "ready" : "absent",
+                    static_cast<unsigned>(faucet::kPinTemperatureAdc),
+                    static_cast<unsigned>(faucet::kPinTdsAdc));
     logSystemConfigStatus();
     logStartupPhase("config_ready");
     g_configInitComplete = true;
@@ -737,9 +741,7 @@ void maybeMarkOtaValidAfterHealthCheck() {
 void setup() {
     Serial.begin(115200);
     delay(200);
-    Serial.println("[faucet] setup: start");
     configureBase();
-    Serial.println("[faucet] setup: base configured");
 
     g_baseBeginComplete = Esp32Base::begin();
     if (!g_baseBeginComplete) {
@@ -750,9 +752,7 @@ void setup() {
 #else
     g_littleFsInitComplete = true;
 #endif
-    Serial.println("[faucet] setup: base begin done");
     initializeApplication();
-    Serial.println("[faucet] setup: app initialized");
 }
 
 void loop() {

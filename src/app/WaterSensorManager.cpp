@@ -52,8 +52,9 @@ TdsCalibrationMode tdsModeForPointCount(std::uint8_t pointCount) {
 
 }  // namespace
 
-WaterSensorManager::WaterSensorManager(AdcReader& adc)
+WaterSensorManager::WaterSensorManager(AdcReader& adc, bool sampleInputVoltage)
     : adc_(adc),
+      sampleInputVoltage_(sampleInputVoltage),
       config_(makeDefaultConfig()),
       snapshot_{},
       lastSampleMs_(0),
@@ -83,7 +84,9 @@ void WaterSensorManager::configure(const SystemConfig& config) {
 
 bool WaterSensorManager::begin() {
     const bool ready = adc_.begin();
-    adc_.setRange(AdcChannel::A0, AdcRange::P4096);
+    if (sampleInputVoltage_) {
+        adc_.setRange(AdcChannel::A0, AdcRange::P4096);
+    }
     adc_.setRange(AdcChannel::A1, AdcRange::P4096);
     adc_.setRange(AdcChannel::A2, tdsRange_);
     return ready;
@@ -290,13 +293,15 @@ void WaterSensorManager::sampleOnce() {
     WaterSensorSnapshot next{};
     std::uint8_t failures = 0;
 
-    const AdcReadResult input = adc_.readSingleEnded(AdcChannel::A0);
-    if (input.ok) {
-        next.inputVoltageMv.valid = true;
-        next.inputVoltageMv.value =
-            static_cast<std::int32_t>(inputVoltageMvFromDivider(input.millivolts, kInputDividerHighOhm, kInputDividerLowOhm));
-    } else {
-        ++failures;
+    if (sampleInputVoltage_) {
+        const AdcReadResult input = adc_.readSingleEnded(AdcChannel::A0);
+        if (input.ok) {
+            next.inputVoltageMv.valid = true;
+            next.inputVoltageMv.value = static_cast<std::int32_t>(
+                inputVoltageMvFromDivider(input.millivolts, kInputDividerHighOhm, kInputDividerLowOhm));
+        } else {
+            ++failures;
+        }
     }
 
     if (enabledTemperature(config_)) {

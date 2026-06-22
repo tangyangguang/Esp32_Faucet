@@ -407,6 +407,9 @@ void test_st7789_formal_build_uses_tft_espi_backend() {
     TEST_ASSERT_NOT_NULL(std::strstr(source, "g_tft.pushColors"));
     TEST_ASSERT_NOT_NULL(std::strstr(platform, "-D FAUCET_ST7789_USE_TFT_ESPI=1"));
     TEST_ASSERT_NOT_NULL(std::strstr(platform, "bodmer/TFT_eSPI @ 2.5.43"));
+    TEST_ASSERT_NOT_NULL(std::strstr(platform, "-D LOAD_FONT2=1"));
+    TEST_ASSERT_NOT_NULL(std::strstr(platform, "-D LOAD_FONT4=1"));
+    TEST_ASSERT_NOT_NULL(std::strstr(platform, "-D LOAD_FONT7=1"));
 }
 
 void test_st7789_main_numbers_do_not_use_scaled_16x16_bitmap_text() {
@@ -505,6 +508,25 @@ void test_st7789_layout_buffers_full_redraws_and_fits_confirm_and_hints() {
         source, "drawText(static_cast<std::int16_t>(x + 6), static_cast<std::int16_t>(y + 4), sensor.label"));
 }
 
+void test_st7789_same_page_updates_do_not_force_full_redraw() {
+    FILE* file = std::fopen("src/drivers/St7789Display.cpp", "r");
+    TEST_ASSERT_NOT_NULL(file);
+
+    char source[76000]{};
+    const std::size_t read = std::fread(source, 1, sizeof(source) - 1, file);
+    std::fclose(file);
+    TEST_ASSERT_GREATER_THAN_size_t(0, read);
+
+    TEST_ASSERT_NULL(std::strstr(source, "const bool runningPage"));
+    TEST_ASSERT_NULL(std::strstr(source, "!runningPage"));
+    TEST_ASSERT_NOT_NULL(std::strstr(source, "const bool fullRedraw = !lastFrameValid_ || !lastFrame_.on || frame.page != lastFrame_.page"));
+    TEST_ASSERT_NOT_NULL(std::strstr(source, "renderPartialFrame(frame, lastFrame_)"));
+    TEST_ASSERT_NOT_NULL(std::strstr(source, "renderStandbyPartialFrame"));
+    TEST_ASSERT_NOT_NULL(std::strstr(source, "renderConfirmPartialFrame"));
+    TEST_ASSERT_NOT_NULL(std::strstr(source, "fillRect(20, 64, 200, 64, kBg)"));
+    TEST_ASSERT_NOT_NULL(std::strstr(source, "fillRect(26, 66, 188, 92, kPanel2)"));
+}
+
 int main(int argc, char** argv) {
     (void)argc;
     (void)argv;
@@ -524,5 +546,6 @@ int main(int argc, char** argv) {
     RUN_TEST(test_st7789_standby_cards_use_black_background_and_fit_text);
     RUN_TEST(test_st7789_layout_uses_padded_badges_and_non_overlapping_cards);
     RUN_TEST(test_st7789_layout_buffers_full_redraws_and_fits_confirm_and_hints);
+    RUN_TEST(test_st7789_same_page_updates_do_not_force_full_redraw);
     return UNITY_END();
 }

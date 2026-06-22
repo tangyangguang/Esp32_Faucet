@@ -244,7 +244,7 @@ void test_config_save_and_load_round_trips_system_config() {
     SystemConfig config = makeDefaultConfig();
     config.confirmTimeoutSec = 20;
     config.beepEnabled = false;
-    config.displaySleepSec = 45;
+    config.displaySleepSec = 75;
     config.resultDisplaySec = 12;
     config.lcdI2cAddress = 0x3F;
     config.volumeAdjustStepMl = 250;
@@ -273,7 +273,7 @@ void test_config_save_and_load_round_trips_system_config() {
     const SystemConfig loaded = store.loadSystemConfig();
     TEST_ASSERT_EQUAL_UINT32(20, loaded.confirmTimeoutSec);
     TEST_ASSERT_FALSE(loaded.beepEnabled);
-    TEST_ASSERT_EQUAL_UINT32(45, loaded.displaySleepSec);
+    TEST_ASSERT_EQUAL_UINT32(75, loaded.displaySleepSec);
     TEST_ASSERT_EQUAL_UINT32(12, loaded.resultDisplaySec);
     TEST_ASSERT_EQUAL_UINT8(0x3F, loaded.lcdI2cAddress);
     TEST_ASSERT_EQUAL_UINT32(250, loaded.volumeAdjustStepMl);

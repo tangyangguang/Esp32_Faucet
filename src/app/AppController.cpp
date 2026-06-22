@@ -355,6 +355,8 @@ AppSnapshot AppController::snapshot() const {
     snapshot.adjustmentStepMl = adjustmentStepMl_;
     snapshot.timeAdjustmentStepSec = timeAdjustmentStepSec_;
     snapshot.calibrationReady = lastResultRecordValid_;
+    snapshot.lastResultRecordAvailable = lastResultRecordValid_;
+    snapshot.lastResultRecord = lastResultRecord_;
     snapshot.calibrationActualMl = localCalibrationActualMl_;
     snapshot.calibrationStepMl = localCalibrationStepMl_;
     snapshot.calibrationStatus = calibrationSession_.status;

@@ -162,7 +162,8 @@ void sanitizeConfig(SystemConfig& config) {
     config.valveFullPowerSec = clampValue<std::uint32_t>(config.valveFullPowerSec, 1, 10);
     config.valveHoldDutyPercent = clampValue<std::uint8_t>(
         config.valveHoldDutyPercent, kMinValveHoldDutyPercent, kMaxValveHoldDutyPercent);
-    config.displaySleepSec = clampValue<std::uint32_t>(config.displaySleepSec, 5, 300);
+    config.displaySleepSec =
+        clampValue<std::uint32_t>(config.displaySleepSec, kMinDisplaySleepSec, kMaxDisplaySleepSec);
     config.resultDisplaySec = clampValue<std::uint32_t>(config.resultDisplaySec, 0, 60);
     config.lcdI2cAddress = clampValue<std::uint8_t>(config.lcdI2cAddress, 0x03, 0x77);
     config.sensorVrefMv = clampValue<std::uint16_t>(config.sensorVrefMv, kMinSensorVrefMv, kMaxSensorVrefMv);

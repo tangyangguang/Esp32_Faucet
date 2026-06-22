@@ -51,6 +51,7 @@ void test_default_config_matches_product_defaults() {
     TEST_ASSERT_EQUAL_UINT32(5, config.valveFullPowerSec);
     TEST_ASSERT_EQUAL_UINT8(kDefaultValveHoldDutyPercent, config.valveHoldDutyPercent);
     TEST_ASSERT_EQUAL_UINT32(kDefaultDisplaySleepSec, config.displaySleepSec);
+    TEST_ASSERT_EQUAL_UINT32(60, config.displaySleepSec);
     TEST_ASSERT_EQUAL_UINT32(kDefaultResultDisplaySec, config.resultDisplaySec);
     TEST_ASSERT_EQUAL_UINT8(kDefaultLcdI2cAddress, config.lcdI2cAddress);
     TEST_ASSERT_TRUE(config.beepEnabled);
@@ -183,6 +184,11 @@ void test_sanitize_config_clamps_scalar_ranges() {
     TEST_ASSERT_EQUAL_UINT32(300, config.displaySleepSec);
     TEST_ASSERT_EQUAL_UINT32(60, config.resultDisplaySec);
     TEST_ASSERT_EQUAL_UINT8(0x03, config.lcdI2cAddress);
+
+    config = makeDefaultConfig();
+    config.displaySleepSec = 5;
+    sanitizeConfig(config);
+    TEST_ASSERT_EQUAL_UINT32(kDefaultDisplaySleepSec, config.displaySleepSec);
 
     config = makeDefaultConfig();
     config.pulseMinIntervalUs = 999999;

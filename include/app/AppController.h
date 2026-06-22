@@ -52,6 +52,8 @@ struct AppSnapshot {
     std::uint32_t calibrationActualMl = 0;
     std::uint32_t calibrationStepMl = 100;
     bool calibrationReady = false;
+    bool lastResultRecordAvailable = false;
+    WaterRecord lastResultRecord{};
     CalibrationSessionStatus calibrationStatus = CalibrationSessionStatus::Idle;
     std::uint32_t calibrationIdleExpiresAt = 0;
     std::uint8_t calibrationAttemptCount = 0;

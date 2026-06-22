@@ -82,6 +82,26 @@ bool sameFrame(const ColorDisplayFrame& a, const ColorDisplayFrame& b) {
     return std::memcmp(&a, &b, sizeof(ColorDisplayFrame)) == 0;
 }
 
+bool textChanged(const char* a, const char* b) {
+    return std::strcmp(a ? a : "", b ? b : "") != 0;
+}
+
+bool metricChanged(const ColorDisplayMetric& a, const ColorDisplayMetric& b) {
+    return std::memcmp(&a, &b, sizeof(ColorDisplayMetric)) != 0;
+}
+
+bool hintsChanged(const ColorDisplayFrame& a, const ColorDisplayFrame& b) {
+    if (a.hintCount != b.hintCount) {
+        return true;
+    }
+    for (std::uint8_t i = 0; i < a.hintCount && i < kColorDisplayHintCount; ++i) {
+        if (textChanged(a.hints[i], b.hints[i])) {
+            return true;
+        }
+    }
+    return false;
+}
+
 std::uint16_t accentForPage(ColorDisplayPage page) {
     switch (page) {
         case ColorDisplayPage::StandbyTime:
@@ -341,9 +361,12 @@ void St7789Display::apply(const ColorDisplayFrame& frame) {
         return;
     }
     setBacklight(true);
-    const bool runningPage =
-        frame.page == ColorDisplayPage::RunningVolume || frame.page == ColorDisplayPage::RunningTime;
-    const bool fullRedraw = !runningPage || !lastFrameValid_ || !lastFrame_.on || frame.page != lastFrame_.page;
+    const bool fullRedraw = !lastFrameValid_ || !lastFrame_.on || frame.page != lastFrame_.page;
+    if (!fullRedraw && renderPartialFrame(frame, lastFrame_)) {
+        lastFrame_ = frame;
+        lastFrameValid_ = true;
+        return;
+    }
     renderFrame(frame, fullRedraw);
     lastFrame_ = frame;
     lastFrameValid_ = true;
@@ -1185,13 +1208,109 @@ void St7789Display::drawHints(const ColorDisplayFrame& frame) {
     }
 }
 
+void St7789Display::renderTopBarPartialFrame(const ColorDisplayFrame& frame,
+                                             const ColorDisplayFrame& previous) {
+    const std::uint16_t accent = accentForPage(frame.page);
+    if (textChanged(frame.state, previous.state)) {
+        fillRect(8, 10, 128, 24, kBg);
+        fillCircle(16, 21, 4, accent);
+        drawText(26, 14, frame.state, kInk, kBg, 1);
+    }
+    if (textChanged(frame.tag, previous.tag)) {
+        fillRect(142, 8, 86, 26, kBg);
+        drawTagPill(226, 10, frame.tag, accent, kBg);
+    }
+}
+
+void St7789Display::renderStandbyPartialFrame(const ColorDisplayFrame& frame,
+                                              const ColorDisplayFrame& previous) {
+    const std::uint16_t accent = accentForPage(frame.page);
+    renderTopBarPartialFrame(frame, previous);
+
+    if (textChanged(frame.title, previous.title)) {
+        fillRect(0, 45, kWidth, 22, kBg);
+        drawCenteredText(49, frame.title, kMuted, kBg, 1);
+    }
+    if (textChanged(frame.mainValue, previous.mainValue) || textChanged(frame.mainUnit, previous.mainUnit)) {
+        fillRect(20, 64, 200, 64, kBg);
+        drawMainValue(120, 70, frame.mainValue, frame.mainUnit, 7, 4, kInk, accent, kBg);
+    }
+    if (textChanged(frame.subtitle, previous.subtitle)) {
+        fillRect(0, 132, kWidth, 22, kBg);
+        drawCenteredText(136, frame.subtitle, kCyan, kBg, 1);
+    }
+
+    constexpr std::int16_t cardX[] = {14, 99, 173};
+    constexpr std::int16_t cardW[] = {78, 66, 53};
+    for (std::uint8_t i = 0; i < 3; ++i) {
+        const bool hasCurrent = i < frame.metricCount;
+        const bool hadPrevious = i < previous.metricCount;
+        if (hasCurrent != hadPrevious ||
+            (hasCurrent && hadPrevious && metricChanged(frame.metrics[i], previous.metrics[i]))) {
+            fillRect(cardX[i], 184, cardW[i], 40, kBg);
+            if (hasCurrent) {
+                drawMetricCard(cardX[i], 184, cardW[i], frame.metrics[i], 40);
+            }
+        }
+    }
+}
+
+void St7789Display::renderConfirmPartialFrame(const ColorDisplayFrame& frame,
+                                              const ColorDisplayFrame& previous) {
+    const std::uint16_t accent = accentForPage(frame.page);
+    renderTopBarPartialFrame(frame, previous);
+
+    if (textChanged(frame.title, previous.title) || textChanged(frame.mainValue, previous.mainValue) ||
+        textChanged(frame.mainUnit, previous.mainUnit)) {
+        fillRect(26, 66, 188, 92, kPanel2);
+        drawCenteredTextFit(72, 184, frame.title, kMuted, kPanel2, 1);
+        drawMainValue(120,
+                      94,
+                      frame.mainValue,
+                      frame.mainUnit,
+                      frame.page == ColorDisplayPage::ConfirmTime ? 4 : 7,
+                      4,
+                      kInk,
+                      accent,
+                      kPanel2);
+        drawCenteredTextFit(151, 184, "确认后开始出水", kGreen, kPanel2, 1);
+    }
+    if (textChanged(frame.subtitle, previous.subtitle)) {
+        fillRect(14, 176, 212, 22, kBg);
+        drawCenteredTextFit(180, 212, frame.subtitle, kMuted, kBg, 1);
+    }
+    if (hintsChanged(frame, previous)) {
+        fillRect(14, 218, 212, 20, kBg);
+        drawHints(frame);
+    }
+}
+
+bool St7789Display::renderPartialFrame(const ColorDisplayFrame& frame,
+                                       const ColorDisplayFrame& previous) {
+    switch (frame.page) {
+        case ColorDisplayPage::StandbyVolume:
+        case ColorDisplayPage::StandbyTime:
+        case ColorDisplayPage::StandbyOffline:
+            renderStandbyPartialFrame(frame, previous);
+            return true;
+        case ColorDisplayPage::ConfirmVolume:
+        case ColorDisplayPage::ConfirmTime:
+            renderConfirmPartialFrame(frame, previous);
+            return true;
+        default:
+            return false;
+    }
+}
+
 void St7789Display::renderFrame(const ColorDisplayFrame& frame, bool fullRedraw) {
     const std::uint16_t accent = accentForPage(frame.page);
     const bool buffered = beginBufferedFrame(fullRedraw);
     if (fullRedraw && !buffered) {
         fillScreen(kBg);
     }
-    fillRect(0, 0, kWidth, 40, kBg);
+    if (fullRedraw) {
+        fillRect(0, 0, kWidth, 40, kBg);
+    }
     drawTopBar(frame, accent);
 
     switch (frame.page) {

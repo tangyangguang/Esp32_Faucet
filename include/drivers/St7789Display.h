@@ -143,6 +143,10 @@ private:
     void drawTopBar(const ColorDisplayFrame& frame, std::uint16_t accent);
     void drawHintSlot(std::int16_t x, std::int16_t y, std::int16_t w, const char* text);
     void drawHints(const ColorDisplayFrame& frame);
+    void renderTopBarPartialFrame(const ColorDisplayFrame& frame, const ColorDisplayFrame& previous);
+    void renderStandbyPartialFrame(const ColorDisplayFrame& frame, const ColorDisplayFrame& previous);
+    void renderConfirmPartialFrame(const ColorDisplayFrame& frame, const ColorDisplayFrame& previous);
+    bool renderPartialFrame(const ColorDisplayFrame& frame, const ColorDisplayFrame& previous);
     void renderFrame(const ColorDisplayFrame& frame, bool fullRedraw);
 
     std::uint8_t sclkPin_;

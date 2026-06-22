@@ -741,9 +741,7 @@ void maybeMarkOtaValidAfterHealthCheck() {
 void setup() {
     Serial.begin(115200);
     delay(200);
-    Serial.println("[faucet] setup: start");
     configureBase();
-    Serial.println("[faucet] setup: base configured");
 
     g_baseBeginComplete = Esp32Base::begin();
     if (!g_baseBeginComplete) {
@@ -754,9 +752,7 @@ void setup() {
 #else
     g_littleFsInitComplete = true;
 #endif
-    Serial.println("[faucet] setup: base begin done");
     initializeApplication();
-    Serial.println("[faucet] setup: app initialized");
 }
 
 void loop() {

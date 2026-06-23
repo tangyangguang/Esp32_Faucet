@@ -451,6 +451,59 @@ struct CalibrationAppFixture {
     }
 };
 
+struct CompactTraceCalibrationAppFixture {
+    SystemConfig config = makeDefaultConfig();
+    StatisticsStore statistics;
+    FilterStore filters;
+    MemoryRecordWriter records;
+    MemoryCalibrationWriter calibrations;
+    MemoryFileBackend backend;
+    MeteringSchemeStore schemes;
+    MeteringSchemeRecord active{};
+    CalibrationSessionFileStore sessionStore;
+    CalibrationSessionTraceStore traceStore;
+    WaterPulseTrace ramTraces[1]{};
+    WaterPulseTraceBucketSample ramBuckets[kPulseTraceMaxBucketsPerTrace]{};
+    WaterPulseTraceSample ramStartupEdges[kPulseTraceMaxStartupEdgesPerTrace]{};
+    WaterPulseTraceStore pulseTraces;
+    AppController* app = nullptr;
+
+    CompactTraceCalibrationAppFixture()
+        : filters(config.filters),
+          schemes(backend, "/schemes.bin"),
+          sessionStore(backend, "/cal-session.bin"),
+          traceStore(backend, "/cal-traces.bin"),
+          pulseTraces(ramTraces,
+                      1,
+                      ramBuckets,
+                      kPulseTraceMaxBucketsPerTrace,
+                      ramStartupEdges,
+                      kPulseTraceMaxStartupEdgesPerTrace,
+                      1) {
+        statistics.reset({20260506, 202619, 202605});
+        TEST_ASSERT_TRUE(prepareMeteringScheme(schemes, 2100, active));
+        TEST_ASSERT_TRUE(sessionStore.begin());
+        TEST_ASSERT_TRUE(traceStore.begin());
+    }
+
+    ~CompactTraceCalibrationAppFixture() {
+        delete app;
+    }
+
+    void createApp() {
+        app = new AppController(config,
+                                active,
+                                statistics,
+                                filters,
+                                records,
+                                schemes,
+                                &pulseTraces,
+                                &calibrations,
+                                &sessionStore,
+                                &traceStore);
+    }
+};
+
 void savePendingRamCalibrationAttempt(CalibrationAppFixture& fixture,
                                       CalibrationSessionRecord& session,
                                       std::uint8_t slot,
@@ -1299,6 +1352,37 @@ void test_app_controller_local_ok_starts_calibration_run_and_completion_awaits_a
     TEST_ASSERT_EQUAL_UINT32(520, valid.actualMl);
     WaterPulseTraceSample copied[4096]{};
     TEST_ASSERT_EQUAL_size_t(valid.trace.sampleCount, traceStore.readSamples(0, copied, 4096));
+}
+
+void test_app_controller_saves_long_high_pulse_calibration_without_raw_edge_truncation() {
+    CompactTraceCalibrationAppFixture fixture;
+    fixture.createApp();
+
+    TEST_ASSERT_TRUE(fixture.app->startCalibrationSessionForWeb(1714502400));
+    fixture.app->resetInputs({false, false, false, false}, 0);
+    pressAndReleaseOk(*fixture.app, 300);
+
+    for (std::uint32_t i = 0; i < 15750; ++i) {
+        fixture.app->onFlowPulse(1000000UL + i * 14285UL);
+    }
+    fixture.app->tick(input({true, false, false, false}, 225000, 225000000UL, 1714502625));
+    fixture.app->tick(input({true, false, false, false},
+                            225000 + kButtonDebounceMs,
+                            (225000 + kButtonDebounceMs) * 1000UL,
+                            1714502625));
+
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationSessionStatus::AwaitingActual),
+                            static_cast<unsigned>(fixture.app->snapshot().calibrationStatus));
+    TEST_ASSERT_TRUE(fixture.app->submitCalibrationActualForWeb(7500, 1714502630));
+
+    CalibrationStoredTrace stored{};
+    TEST_ASSERT_TRUE(fixture.traceStore.load(0, stored));
+    TEST_ASSERT_TRUE(stored.valid);
+    TEST_ASSERT_FALSE(stored.trace.truncated);
+    TEST_ASSERT_EQUAL_UINT32(15750, stored.trace.totalPulses);
+    TEST_ASSERT_TRUE(stored.trace.bucketCount > 400);
+    TEST_ASSERT_TRUE(stored.trace.startupEdgeCount > 900);
+    TEST_ASSERT_FALSE((stored.trace.flags & kPulseTraceFlagBucketOverflow) != 0);
 }
 
 void test_app_controller_calibration_run_ignores_preset_target_until_local_cancel() {
@@ -2330,6 +2414,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_app_controller_calibration_ready_and_generated_time_out_from_last_action);
     RUN_TEST(test_app_controller_reboot_drops_awaiting_actual_when_ram_trace_missing);
     RUN_TEST(test_app_controller_local_ok_starts_calibration_run_and_completion_awaits_actual);
+    RUN_TEST(test_app_controller_saves_long_high_pulse_calibration_without_raw_edge_truncation);
     RUN_TEST(test_app_controller_calibration_run_ignores_preset_target_until_local_cancel);
     RUN_TEST(test_app_controller_generates_calibration_session_candidate);
     RUN_TEST(test_app_controller_auto_generates_after_second_valid_calibration_sample);

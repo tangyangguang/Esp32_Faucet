@@ -203,7 +203,6 @@ SampleIndexEntry makeEntry(const CalibrationStoredTrace& trace,
     entry.trace = trace.trace;
     entry.trace.bucketCount = bucketCount;
     entry.trace.startupEdgeCount = startupEdgeCount;
-    entry.trace.sampleCount = 0;
     entry.trace.sampleStart = 0;
     entry.trace.bucketStart = 0;
     entry.trace.startupEdgeStart = 0;
@@ -223,7 +222,6 @@ CalibrationStoredTrace storedFromEntry(const SampleIndexEntry& entry) {
     trace.trace = entry.trace;
     trace.trace.bucketCount = entry.bucketCount;
     trace.trace.startupEdgeCount = entry.startupEdgeCount;
-    trace.trace.sampleCount = 0;
     trace.trace.sampleStart = 0;
     trace.trace.bucketStart = 0;
     trace.trace.startupEdgeStart = 0;

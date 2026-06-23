@@ -318,6 +318,11 @@ void test_calibration_session_trace_store_is_small_and_initialized_after_record_
     const char* sessionTracePath = std::strstr(init, "kCalibrationSessionTracePath");
     TEST_ASSERT_TRUE(sessionTracePath == nullptr || sessionTracePath > end);
     TEST_ASSERT_NOT_NULL(std::strstr(init, "g_calibrationSessionTraces.begin()"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "g_pulseTraceSamples"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "g_pulseTraceBuckets"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "g_pulseTraceStartupEdges"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "kPulseTraceMaxBucketsPerTrace"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "kPulseTraceMaxStartupEdgesPerTrace"));
     TEST_ASSERT_NULL(std::strstr(buffer, "kCalibrationLongTermSamplesPath"));
     TEST_ASSERT_NULL(std::strstr(buffer, "g_calibrationLongTermSamples"));
 }

@@ -147,6 +147,66 @@ void fillTrace(WaterPulseTraceStore& store, std::uint32_t id, std::initializer_l
 
 }  // namespace
 
+void test_trace_store_records_effective_pulses_into_500ms_buckets() {
+    WaterPulseTrace traces[1]{};
+    WaterPulseTraceBucketSample buckets[kPulseTraceMaxBucketsPerTrace]{};
+    WaterPulseTraceSample startupEdges[kPulseTraceMaxStartupEdgesPerTrace]{};
+    WaterPulseTraceStore store(
+        traces, 1, buckets, kPulseTraceMaxBucketsPerTrace, startupEdges, kPulseTraceMaxStartupEdgesPerTrace, 1);
+
+    const std::uint32_t id = store.beginTrace(1000, 1000);
+    TEST_ASSERT_NOT_EQUAL_UINT32(0, id);
+    TEST_ASSERT_TRUE(store.appendPulseEdge(id, 0));
+    TEST_ASSERT_TRUE(store.appendPulseEdge(id, 100000));
+    TEST_ASSERT_TRUE(store.appendPulseEdge(id, 510000));
+    TEST_ASSERT_TRUE(store.appendPulseEdge(id, 900000));
+
+    const WaterPulseTrace* trace = store.findById(id);
+    TEST_ASSERT_NOT_NULL(trace);
+    TEST_ASSERT_EQUAL_size_t(2, trace->bucketCount);
+    TEST_ASSERT_EQUAL_UINT16(2, store.bucketAt(*trace, 0)->pulseCount);
+    TEST_ASSERT_EQUAL_UINT16(2, store.bucketAt(*trace, 1)->pulseCount);
+    TEST_ASSERT_EQUAL_size_t(4, trace->startupEdgeCount);
+    TEST_ASSERT_EQUAL_UINT32(900000, store.startupEdgeAt(*trace, 3)->elapsedUs);
+}
+
+void test_trace_store_filters_too_close_edges_without_bucket_counting() {
+    WaterPulseTrace traces[1]{};
+    WaterPulseTraceBucketSample buckets[8]{};
+    WaterPulseTraceSample startupEdges[8]{};
+    WaterPulseTraceStore store(traces, 1, buckets, 8, startupEdges, 8, 1);
+
+    const std::uint32_t id = store.beginTrace(1000, 1000);
+    TEST_ASSERT_TRUE(store.appendPulseEdge(id, 0));
+    TEST_ASSERT_TRUE(store.appendPulseEdge(id, 500));
+    TEST_ASSERT_TRUE(store.appendPulseEdge(id, 1500));
+
+    const WaterPulseTrace* trace = store.findById(id);
+    TEST_ASSERT_NOT_NULL(trace);
+    TEST_ASSERT_EQUAL_UINT32(2, trace->totalPulses);
+    TEST_ASSERT_EQUAL_UINT32(1, trace->minIntervalFilteredCount);
+    TEST_ASSERT_EQUAL_UINT16(2, store.bucketAt(*trace, 0)->pulseCount);
+    TEST_ASSERT_EQUAL_size_t(2, trace->startupEdgeCount);
+}
+
+void test_trace_store_bucket_overflow_keeps_counting_totals() {
+    WaterPulseTrace traces[1]{};
+    WaterPulseTraceBucketSample buckets[1]{};
+    WaterPulseTraceSample startupEdges[4]{};
+    WaterPulseTraceStore store(traces, 1, buckets, 1, startupEdges, 4, 1);
+
+    const std::uint32_t id = store.beginTrace(1000, 1000);
+    TEST_ASSERT_TRUE(store.appendPulseEdge(id, 0));
+    TEST_ASSERT_TRUE(store.appendPulseEdge(id, 600000));
+    TEST_ASSERT_TRUE(store.appendPulseEdge(id, 1100000));
+
+    const WaterPulseTrace* trace = store.findById(id);
+    TEST_ASSERT_NOT_NULL(trace);
+    TEST_ASSERT_EQUAL_UINT32(3, trace->totalPulses);
+    TEST_ASSERT_EQUAL_size_t(1, trace->bucketCount);
+    TEST_ASSERT_TRUE((trace->flags & kPulseTraceFlagBucketOverflow) != 0);
+}
+
 void test_trace_store_records_seconds_and_reports_memory_stats() {
     WaterPulseTrace traces[4]{};
     WaterPulseTraceSample samples[32]{};
@@ -576,6 +636,9 @@ int main(int argc, char** argv) {
     (void)argc;
     (void)argv;
     UNITY_BEGIN();
+    RUN_TEST(test_trace_store_records_effective_pulses_into_500ms_buckets);
+    RUN_TEST(test_trace_store_filters_too_close_edges_without_bucket_counting);
+    RUN_TEST(test_trace_store_bucket_overflow_keeps_counting_totals);
     RUN_TEST(test_trace_store_records_seconds_and_reports_memory_stats);
     RUN_TEST(test_trace_store_does_not_synthesize_edges_to_match_record_duration);
     RUN_TEST(test_trace_store_drops_oldest_when_recent_trace_count_is_exceeded);

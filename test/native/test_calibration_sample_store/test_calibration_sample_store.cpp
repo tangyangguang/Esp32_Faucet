@@ -89,7 +89,8 @@ CalibrationStoredTrace traceFor(std::uint32_t sessionId, std::uint8_t attemptInd
     trace.savedAt = 1770000000 + attemptIndex;
     trace.trace.traceId = 100 + attemptIndex;
     trace.trace.startTime = 1770000000 + attemptIndex;
-    trace.trace.sampleCount = 3;
+    trace.trace.bucketCount = 2;
+    trace.trace.startupEdgeCount = 3;
     trace.trace.totalPulses = 3;
     trace.trace.actualMl = actualMl;
     trace.trace.finished = true;
@@ -103,6 +104,11 @@ void fillSamples(WaterPulseTraceSample (&samples)[3], std::uint32_t baseUs) {
     samples[2].elapsedUs = baseUs * 2;
 }
 
+void fillBuckets(WaterPulseTraceBucketSample (&buckets)[2]) {
+    buckets[0].pulseCount = 1;
+    buckets[1].pulseCount = 2;
+}
+
 }  // namespace
 
 void test_session_trace_store_has_six_slots_and_creates_file_on_begin() {
@@ -114,6 +120,11 @@ void test_session_trace_store_has_six_slots_and_creates_file_on_begin() {
     TEST_ASSERT_TRUE(backend.exists("/session-traces.bin"));
     TEST_ASSERT_EQUAL_size_t(6, kCalibrationSessionTraceSlots);
     TEST_ASSERT_EQUAL_size_t(6, store.capacity());
+    const std::size_t expectedMin =
+        24 + kCalibrationSessionTraceSlots * sizeof(CalibrationStoredTrace) +
+        kCalibrationSessionTraceSlots * kPulseTraceMaxBucketsPerTrace * sizeof(WaterPulseTraceBucketSample) +
+        kCalibrationSessionTraceSlots * kPulseTraceMaxStartupEdgesPerTrace * sizeof(WaterPulseTraceSample);
+    TEST_ASSERT_TRUE(static_cast<std::size_t>(backend.fileSize("/session-traces.bin")) >= expectedMin);
 }
 
 void test_session_trace_store_rebuilds_invalid_existing_file() {
@@ -129,15 +140,17 @@ void test_session_trace_store_rebuilds_invalid_existing_file() {
     TEST_ASSERT_EQUAL_size_t(1, backend.removeCalls);
 }
 
-void test_session_trace_pending_then_valid_round_trips_samples() {
+void test_session_trace_pending_then_valid_round_trips_compact_trace() {
     MemoryFileBackend backend;
     CalibrationSessionTraceStore store(backend, "/session-traces.bin");
     TEST_ASSERT_TRUE(store.begin());
-    WaterPulseTraceSample samples[3]{};
-    fillSamples(samples, 10000);
+    WaterPulseTraceBucketSample buckets[2]{};
+    WaterPulseTraceSample startup[3]{};
+    fillBuckets(buckets);
+    fillSamples(startup, 10000);
 
     TEST_ASSERT_TRUE(backend.exists("/session-traces.bin"));
-    TEST_ASSERT_TRUE(store.savePending(0, traceFor(11, 0, 0), samples, 3));
+    TEST_ASSERT_TRUE(store.savePending(0, traceFor(11, 0, 0), buckets, 2, startup, 3));
     TEST_ASSERT_TRUE(backend.exists("/session-traces.bin"));
     CalibrationStoredTrace pending{};
     TEST_ASSERT_TRUE(store.load(0, pending));
@@ -150,36 +163,46 @@ void test_session_trace_pending_then_valid_round_trips_samples() {
     TEST_ASSERT_FALSE(loaded.pendingActual);
     TEST_ASSERT_TRUE(loaded.valid);
     TEST_ASSERT_EQUAL_UINT32(1000, loaded.actualMl);
-    WaterPulseTraceSample copied[3]{};
-    TEST_ASSERT_EQUAL_size_t(3, store.readSamples(0, copied, 3));
-    TEST_ASSERT_EQUAL_UINT32(20000, copied[2].elapsedUs);
+    TEST_ASSERT_EQUAL_size_t(2, loaded.trace.bucketCount);
+    TEST_ASSERT_EQUAL_size_t(3, loaded.trace.startupEdgeCount);
+    WaterPulseTraceBucketSample copiedBuckets[2]{};
+    WaterPulseTraceSample copiedStartup[3]{};
+    TEST_ASSERT_EQUAL_size_t(2, store.readBuckets(0, copiedBuckets, 2));
+    TEST_ASSERT_EQUAL_size_t(3, store.readStartupEdges(0, copiedStartup, 3));
+    TEST_ASSERT_EQUAL_UINT16(2, copiedBuckets[1].pulseCount);
+    TEST_ASSERT_EQUAL_UINT32(20000, copiedStartup[2].elapsedUs);
 }
 
 void test_session_trace_store_accepts_sixth_valid_sample_slot() {
     MemoryFileBackend backend;
     CalibrationSessionTraceStore store(backend, "/session-traces.bin");
     TEST_ASSERT_TRUE(store.begin());
-    WaterPulseTraceSample samples[3]{};
-    fillSamples(samples, 10000);
+    WaterPulseTraceBucketSample buckets[2]{};
+    WaterPulseTraceSample startup[3]{};
+    fillBuckets(buckets);
+    fillSamples(startup, 10000);
 
     const std::uint8_t slot = 5;
-    TEST_ASSERT_TRUE(store.savePending(slot, traceFor(11, slot, 0), samples, 3));
+    TEST_ASSERT_TRUE(store.savePending(slot, traceFor(11, slot, 0), buckets, 2, startup, 3));
     TEST_ASSERT_TRUE(store.commitValid(slot, 3000, 1770000100));
 
     CalibrationStoredTrace loaded{};
     TEST_ASSERT_TRUE(store.load(slot, loaded));
     TEST_ASSERT_TRUE(loaded.valid);
     TEST_ASSERT_EQUAL_UINT32(3000, loaded.actualMl);
-    TEST_ASSERT_EQUAL_size_t(3, store.readSamples(slot, samples, 3));
+    TEST_ASSERT_EQUAL_size_t(2, store.readBuckets(slot, buckets, 2));
+    TEST_ASSERT_EQUAL_size_t(3, store.readStartupEdges(slot, startup, 3));
 }
 
 void test_starting_new_session_reuses_existing_trace_file_without_clearing_slots() {
     MemoryFileBackend backend;
     CalibrationSessionTraceStore store(backend, "/session-traces.bin");
     TEST_ASSERT_TRUE(store.begin());
-    WaterPulseTraceSample samples[3]{};
-    fillSamples(samples, 10000);
-    TEST_ASSERT_TRUE(store.savePending(0, traceFor(11, 0, 0), samples, 3));
+    WaterPulseTraceBucketSample buckets[2]{};
+    WaterPulseTraceSample startup[3]{};
+    fillBuckets(buckets);
+    fillSamples(startup, 10000);
+    TEST_ASSERT_TRUE(store.savePending(0, traceFor(11, 0, 0), buckets, 2, startup, 3));
     TEST_ASSERT_TRUE(store.commitValid(0, 1000, 1770000100));
     backend.writeCalls = 0;
 
@@ -188,7 +211,8 @@ void test_starting_new_session_reuses_existing_trace_file_without_clearing_slots
     CalibrationStoredTrace loaded{};
     TEST_ASSERT_TRUE(store.load(0, loaded));
     TEST_ASSERT_EQUAL_UINT32(11, loaded.sessionId);
-    TEST_ASSERT_EQUAL_size_t(3, store.readSamples(0, samples, 3));
+    TEST_ASSERT_EQUAL_size_t(2, store.readBuckets(0, buckets, 2));
+    TEST_ASSERT_EQUAL_size_t(3, store.readStartupEdges(0, startup, 3));
     TEST_ASSERT_EQUAL_size_t(0, backend.writeCalls);
 }
 
@@ -211,7 +235,7 @@ int main(int argc, char** argv) {
     UNITY_BEGIN();
     RUN_TEST(test_session_trace_store_has_six_slots_and_creates_file_on_begin);
     RUN_TEST(test_session_trace_store_rebuilds_invalid_existing_file);
-    RUN_TEST(test_session_trace_pending_then_valid_round_trips_samples);
+    RUN_TEST(test_session_trace_pending_then_valid_round_trips_compact_trace);
     RUN_TEST(test_session_trace_store_accepts_sixth_valid_sample_slot);
     RUN_TEST(test_starting_new_session_reuses_existing_trace_file_without_clearing_slots);
     RUN_TEST(test_starting_new_session_creates_missing_trace_file);

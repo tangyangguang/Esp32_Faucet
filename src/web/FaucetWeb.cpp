@@ -4023,6 +4023,10 @@ void handleRecordDetailPage() {
             backHref,
             backLabel);
     Esp32BaseWeb::sendChunk("</div>");
+    if (trace->bucketCount > 0) {
+        sendFmt("<p class='hint'>该明细使用 500ms 时间桶保存全程有效脉冲趋势，并保留前 %lu 秒启动边沿。</p>",
+                static_cast<unsigned long>(kPulseTraceStartupDetailMs / 1000UL));
+    }
 
     Esp32BaseWeb::sendChunk("<section class='panel sample-status-panel'><h3>样本状态</h3><table class='kv'>");
     if (traceActualSynced) {

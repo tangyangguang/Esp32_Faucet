@@ -401,6 +401,43 @@ void saveWebSessionAttempt(CalibrationSessionTraceStore& traceStore,
     session.validSampleCount = countValidCalibrationSamples(session);
 }
 
+void saveWebCompactSessionAttempt(CalibrationSessionTraceStore& traceStore,
+                                  CalibrationSessionRecord& session,
+                                  std::uint8_t slot,
+                                  std::uint32_t actualMl) {
+    CalibrationAttempt attempt{};
+    attempt.attemptIndex = slot;
+    attempt.targetHintMl = actualMl;
+    attempt.record = makeWebRecord(testNowSeconds() + slot * 10UL, actualMl);
+    attempt.record.pulseCount = 10;
+    attempt.record.durationSec = 2;
+    attempt.status = CalibrationAttemptStatus::Valid;
+    attempt.actualMl = actualMl;
+
+    WaterPulseTraceBucketSample buckets[4]{{2}, {3}, {3}, {2}};
+    WaterPulseTraceSample startup[3]{{0}, {120000}, {260000}};
+    CalibrationStoredTrace stored{};
+    stored.pendingActual = true;
+    stored.sessionId = session.sessionId;
+    stored.attemptIndex = slot;
+    stored.trace.traceId = slot + 100;
+    stored.trace.startTime = attempt.record.startTime;
+    stored.trace.record = attempt.record;
+    stored.trace.bucketCount = 4;
+    stored.trace.startupEdgeCount = 3;
+    stored.trace.totalPulses = 10;
+    stored.trace.actualMl = actualMl;
+    stored.trace.pulseMinIntervalUs = kDefaultPulseMinIntervalUs;
+    stored.trace.finalState = WaterPulseTraceState::Completed;
+    stored.trace.finished = true;
+    TEST_ASSERT_TRUE(traceStore.savePending(slot, stored, buckets, 4, startup, 3));
+    TEST_ASSERT_TRUE(traceStore.commitValid(slot, actualMl, attempt.record.startTime + 10));
+    attempt.sessionTraceSlot = slot;
+
+    TEST_ASSERT_TRUE(appendCalibrationAttempt(session, attempt));
+    session.validSampleCount = countValidCalibrationSamples(session);
+}
+
 void fillCountingRecords(CountingWaterRecordReader& reader) {
     const std::uint32_t today = testNowSeconds();
     for (std::uint32_t i = 0; i < 40; ++i) {
@@ -1343,6 +1380,32 @@ void test_calibration_detail_reads_persisted_session_trace_without_ram_cache() {
     TEST_ASSERT_EQUAL(std::string::npos, body.find("RAM 缓存淘汰"));
 }
 
+void test_calibration_detail_reads_compact_bucket_trace_without_raw_samples() {
+    WebFixture fixture;
+    CalibrationSessionRecord session = makeCalibrationSession(77, testNowSeconds());
+    session.status = CalibrationSessionStatus::WaitingLocalRun;
+    saveWebCompactSessionAttempt(fixture.traceStore, session, 0, 1500);
+    TEST_ASSERT_TRUE(fixture.sessionStore.save(session));
+    registerRoutes();
+
+    Esp32BaseWeb::nativeTestBeginRequest(Esp32BaseWeb::METHOD_GET, "/faucet/calibration/detail");
+    Esp32BaseWeb::nativeTestSetAuthenticated(true);
+    Esp32BaseWeb::nativeTestSetSameOrigin(true);
+    Esp32BaseWeb::nativeTestSetParam("from", "calibration");
+    Esp32BaseWeb::nativeTestSetParam("slot", "0");
+    Esp32BaseWeb::nativeTestSetParam("bucket", "1");
+
+    TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch("/faucet/calibration/detail", Esp32BaseWeb::METHOD_GET));
+
+    TEST_ASSERT_EQUAL(200, Esp32BaseWeb::nativeTestResponse().code);
+    const std::string& body = Esp32BaseWeb::nativeTestResponse().body;
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("<h2>脉冲明细</h2>"));
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("500ms"));
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("时间桶"));
+    TEST_ASSERT_EQUAL(std::string::npos, body.find("内存不足"));
+    TEST_ASSERT_EQUAL(std::string::npos, body.find("RAM 缓存淘汰"));
+}
+
 void test_tds_calibration_start_redirects_busy_to_calibration_page() {
     WebFixture fixture;
     enableTdsForFixture(fixture);
@@ -1577,6 +1640,7 @@ int main(int, char**) {
     RUN_TEST(test_flow_calibration_remove_sample_redirects_busy_without_changing_sample);
     RUN_TEST(test_flow_calibration_sample_table_only_shows_remove_for_active_samples);
     RUN_TEST(test_calibration_detail_reads_persisted_session_trace_without_ram_cache);
+    RUN_TEST(test_calibration_detail_reads_compact_bucket_trace_without_raw_samples);
     RUN_TEST(test_tds_calibration_start_redirects_busy_to_calibration_page);
     RUN_TEST(test_tds_calibration_start_redirects_success_from_idle);
     RUN_TEST(test_tds_calibration_start_redirects_invalid_state_when_session_exists);

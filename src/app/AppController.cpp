@@ -377,7 +377,7 @@ void AppController::resetInputs(ButtonLevels levels, std::uint32_t nowMs) {
 
 void AppController::onFlowPulse(std::uint32_t nowUs) {
     if (pulseTraces_ && activeTraceId_ != 0) {
-        pulseTraces_->appendRawEdge(activeTraceId_, elapsedSince(nowUs, activeTraceStartUs_));
+        pulseTraces_->appendPulseEdge(activeTraceId_, elapsedSince(nowUs, activeTraceStartUs_));
     }
     flow_.onPulse(nowUs);
 }

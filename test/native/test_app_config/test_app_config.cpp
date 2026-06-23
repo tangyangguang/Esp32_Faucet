@@ -46,7 +46,10 @@ void test_default_config_matches_product_defaults() {
     TEST_ASSERT_EQUAL_UINT16(kDefaultCalibrationMaxRelativeErrorTenthPercent,
                              config.calibrationMaxRelativeErrorTenthPercent);
     TEST_ASSERT_EQUAL_UINT16(50, config.calibrationMaxRelativeErrorTenthPercent);
-    TEST_ASSERT_EQUAL_UINT32(4096, kPulseTraceMaxRawEdgesPerTrace);
+    TEST_ASSERT_EQUAL_UINT32(500, kPulseTraceBucketMs);
+    TEST_ASSERT_EQUAL_UINT32(15000, kPulseTraceStartupDetailMs);
+    TEST_ASSERT_EQUAL_size_t(1200, kPulseTraceMaxBucketsPerTrace);
+    TEST_ASSERT_EQUAL_size_t(4096, kPulseTraceMaxStartupEdgesPerTrace);
     TEST_ASSERT_EQUAL_UINT32(kDefaultValveFullPowerSec, config.valveFullPowerSec);
     TEST_ASSERT_EQUAL_UINT32(5, config.valveFullPowerSec);
     TEST_ASSERT_EQUAL_UINT8(kDefaultValveHoldDutyPercent, config.valveHoldDutyPercent);
@@ -298,6 +301,10 @@ void test_pulse_observation_window_is_editable_in_app_config_page() {
 
 void test_calibration_session_trace_store_is_small_and_initialized_after_record_store() {
     TEST_ASSERT_EQUAL_size_t(6, kCalibrationSessionTraceSlots);
+    TEST_ASSERT_EQUAL_UINT32(500, kPulseTraceBucketMs);
+    TEST_ASSERT_EQUAL_UINT32(15000, kPulseTraceStartupDetailMs);
+    TEST_ASSERT_EQUAL_size_t(1200, kPulseTraceMaxBucketsPerTrace);
+    TEST_ASSERT_EQUAL_size_t(4096, kPulseTraceMaxStartupEdgesPerTrace);
 
     FILE* file = std::fopen("src/main.cpp", "rb");
     TEST_ASSERT_NOT_NULL(file);
@@ -314,6 +321,11 @@ void test_calibration_session_trace_store_is_small_and_initialized_after_record_
     const char* sessionTracePath = std::strstr(init, "kCalibrationSessionTracePath");
     TEST_ASSERT_TRUE(sessionTracePath == nullptr || sessionTracePath > end);
     TEST_ASSERT_NOT_NULL(std::strstr(init, "g_calibrationSessionTraces.begin()"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "g_pulseTraceSamples"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "g_pulseTraceBuckets"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "g_pulseTraceStartupEdges"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "kPulseTraceMaxBucketsPerTrace"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "kPulseTraceMaxStartupEdgesPerTrace"));
     TEST_ASSERT_NULL(std::strstr(buffer, "kCalibrationLongTermSamplesPath"));
     TEST_ASSERT_NULL(std::strstr(buffer, "g_calibrationLongTermSamples"));
 }

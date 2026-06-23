@@ -7,6 +7,7 @@
 #include "app/WaterRecordCalibrationStore.h"
 #include "web/FaucetWeb.h"
 
+#include <algorithm>
 #include <cstring>
 #include <map>
 #include <string>
@@ -372,8 +373,20 @@ void saveWebSessionAttempt(CalibrationSessionTraceStore& traceStore,
 
     if (status == CalibrationAttemptStatus::Valid || status == CalibrationAttemptStatus::PendingActual) {
         WaterPulseTraceSample samples[512]{};
+        WaterPulseTraceBucketSample buckets[kPulseTraceMaxBucketsPerTrace]{};
         const std::size_t sampleCount = fillWebCalibrationSamples(samples, 512, 40, attempt.record.pulseCount - 40, 6);
         TEST_ASSERT_GREATER_THAN_size_t(0, sampleCount);
+        std::size_t bucketCount = 0;
+        std::size_t startupEdgeCount = 0;
+        for (std::size_t i = 0; i < sampleCount; ++i) {
+            const std::size_t bucketIndex = samples[i].elapsedUs / (kPulseTraceBucketMs * 1000UL);
+            TEST_ASSERT_LESS_THAN_size_t(kPulseTraceMaxBucketsPerTrace, bucketIndex);
+            ++buckets[bucketIndex].pulseCount;
+            bucketCount = std::max(bucketCount, bucketIndex + 1);
+            if (samples[i].elapsedUs < kPulseTraceStartupDetailMs * 1000UL) {
+                ++startupEdgeCount;
+            }
+        }
 
         CalibrationStoredTrace stored{};
         stored.pendingActual = true;
@@ -382,13 +395,14 @@ void saveWebSessionAttempt(CalibrationSessionTraceStore& traceStore,
         stored.trace.traceId = slot + 1;
         stored.trace.startTime = attempt.record.startTime;
         stored.trace.record = attempt.record;
-        stored.trace.sampleCount = sampleCount;
+        stored.trace.bucketCount = bucketCount;
+        stored.trace.startupEdgeCount = startupEdgeCount;
         stored.trace.totalPulses = attempt.record.pulseCount;
         stored.trace.actualMl = actualMl;
         stored.trace.pulseMinIntervalUs = kDefaultPulseMinIntervalUs;
         stored.trace.finalState = WaterPulseTraceState::Completed;
         stored.trace.finished = true;
-        TEST_ASSERT_TRUE(traceStore.savePending(slot, stored, samples, sampleCount));
+        TEST_ASSERT_TRUE(traceStore.savePending(slot, stored, buckets, bucketCount, samples, startupEdgeCount));
         if (status == CalibrationAttemptStatus::Valid) {
             TEST_ASSERT_TRUE(traceStore.commitValid(slot, actualMl, attempt.record.startTime + 10));
         }
@@ -396,6 +410,43 @@ void saveWebSessionAttempt(CalibrationSessionTraceStore& traceStore,
     } else {
         attempt.sessionTraceSlot = kCalibrationSessionTraceSlots;
     }
+
+    TEST_ASSERT_TRUE(appendCalibrationAttempt(session, attempt));
+    session.validSampleCount = countValidCalibrationSamples(session);
+}
+
+void saveWebCompactSessionAttempt(CalibrationSessionTraceStore& traceStore,
+                                  CalibrationSessionRecord& session,
+                                  std::uint8_t slot,
+                                  std::uint32_t actualMl) {
+    CalibrationAttempt attempt{};
+    attempt.attemptIndex = slot;
+    attempt.targetHintMl = actualMl;
+    attempt.record = makeWebRecord(testNowSeconds() + slot * 10UL, actualMl);
+    attempt.record.pulseCount = 10;
+    attempt.record.durationSec = 2;
+    attempt.status = CalibrationAttemptStatus::Valid;
+    attempt.actualMl = actualMl;
+
+    WaterPulseTraceBucketSample buckets[4]{{2}, {3}, {3}, {2}};
+    WaterPulseTraceSample startup[3]{{0}, {120000}, {260000}};
+    CalibrationStoredTrace stored{};
+    stored.pendingActual = true;
+    stored.sessionId = session.sessionId;
+    stored.attemptIndex = slot;
+    stored.trace.traceId = slot + 100;
+    stored.trace.startTime = attempt.record.startTime;
+    stored.trace.record = attempt.record;
+    stored.trace.bucketCount = 4;
+    stored.trace.startupEdgeCount = 3;
+    stored.trace.totalPulses = 10;
+    stored.trace.actualMl = actualMl;
+    stored.trace.pulseMinIntervalUs = kDefaultPulseMinIntervalUs;
+    stored.trace.finalState = WaterPulseTraceState::Completed;
+    stored.trace.finished = true;
+    TEST_ASSERT_TRUE(traceStore.savePending(slot, stored, buckets, 4, startup, 3));
+    TEST_ASSERT_TRUE(traceStore.commitValid(slot, actualMl, attempt.record.startTime + 10));
+    attempt.sessionTraceSlot = slot;
 
     TEST_ASSERT_TRUE(appendCalibrationAttempt(session, attempt));
     session.validSampleCount = countValidCalibrationSamples(session);
@@ -693,7 +744,7 @@ void test_calibration_home_shows_three_expanded_sections_without_flow_tables() {
     TEST_ASSERT_EQUAL(std::string::npos, body.find("<details"));
 }
 
-void test_flow_calibration_refresh_preserves_active_session_state() {
+void test_calibration_home_redirects_active_flow_session_to_workflow() {
     WebFixture fixture;
     TEST_ASSERT_TRUE(fixture.app.startCalibrationSessionForWeb(testNowSeconds()));
     registerRoutes();
@@ -702,9 +753,15 @@ void test_flow_calibration_refresh_preserves_active_session_state() {
     Esp32BaseWeb::nativeTestSetAuthenticated(true);
     Esp32BaseWeb::nativeTestSetSameOrigin(true);
     TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch("/faucet/calibration", Esp32BaseWeb::METHOD_GET));
-    const std::string homeBody = Esp32BaseWeb::nativeTestResponse().body;
-    TEST_ASSERT_NOT_EQUAL(std::string::npos, homeBody.find("继续流量计校准"));
-    TEST_ASSERT_NOT_EQUAL(std::string::npos, homeBody.find("等待本地出水"));
+
+    TEST_ASSERT_EQUAL(303, Esp32BaseWeb::nativeTestResponse().code);
+    TEST_ASSERT_EQUAL_STRING("/faucet/calibration/flow", Esp32BaseWeb::nativeTestResponseHeader("Location"));
+}
+
+void test_flow_calibration_page_preserves_active_session_state() {
+    WebFixture fixture;
+    TEST_ASSERT_TRUE(fixture.app.startCalibrationSessionForWeb(testNowSeconds()));
+    registerRoutes();
 
     Esp32BaseWeb::nativeTestBeginRequest(Esp32BaseWeb::METHOD_GET, "/faucet/calibration/flow");
     Esp32BaseWeb::nativeTestSetAuthenticated(true);
@@ -1339,7 +1396,34 @@ void test_calibration_detail_reads_persisted_session_trace_without_ram_cache() {
     const std::string& body = Esp32BaseWeb::nativeTestResponse().body;
     TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("<h2>脉冲明细</h2>"));
     TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("href='/faucet/calibration/detail?from=calibration&slot=0&bucket=2'"));
-    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("原始明细"));
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("时间桶明细"));
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("启动边沿"));
+    TEST_ASSERT_EQUAL(std::string::npos, body.find("RAM 缓存淘汰"));
+}
+
+void test_calibration_detail_reads_persisted_bucket_trace_without_ram_cache() {
+    WebFixture fixture;
+    CalibrationSessionRecord session = makeCalibrationSession(77, testNowSeconds());
+    session.status = CalibrationSessionStatus::WaitingLocalRun;
+    saveWebCompactSessionAttempt(fixture.traceStore, session, 0, 1500);
+    TEST_ASSERT_TRUE(fixture.sessionStore.save(session));
+    registerRoutes();
+
+    Esp32BaseWeb::nativeTestBeginRequest(Esp32BaseWeb::METHOD_GET, "/faucet/calibration/detail");
+    Esp32BaseWeb::nativeTestSetAuthenticated(true);
+    Esp32BaseWeb::nativeTestSetSameOrigin(true);
+    Esp32BaseWeb::nativeTestSetParam("from", "calibration");
+    Esp32BaseWeb::nativeTestSetParam("slot", "0");
+    Esp32BaseWeb::nativeTestSetParam("bucket", "1");
+
+    TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch("/faucet/calibration/detail", Esp32BaseWeb::METHOD_GET));
+
+    TEST_ASSERT_EQUAL(200, Esp32BaseWeb::nativeTestResponse().code);
+    const std::string& body = Esp32BaseWeb::nativeTestResponse().body;
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("<h2>脉冲明细</h2>"));
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("500ms"));
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("时间桶"));
+    TEST_ASSERT_EQUAL(std::string::npos, body.find("内存不足"));
     TEST_ASSERT_EQUAL(std::string::npos, body.find("RAM 缓存淘汰"));
 }
 
@@ -1547,7 +1631,8 @@ int main(int, char**) {
     RUN_TEST(test_after_format_fs_notification_notifies_app_storage_rebuild);
     RUN_TEST(test_stats_page_initial_render_shows_complete_report);
     RUN_TEST(test_calibration_home_shows_three_expanded_sections_without_flow_tables);
-    RUN_TEST(test_flow_calibration_refresh_preserves_active_session_state);
+    RUN_TEST(test_calibration_home_redirects_active_flow_session_to_workflow);
+    RUN_TEST(test_flow_calibration_page_preserves_active_session_state);
     RUN_TEST(test_calibration_page_initial_render_shows_tds_controls);
     RUN_TEST(test_tds_calibration_prioritizes_two_point_flow);
     RUN_TEST(test_temperature_calibration_uses_simple_card_and_celsius_input);
@@ -1577,6 +1662,7 @@ int main(int, char**) {
     RUN_TEST(test_flow_calibration_remove_sample_redirects_busy_without_changing_sample);
     RUN_TEST(test_flow_calibration_sample_table_only_shows_remove_for_active_samples);
     RUN_TEST(test_calibration_detail_reads_persisted_session_trace_without_ram_cache);
+    RUN_TEST(test_calibration_detail_reads_persisted_bucket_trace_without_ram_cache);
     RUN_TEST(test_tds_calibration_start_redirects_busy_to_calibration_page);
     RUN_TEST(test_tds_calibration_start_redirects_success_from_idle);
     RUN_TEST(test_tds_calibration_start_redirects_invalid_state_when_session_exists);

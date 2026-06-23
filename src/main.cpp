@@ -45,8 +45,10 @@ constexpr std::size_t kRamRecordCalibrationCapacity = 32;
 constexpr std::size_t kWaterRecordCapacity = 20000;
 constexpr std::size_t kWaterRecordCalibrationCapacity = 512;
 constexpr std::size_t kPulseTraceCapacity = faucet::kRecentPulseTraceCount;
-constexpr std::size_t kPulseTraceMaxSamples =
-    static_cast<std::size_t>(faucet::kRecentPulseTraceCount) * faucet::kPulseTraceMaxRawEdgesPerTrace;
+constexpr std::size_t kPulseTraceMaxBuckets =
+    static_cast<std::size_t>(faucet::kRecentPulseTraceCount) * faucet::kPulseTraceMaxBucketsPerTrace;
+constexpr std::size_t kPulseTraceMaxStartupEdges =
+    static_cast<std::size_t>(faucet::kRecentPulseTraceCount) * faucet::kPulseTraceMaxStartupEdgesPerTrace;
 constexpr std::uint32_t kRuntimePersistenceRetryIntervalMs = 30000UL;
 constexpr std::size_t kMaxFlowPulsesPerTick = 32;
 constexpr std::uint32_t kI2cTimeoutMs = 20UL;
@@ -185,7 +187,8 @@ faucet::CalibrationSessionTraceStore g_calibrationSessionTraces(g_waterRecordBac
 PersistentRecordWriter g_records;
 PersistentRecordCalibrationStore g_recordCalibrations;
 faucet::WaterPulseTrace* g_pulseTraceRecords = nullptr;
-faucet::WaterPulseTraceSample* g_pulseTraceSamples = nullptr;
+faucet::WaterPulseTraceBucketSample* g_pulseTraceBuckets = nullptr;
+faucet::WaterPulseTraceSample* g_pulseTraceStartupEdges = nullptr;
 faucet::WaterPulseTraceStore* g_pulseTraces = nullptr;
 faucet::AppController* g_app = nullptr;
 faucet::GpioButtonReader g_buttons(faucet::kPinButtonCancel,
@@ -434,13 +437,16 @@ void initializeApplication() {
     g_recordStoreInitComplete = waterRecordReady && calibrationSessionReady;
     logStartupPhase("record_store_ready");
     g_pulseTraceRecords = new (std::nothrow) faucet::WaterPulseTrace[kPulseTraceCapacity]{};
-    g_pulseTraceSamples = new (std::nothrow) faucet::WaterPulseTraceSample[kPulseTraceMaxSamples]{};
-    if (g_pulseTraceRecords && g_pulseTraceSamples) {
+    g_pulseTraceBuckets = new (std::nothrow) faucet::WaterPulseTraceBucketSample[kPulseTraceMaxBuckets]{};
+    g_pulseTraceStartupEdges = new (std::nothrow) faucet::WaterPulseTraceSample[kPulseTraceMaxStartupEdges]{};
+    if (g_pulseTraceRecords && g_pulseTraceBuckets && g_pulseTraceStartupEdges) {
         g_pulseTraces = new (std::nothrow) faucet::WaterPulseTraceStore(
             g_pulseTraceRecords,
             kPulseTraceCapacity,
-            g_pulseTraceSamples,
-            kPulseTraceMaxSamples,
+            g_pulseTraceBuckets,
+            kPulseTraceMaxBuckets,
+            g_pulseTraceStartupEdges,
+            kPulseTraceMaxStartupEdges,
             faucet::kRecentPulseTraceCount);
     }
     if (!g_pulseTraces) {

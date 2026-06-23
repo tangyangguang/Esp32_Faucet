@@ -3,6 +3,7 @@
 #include "app/TimeUtils.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <limits>
 #include <memory>
@@ -56,34 +57,105 @@ MeteringSchemeRecord defaultRuntimeMeteringScheme() {
 }
 
 CalibrationSampleSummary makeCalibrationSummary(const WaterPulseTrace& trace,
-                                                const WaterPulseTraceSample* samples,
-                                                std::size_t sampleCount,
+                                                const WaterPulseTraceBucketSample* buckets,
+                                                std::size_t bucketCount,
                                                 std::uint32_t actualMl,
                                                 const SegmentedCalibrationOptions& options) {
     CalibrationSampleSummary summary{};
     summary.actualMl = actualMl;
     summary.totalPulses = trace.totalPulses;
-    summary.rejectedPulses = trace.record.rejectedPulseCount;
+    summary.rejectedPulses = trace.minIntervalFilteredCount;
     summary.durationSec = trace.record.durationSec;
-    summary.truncated = trace.truncated;
+    summary.truncated = (trace.flags & (kPulseTraceFlagBucketOverflow | kPulseTraceFlagStartupOverflow)) != 0;
     summary.resumedAfterPause = trace.resumedAfterPause;
-    if (!samples || sampleCount == 0 || trace.truncated || trace.resumedAfterPause || actualMl < kCalibrationMinActualMl ||
-        trace.totalPulses == 0) {
+    if (!buckets || bucketCount == 0 || summary.truncated || trace.resumedAfterPause ||
+        actualMl < kCalibrationMinActualMl || trace.totalPulses == 0) {
         return summary;
     }
-    const WaterPulseTraceAnalysis analysis = analyzeWaterPulseTrace(trace, samples, sampleCount, options);
-    summary.stable = analysis.stable;
-    summary.startupPulseCount = analysis.startupPulseCount;
-    summary.stablePulseCount = analysis.stablePulseCount;
-    summary.stableStartSec = analysis.stableStartSec;
-    summary.stablePulsePerSec = analysis.stablePulsePerSec;
-    if (!summary.stable && sampleCount >= 6 && trace.record.durationSec > 0 &&
-        trace.record.durationSec < kMinCalibrationStableWindowSec) {
+    const std::uint32_t durationSec =
+        trace.record.durationSec > 0
+            ? trace.record.durationSec
+            : static_cast<std::uint32_t>((bucketCount * kPulseTraceBucketMs + 999UL) / 1000UL);
+    summary.durationSec = durationSec;
+    if (durationSec == 0) {
+        return summary;
+    }
+    std::uint32_t* perSecond = new (std::nothrow) std::uint32_t[durationSec]{};
+    if (!perSecond) {
+        return summary;
+    }
+    for (std::size_t i = 0; i < bucketCount; ++i) {
+        const std::uint32_t sec = static_cast<std::uint32_t>((i * kPulseTraceBucketMs) / 1000UL);
+        if (sec < durationSec) {
+            perSecond[sec] += buckets[i].pulseCount;
+        }
+    }
+    const std::uint32_t stableWindowSec =
+        std::min<std::uint32_t>(std::max<std::uint32_t>(options.stableWindowSec, kMinCalibrationStableWindowSec),
+                                kMaxCalibrationStableWindowSec);
+    const std::uint32_t stableTolerancePercent = std::min<std::uint32_t>(
+        std::max<std::uint32_t>(options.stableTolerancePercent, kMinCalibrationStableTolerancePercent),
+        kMaxCalibrationStableTolerancePercent);
+    if (durationSec >= 6 && stableWindowSec <= durationSec) {
+        std::uint32_t runningCount = 0;
+        std::uint32_t runningTotal = 0;
+        for (std::uint32_t i = durationSec / 2; i < durationSec; ++i) {
+            if (perSecond[i] > 0) {
+                ++runningCount;
+                runningTotal += perSecond[i];
+            }
+        }
+        if (runningCount >= 3) {
+            const float stableRate = static_cast<float>(runningTotal) / static_cast<float>(runningCount);
+            const std::uint32_t stableFloor = static_cast<std::uint32_t>(stableRate + 0.5f);
+            for (std::uint32_t i = 0; stableFloor > 0 && i + stableWindowSec <= durationSec; ++i) {
+                if (perSecond[i] < stableFloor) {
+                    continue;
+                }
+                std::uint32_t total = 0;
+                std::uint32_t minValue = UINT32_MAX;
+                std::uint32_t maxValue = 0;
+                for (std::uint32_t j = 0; j < stableWindowSec; ++j) {
+                    const std::uint32_t value = perSecond[i + j];
+                    total += value;
+                    minValue = std::min(minValue, value);
+                    maxValue = std::max(maxValue, value);
+                }
+                if (minValue == 0) {
+                    continue;
+                }
+                const float avg = static_cast<float>(total) / static_cast<float>(stableWindowSec);
+                const float avgTolerance = stableRate * static_cast<float>(stableTolerancePercent) / 100.0f;
+                const float spreadTolerance =
+                    stableRate * static_cast<float>(stableTolerancePercent) * 1.6f / 100.0f;
+                if (std::fabs(avg - stableRate) <= std::max(1.0f, avgTolerance) &&
+                    static_cast<float>(maxValue - minValue) <= std::max(1.0f, spreadTolerance)) {
+                    summary.stable = true;
+                    summary.stableStartSec = i;
+                    for (std::uint32_t k = 0; k < i; ++k) {
+                        summary.startupPulseCount += perSecond[k];
+                    }
+                    std::uint32_t stableSeconds = 0;
+                    for (std::uint32_t k = i; k < durationSec; ++k) {
+                        summary.stablePulseCount += perSecond[k];
+                        ++stableSeconds;
+                    }
+                    summary.stablePulsePerSec =
+                        stableSeconds == 0
+                            ? 0.0f
+                            : static_cast<float>(summary.stablePulseCount) / static_cast<float>(stableSeconds);
+                    break;
+                }
+            }
+        }
+    }
+    if (!summary.stable && durationSec < kMinCalibrationStableWindowSec) {
         summary.stable = true;
         summary.stablePulseCount = trace.totalPulses;
-        summary.stablePulsePerSec = static_cast<float>(trace.totalPulses) / static_cast<float>(trace.record.durationSec);
+        summary.stablePulsePerSec = static_cast<float>(trace.totalPulses) / static_cast<float>(durationSec);
     }
     summary.usableForGeneration = summary.stable && summary.stablePulseCount > 0;
+    delete[] perSecond;
     return summary;
 }
 
@@ -273,7 +345,7 @@ void AppController::resetInputs(ButtonLevels levels, std::uint32_t nowMs) {
 
 void AppController::onFlowPulse(std::uint32_t nowUs) {
     if (pulseTraces_ && activeTraceId_ != 0) {
-        pulseTraces_->appendRawEdge(activeTraceId_, elapsedSince(nowUs, activeTraceStartUs_));
+        pulseTraces_->appendPulseEdge(activeTraceId_, elapsedSince(nowUs, activeTraceStartUs_));
     }
     flow_.onPulse(nowUs);
 }
@@ -561,29 +633,45 @@ bool AppController::submitCalibrationActualForWeb(std::uint32_t actualMl, std::u
     }
     CalibrationAttempt& attempt = calibrationSession_.attempts[calibrationSession_.attemptCount - 1];
     const WaterPulseTrace* trace = pulseTraces_ ? pulseTraces_->findByRecord(attempt.record) : nullptr;
-    if (attempt.status != CalibrationAttemptStatus::PendingActual || !trace || trace->truncated ||
-        trace->resumedAfterPause || trace->sampleCount == 0 ||
-        trace->sampleCount > kPulseTraceMaxRawEdgesPerTrace || trace->totalPulses == 0) {
+    if (attempt.status != CalibrationAttemptStatus::PendingActual || !trace || trace->resumedAfterPause ||
+        trace->totalPulses == 0 || trace->bucketCount == 0 ||
+        (trace->flags & (kPulseTraceFlagBucketOverflow | kPulseTraceFlagStartupOverflow)) != 0) {
         rejectCalibrationAttempt(calibrationSession_, attempt, CalibrationInvalidReason::AnalysisFailed, nowSeconds);
         saveCalibrationSession();
         return false;
     }
-    WaterPulseTraceSample* samples = new (std::nothrow) WaterPulseTraceSample[trace->sampleCount]{};
-    if (!samples) {
+    std::unique_ptr<WaterPulseTraceBucketSample[]> buckets;
+    std::unique_ptr<WaterPulseTraceSample[]> startupEdges;
+    buckets.reset(new (std::nothrow) WaterPulseTraceBucketSample[trace->bucketCount]{});
+    if (!buckets) {
         rejectCalibrationAttempt(calibrationSession_, attempt, CalibrationInvalidReason::StorageFailed, nowSeconds);
         saveCalibrationSession();
         return false;
     }
-    for (std::size_t i = 0; i < trace->sampleCount; ++i) {
-        const WaterPulseTraceSample* sample = pulseTraces_->sampleAt(*trace, i);
-        if (sample) {
-            samples[i] = *sample;
+    for (std::size_t i = 0; i < trace->bucketCount; ++i) {
+        const WaterPulseTraceBucketSample* bucket = pulseTraces_->bucketAt(*trace, i);
+        if (bucket) {
+            buckets[i] = *bucket;
+        }
+    }
+    if (trace->startupEdgeCount > 0) {
+        startupEdges.reset(new (std::nothrow) WaterPulseTraceSample[trace->startupEdgeCount]{});
+        if (!startupEdges) {
+            rejectCalibrationAttempt(calibrationSession_, attempt, CalibrationInvalidReason::StorageFailed, nowSeconds);
+            saveCalibrationSession();
+            return false;
+        }
+        for (std::size_t i = 0; i < trace->startupEdgeCount; ++i) {
+            const WaterPulseTraceSample* edge = pulseTraces_->startupEdgeAt(*trace, i);
+            if (edge) {
+                startupEdges[i] = *edge;
+            }
         }
     }
     const CalibrationSampleSummary summary =
         makeCalibrationSummary(*trace,
-                               samples,
-                               trace->sampleCount,
+                               buckets.get(),
+                               trace->bucketCount,
                                actualMl,
                                segmentedCalibrationOptionsFromConfig(config_));
     CalibrationStoredTrace stored{};
@@ -600,15 +688,18 @@ bool AppController::submitCalibrationActualForWeb(std::uint32_t actualMl, std::u
     calibration.oldStartupCompensationMl = activeMeteringScheme_.params.startupVolumeMl;
     calibration.newStartupCompensationMl = activeMeteringScheme_.params.startupVolumeMl;
     calibration.kind = WaterRecordCalibrationKind::PulsePerMl;
+    const bool savedTrace = calibrationSessionTraces_->savePending(attempt.sessionTraceSlot,
+                                                                   stored,
+                                                                   buckets.get(),
+                                                                   trace->bucketCount,
+                                                                   startupEdges.get(),
+                                                                   trace->startupEdgeCount);
     if (!recordCalibrations_->upsert(calibration) ||
-        !calibrationSessionTraces_->savePending(attempt.sessionTraceSlot, stored, samples, trace->sampleCount) ||
-        !calibrationSessionTraces_->commitValid(attempt.sessionTraceSlot, actualMl, nowSeconds)) {
-        delete[] samples;
+        !savedTrace || !calibrationSessionTraces_->commitValid(attempt.sessionTraceSlot, actualMl, nowSeconds)) {
         rejectCalibrationAttempt(calibrationSession_, attempt, CalibrationInvalidReason::StorageFailed, nowSeconds);
         saveCalibrationSession();
         return false;
     }
-    delete[] samples;
 
     attempt.actualMl = actualMl;
     attempt.summary = summary;
@@ -1199,7 +1290,7 @@ bool AppController::invalidateAwaitingActualIfRamTraceMissing(std::uint32_t nowS
         return false;
     }
     const WaterPulseTrace* trace = pulseTraces_ ? pulseTraces_->findByRecord(attempt.record) : nullptr;
-    if (trace && trace->sampleCount > 0) {
+    if (trace && trace->bucketCount > 0) {
         return false;
     }
     attempt.status = CalibrationAttemptStatus::Invalid;
@@ -1307,7 +1398,8 @@ void AppController::persistCalibrationPendingAttempt(const WaterRecord& record, 
     }
 
     const WaterPulseTrace* trace = pulseTraces_ ? pulseTraces_->findByRecord(record) : nullptr;
-    if (!trace || trace->sampleCount == 0 || trace->sampleCount > kPulseTraceMaxRawEdgesPerTrace) {
+    if (!trace || trace->bucketCount == 0 ||
+        (trace->flags & (kPulseTraceFlagBucketOverflow | kPulseTraceFlagStartupOverflow)) != 0) {
         attempt.status = CalibrationAttemptStatus::Invalid;
         attempt.invalidReason = CalibrationInvalidReason::TruncatedTrace;
         appendCalibrationAttempt(calibrationSession_, attempt);

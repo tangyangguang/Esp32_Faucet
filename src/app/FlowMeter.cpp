@@ -17,7 +17,7 @@ bool validParams(const MeteringParameters& params) {
         return false;
     }
     return (params.startupPulseCount == 0 && params.startupVolumeMl == 0) ||
-           (params.startupPulseCount > 0 && params.startupVolumeMl > 0);
+           params.startupPulseCount > 0;
 }
 
 }  // namespace

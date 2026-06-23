@@ -461,6 +461,62 @@ void test_segmented_calibration_uses_two_valid_samples() {
     TEST_ASSERT_EQUAL_UINT32(40, result.startupPulseCount);
 }
 
+void test_segmented_calibration_accepts_no_startup_compensation_fit() {
+    SegmentedCalibrationSample samples[3]{};
+    samples[0].actualMl = 500;
+    samples[0].totalPulses = 1055;
+    samples[0].stablePulseCount = 1055;
+    samples[0].stablePulsePerSec = 35.0f;
+    samples[1].actualMl = 750;
+    samples[1].totalPulses = 1506;
+    samples[1].stablePulseCount = 1506;
+    samples[1].stablePulsePerSec = 34.0f;
+    samples[2].actualMl = 900;
+    samples[2].totalPulses = 1816;
+    samples[2].stablePulseCount = 1816;
+    samples[2].stablePulsePerSec = 33.0f;
+
+    SegmentedCalibrationResult result{};
+    TEST_ASSERT_TRUE(computeSegmentedCalibration(samples, 3, result));
+
+    TEST_ASSERT_TRUE(result.valid);
+    TEST_ASSERT_EQUAL_UINT32(0, result.startupPulseCount);
+    TEST_ASSERT_EQUAL_UINT32(0, result.startupVolumeMl);
+    TEST_ASSERT_EQUAL_UINT32(0, result.startupDurationMs);
+    TEST_ASSERT_UINT32_WITHIN(20, 2030, result.stablePulsePerLiter);
+}
+
+void test_segmented_calibration_keeps_detected_startup_when_equivalent_volume_is_zero() {
+    SegmentedCalibrationSample samples[3]{};
+    samples[0].actualMl = 1000;
+    samples[0].totalPulses = 2220;
+    samples[0].startupPulseCount = 120;
+    samples[0].stablePulseCount = 2100;
+    samples[0].startupDurationSec = 5;
+    samples[0].stablePulsePerSec = 60.0f;
+    samples[1].actualMl = 1500;
+    samples[1].totalPulses = 3120;
+    samples[1].startupPulseCount = 120;
+    samples[1].stablePulseCount = 3000;
+    samples[1].startupDurationSec = 5;
+    samples[1].stablePulsePerSec = 60.0f;
+    samples[2].actualMl = 1800;
+    samples[2].totalPulses = 3720;
+    samples[2].startupPulseCount = 120;
+    samples[2].stablePulseCount = 3600;
+    samples[2].startupDurationSec = 5;
+    samples[2].stablePulsePerSec = 60.0f;
+
+    SegmentedCalibrationResult result{};
+    TEST_ASSERT_TRUE(computeSegmentedCalibration(samples, 3, result));
+
+    TEST_ASSERT_TRUE(result.valid);
+    TEST_ASSERT_EQUAL_UINT32(120, result.startupPulseCount);
+    TEST_ASSERT_EQUAL_UINT32(0, result.startupVolumeMl);
+    TEST_ASSERT_EQUAL_UINT32(5000, result.startupDurationMs);
+    TEST_ASSERT_TRUE(result.stablePulsePerLiter >= 1700 && result.stablePulsePerLiter <= 2000);
+}
+
 void test_segmented_calibration_rejects_time_estimate_params_out_of_range() {
     SegmentedCalibrationSample samples[2]{};
     samples[0].actualMl = 1500;
@@ -665,6 +721,8 @@ int main(int argc, char** argv) {
     RUN_TEST(test_trace_bucket_aggregation_sums_pulses_by_selected_seconds);
     RUN_TEST(test_trace_bucket_aggregation_accepts_four_second_bucket);
     RUN_TEST(test_segmented_calibration_uses_two_valid_samples);
+    RUN_TEST(test_segmented_calibration_accepts_no_startup_compensation_fit);
+    RUN_TEST(test_segmented_calibration_keeps_detected_startup_when_equivalent_volume_is_zero);
     RUN_TEST(test_segmented_calibration_rejects_time_estimate_params_out_of_range);
     RUN_TEST(test_segmented_calibration_fits_all_valid_samples);
     RUN_TEST(test_segmented_calibration_rejects_error_above_configured_limits);

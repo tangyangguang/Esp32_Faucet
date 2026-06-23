@@ -151,6 +151,14 @@ public:
         return true;
     }
 
+    void replaceFile(const char* path, const void* data, std::size_t len) {
+        std::vector<std::uint8_t>& file = files[path ? path : ""];
+        file.resize(len, 0);
+        if (data && len > 0) {
+            std::memcpy(file.data(), data, len);
+        }
+    }
+
 private:
     std::map<std::string, std::vector<std::uint8_t>> files;
 };
@@ -351,10 +359,10 @@ void saveCalibrationSessionSample(CalibrationSessionTraceStore& traceStore,
                                   std::uint32_t startupPulses,
                                   std::uint32_t stablePulses,
                                   std::uint32_t stableSeconds) {
-    WaterPulseTraceSample samples[2048]{};
+    WaterPulseTraceSample samples[4096]{};
     WaterPulseTraceBucketSample buckets[kPulseTraceMaxBucketsPerTrace]{};
     const std::size_t sampleCount =
-        fillCalibrationSamples(samples, 2048, startupPulses, stablePulses, stableSeconds);
+        fillCalibrationSamples(samples, 4096, startupPulses, stablePulses, stableSeconds);
     TEST_ASSERT_GREATER_THAN_size_t(0, sampleCount);
     std::size_t bucketCount = 0;
     std::size_t startupEdgeCount = 0;
@@ -1177,7 +1185,7 @@ void test_app_controller_starting_calibration_twice_is_rejected() {
                             static_cast<unsigned>(app.snapshot().calibrationStatus));
 }
 
-void test_app_controller_calibration_preparing_times_out_to_discarded() {
+void test_app_controller_flow_calibration_session_does_not_time_out() {
     SystemConfig config = makeDefaultConfig();
     StatisticsStore statistics;
     statistics.reset({20260506, 202619, 202605});
@@ -1193,15 +1201,15 @@ void test_app_controller_calibration_preparing_times_out_to_discarded() {
 
     TEST_ASSERT_TRUE(app.startCalibrationSessionForWeb(1714502400));
 
-    app.tick(input({false, false, false, false}, 1801000, 1801000000UL, 1714504201));
+    app.tick(input({false, false, false, false}, 86400000, 1000000UL, 1714588800));
 
-    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(LocalUiMode::Normal),
+    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(LocalUiMode::Calibration),
                             static_cast<std::uint8_t>(app.snapshot().localMode));
-    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationSessionStatus::Discarded),
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationSessionStatus::WaitingLocalRun),
                             static_cast<unsigned>(app.snapshot().calibrationStatus));
 }
 
-void test_app_controller_calibration_ready_and_generated_time_out_from_last_action() {
+void test_app_controller_calibration_ready_restores_generated_and_stays_active_without_idle_timeout() {
     SystemConfig config = makeDefaultConfig();
     StatisticsStore statistics;
     statistics.reset({20260506, 202619, 202605});
@@ -1235,14 +1243,8 @@ void test_app_controller_calibration_ready_and_generated_time_out_from_last_acti
                       &calibrations,
                       &sessionStore,
                       &traceStore);
-    TEST_ASSERT_EQUAL_UINT32(1714502500 + kCalibrationIdleTimeoutSec,
-                             app.snapshot().calibrationIdleExpiresAt);
-
-    app.tick(input({false, false, false, false}, 1000, 1000000UL, 1714502500 + kCalibrationIdleTimeoutSec - 1));
-    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationSessionStatus::ReadyToGenerate),
-                            static_cast<unsigned>(app.snapshot().calibrationStatus));
-    app.tick(input({false, false, false, false}, 2000, 2000000UL, 1714502500 + kCalibrationIdleTimeoutSec));
-    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationSessionStatus::Discarded),
+    app.tick(input({false, false, false, false}, 1000, 1000000UL, 1714588800));
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationSessionStatus::Generated),
                             static_cast<unsigned>(app.snapshot().calibrationStatus));
 
     session.status = CalibrationSessionStatus::ReadyToGenerate;
@@ -1259,10 +1261,8 @@ void test_app_controller_calibration_ready_and_generated_time_out_from_last_acti
                             &sessionStore,
                             &traceStore);
     TEST_ASSERT_TRUE(generated.generateCalibrationForWeb(1714505100));
-    TEST_ASSERT_EQUAL_UINT32(1714505100 + kCalibrationIdleTimeoutSec,
-                             generated.snapshot().calibrationIdleExpiresAt);
-    generated.tick(input({false, false, false, false}, 3000, 3000000UL, 1714505100 + kCalibrationIdleTimeoutSec));
-    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationSessionStatus::Discarded),
+    generated.tick(input({false, false, false, false}, 3000, 3000000UL, 1714588800));
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationSessionStatus::Generated),
                             static_cast<unsigned>(generated.snapshot().calibrationStatus));
 }
 
@@ -1481,6 +1481,58 @@ void test_app_controller_generates_calibration_session_candidate() {
                             static_cast<unsigned>(app.snapshot().calibrationStatus));
 }
 
+void test_app_controller_generates_after_incompatible_metering_store_rebuild() {
+    SystemConfig config = makeDefaultConfig();
+    StatisticsStore statistics;
+    FilterStore filters(config.filters);
+    MemoryRecordWriter records;
+    MemoryCalibrationWriter calibrations;
+    MemoryFileBackend backend;
+    MeteringSchemeStoreHeader oldHeader{};
+    oldHeader.magic = 0x314D5346UL;
+    oldHeader.version = 1;
+    oldHeader.headerSize = sizeof(MeteringSchemeStoreHeader);
+    oldHeader.recordSize = sizeof(MeteringSchemeRecord);
+    oldHeader.activeSchemeId = 1;
+    oldHeader.nextSchemeId = 2;
+    oldHeader.slotCount = kMeteringSchemeStoreSlotCount;
+    backend.replaceFile("/schemes.bin", &oldHeader, sizeof(oldHeader));
+
+    MeteringSchemeStore schemes(backend, "/schemes.bin");
+    TEST_ASSERT_TRUE(schemes.begin());
+    MeteringSchemeRecord active{};
+    TEST_ASSERT_TRUE(schemes.activeScheme(active));
+    CalibrationSessionFileStore sessionStore(backend, "/cal-session.bin");
+    CalibrationSessionTraceStore traceStore(backend, "/cal-traces.bin");
+    TEST_ASSERT_TRUE(sessionStore.begin());
+    TEST_ASSERT_TRUE(traceStore.begin());
+
+    CalibrationSessionRecord session = makeCalibrationSession(77, 1714502400);
+    saveCalibrationSessionSample(traceStore, session, 0, 1714502401, 1500, 40, 210, 6);
+    saveCalibrationSessionSample(traceStore, session, 1, 1714502410, 7500, 40, 1540, 11);
+    session.status = CalibrationSessionStatus::ReadyToGenerate;
+    session.validSampleCount = countValidCalibrationSamples(session);
+    TEST_ASSERT_TRUE(sessionStore.save(session));
+
+    AppController app(config,
+                      active,
+                      statistics,
+                      filters,
+                      records,
+                      schemes,
+                      nullptr,
+                      &calibrations,
+                      &sessionStore,
+                      &traceStore);
+
+    TEST_ASSERT_TRUE(app.generateCalibrationForWeb(1714502500));
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationSessionStatus::Generated),
+                            static_cast<unsigned>(app.snapshot().calibrationStatus));
+    TEST_ASSERT_TRUE(app.applyGeneratedCalibrationForWeb(1714502600));
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationSessionStatus::Applied),
+                            static_cast<unsigned>(app.snapshot().calibrationStatus));
+}
+
 void test_app_controller_auto_generates_after_second_valid_calibration_sample() {
     CalibrationAppFixture fixture;
     saveOneValidOnePendingSession(fixture, 1714502400);
@@ -1493,6 +1545,67 @@ void test_app_controller_auto_generates_after_second_valid_calibration_sample() 
     TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationSessionStatus::Generated),
                             static_cast<unsigned>(snapshot.calibrationStatus));
     TEST_ASSERT_TRUE(fixture.app->applyGeneratedCalibrationForWeb(1714502600));
+}
+
+void test_app_controller_auto_generates_no_startup_segment_calibration_samples() {
+    CalibrationAppFixture fixture;
+    CalibrationSessionRecord session = makeCalibrationSession(77, 1714502400);
+    saveCalibrationSessionSample(fixture.traceStore, session, 0, 1714502401, 500, 0, 1055, 30);
+    savePendingRamCalibrationAttempt(fixture, session, 1, 1714502410, 750, 0, 1506, 45);
+    session.status = CalibrationSessionStatus::AwaitingActual;
+    session.validSampleCount = countValidCalibrationSamples(session);
+    TEST_ASSERT_TRUE(fixture.sessionStore.save(session));
+    fixture.createApp();
+
+    TEST_ASSERT_TRUE(fixture.app->submitCalibrationActualForWeb(750, 1714502500));
+
+    const AppSnapshot snapshot = fixture.app->snapshot();
+    TEST_ASSERT_EQUAL_UINT8(2, snapshot.calibrationValidSampleCount);
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationSessionStatus::Generated),
+                            static_cast<unsigned>(snapshot.calibrationStatus));
+    TEST_ASSERT_TRUE(fixture.app->applyGeneratedCalibrationForWeb(1714502600));
+    TEST_ASSERT_EQUAL_UINT32(0, fixture.app->activeMeteringScheme().params.startupPulseCount);
+    TEST_ASSERT_EQUAL_UINT32(0, fixture.app->activeMeteringScheme().params.startupVolumeMl);
+}
+
+void test_app_controller_restores_waiting_session_candidate_from_existing_valid_samples() {
+    CalibrationAppFixture fixture;
+    CalibrationSessionRecord session = makeCalibrationSession(77, 1714502400);
+    saveCalibrationSessionSample(fixture.traceStore, session, 0, 1714502401, 500, 0, 1055, 30);
+    saveCalibrationSessionSample(fixture.traceStore, session, 1, 1714502410, 750, 0, 1506, 45);
+    saveCalibrationSessionSample(fixture.traceStore, session, 2, 1714502420, 900, 0, 1816, 55);
+    session.status = CalibrationSessionStatus::WaitingLocalRun;
+    session.validSampleCount = countValidCalibrationSamples(session);
+    TEST_ASSERT_TRUE(fixture.sessionStore.save(session));
+
+    fixture.createApp();
+
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationSessionStatus::Generated),
+                            static_cast<unsigned>(fixture.app->snapshot().calibrationStatus));
+    TEST_ASSERT_EQUAL_UINT8(3, fixture.app->snapshot().calibrationValidSampleCount);
+    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(BeepPattern::None),
+                            static_cast<std::uint8_t>(fixture.app->consumeBeepPattern()));
+    TEST_ASSERT_TRUE(fixture.app->applyGeneratedCalibrationForWeb(1714502600));
+    TEST_ASSERT_EQUAL_UINT32(0, fixture.app->activeMeteringScheme().params.startupPulseCount);
+    TEST_ASSERT_EQUAL_UINT32(0, fixture.app->activeMeteringScheme().params.startupVolumeMl);
+}
+
+void test_app_controller_restores_discarded_session_candidate_from_existing_valid_samples() {
+    CalibrationAppFixture fixture;
+    CalibrationSessionRecord session = makeCalibrationSession(77, 1714502400);
+    saveCalibrationSessionSample(fixture.traceStore, session, 0, 1714502401, 1000, 143, 1967, 31);
+    saveCalibrationSessionSample(fixture.traceStore, session, 1, 1714502410, 1500, 77, 2934, 48);
+    saveCalibrationSessionSample(fixture.traceStore, session, 2, 1714502420, 1800, 83, 3548, 59);
+    session.status = CalibrationSessionStatus::Discarded;
+    session.validSampleCount = countValidCalibrationSamples(session);
+    TEST_ASSERT_TRUE(fixture.sessionStore.save(session));
+
+    fixture.createApp();
+
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationSessionStatus::Generated),
+                            static_cast<unsigned>(fixture.app->snapshot().calibrationStatus));
+    TEST_ASSERT_TRUE(fixture.app->applyGeneratedCalibrationForWeb(1714502600));
+    TEST_ASSERT_GREATER_THAN_UINT32(0, fixture.app->activeMeteringScheme().params.startupPulseCount);
 }
 
 void test_app_controller_saves_unstable_actual_without_counting_valid_sample() {
@@ -2373,6 +2486,14 @@ void test_app_controller_uses_shared_run_flow_reset_helper() {
     TEST_ASSERT_EQUAL_size_t(1, count);
 }
 
+void test_app_controller_calibration_summary_does_not_duplicate_stable_pulse_accumulation() {
+    const std::string body = readAppControllerSource();
+    TEST_ASSERT_EQUAL(
+        std::string::npos,
+        body.find("summary.stablePulseCount += perSecond[k];\n"
+                  "                        summary.stablePulseCount += perSecond[k];"));
+}
+
 void test_app_controller_restore_session_does_not_allocate_loaded_session_on_stack() {
     const std::string body = readAppControllerSource();
     TEST_ASSERT_EQUAL(std::string::npos, body.find("CalibrationSessionRecord loaded{}"));
@@ -2429,14 +2550,18 @@ int main(int argc, char** argv) {
     RUN_TEST(test_app_controller_starting_calibration_from_idle_enters_preparing);
     RUN_TEST(test_app_controller_starting_calibration_while_running_is_rejected);
     RUN_TEST(test_app_controller_starting_calibration_twice_is_rejected);
-    RUN_TEST(test_app_controller_calibration_preparing_times_out_to_discarded);
-    RUN_TEST(test_app_controller_calibration_ready_and_generated_time_out_from_last_action);
+    RUN_TEST(test_app_controller_flow_calibration_session_does_not_time_out);
+    RUN_TEST(test_app_controller_calibration_ready_restores_generated_and_stays_active_without_idle_timeout);
     RUN_TEST(test_app_controller_reboot_drops_awaiting_actual_when_ram_trace_missing);
     RUN_TEST(test_app_controller_local_ok_starts_calibration_run_and_completion_awaits_actual);
     RUN_TEST(test_app_controller_saves_long_high_pulse_calibration_without_bucket_overflow);
     RUN_TEST(test_app_controller_calibration_run_ignores_preset_target_until_local_cancel);
     RUN_TEST(test_app_controller_generates_calibration_session_candidate);
+    RUN_TEST(test_app_controller_generates_after_incompatible_metering_store_rebuild);
     RUN_TEST(test_app_controller_auto_generates_after_second_valid_calibration_sample);
+    RUN_TEST(test_app_controller_auto_generates_no_startup_segment_calibration_samples);
+    RUN_TEST(test_app_controller_restores_waiting_session_candidate_from_existing_valid_samples);
+    RUN_TEST(test_app_controller_restores_discarded_session_candidate_from_existing_valid_samples);
     RUN_TEST(test_app_controller_saves_unstable_actual_without_counting_valid_sample);
     RUN_TEST(test_app_controller_generated_calibration_can_continue_collecting_samples);
     RUN_TEST(test_app_controller_submit_actual_succeeds_when_auto_refresh_cannot_generate);
@@ -2456,6 +2581,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_app_controller_snapshot_reports_current_flow_rate);
     RUN_TEST(test_app_controller_uses_window_flow_for_high_flow_safety);
     RUN_TEST(test_app_controller_uses_shared_run_flow_reset_helper);
+    RUN_TEST(test_app_controller_calibration_summary_does_not_duplicate_stable_pulse_accumulation);
     RUN_TEST(test_app_controller_restore_session_does_not_allocate_loaded_session_on_stack);
     RUN_TEST(test_app_controller_calibration_paths_avoid_large_stack_arrays);
     return UNITY_END();

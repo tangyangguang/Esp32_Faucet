@@ -361,20 +361,36 @@ void saveWebSessionAttempt(CalibrationSessionTraceStore& traceStore,
                            CalibrationSessionRecord& session,
                            std::uint8_t slot,
                            CalibrationAttemptStatus status,
-                           std::uint32_t actualMl) {
+                           std::uint32_t actualMl,
+                           std::uint32_t pulseCount = 0,
+                           std::uint32_t stableSeconds = 6) {
     CalibrationAttempt attempt{};
     attempt.attemptIndex = slot;
     attempt.targetHintMl = actualMl > 0 ? actualMl : 1000;
     attempt.record = makeWebRecord(testNowSeconds() + slot * 10UL, attempt.targetHintMl);
-    attempt.record.pulseCount = 260 + static_cast<std::uint32_t>(slot) * 50UL;
-    attempt.record.durationSec = 11;
+    attempt.record.pulseCount = pulseCount > 0 ? pulseCount : 260 + static_cast<std::uint32_t>(slot) * 50UL;
+    attempt.record.durationSec = 5 + stableSeconds;
     attempt.status = status;
     attempt.actualMl = status == CalibrationAttemptStatus::Valid ? actualMl : 0;
+    const std::uint32_t startupPulses = std::min<std::uint32_t>(40, attempt.record.pulseCount);
+    const std::uint32_t stablePulses = attempt.record.pulseCount - startupPulses;
+    if (status == CalibrationAttemptStatus::Valid) {
+        attempt.summary.actualMl = actualMl;
+        attempt.summary.totalPulses = attempt.record.pulseCount;
+        attempt.summary.durationSec = attempt.record.durationSec;
+        attempt.summary.stable = true;
+        attempt.summary.startupPulseCount = startupPulses;
+        attempt.summary.stablePulseCount = stablePulses;
+        attempt.summary.stableStartSec = 5;
+        attempt.summary.stablePulsePerSec = static_cast<float>(stablePulses) / static_cast<float>(stableSeconds);
+        attempt.summary.usableForGeneration = stablePulses > 0 && actualMl >= kCalibrationMinActualMl;
+    }
 
     if (status == CalibrationAttemptStatus::Valid || status == CalibrationAttemptStatus::PendingActual) {
-        WaterPulseTraceSample samples[512]{};
+        WaterPulseTraceSample samples[2048]{};
         WaterPulseTraceBucketSample buckets[kPulseTraceMaxBucketsPerTrace]{};
-        const std::size_t sampleCount = fillWebCalibrationSamples(samples, 512, 40, attempt.record.pulseCount - 40, 6);
+        const std::size_t sampleCount =
+            fillWebCalibrationSamples(samples, 2048, startupPulses, attempt.record.pulseCount - startupPulses, stableSeconds);
         TEST_ASSERT_GREATER_THAN_size_t(0, sampleCount);
         std::size_t bucketCount = 0;
         std::size_t startupEdgeCount = 0;
@@ -916,6 +932,57 @@ void test_flow_calibration_center_initial_render_shows_current_parameter_workflo
     TEST_ASSERT_EQUAL(std::string::npos, body.find("长期样本库"));
     TEST_ASSERT_EQUAL(std::string::npos, body.find("最多 6 次接水"));
     TEST_ASSERT_LESS_OR_EQUAL_UINT32(3, fixture.calibrationFiles.meteringSchemeRecordReads);
+}
+
+void test_flow_calibration_generated_session_shows_candidate_details_before_apply() {
+    WebFixture fixture;
+    TEST_ASSERT_TRUE(fixture.meteringSchemes.begin());
+    MeteringSchemeRecord active{};
+    TEST_ASSERT_TRUE(fixture.meteringSchemes.activeScheme(active));
+
+    CalibrationSessionRecord session{};
+    session.sessionId = 77;
+    session.status = CalibrationSessionStatus::ReadyToGenerate;
+    session.startedAt = testNowSeconds();
+    session.updatedAt = testNowSeconds();
+    saveWebSessionAttempt(fixture.traceStore, session, 0, CalibrationAttemptStatus::Valid, 1500, 250, 6);
+    saveWebSessionAttempt(fixture.traceStore, session, 1, CalibrationAttemptStatus::Valid, 7500, 1580, 11);
+    session.validSampleCount = countValidCalibrationSamples(session);
+    TEST_ASSERT_TRUE(fixture.sessionStore.save(session));
+
+    AppController app(fixture.config,
+                      active,
+                      fixture.statistics,
+                      fixture.filters,
+                      fixture.recordWriter,
+                      fixture.meteringSchemes,
+                      nullptr,
+                      &fixture.calibrations,
+                      &fixture.sessionStore,
+                      &fixture.traceStore,
+                      &fixture.waterSensors);
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationSessionStatus::Generated),
+                            static_cast<unsigned>(app.snapshot().calibrationStatus));
+    fixture.installContext(app, fixture.records);
+    registerRoutes();
+    Esp32BaseWeb::nativeTestBeginRequest(Esp32BaseWeb::METHOD_GET, "/faucet/calibration/flow");
+    Esp32BaseWeb::nativeTestSetAuthenticated(true);
+    Esp32BaseWeb::nativeTestSetSameOrigin(true);
+
+    TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch("/faucet/calibration/flow", Esp32BaseWeb::METHOD_GET));
+
+    const std::string& body = Esp32BaseWeb::nativeTestResponse().body;
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("推荐计量参数"));
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("启动脉冲"));
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("启动水量"));
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("稳态 P/L"));
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("启动时长"));
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("稳态流速"));
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("生成来源"));
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("样本数"));
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("容量范围"));
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("最大误差"));
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("使用这组参数"));
 }
 
 void test_flow_calibration_history_uses_parameter_language() {
@@ -1639,6 +1706,7 @@ int main(int, char**) {
     RUN_TEST(test_temperature_calibration_disables_save_when_sensor_is_disabled);
     RUN_TEST(test_temperature_calibration_post_accepts_celsius_decimal_input);
     RUN_TEST(test_flow_calibration_center_initial_render_shows_current_parameter_workflow);
+    RUN_TEST(test_flow_calibration_generated_session_shows_candidate_details_before_apply);
     RUN_TEST(test_flow_calibration_history_uses_parameter_language);
     RUN_TEST(test_flow_calibration_manual_input_prefills_copied_parameters);
     RUN_TEST(test_flow_calibration_manual_save_becomes_active_parameter);

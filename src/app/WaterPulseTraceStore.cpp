@@ -533,6 +533,58 @@ bool sampleUsableForFit(const SegmentedCalibrationSample& sample) {
     return sample.actualMl > 0 && sample.stablePulseCount > 0 && sample.totalPulses > 0;
 }
 
+FitResult fitNoStartupSamples(const SegmentedCalibrationSample* samples,
+                              std::size_t sampleCount,
+                              const bool* excluded) {
+    FitResult fit{};
+    double sumXX = 0.0;
+    double sumXY = 0.0;
+    for (std::size_t i = 0; i < sampleCount; ++i) {
+        if ((excluded && excluded[i]) || !sampleUsableForFit(samples[i])) {
+            continue;
+        }
+        const double x = static_cast<double>(samples[i].totalPulses);
+        const double y = static_cast<double>(samples[i].actualMl);
+        sumXX += x * x;
+        sumXY += x * y;
+        if (samples[i].stablePulsePerSec > 0.0f) {
+            fit.totalStablePulsePerSec += samples[i].stablePulsePerSec;
+            ++fit.stablePulseRateSampleCount;
+        }
+        fit.minActualMl = std::min(fit.minActualMl, samples[i].actualMl);
+        fit.maxActualMl = std::max(fit.maxActualMl, samples[i].actualMl);
+        ++fit.sampleCount;
+    }
+    if (fit.sampleCount < 2 || !(sumXX > 0.0)) {
+        return fit;
+    }
+    fit.mlPerStablePulse = sumXY / sumXX;
+    fit.startupVolumeMl = 0.0;
+    if (!(fit.mlPerStablePulse > 0.0)) {
+        return fit;
+    }
+    for (std::size_t i = 0; i < sampleCount; ++i) {
+        if ((excluded && excluded[i]) || !sampleUsableForFit(samples[i])) {
+            continue;
+        }
+        const double estimated = fit.mlPerStablePulse * samples[i].totalPulses;
+        const std::uint32_t errorMl = roundU32(static_cast<float>(std::fabs(estimated - samples[i].actualMl)));
+        const std::uint32_t relTenths =
+            samples[i].actualMl == 0
+                ? 0
+                : static_cast<std::uint32_t>((static_cast<std::uint64_t>(errorMl) * 1000ULL +
+                                              samples[i].actualMl / 2ULL) /
+                                             samples[i].actualMl);
+        if (errorMl > fit.maxErrorMl || (errorMl == fit.maxErrorMl && relTenths > fit.maxRelativeErrorTenthPercent)) {
+            fit.maxErrorMl = errorMl;
+            fit.maxRelativeErrorTenthPercent = relTenths > UINT16_MAX ? UINT16_MAX : static_cast<std::uint16_t>(relTenths);
+            fit.worstSample = i;
+        }
+    }
+    fit.valid = true;
+    return fit;
+}
+
 FitResult fitSegmentedSamples(const SegmentedCalibrationSample* samples,
                               std::size_t sampleCount,
                               const bool* excluded) {
@@ -567,12 +619,18 @@ FitResult fitSegmentedSamples(const SegmentedCalibrationSample* samples,
     const double n = static_cast<double>(fit.sampleCount);
     const double denominator = n * sumXX - sumX * sumX;
     if (!(denominator > 0.0)) {
-        return fit;
+        return fit.totalStartupPulseCount == 0 ? fitNoStartupSamples(samples, sampleCount, excluded) : fit;
     }
     fit.mlPerStablePulse = (n * sumXY - sumX * sumY) / denominator;
     fit.startupVolumeMl = (sumY - fit.mlPerStablePulse * sumX) / n;
-    if (!(fit.mlPerStablePulse > 0.0) || !(fit.startupVolumeMl > 0.0)) {
+    if (!(fit.mlPerStablePulse > 0.0)) {
         return fit;
+    }
+    if (fit.totalStartupPulseCount == 0) {
+        return fitNoStartupSamples(samples, sampleCount, excluded);
+    }
+    if (!(fit.startupVolumeMl > 0.0)) {
+        fit.startupVolumeMl = 0.0;
     }
     for (std::size_t i = 0; i < sampleCount; ++i) {
         if ((excluded && excluded[i]) || !sampleUsableForFit(samples[i])) {

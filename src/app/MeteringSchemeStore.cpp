@@ -128,6 +128,11 @@ bool MeteringSchemeStore::begin() {
         return ok;
     }
     if (!loadHeader()) {
+        if (status_ == AppStorageStatus::IncompatibleFormat || status_ == AppStorageStatus::Corrupt) {
+            const bool ok = initializeNewFile();
+            status_ = ok ? AppStorageStatus::Ready : AppStorageStatus::BackendFailure;
+            return ok;
+        }
         return false;
     }
     ready_ = true;

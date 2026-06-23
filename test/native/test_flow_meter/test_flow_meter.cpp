@@ -57,6 +57,17 @@ void test_segmented_stable_stage_uses_stable_pulse_per_liter_after_startup() {
     TEST_ASSERT_EQUAL_UINT32(90, meter.snapshot(6000).volumeMl);
 }
 
+void test_segmented_startup_pulse_offset_can_have_zero_startup_volume() {
+    FlowMeter meter(MeteringParameters{4, 0, 200}, kDefaultPulseFilterUs);
+
+    for (std::uint32_t i = 0; i < 4; ++i) {
+        TEST_ASSERT_TRUE(meter.onPulse(1000 + i * 1000));
+        TEST_ASSERT_EQUAL_UINT32(0, meter.snapshot(1000 + i * 1000).volumeMl);
+    }
+    TEST_ASSERT_TRUE(meter.onPulse(5000));
+    TEST_ASSERT_EQUAL_UINT32(5, meter.snapshot(5000).volumeMl);
+}
+
 void test_filters_pulses_inside_filter_window() {
     FlowMeter meter(MeteringParameters{0, 0, 500}, 1000);
 
@@ -182,7 +193,7 @@ void test_rejects_invalid_metering_parameters() {
 
     TEST_ASSERT_FALSE(meter.setMeteringParameters(MeteringParameters{4, 80, 0}));
     TEST_ASSERT_FALSE(meter.setMeteringParameters(MeteringParameters{0, 80, 500}));
-    TEST_ASSERT_FALSE(meter.setMeteringParameters(MeteringParameters{4, 0, 500}));
+    TEST_ASSERT_TRUE(meter.setMeteringParameters(MeteringParameters{4, 0, 500}));
     TEST_ASSERT_TRUE(meter.setMeteringParameters(MeteringParameters{0, 0, 1000}));
 }
 
@@ -231,6 +242,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_default_constructor_uses_builtin_yfs201_startup_parameters);
     RUN_TEST(test_segmented_startup_volume_is_spread_across_startup_pulses);
     RUN_TEST(test_segmented_stable_stage_uses_stable_pulse_per_liter_after_startup);
+    RUN_TEST(test_segmented_startup_pulse_offset_can_have_zero_startup_volume);
     RUN_TEST(test_filters_pulses_inside_filter_window);
     RUN_TEST(test_pulse_exactly_at_filter_boundary_is_accepted);
     RUN_TEST(test_current_flow_uses_recent_pulse_interval);

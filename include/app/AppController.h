@@ -55,7 +55,6 @@ struct AppSnapshot {
     bool lastResultRecordAvailable = false;
     WaterRecord lastResultRecord{};
     CalibrationSessionStatus calibrationStatus = CalibrationSessionStatus::Idle;
-    std::uint32_t calibrationIdleExpiresAt = 0;
     std::uint8_t calibrationAttemptCount = 0;
     std::uint8_t calibrationValidSampleCount = 0;
     std::uint32_t calibrationMinActualMl = 0;
@@ -63,6 +62,7 @@ struct AppSnapshot {
     std::uint32_t calibrationMaxRunSec = 0;
     bool calibrationCanQuickGenerate = false;
     bool calibrationRecommended = false;
+    MeteringSchemeCandidate calibrationCandidate{};
     std::uint32_t pulsePerLiter = 0;
     MeteringParameters meteringParams{};
     std::uint32_t targetEstimatedDurationSec = 0;
@@ -195,7 +195,6 @@ private:
                                                               bool allowLocalCalibration,
                                                               std::uint32_t calibratedAt);
     void restoreCalibrationSession();
-    void expireIdleCalibrationSession(std::uint32_t nowSeconds);
     bool invalidateAwaitingActualIfRamTraceMissing(std::uint32_t nowSeconds);
     bool saveCalibrationSession();
     bool refreshCalibrationCandidate(std::uint32_t nowSeconds);

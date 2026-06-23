@@ -83,7 +83,7 @@ bool validMeteringSchemeParameters(const MeteringParameters& params) {
         return false;
     }
     return (params.startupPulseCount == 0 && params.startupVolumeMl == 0) ||
-           (params.startupPulseCount > 0 && params.startupVolumeMl > 0);
+           params.startupPulseCount > 0;
 }
 
 std::uint32_t estimatePulsesForVolumeMl(const MeteringParameters& params, std::uint32_t targetMl) {
@@ -108,7 +108,7 @@ std::uint32_t estimateDurationMsForVolumeMl(const MeteringParameters& params, st
     if (!validMeteringSchemeParameters(params) || targetMl == 0 || params.stableFlowMlPerMin == 0) {
         return 0;
     }
-    if (params.startupDurationMs == 0 || params.startupVolumeMl == 0) {
+    if (params.startupDurationMs == 0 || params.startupPulseCount == 0) {
         return saturatingU32((static_cast<std::uint64_t>(targetMl) * 60000ULL +
                               params.stableFlowMlPerMin / 2ULL) /
                              params.stableFlowMlPerMin);
@@ -128,7 +128,7 @@ std::uint32_t estimateVolumeMlForDurationMs(const MeteringParameters& params, st
     if (!validMeteringSchemeParameters(params) || durationMs == 0 || params.stableFlowMlPerMin == 0) {
         return 0;
     }
-    if (params.startupDurationMs == 0 || params.startupVolumeMl == 0) {
+    if (params.startupDurationMs == 0 || params.startupPulseCount == 0) {
         return saturatingU32((static_cast<std::uint64_t>(durationMs) * params.stableFlowMlPerMin + 30000ULL) /
                              60000ULL);
     }

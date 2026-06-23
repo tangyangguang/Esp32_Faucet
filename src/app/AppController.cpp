@@ -182,14 +182,6 @@ bool appendSummaryCalibrationSample(const CalibrationAttempt& attempt,
     return true;
 }
 
-bool calibrationStatusExpiresWhenIdle(CalibrationSessionStatus status) {
-    return status == CalibrationSessionStatus::Preparing ||
-           status == CalibrationSessionStatus::WaitingLocalRun ||
-           status == CalibrationSessionStatus::AwaitingActual ||
-           status == CalibrationSessionStatus::ReadyToGenerate ||
-           status == CalibrationSessionStatus::Generated;
-}
-
 void rejectCalibrationAttempt(CalibrationSessionRecord& session,
                               CalibrationAttempt& attempt,
                               CalibrationInvalidReason reason,
@@ -361,7 +353,6 @@ void AppController::tick(const AppTickInput& input) {
     if (input.timeSynced && waterSensors_) {
         waterSensors_->expireTdsCalibrationSession(input.nowSeconds);
     }
-    expireIdleCalibrationSession(input.timeSynced ? input.nowSeconds : 0);
     handleButtonEvent(event, input.nowMs, input.nowUs, input.nowSeconds, input.timeSynced, input.bootId);
     if (localMode_ == LocalUiMode::RecordCalibration && localCalibrationIgnoreOkUntilRelease_) {
         if (input.buttons.okPressed) {
@@ -446,15 +437,12 @@ AppSnapshot AppController::snapshot() const {
     snapshot.calibrationActualMl = localCalibrationActualMl_;
     snapshot.calibrationStepMl = localCalibrationStepMl_;
     snapshot.calibrationStatus = calibrationSession_.status;
-    snapshot.calibrationIdleExpiresAt =
-        calibrationStatusExpiresWhenIdle(calibrationSession_.status) && calibrationSession_.updatedAt > 0
-            ? calibrationSession_.updatedAt + kCalibrationIdleTimeoutSec
-            : 0;
     snapshot.calibrationAttemptCount = calibrationSession_.attemptCount;
     snapshot.calibrationValidSampleCount = calibrationSession_.validSampleCount;
     snapshot.calibrationMaxRunSec = config_.maxOutTimeSec;
     snapshot.calibrationCanQuickGenerate = calibrationCanQuickGenerate(calibrationSession_);
     snapshot.calibrationRecommended = calibrationIsRecommended(calibrationSession_);
+    snapshot.calibrationCandidate = calibrationCandidate_;
     bool foundCalibrationActual = false;
     for (std::uint8_t i = 0; i < calibrationSession_.attemptCount && i < kCalibrationMaxAttempts; ++i) {
         const CalibrationAttempt& attempt = calibrationSession_.attempts[i];
@@ -800,14 +788,15 @@ bool AppController::generateCalibrationForWeb(std::uint32_t nowSeconds) {
 bool AppController::refreshCalibrationCandidate(std::uint32_t nowSeconds) {
     clearCalibrationCandidate();
     calibrationSession_.validSampleCount = countValidCalibrationSamples(calibrationSession_);
+    const bool canQuickGenerate = calibrationCanQuickGenerate(calibrationSession_);
     if (calibrationSession_.sessionId == 0 ||
         calibrationSession_.status == CalibrationSessionStatus::Idle ||
         calibrationSession_.status == CalibrationSessionStatus::Applied ||
-        calibrationSession_.status == CalibrationSessionStatus::Discarded ||
+        (calibrationSession_.status == CalibrationSessionStatus::Discarded && !canQuickGenerate) ||
         calibrationSession_.status == CalibrationSessionStatus::Failed) {
         return false;
     }
-    if (!meteringSchemes_ || !meteringSchemes_->ready() || !calibrationCanQuickGenerate(calibrationSession_) ||
+    if (!meteringSchemes_ || !meteringSchemes_->ready() || !canQuickGenerate ||
         water_.snapshot().state != WaterState::Idle) {
         calibrationSession_.status = calibrationCanStartAttempt(calibrationSession_) ? CalibrationSessionStatus::WaitingLocalRun
                                                                                     : CalibrationSessionStatus::Failed;
@@ -1257,6 +1246,15 @@ void AppController::restoreCalibrationSession() {
         saveCalibrationSession();
     }
     invalidateAwaitingActualIfRamTraceMissing(0);
+    if ((calibrationSession_.status == CalibrationSessionStatus::Discarded ||
+         calibrationSession_.status == CalibrationSessionStatus::WaitingLocalRun ||
+         calibrationSession_.status == CalibrationSessionStatus::ReadyToGenerate ||
+         calibrationSession_.status == CalibrationSessionStatus::Generated) &&
+        calibrationCanQuickGenerate(calibrationSession_)) {
+        const BeepPattern restoredBeep = pendingBeep_;
+        refreshCalibrationCandidate(calibrationSession_.updatedAt);
+        pendingBeep_ = restoredBeep;
+    }
     if (calibrationSession_.status == CalibrationSessionStatus::Preparing ||
         calibrationSession_.status == CalibrationSessionStatus::WaitingLocalRun ||
         calibrationSession_.status == CalibrationSessionStatus::AwaitingActual ||
@@ -1264,20 +1262,6 @@ void AppController::restoreCalibrationSession() {
         calibrationSession_.status == CalibrationSessionStatus::Generated) {
         localMode_ = LocalUiMode::Calibration;
     }
-}
-
-void AppController::expireIdleCalibrationSession(std::uint32_t nowSeconds) {
-    if (nowSeconds == 0 || localMode_ != LocalUiMode::Calibration ||
-        !calibrationStatusExpiresWhenIdle(calibrationSession_.status) ||
-        calibrationSession_.updatedAt == 0 || nowSeconds < calibrationSession_.updatedAt ||
-        nowSeconds - calibrationSession_.updatedAt < kCalibrationIdleTimeoutSec) {
-        return;
-    }
-    calibrationSession_.status = CalibrationSessionStatus::Discarded;
-    calibrationCandidate_ = MeteringSchemeCandidate{};
-    calibrationSession_.updatedAt = nowSeconds;
-    saveCalibrationSession();
-    localMode_ = LocalUiMode::Normal;
 }
 
 bool AppController::invalidateAwaitingActualIfRamTraceMissing(std::uint32_t nowSeconds) {

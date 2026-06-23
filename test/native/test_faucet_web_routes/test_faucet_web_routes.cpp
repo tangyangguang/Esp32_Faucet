@@ -791,12 +791,12 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NULL(std::strstr(buffer, "<h3>有效样本</h3>"));
     TEST_ASSERT_NULL(std::strstr(buffer, "计量方案生成只使用长期样本库"));
     TEST_ASSERT_NULL(std::strstr(buffer, "历史样本 #"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "calibration-timeout-pill"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "data-calibration-countdown"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "data-remaining"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "calibration-timeout-pill"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "data-calibration-countdown"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "data-remaining"));
     TEST_ASSERT_NULL(std::strstr(buffer, "data-expires-at"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "faucetStartCalibrationCountdown"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "非出水中 30 分钟无操作自动退出"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "faucetStartCalibrationCountdown"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "非出水中 30 分钟无操作自动退出"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "RAM 临时"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "待校准容量"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "容量已校准"));

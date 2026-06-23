@@ -109,6 +109,36 @@ void test_begin_initializes_default_scheme_file() {
     TEST_ASSERT_EQUAL_UINT32(8, active.params.startupPulseCount);
 }
 
+void test_begin_rebuilds_incompatible_scheme_file() {
+    MemoryFileBackend backend;
+    MeteringSchemeStoreHeader oldHeader{};
+    oldHeader.magic = 0x314D5346UL;
+    oldHeader.version = 1;
+    oldHeader.headerSize = sizeof(MeteringSchemeStoreHeader);
+    oldHeader.recordSize = sizeof(MeteringSchemeRecord);
+    oldHeader.activeSchemeId = 1;
+    oldHeader.nextSchemeId = 2;
+    oldHeader.slotCount = kMeteringSchemeStoreSlotCount;
+    backend.files["/schemes.bin"].resize(sizeof(oldHeader), 0);
+    std::memcpy(backend.files["/schemes.bin"].data(), &oldHeader, sizeof(oldHeader));
+
+    MeteringSchemeStore store(backend, "/schemes.bin");
+
+    TEST_ASSERT_TRUE(store.begin());
+    TEST_ASSERT_TRUE(store.ready());
+    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(AppStorageStatus::Ready),
+                            static_cast<std::uint8_t>(store.status()));
+    TEST_ASSERT_EQUAL_UINT32(1, store.activeSchemeId());
+    TEST_ASSERT_EQUAL_size_t(sizeof(MeteringSchemeStoreHeader) +
+                                 kMeteringSchemeStoreSlotCount * sizeof(MeteringSchemeRecord),
+                             backend.files["/schemes.bin"].size());
+
+    MeteringSchemeRecord active{};
+    TEST_ASSERT_TRUE(store.activeScheme(active));
+    TEST_ASSERT_EQUAL_STRING("YF-S201 默认计量方案", active.name);
+    TEST_ASSERT_EQUAL_UINT32(8, active.params.startupPulseCount);
+}
+
 void test_list_reads_scheme_records_in_one_bulk_operation() {
     MemoryFileBackend backend;
     MeteringSchemeStore store(backend, "/schemes.bin");
@@ -194,6 +224,7 @@ int main(int argc, char** argv) {
     (void)argv;
     UNITY_BEGIN();
     RUN_TEST(test_begin_initializes_default_scheme_file);
+    RUN_TEST(test_begin_rebuilds_incompatible_scheme_file);
     RUN_TEST(test_list_reads_scheme_records_in_one_bulk_operation);
     RUN_TEST(test_set_active_scheme_updates_current_id);
     RUN_TEST(test_full_store_overwrites_oldest_non_current_record);

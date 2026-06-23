@@ -123,6 +123,16 @@ void test_metering_estimate_handles_no_startup_segment() {
     TEST_ASSERT_EQUAL_UINT32(450, estimate.fullRunPulsePerLiter);
 }
 
+void test_metering_estimate_allows_startup_pulse_offset_without_startup_volume() {
+    const MeteringParameters params{120, 0, 1900, 5000, 1900};
+
+    TEST_ASSERT_TRUE(validMeteringSchemeParameters(params));
+    TEST_ASSERT_EQUAL_UINT32(2020, estimatePulsesForVolumeMl(params, 1000));
+    TEST_ASSERT_EQUAL_UINT32(36579, estimateDurationMsForVolumeMl(params, 1000));
+    TEST_ASSERT_EQUAL_UINT32(0, estimateVolumeMlForDurationMs(params, 5000));
+    TEST_ASSERT_EQUAL_UINT32(1000, estimateVolumeMlForDurationMs(params, 36579));
+}
+
 int main(int argc, char** argv) {
     (void)argc;
     (void)argv;
@@ -133,5 +143,6 @@ int main(int argc, char** argv) {
     RUN_TEST(test_create_manual_uses_free_slot_and_fails_when_collection_is_full);
     RUN_TEST(test_metering_estimate_uses_segmented_parameters_for_target_volume);
     RUN_TEST(test_metering_estimate_handles_no_startup_segment);
+    RUN_TEST(test_metering_estimate_allows_startup_pulse_offset_without_startup_volume);
     return UNITY_END();
 }

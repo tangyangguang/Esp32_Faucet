@@ -121,7 +121,7 @@ void test_list_reads_scheme_records_in_one_bulk_operation() {
     MeteringSchemeRecord records[kMeteringSchemeStoreSlotCount]{};
     backend.recordReadAtCalls = 0;
     TEST_ASSERT_EQUAL_size_t(kMeteringSchemeStoreSlotCount,
-                             store.list(records, kMeteringSchemeStoreSlotCount, false));
+                             store.list(records, kMeteringSchemeStoreSlotCount));
 
     TEST_ASSERT_EQUAL_size_t(1, backend.recordReadAtCalls);
     TEST_ASSERT_EQUAL_UINT32(1, records[0].id);

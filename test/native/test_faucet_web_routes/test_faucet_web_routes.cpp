@@ -1189,9 +1189,10 @@ void test_calibration_page_avoids_large_metering_scheme_stack_arrays() {
     TEST_ASSERT_TRUE(schemeAllocation < nextFunction);
     TEST_ASSERT_TRUE(schemeRelease < nextFunction);
     TEST_ASSERT_TRUE(stackArray == nullptr || stackArray > nextFunction);
-    TEST_ASSERT_NOT_NULL(findWithin(panel, nextFunction, "g_context.meteringSchemes->list(schemes, kMeteringSchemeStoreSlotCount, false)"));
+    TEST_ASSERT_NOT_NULL(findWithin(panel, nextFunction, "g_context.meteringSchemes->list(schemes, kMeteringSchemeStoreSlotCount)"));
     TEST_ASSERT_NULL(findWithin(panel, nextFunction, "new (std::nothrow) MeteringSchemeRecord[10]"));
     TEST_ASSERT_NULL(findWithin(panel, nextFunction, "list(schemes, 10, true)"));
+    TEST_ASSERT_NULL(findWithin(panel, nextFunction, "list(schemes, kMeteringSchemeStoreSlotCount, false)"));
 
     const char* diagnostics = std::strstr(buffer, "SegmentedSampleDiagnostics collectSegmentedSampleDiagnostics");
     TEST_ASSERT_NULL(diagnostics);

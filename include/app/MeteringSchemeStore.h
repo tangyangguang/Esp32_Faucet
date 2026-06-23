@@ -32,7 +32,7 @@ public:
     std::uint32_t activeSchemeId() const;
     bool activeScheme(MeteringSchemeRecord& output) const;
     bool findById(std::uint32_t id, MeteringSchemeRecord& output) const;
-    std::size_t list(MeteringSchemeRecord* output, std::size_t outputCapacity, bool includeDeleted) const;
+    std::size_t list(MeteringSchemeRecord* output, std::size_t outputCapacity) const;
 
     bool saveCandidateAsNew(const MeteringSchemeCandidate& candidate,
                             const char* name,

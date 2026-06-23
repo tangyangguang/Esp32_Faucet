@@ -182,11 +182,11 @@ void initializeManualMeteringScheme(MeteringSchemeRecord& scheme,
                                     std::uint32_t id,
                                     const char* name,
                                     const MeteringParameters& params,
-    std::uint32_t nowSeconds) {
+                                    std::uint32_t nowSeconds) {
     initializeCommonScheme(scheme, id, name, params, MeteringSchemeSource::Manual, nowSeconds);
 }
 
-std::size_t meteringSchemeCount(const MeteringSchemeCollection& schemes, bool includeDeleted) {
+std::size_t meteringSchemeCount(const MeteringSchemeCollection& schemes) {
     if (!schemes.records) {
         return 0;
     }

@@ -170,10 +170,7 @@ bool MeteringSchemeStore::findById(std::uint32_t id, MeteringSchemeRecord& outpu
     return findSlotById(id, output, slot);
 }
 
-std::size_t MeteringSchemeStore::list(MeteringSchemeRecord* output,
-                                      std::size_t outputCapacity,
-                                      bool includeDeleted) const {
-    (void)includeDeleted;
+std::size_t MeteringSchemeStore::list(MeteringSchemeRecord* output, std::size_t outputCapacity) const {
     if (!ready() || !output || outputCapacity == 0) {
         return 0;
     }

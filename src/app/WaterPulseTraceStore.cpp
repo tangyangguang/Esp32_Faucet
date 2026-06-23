@@ -422,6 +422,7 @@ WaterPulseTraceAnalysis analyzeWaterPulseTrace(const WaterPulseTrace& trace,
     const float stableRate = static_cast<float>(runningTotal) / static_cast<float>(runningCount);
     const std::uint32_t stableFloor = roundU32(stableRate);
     if (stableFloor == 0) {
+        delete[] perSecond;
         return out;
     }
     for (std::uint32_t i = 0; i + stableWindowSec <= durationSec; ++i) {

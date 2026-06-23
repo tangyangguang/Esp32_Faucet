@@ -1231,7 +1231,7 @@ void sendCalibrationParameterPanels() {
     MeteringSchemeRecord* schemes = new (std::nothrow) MeteringSchemeRecord[kMeteringSchemeStoreSlotCount]{};
     const bool ready = ensureMeteringSchemesReady();
     const std::size_t count =
-        ready && schemes ? g_context.meteringSchemes->list(schemes, kMeteringSchemeStoreSlotCount, false) : 0;
+        ready && schemes ? g_context.meteringSchemes->list(schemes, kMeteringSchemeStoreSlotCount) : 0;
     const std::uint32_t activeId = ready ? g_context.meteringSchemes->activeSchemeId() : 0;
     char createdText[24]{};
     std::uint32_t createdSchemeId = 0;
@@ -1524,7 +1524,12 @@ void sendCalibrationSessionAttemptRow(const CalibrationSessionRecord& session,
         }
     }
     const bool stableReady =
-        attempt.status == CalibrationAttemptStatus::Valid && !attempt.resumedAfterPause && !attempt.truncated;
+        attempt.status == CalibrationAttemptStatus::Valid &&
+        attempt.summary.usableForGeneration &&
+        attempt.summary.stable &&
+        attempt.summary.stablePulseCount > 0 &&
+        !attempt.summary.resumedAfterPause &&
+        !attempt.summary.truncated;
     sendFmt("<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%luP</td><td>",
             timeText,
             durationText,
@@ -1539,9 +1544,10 @@ void sendCalibrationSessionAttemptRow(const CalibrationSessionRecord& session,
     }
     Esp32BaseWeb::sendChunk("</td><td>");
     sendCalibrationAttemptTraceLink(attempt);
+    const bool savedOnly = attempt.status == CalibrationAttemptStatus::Valid && !stableReady;
     sendFmt("</td><td><span class='status-pill %s'>%s</span></td><td>本次会话 #%u</td><td><span class='status-pill %s'>%s</span>",
             stableReady ? "status-ok" : (attempt.status == CalibrationAttemptStatus::Invalid ? "status-warn" : "status-muted"),
-            stableReady ? "稳态可用" : (attempt.status == CalibrationAttemptStatus::Invalid ? calibrationInvalidReasonText(attempt.invalidReason) : "-"),
+            stableReady ? "稳态可用" : (attempt.status == CalibrationAttemptStatus::Invalid ? calibrationInvalidReasonText(attempt.invalidReason) : (savedOnly ? "仅记录" : "-")),
             static_cast<unsigned>(attempt.attemptIndex + 1),
             attempt.status == CalibrationAttemptStatus::Valid ? "status-ok" :
                 (attempt.status == CalibrationAttemptStatus::Invalid ? "status-warn" : "status-muted"),

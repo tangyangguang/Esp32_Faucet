@@ -77,16 +77,21 @@ CalibrationSampleSummary makeCalibrationSummary(const WaterPulseTrace& trace,
     summary.stablePulseCount = analysis.stablePulseCount;
     summary.stableStartSec = analysis.stableStartSec;
     summary.stablePulsePerSec = analysis.stablePulsePerSec;
-    summary.usableForGeneration = true;
+    if (!summary.stable && sampleCount >= 6 && trace.record.durationSec > 0 &&
+        trace.record.durationSec < kMinCalibrationStableWindowSec) {
+        summary.stable = true;
+        summary.stablePulseCount = trace.totalPulses;
+        summary.stablePulsePerSec = static_cast<float>(trace.totalPulses) / static_cast<float>(trace.record.durationSec);
+    }
+    summary.usableForGeneration = summary.stable && summary.stablePulseCount > 0;
     return summary;
 }
 
 bool appendSummaryCalibrationSample(const CalibrationAttempt& attempt,
                                     SegmentedCalibrationSample* samples,
                                     std::size_t sampleCapacity,
-                                    std::uint32_t* sourceIds,
                                     std::size_t& sampleCount) {
-    if (!samples || !sourceIds || sampleCount >= sampleCapacity ||
+    if (!samples || sampleCount >= sampleCapacity ||
         attempt.status != CalibrationAttemptStatus::Valid || !attempt.summary.usableForGeneration ||
         attempt.summary.actualMl == 0 || attempt.summary.totalPulses == 0 ||
         attempt.summary.truncated || attempt.summary.resumedAfterPause ||
@@ -101,8 +106,6 @@ bool appendSummaryCalibrationSample(const CalibrationAttempt& attempt,
         attempt.summary.stableStartSec,
         attempt.summary.stablePulsePerSec,
     };
-    sourceIds[sampleCount] =
-        attempt.record.startTime == 0 ? static_cast<std::uint32_t>(attempt.attemptIndex + 1) : attempt.record.startTime;
     ++sampleCount;
     return true;
 }
@@ -115,16 +118,22 @@ bool calibrationStatusExpiresWhenIdle(CalibrationSessionStatus status) {
            status == CalibrationSessionStatus::Generated;
 }
 
+void rejectCalibrationAttempt(CalibrationSessionRecord& session,
+                              CalibrationAttempt& attempt,
+                              CalibrationInvalidReason reason,
+                              std::uint32_t nowSeconds) {
+    attempt.status = CalibrationAttemptStatus::Invalid;
+    attempt.invalidReason = reason;
+    session.validSampleCount = countValidCalibrationSamples(session);
+    session.status = calibrationCanStartAttempt(session) ? CalibrationSessionStatus::WaitingLocalRun
+                                                        : CalibrationSessionStatus::Failed;
+    session.updatedAt = nowSeconds;
+}
+
 void fillCandidateFromSegmentedResult(MeteringSchemeCandidate& candidate,
                                       const SegmentedCalibrationResult& result,
-                                      const SegmentedCalibrationOptions& options,
-                                      const std::uint32_t* sourceIds,
-                                      std::size_t sourceCount,
                                       std::uint32_t nowSeconds,
                                       MeteringSchemeSource sourceType) {
-    (void)options;
-    (void)sourceIds;
-    (void)sourceCount;
     candidate = MeteringSchemeCandidate{};
     candidate.ready = true;
     candidate.sourceType = sourceType;
@@ -555,17 +564,13 @@ bool AppController::submitCalibrationActualForWeb(std::uint32_t actualMl, std::u
     if (attempt.status != CalibrationAttemptStatus::PendingActual || !trace || trace->truncated ||
         trace->resumedAfterPause || trace->sampleCount == 0 ||
         trace->sampleCount > kPulseTraceMaxRawEdgesPerTrace || trace->totalPulses == 0) {
-        attempt.status = CalibrationAttemptStatus::Invalid;
-        attempt.invalidReason = CalibrationInvalidReason::AnalysisFailed;
-        calibrationSession_.updatedAt = nowSeconds;
+        rejectCalibrationAttempt(calibrationSession_, attempt, CalibrationInvalidReason::AnalysisFailed, nowSeconds);
         saveCalibrationSession();
         return false;
     }
     WaterPulseTraceSample* samples = new (std::nothrow) WaterPulseTraceSample[trace->sampleCount]{};
     if (!samples) {
-        attempt.status = CalibrationAttemptStatus::Invalid;
-        attempt.invalidReason = CalibrationInvalidReason::StorageFailed;
-        calibrationSession_.updatedAt = nowSeconds;
+        rejectCalibrationAttempt(calibrationSession_, attempt, CalibrationInvalidReason::StorageFailed, nowSeconds);
         saveCalibrationSession();
         return false;
     }
@@ -581,14 +586,6 @@ bool AppController::submitCalibrationActualForWeb(std::uint32_t actualMl, std::u
                                trace->sampleCount,
                                actualMl,
                                segmentedCalibrationOptionsFromConfig(config_));
-    if (!summary.usableForGeneration) {
-        delete[] samples;
-        attempt.status = CalibrationAttemptStatus::Invalid;
-        attempt.invalidReason = CalibrationInvalidReason::AnalysisFailed;
-        calibrationSession_.updatedAt = nowSeconds;
-        saveCalibrationSession();
-        return false;
-    }
     CalibrationStoredTrace stored{};
     stored.pendingActual = true;
     stored.sessionId = calibrationSession_.sessionId;
@@ -607,9 +604,7 @@ bool AppController::submitCalibrationActualForWeb(std::uint32_t actualMl, std::u
         !calibrationSessionTraces_->savePending(attempt.sessionTraceSlot, stored, samples, trace->sampleCount) ||
         !calibrationSessionTraces_->commitValid(attempt.sessionTraceSlot, actualMl, nowSeconds)) {
         delete[] samples;
-        attempt.status = CalibrationAttemptStatus::Invalid;
-        attempt.invalidReason = CalibrationInvalidReason::StorageFailed;
-        calibrationSession_.updatedAt = nowSeconds;
+        rejectCalibrationAttempt(calibrationSession_, attempt, CalibrationInvalidReason::StorageFailed, nowSeconds);
         saveCalibrationSession();
         return false;
     }
@@ -734,12 +729,11 @@ bool AppController::refreshCalibrationCandidate(std::uint32_t nowSeconds) {
     if (!samples) {
         return false;
     }
-    std::uint32_t sourceIds[kCalibrationMaxValidSamples]{};
     std::size_t sampleCount = 0;
     const SegmentedCalibrationOptions options = segmentedCalibrationOptionsFromConfig(config_);
     for (std::uint8_t i = 0; i < calibrationSession_.attemptCount && i < kCalibrationMaxAttempts; ++i) {
         const CalibrationAttempt& attempt = calibrationSession_.attempts[i];
-        appendSummaryCalibrationSample(attempt, samples.get(), kCalibrationMaxValidSamples, sourceIds, sampleCount);
+        appendSummaryCalibrationSample(attempt, samples.get(), kCalibrationMaxValidSamples, sampleCount);
     }
 
     SegmentedCalibrationResult result{};
@@ -752,9 +746,6 @@ bool AppController::refreshCalibrationCandidate(std::uint32_t nowSeconds) {
     MeteringSchemeCandidate candidate{};
     fillCandidateFromSegmentedResult(candidate,
                                      result,
-                                     options,
-                                     sourceIds,
-                                     sampleCount,
                                      nowSeconds,
                                      MeteringSchemeSource::CalibrationSession);
     calibrationCandidate_ = candidate;

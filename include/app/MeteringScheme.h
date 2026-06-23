@@ -93,7 +93,7 @@ void initializeManualMeteringScheme(MeteringSchemeRecord& scheme,
                                     const char* name,
                                     const MeteringParameters& params,
                                     std::uint32_t nowSeconds);
-std::size_t meteringSchemeCount(const MeteringSchemeCollection& schemes, bool includeDeleted);
+std::size_t meteringSchemeCount(const MeteringSchemeCollection& schemes);
 MeteringSchemeRecord* findMeteringSchemeById(MeteringSchemeCollection& schemes, std::uint32_t id);
 const MeteringSchemeRecord* findMeteringSchemeById(const MeteringSchemeCollection& schemes, std::uint32_t id);
 MeteringSchemeRecord* activeMeteringScheme(MeteringSchemeCollection& schemes);

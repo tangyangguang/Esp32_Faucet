@@ -484,6 +484,34 @@ void savePendingRamCalibrationAttempt(CalibrationAppFixture& fixture,
     TEST_ASSERT_TRUE(appendCalibrationAttempt(session, attempt));
 }
 
+void savePendingRamCalibrationAttemptWithRawEdges(CalibrationAppFixture& fixture,
+                                                  CalibrationSessionRecord& session,
+                                                  std::uint8_t slot,
+                                                  std::uint32_t startTime,
+                                                  std::uint32_t actualMl,
+                                                  const std::uint32_t* elapsedUs,
+                                                  std::size_t edgeCount,
+                                                  std::uint32_t durationSec) {
+    const std::uint32_t traceId = fixture.pulseTraces.beginTrace(startTime, kDefaultPulseMinIntervalUs);
+    TEST_ASSERT_NOT_EQUAL_UINT32(0, traceId);
+    for (std::size_t i = 0; i < edgeCount; ++i) {
+        TEST_ASSERT_TRUE(fixture.pulseTraces.appendRawEdge(traceId, elapsedUs[i]));
+    }
+
+    WaterRecord record = calibrationRecord(startTime, static_cast<std::uint32_t>(edgeCount), actualMl);
+    record.durationSec = durationSec;
+    TEST_ASSERT_TRUE(fixture.pulseTraces.finishTrace(
+        traceId, record, WaterPulseTraceState::Completed, durationSec * 1000000UL));
+
+    CalibrationAttempt attempt{};
+    attempt.attemptIndex = slot;
+    attempt.sessionTraceSlot = slot;
+    attempt.record = record;
+    attempt.targetHintMl = actualMl;
+    attempt.status = CalibrationAttemptStatus::PendingActual;
+    TEST_ASSERT_TRUE(appendCalibrationAttempt(session, attempt));
+}
+
 void saveOneValidOnePendingSession(CalibrationAppFixture& fixture, std::uint32_t nowSeconds) {
     CalibrationSessionRecord session = makeCalibrationSession(77, nowSeconds);
     saveCalibrationSessionSample(fixture.traceStore, session, 0, nowSeconds + 1, 1500, 40, 210, 6);
@@ -1343,12 +1371,12 @@ void test_app_controller_generates_calibration_session_candidate() {
                       &sessionStore,
                       &traceStore);
     MeteringSchemeRecord beforeGenerate[4]{};
-    const std::size_t beforeGenerateCount = schemes.list(beforeGenerate, 4, true);
+    const std::size_t beforeGenerateCount = schemes.list(beforeGenerate, 4);
 
     TEST_ASSERT_TRUE(app.generateCalibrationForWeb(1714502500));
 
     MeteringSchemeRecord list[4]{};
-    TEST_ASSERT_EQUAL_size_t(beforeGenerateCount, schemes.list(list, 4, true));
+    TEST_ASSERT_EQUAL_size_t(beforeGenerateCount, schemes.list(list, 4));
     TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationSessionStatus::Generated),
                             static_cast<unsigned>(app.snapshot().calibrationStatus));
 }
@@ -1365,6 +1393,39 @@ void test_app_controller_auto_generates_after_second_valid_calibration_sample() 
     TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationSessionStatus::Generated),
                             static_cast<unsigned>(snapshot.calibrationStatus));
     TEST_ASSERT_TRUE(fixture.app->applyGeneratedCalibrationForWeb(1714502600));
+}
+
+void test_app_controller_saves_unstable_actual_without_counting_valid_sample() {
+    CalibrationAppFixture fixture;
+    CalibrationSessionRecord session = makeCalibrationSession(77, 1714502400);
+    saveCalibrationSessionSample(fixture.traceStore, session, 0, 1714502401, 1500, 40, 210, 6);
+    const std::uint32_t unstableEdges[] = {
+        0,
+        1000000UL,
+        2000000UL,
+        3000000UL,
+        4000000UL,
+    };
+    savePendingRamCalibrationAttemptWithRawEdges(
+        fixture, session, 1, 1714502410, 7500, unstableEdges, 5, 8);
+    session.status = CalibrationSessionStatus::AwaitingActual;
+    session.validSampleCount = countValidCalibrationSamples(session);
+    TEST_ASSERT_TRUE(fixture.sessionStore.save(session));
+    fixture.createApp();
+
+    TEST_ASSERT_TRUE(fixture.app->submitCalibrationActualForWeb(7500, 1714502500));
+
+    const AppSnapshot snapshot = fixture.app->snapshot();
+    TEST_ASSERT_EQUAL_UINT8(1, snapshot.calibrationValidSampleCount);
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationSessionStatus::WaitingLocalRun),
+                            static_cast<unsigned>(snapshot.calibrationStatus));
+    CalibrationSessionRecord persisted{};
+    TEST_ASSERT_TRUE(fixture.sessionStore.load(persisted));
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationAttemptStatus::Valid),
+                            static_cast<unsigned>(persisted.attempts[1].status));
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationInvalidReason::None),
+                            static_cast<unsigned>(persisted.attempts[1].invalidReason));
+    TEST_ASSERT_FALSE(persisted.attempts[1].summary.usableForGeneration);
 }
 
 void test_app_controller_generated_calibration_can_continue_collecting_samples() {
@@ -2272,6 +2333,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_app_controller_calibration_run_ignores_preset_target_until_local_cancel);
     RUN_TEST(test_app_controller_generates_calibration_session_candidate);
     RUN_TEST(test_app_controller_auto_generates_after_second_valid_calibration_sample);
+    RUN_TEST(test_app_controller_saves_unstable_actual_without_counting_valid_sample);
     RUN_TEST(test_app_controller_generated_calibration_can_continue_collecting_samples);
     RUN_TEST(test_app_controller_submit_actual_succeeds_when_auto_refresh_cannot_generate);
     RUN_TEST(test_app_controller_removed_valid_sample_clears_generated_candidate);

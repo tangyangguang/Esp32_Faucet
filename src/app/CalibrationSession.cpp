@@ -10,7 +10,9 @@ bool isValidSample(const CalibrationAttempt& attempt) {
     return attempt.status == CalibrationAttemptStatus::Valid &&
            attempt.summary.usableForGeneration &&
            attempt.summary.actualMl >= kCalibrationMinActualMl &&
-           attempt.summary.totalPulses > 0;
+           attempt.summary.totalPulses > 0 &&
+           attempt.summary.stable &&
+           attempt.summary.stablePulseCount > 0;
 }
 
 std::uint32_t validSampleSpanMl(const CalibrationSessionRecord& session) {

@@ -85,16 +85,8 @@ enum PulseTraceFlags : std::uint8_t {
     kPulseTraceFlagDroppedPulseOverflow = 1U << 2U,
 };
 
-enum PulseTraceBucketFlags : std::uint8_t {
-    kPulseTraceBucketRunning = 1U << 0U,
-    kPulseTraceBucketPaused = 1U << 1U,
-    kPulseTraceBucketFinished = 1U << 2U,
-};
-
 struct WaterPulseTraceBucketSample {
     std::uint16_t pulseCount;
-    std::uint8_t stateFlags;
-    std::uint8_t reserved;
 };
 ```
 
@@ -354,7 +346,7 @@ void test_session_trace_store_round_trips_compact_buckets_and_startup_edges() {
     CalibrationStoredTrace trace = traceFor(11, 0, 0);
     trace.trace.bucketCount = 2;
     trace.trace.startupEdgeCount = 2;
-    WaterPulseTraceBucketSample buckets[2]{{3, kPulseTraceBucketRunning, 0}, {4, kPulseTraceBucketRunning, 0}};
+    WaterPulseTraceBucketSample buckets[2]{{3}, {4}};
     WaterPulseTraceSample startup[2]{{0}, {10000}};
 
     TEST_ASSERT_TRUE(store.savePending(0, trace, buckets, 2, startup, 2));

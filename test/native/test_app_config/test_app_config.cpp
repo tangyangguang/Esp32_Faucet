@@ -298,6 +298,10 @@ void test_pulse_observation_window_is_editable_in_app_config_page() {
 
 void test_calibration_session_trace_store_is_small_and_initialized_after_record_store() {
     TEST_ASSERT_EQUAL_size_t(6, kCalibrationSessionTraceSlots);
+    TEST_ASSERT_EQUAL_UINT32(500, kPulseTraceBucketMs);
+    TEST_ASSERT_EQUAL_UINT32(15000, kPulseTraceStartupDetailMs);
+    TEST_ASSERT_EQUAL_size_t(1200, kPulseTraceMaxBucketsPerTrace);
+    TEST_ASSERT_EQUAL_size_t(4096, kPulseTraceMaxStartupEdgesPerTrace);
 
     FILE* file = std::fopen("src/main.cpp", "rb");
     TEST_ASSERT_NOT_NULL(file);

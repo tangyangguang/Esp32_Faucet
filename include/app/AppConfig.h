@@ -48,6 +48,10 @@ constexpr std::uint32_t kMaxCalibrationMaxErrorMl = 1000;
 constexpr std::uint16_t kMinCalibrationMaxRelativeErrorTenthPercent = 10;
 constexpr std::uint16_t kDefaultCalibrationMaxRelativeErrorTenthPercent = 50;
 constexpr std::uint16_t kMaxCalibrationMaxRelativeErrorTenthPercent = 200;
+constexpr std::uint32_t kPulseTraceBucketMs = 500;
+constexpr std::uint32_t kPulseTraceStartupDetailMs = 15000;
+constexpr std::size_t kPulseTraceMaxBucketsPerTrace = 1200;
+constexpr std::size_t kPulseTraceMaxStartupEdgesPerTrace = 4096;
 constexpr std::uint32_t kPulseTraceMaxRawEdgesPerTrace = 4096;
 constexpr std::uint32_t kPulseTraceSamplesPerTrace = kPulseTraceMaxRawEdgesPerTrace;
 

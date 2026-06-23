@@ -366,6 +366,7 @@ AppSnapshot AppController::snapshot() const {
             : 0;
     snapshot.calibrationAttemptCount = calibrationSession_.attemptCount;
     snapshot.calibrationValidSampleCount = calibrationSession_.validSampleCount;
+    snapshot.calibrationMaxRunSec = config_.maxOutTimeSec;
     snapshot.calibrationCanQuickGenerate = calibrationCanQuickGenerate(calibrationSession_);
     snapshot.calibrationRecommended = calibrationIsRecommended(calibrationSession_);
     bool foundCalibrationActual = false;
@@ -515,6 +516,8 @@ bool AppController::startCalibrationSessionForWeb(std::uint32_t nowSeconds) {
     }
     initializeCalibrationSessionRecord(calibrationSession_, sessionId, nowSeconds);
     calibrationCandidate_ = MeteringSchemeCandidate{};
+    calibrationSession_.status = CalibrationSessionStatus::WaitingLocalRun;
+    calibrationSession_.updatedAt = nowSeconds;
     if (!saveCalibrationSession()) {
         calibrationSession_ = CalibrationSessionRecord{};
         return false;
@@ -980,7 +983,9 @@ void AppController::handleButtonEvent(ButtonEvent event,
             pendingBeep_ = BeepPattern::Click;
             return;
         }
-        if (calibrationSession_.status == CalibrationSessionStatus::WaitingLocalRun &&
+        if ((calibrationSession_.status == CalibrationSessionStatus::WaitingLocalRun ||
+             calibrationSession_.status == CalibrationSessionStatus::ReadyToGenerate ||
+             calibrationSession_.status == CalibrationSessionStatus::Generated) &&
             event.type == ButtonEventType::OkShort) {
             if (!beginCalibrationLocalRun(nowMs, nowUs, nowSeconds, timeSynced, bootId)) {
                 pendingBeep_ = BeepPattern::Error;
@@ -994,25 +999,13 @@ void AppController::handleButtonEvent(ButtonEvent event,
                 return;
             }
             if (event.type == ButtonEventType::OkShort) {
-                const WaterSnapshot water = water_.snapshot();
-                if (water_.togglePause(nowMs)) {
-                    if (pulseTraces_ && activeTraceId_ != 0) {
-                        const std::uint32_t elapsedUs = elapsedSince(nowUs, activeTraceStartUs_);
-                        if (water.state == WaterState::Running) {
-                            pulseTraces_->markPaused(activeTraceId_, elapsedUs);
-                        } else if (water.state == WaterState::Paused) {
-                            pulseTraces_->markResumedAfterPause(activeTraceId_, elapsedUs);
-                        }
-                    }
-                    pendingBeep_ = BeepPattern::Click;
-                }
+                pendingBeep_ = BeepPattern::Error;
                 return;
             }
         }
         if (calibrationSession_.status == CalibrationSessionStatus::AwaitingActual &&
             (event.type == ButtonEventType::CancelShort || event.type == ButtonEventType::CancelLong)) {
-            skipCalibrationAttemptForWeb(CalibrationSkipReason::Mistake, nowSeconds);
-            pendingBeep_ = BeepPattern::Click;
+            pendingBeep_ = BeepPattern::Error;
             return;
         }
         switch (event.type) {
@@ -1146,23 +1139,9 @@ void AppController::exitResultDisplay(std::uint32_t) {
 }
 
 void AppController::updateResultOkHold(const AppTickInput& input) {
-    if (localMode_ != LocalUiMode::Result || !lastResultRecordValid_ || !input.buttons.okPressed) {
-        resultOkHoldActive_ = false;
-        resultOkCalibrationEntered_ = false;
-        return;
-    }
-
-    if (!resultOkHoldActive_) {
-        resultOkHoldActive_ = true;
-        resultOkHoldStartMs_ = input.nowMs;
-        resultOkCalibrationEntered_ = false;
-        return;
-    }
-
-    if (!resultOkCalibrationEntered_ &&
-        elapsedAtLeast(input.nowMs, resultOkHoldStartMs_, kResultOkCalibrationHoldMs)) {
-        enterLocalRecordCalibration();
-    }
+    (void)input;
+    resultOkHoldActive_ = false;
+    resultOkCalibrationEntered_ = false;
 }
 
 void AppController::enterLocalRecordCalibration() {
@@ -1317,13 +1296,16 @@ bool AppController::beginCalibrationLocalRun(std::uint32_t nowMs,
                                              std::uint32_t nowSeconds,
                                              bool timeSynced,
                                              std::uint32_t bootId) {
-    if (calibrationSession_.status != CalibrationSessionStatus::WaitingLocalRun ||
+    if ((calibrationSession_.status != CalibrationSessionStatus::WaitingLocalRun &&
+         calibrationSession_.status != CalibrationSessionStatus::ReadyToGenerate &&
+         calibrationSession_.status != CalibrationSessionStatus::Generated) ||
         water_.snapshot().state != WaterState::Idle || !calibrationCanStartAttempt(calibrationSession_)) {
         return false;
     }
-    if (!water_.requestStart(nowMs) || !water_.confirmStart(nowMs)) {
+    if (!water_.startUntargeted(nowMs)) {
         return false;
     }
+    clearCalibrationCandidate();
     calibrationSession_.status = CalibrationSessionStatus::Running;
     calibrationSession_.updatedAt = nowSeconds;
     saveCalibrationSession();

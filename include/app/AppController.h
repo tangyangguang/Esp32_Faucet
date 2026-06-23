@@ -60,6 +60,7 @@ struct AppSnapshot {
     std::uint8_t calibrationValidSampleCount = 0;
     std::uint32_t calibrationMinActualMl = 0;
     std::uint32_t calibrationMaxActualMl = 0;
+    std::uint32_t calibrationMaxRunSec = 0;
     bool calibrationCanQuickGenerate = false;
     bool calibrationRecommended = false;
     std::uint32_t pulsePerLiter = 0;

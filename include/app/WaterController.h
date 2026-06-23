@@ -53,6 +53,7 @@ public:
     bool selectPreset(std::size_t index);
     bool requestStart(std::uint32_t nowMs);
     bool confirmStart(std::uint32_t nowMs);
+    bool startUntargeted(std::uint32_t nowMs);
     bool adjustTarget(std::int32_t delta);
     void cancel(std::uint32_t nowMs);
     void stop(std::uint32_t nowMs);

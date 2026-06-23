@@ -117,7 +117,7 @@ void formatRecordTime(std::uint32_t seconds, char* out, std::size_t len);
 void formatFlowLitersPerMin(std::uint32_t flowMlPerMin, char* out, std::size_t len);
 void sendNoticeFromQuery();
 void sendPageEnd();
-void sendManualParameterLink(const char* label, const MeteringParameters& params);
+void sendManualParameterLink(const char* label, const MeteringSchemeRecord& scheme);
 
 Esp32BaseWeb::Method toBaseMethod(FaucetWebMethod method) {
     switch (method) {
@@ -195,6 +195,28 @@ void sendHtmlAttrEscapedBounded(const char* text, std::size_t maxLen) {
 
 void sendHtmlEscapedBounded(const char* text, std::size_t maxLen) {
     sendHtmlEscapedInternal(text ? text : "", maxLen);
+}
+
+bool isUrlUnreserved(unsigned char ch) {
+    return (ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') || ch == '-' ||
+           ch == '_' || ch == '.' || ch == '~';
+}
+
+void sendUrlQueryValueEscapedBounded(const char* text, std::size_t maxLen) {
+    static constexpr char kHex[] = "0123456789ABCDEF";
+    if (!text) {
+        return;
+    }
+    for (std::size_t i = 0; i < maxLen && text[i] != '\0'; ++i) {
+        const unsigned char ch = static_cast<unsigned char>(text[i]);
+        if (isUrlUnreserved(ch)) {
+            char out[2] = {static_cast<char>(ch), '\0'};
+            Esp32BaseWeb::sendChunk(out);
+        } else {
+            char out[4] = {'%', kHex[(ch >> 4U) & 0x0FU], kHex[ch & 0x0FU], '\0'};
+            Esp32BaseWeb::sendChunk(out);
+        }
+    }
 }
 
 void formatLiters(std::uint32_t ml, char* out, std::size_t len) {
@@ -1408,7 +1430,7 @@ void sendActiveMeteringSchemeCard(const MeteringSchemeRecord& scheme, std::uint3
     Esp32BaseWeb::sendChunk("</div><div class='row-actions active-metering-actions'>");
     sendSchemeDetailButton(scheme, activeId);
     sendMeteringTrialButton(scheme.name[0] ? scheme.name : "当前计量参数", scheme.params, 1000, 10);
-    sendManualParameterLink("复制参数", scheme.params);
+    sendManualParameterLink("复制参数", scheme);
     Esp32BaseWeb::sendChunk("</div></section>");
 }
 
@@ -1453,8 +1475,11 @@ void sendMeteringTrialModal() {
                             "</form></div></div>");
 }
 
-void sendManualParameterLink(const char* label, const MeteringParameters& params) {
-    sendFmt("<a class='btn-link' href='/faucet/calibration/flow?manual=1&startupPulseCount=%lu&startupVolumeMl=%lu&stablePulsePerLiter=%lu&startupDurationMs=%lu&stableFlowMlPerMin=%lu'>%s</a>",
+void sendManualParameterLink(const char* label, const MeteringSchemeRecord& scheme) {
+    const MeteringParameters& params = scheme.params;
+    sendFmt("<a class='btn-link' href='/faucet/calibration/flow?manual=1&name=");
+    sendUrlQueryValueEscapedBounded(scheme.name[0] ? scheme.name : "手工参数", sizeof(scheme.name));
+    sendFmt("&startupPulseCount=%lu&startupVolumeMl=%lu&stablePulsePerLiter=%lu&startupDurationMs=%lu&stableFlowMlPerMin=%lu'>%s</a>",
             static_cast<unsigned long>(params.startupPulseCount),
             static_cast<unsigned long>(params.startupVolumeMl),
             static_cast<unsigned long>(params.stablePulsePerLiter),
@@ -1548,7 +1573,7 @@ void sendCalibrationParameterPanels() {
         Esp32BaseWeb::sendChunk("</div></td><td><div class='row-actions scheme-row-actions'>");
         sendSchemeDetailButton(scheme, activeId);
         sendMeteringTrialButton(scheme.name[0] ? scheme.name : "计量方案", scheme.params, 1000, 10);
-        sendManualParameterLink("复制参数", scheme.params);
+        sendManualParameterLink("复制参数", scheme);
         Esp32BaseWeb::sendChunk("</div></td></tr>");
     }
     Esp32BaseWeb::sendChunk("</table>");
@@ -1747,6 +1772,26 @@ const char* calibrationInvalidReasonText(CalibrationInvalidReason reason) {
     return "不满足有效样本条件";
 }
 
+void sendCalibrationAttemptTraceLink(const CalibrationAttempt& attempt) {
+    if (attempt.sessionTraceSlot < kCalibrationSessionTraceSlots && g_context.calibrationSessionTraces &&
+        g_context.calibrationSessionTraces->ready()) {
+        CalibrationStoredTrace stored{};
+        if (g_context.calibrationSessionTraces->load(attempt.sessionTraceSlot, stored)) {
+            sendFmt("<a class='btn-link' href='/faucet/calibration/detail?from=calibration&slot=%u&bucket=1'>脉冲明细</a>",
+                    static_cast<unsigned>(attempt.sessionTraceSlot));
+            return;
+        }
+    }
+    const WaterPulseTrace* trace =
+        g_context.pulseTraces ? g_context.pulseTraces->findByRecord(attempt.record) : nullptr;
+    if (!trace) {
+        Esp32BaseWeb::sendChunk("<span class='hint'>明细不可用</span>");
+        return;
+    }
+    sendFmt("<a class='btn-link' href='/faucet/calibration/detail?from=calibration&trace=%lu&bucket=1'>脉冲明细</a>",
+            static_cast<unsigned long>(trace->traceId));
+}
+
 void sendCalibrationSessionAttemptRow(const CalibrationSessionRecord& session,
                                       const CalibrationAttempt& attempt,
                                       std::uint32_t samplePulseWindowSec) {
@@ -1806,6 +1851,8 @@ void sendCalibrationSessionAttemptRow(const CalibrationSessionRecord& session,
     } else {
         Esp32BaseWeb::sendChunk("-");
     }
+    Esp32BaseWeb::sendChunk("</td><td>");
+    sendCalibrationAttemptTraceLink(attempt);
     sendFmt("</td><td><span class='status-pill %s'>%s</span></td><td>本次会话 #%u</td><td><span class='status-pill %s'>%s</span>",
             stableReady ? "status-ok" : (attempt.status == CalibrationAttemptStatus::Invalid ? "status-warn" : "status-muted"),
             stableReady ? "稳态可用" : (attempt.status == CalibrationAttemptStatus::Invalid ? calibrationInvalidReasonText(attempt.invalidReason) : "-"),
@@ -1820,7 +1867,7 @@ void sendCalibrationSessionAttemptRow(const CalibrationSessionRecord& session,
         renderedAction = true;
     }
     if (attempt.status == CalibrationAttemptStatus::Valid || attempt.status == CalibrationAttemptStatus::PendingActual) {
-        Esp32BaseWeb::sendChunk("<form method='post' action='/faucet/calibration/flow' onsubmit='return once(this)'>"
+        Esp32BaseWeb::sendChunk("<form method='post' action='/faucet/calibration/flow' onsubmit='return faucetSubmitFlowCalibrationAction(this)'>"
                                 "<input type='hidden' name='action' value='remove_sample'>"
                                 "<input type='hidden' name='attemptIndex' value='");
         sendFmt("%u", static_cast<unsigned>(attempt.attemptIndex));
@@ -1836,19 +1883,19 @@ void sendCalibrationSessionAttemptRow(const CalibrationSessionRecord& session,
 void sendCalibrationSamplesPanel(std::uint32_t samplePulseWindowSec) {
     Esp32BaseWeb::sendChunk("<section id='calibration-samples' class='panel'><div class='panel-head'><h3>本次校准样本</h3></div>"
                             "<p class='hint'>这里记录当前校准会话的接水记录；有效样本会自动刷新推荐参数，异常或误操作样本可移除。</p>");
-    sendFmt("<table class='calibration-sample-table'><tr><th>时间</th><th>时长</th><th>目标容量</th><th>估算出水</th><th>量杯实测</th><th>总脉冲</th><th>前 %u 秒脉冲</th><th>稳态识别</th><th>样本来源</th><th>校准用途</th><th>操作</th></tr>",
+    sendFmt("<table class='calibration-sample-table'><tr><th>时间</th><th>时长</th><th>目标容量</th><th>估算出水</th><th>量杯实测</th><th>总脉冲</th><th>前 %u 秒脉冲</th><th>脉冲明细</th><th>稳态识别</th><th>样本来源</th><th>校准用途</th><th>操作</th></tr>",
             static_cast<unsigned>(samplePulseWindowSec));
     if (!g_context.calibrationSessions || !g_context.calibrationSessions->ready()) {
-        Esp32BaseWeb::sendChunk("<tr><td colspan='11'>校准会话存储未就绪，暂时不能读取本次接水记录。</td></tr></table></section>");
+        Esp32BaseWeb::sendChunk("<tr><td colspan='12'>校准会话存储未就绪，暂时不能读取本次接水记录。</td></tr></table></section>");
         return;
     }
     std::unique_ptr<CalibrationSessionRecord> session(new (std::nothrow) CalibrationSessionRecord);
     if (!session) {
-        Esp32BaseWeb::sendChunk("<tr><td colspan='11'>内存不足，暂时不能读取本次校准样本。</td></tr></table></section>");
+        Esp32BaseWeb::sendChunk("<tr><td colspan='12'>内存不足，暂时不能读取本次校准样本。</td></tr></table></section>");
         return;
     }
     if (!g_context.calibrationSessions->load(*session) || session->attemptCount == 0) {
-        Esp32BaseWeb::sendChunk("<tr><td colspan='11'>还没有本次校准样本。进入校准模式后，每次本地出水都会记录到这里。</td></tr></table></section>");
+        Esp32BaseWeb::sendChunk("<tr><td colspan='12'>还没有本次校准样本。进入校准模式后，每次本地出水都会记录到这里。</td></tr></table></section>");
         return;
     }
     bool rendered = false;
@@ -1861,7 +1908,7 @@ void sendCalibrationSamplesPanel(std::uint32_t samplePulseWindowSec) {
         rendered = true;
     }
     if (!rendered) {
-        Esp32BaseWeb::sendChunk("<tr><td colspan='11'>还没有本次校准样本。进入校准模式后，每次本地出水都会记录到这里。</td></tr>");
+        Esp32BaseWeb::sendChunk("<tr><td colspan='12'>还没有本次校准样本。进入校准模式后，每次本地出水都会记录到这里。</td></tr>");
     }
     Esp32BaseWeb::sendChunk("</table></section>");
 }
@@ -2224,6 +2271,106 @@ void sendCalibrationGenerationPanel() {
     Esp32BaseWeb::sendChunk("</section>");
 }
 
+const char* calibrationSessionStatusCode(CalibrationSessionStatus status) {
+    switch (status) {
+        case CalibrationSessionStatus::Idle:
+            return "idle";
+        case CalibrationSessionStatus::Preparing:
+            return "preparing";
+        case CalibrationSessionStatus::WaitingLocalRun:
+            return "waitingLocalRun";
+        case CalibrationSessionStatus::Running:
+            return "running";
+        case CalibrationSessionStatus::AwaitingActual:
+            return "awaitingActual";
+        case CalibrationSessionStatus::ReadyToGenerate:
+            return "readyToGenerate";
+        case CalibrationSessionStatus::Generated:
+            return "generated";
+        case CalibrationSessionStatus::Applied:
+            return "applied";
+        case CalibrationSessionStatus::Discarded:
+            return "discarded";
+        case CalibrationSessionStatus::Failed:
+            return "failed";
+    }
+    return "unknown";
+}
+
+void sendFlowCalibrationSessionPanel(const AppSnapshot& snapshot, bool taskActive) {
+    const bool sessionActive = snapshot.calibrationStatus != CalibrationSessionStatus::Idle &&
+                               snapshot.calibrationStatus != CalibrationSessionStatus::Applied &&
+                               snapshot.calibrationStatus != CalibrationSessionStatus::Discarded &&
+                               snapshot.calibrationStatus != CalibrationSessionStatus::Failed;
+    const bool canStartSession = calibrationSessionInactive(snapshot.calibrationStatus) && !taskActive;
+    const bool canDiscardSession = sessionActive && snapshot.calibrationStatus != CalibrationSessionStatus::Running && !taskActive;
+    const bool canEnterActual = snapshot.calibrationStatus == CalibrationSessionStatus::AwaitingActual;
+    const bool canApply = snapshot.calibrationStatus == CalibrationSessionStatus::Generated && !taskActive;
+    const bool autoRefreshSession =
+        snapshot.calibrationStatus == CalibrationSessionStatus::WaitingLocalRun ||
+        snapshot.calibrationStatus == CalibrationSessionStatus::Running;
+
+    sendFmt("<section id='calibration-session' class='panel calibration-session-panel' data-calibration-status='%s' data-calibration-valid-samples='%u'>"
+            "<div class='panel-head'><h3>校准流程</h3><div class='calibration-session-badges'>",
+            calibrationSessionStatusCode(snapshot.calibrationStatus),
+            static_cast<unsigned>(snapshot.calibrationValidSampleCount));
+    sendFmt("<span class='status-pill %s'%s>%s</span>",
+            sessionActive ? "status-warn" : "status-muted",
+            autoRefreshSession ? " data-calibration-refresh" : "",
+            calibrationSessionStatusText(snapshot.calibrationStatus));
+    if (sessionActive) {
+        const std::uint32_t nowSeconds = g_context.nowSeconds ? g_context.nowSeconds() : 0;
+        const std::uint32_t remainingSec =
+            nowSeconds > 0 && snapshot.calibrationIdleExpiresAt > nowSeconds
+                ? snapshot.calibrationIdleExpiresAt - nowSeconds
+                : kCalibrationIdleTimeoutSec;
+        sendFmt("<span class='status-pill status-muted calibration-timeout-pill' data-calibration-countdown data-remaining='%lu'>非出水中 30 分钟无操作自动退出</span>",
+                static_cast<unsigned long>(remainingSec));
+    }
+    Esp32BaseWeb::sendChunk("</div></div><p class='muted'>至少 2 条有效样本后会自动生成参数；3 条以上更稳。到设备旁按 OK 开始校准出水，按 CANCEL 停止；网页只录入量杯读数并处理样本。</p>");
+    if (snapshot.calibrationStatus == CalibrationSessionStatus::WaitingLocalRun) {
+        Esp32BaseWeb::sendChunk("<p class='ok'>设备正在等待本地 OK 开始校准出水。页面会自动刷新状态。</p>");
+    } else if (snapshot.calibrationStatus == CalibrationSessionStatus::Running) {
+        Esp32BaseWeb::sendChunk("<p class='warn'>校准出水中。请在设备本地按 CANCEL 停止，停止后网页会进入实测容量录入。</p>");
+    } else if (snapshot.calibrationStatus == CalibrationSessionStatus::AwaitingActual) {
+        Esp32BaseWeb::sendChunk("<p class='ok'>本次出水已停止，请按量杯读数填写实测容量。</p>");
+    } else if (snapshot.calibrationStatus == CalibrationSessionStatus::Generated) {
+        Esp32BaseWeb::sendChunk("<p class='ok'>已自动计算出参数建议；可以继续按 OK 补充样本，或确认使用这组参数。</p>");
+    }
+    Esp32BaseWeb::sendChunk("<div class='form-actions calibration-primary-actions'>");
+    if (!sessionActive) {
+        Esp32BaseWeb::sendChunk("<form method='post' action='/faucet/calibration/flow' onsubmit='return once(this)'>"
+                                "<input type='hidden' name='action' value='start_session'>");
+        sendFmt("<input class='primary' type='submit' value='开始校准流程'%s></form>",
+                canStartSession ? "" : " disabled");
+    } else {
+        Esp32BaseWeb::sendChunk("<form method='post' action='/faucet/calibration/flow' onsubmit=\"return confirm('确认退出并丢弃本次校准会话？')&&once(this)\">"
+                                "<input type='hidden' name='action' value='discard_session'>");
+        sendFmt("<input class='secondary' type='submit' value='退出校准流程'%s></form>",
+                canDiscardSession ? "" : " disabled");
+    }
+    Esp32BaseWeb::sendChunk("</div>");
+    if (canEnterActual) {
+        Esp32BaseWeb::sendChunk("<form class='sample-calibration-form' method='post' action='/faucet/calibration/flow' onsubmit='return faucetSubmitFlowCalibrationAction(this)'>"
+                                "<input type='hidden' name='action' value='save_actual'>"
+                                "<label class='compact-field'><span>本次实测容量</span><span class='estimator-input-row'>"
+                                "<input name='actualMl' type='number' min='");
+        sendFmt("%lu", static_cast<unsigned long>(kCalibrationMinActualMl));
+        Esp32BaseWeb::sendChunk("' max='");
+        sendFmt("%lu", static_cast<unsigned long>(kMaxVolumePresetMl));
+        Esp32BaseWeb::sendChunk("' step='1' required><span class='unit-label'>ml</span></span></label>"
+                                "<div class='form-actions'><input class='primary' type='submit' value='保存有效样本'></form>"
+                                "<form method='post' action='/faucet/calibration/flow' onsubmit=\"return confirm('确认放弃本次出水样本？')&&faucetSubmitFlowCalibrationAction(this)\">"
+                                "<input type='hidden' name='action' value='skip_attempt'>"
+                                "<input class='danger' type='submit' value='放弃本次样本'></form></div>");
+    }
+    Esp32BaseWeb::sendChunk("<div class='form-actions calibration-secondary-actions'>"
+                            "<form method='post' action='/faucet/calibration/flow' onsubmit=\"return confirm('确认使用这组计量参数？')&&once(this)\">"
+                            "<input type='hidden' name='action' value='apply_session'>");
+    sendFmt("<input class='primary' type='submit' value='使用这组参数'%s></form></div></section>",
+            canApply ? "" : " disabled");
+}
+
 void formatSensorTemperature(const SensorValue& value, char* out, std::size_t len) {
     if (!out || len == 0) {
         return;
@@ -2269,9 +2416,15 @@ void sendCalibrationCenterFlowCard(const AppSnapshot& snapshot) {
     MeteringSchemeRecord active{};
     const bool activeReady = activeMeteringSchemeForWeb(active);
     const MeteringParameters params = activeReady ? active.params : snapshot.meteringParams;
+    const bool sessionActive = !calibrationSessionInactive(snapshot.calibrationStatus);
     Esp32BaseWeb::sendChunk("<section class='panel calibration-center-card'><div class='panel-head'><h3>当前计量参数</h3>");
-    sendFmt("<span class='status-pill status-ok'>%s</span></div>",
-            activeReady && active.name[0] ? active.name : "默认参数");
+    if (sessionActive) {
+        sendFmt("<span class='status-pill status-warn'>%s</span></div>",
+                calibrationSessionStatusText(snapshot.calibrationStatus));
+    } else {
+        sendFmt("<span class='status-pill status-ok'>%s</span></div>",
+                activeReady && active.name[0] ? active.name : "默认参数");
+    }
     Esp32BaseWeb::sendChunk("<div class='tds-calibration-summary'>");
     sendFmt("<div><span>启动脉冲</span><strong>%lu P</strong></div>",
             static_cast<unsigned long>(params.startupPulseCount));
@@ -2283,11 +2436,14 @@ void sendCalibrationCenterFlowCard(const AppSnapshot& snapshot) {
             static_cast<unsigned long>(params.stablePulsePerLiter));
     sendFmt("<div><span>稳态流速</span><strong>%lu ml/min</strong></div>",
             static_cast<unsigned long>(params.stableFlowMlPerMin));
+    if (sessionActive) {
+        sendFmt("<div><span>本次校准</span><strong>%u 样本</strong></div>",
+                static_cast<unsigned>(snapshot.calibrationValidSampleCount));
+    }
     Esp32BaseWeb::sendChunk("</div><div class='form-actions'>"
-                            "<a class='btn-link primary' href='/faucet/calibration/flow'>进入流量计校准</a>"
-                            "<a class='btn-link' href='/faucet/calibration/flow?manual=1'>手工修改参数</a>"
-                            "<a class='btn-link' href='/faucet/calibration/flow#metering-history'>历史参数</a>"
-                            "</div></section>");
+                            "<a class='btn-link primary' href='/faucet/calibration/flow'>");
+    Esp32BaseWeb::sendChunk(sessionActive ? "继续流量计校准" : "进入流量计校准");
+    Esp32BaseWeb::sendChunk("</a></div></section>");
 }
 
 void sendCalibrationCenterTemperatureCard(const AppSnapshot& snapshot, const SystemConfig& config) {
@@ -2469,6 +2625,9 @@ void sendCalibrationPageScript() {
                             "function faucetEstimateDurationForMl(ml,vs,ts,flow){if(!(ml>0&&flow>0))return 0;if(!(ts>0&&vs>0))return ml*60/flow;if(ml<=vs)return ml*ts/1000/vs;return ts/1000+(ml-vs)*60/flow;}"
                             "function faucetEstimateVolumeForDuration(sec,vs,ts,flow){if(!(sec>0&&flow>0))return 0;var ms=sec*1000;if(ts>0&&vs>0&&ms<=ts)return Math.round(ms*vs/ts);var stableMs=(ts>0&&vs>0)?Math.max(0,ms-ts):ms;var startup=(ts>0&&vs>0)?vs:0;return Math.max(0,Math.round(startup+stableMs*flow/60000));}"
                             "function faucetStartCalibrationCountdown(){var e=document.querySelector('[data-calibration-countdown]');if(!e)return;var left=Number(e.dataset.remaining)||0;function pad(n){return String(n).padStart(2,'0');}function draw(){if(left<=0){e.textContent='可能已超时';e.classList.remove('status-muted','status-warn');e.classList.add('status-error');setTimeout(function(){window.location.assign(window.location.pathname+window.location.search);},1200);return;}var m=Math.floor(left/60),s=left%60;e.textContent=(left<=60?'即将退出 ':'剩余 ')+pad(m)+':'+pad(s);e.classList.remove('status-muted','status-warn','status-error');e.classList.add(left<=60?'status-error':(left<=300?'status-warn':'status-muted'));left-=1;setTimeout(draw,1000);}draw();}"
+                            "function faucetFlowCalibrationActiveStatus(s){return s==='waitingLocalRun'||s==='running';}"
+                            "function faucetFlowCalibrationRefreshSamples(s,prev,valid,prevValid){if(s==='awaitingActual'||s==='readyToGenerate'||s==='generated'||valid!==prevValid)return faucetReplaceCalibrationSection('calibration-samples','/faucet/calibration/flow?partial=samples').catch(function(){});return Promise.resolve();}"
+                            "function faucetStartCalibrationRefresh(){var e=document.getElementById('calibration-session');if(!e||!e.querySelector('[data-calibration-refresh]'))return;var prev=e.getAttribute('data-calibration-status')||'',prevValid=Number(e.getAttribute('data-calibration-valid-samples')||0);function poll(){if(document.hidden){setTimeout(poll,1000);return;}fetch('/api/faucet/status',{cache:'no-store',credentials:'same-origin'}).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json();}).then(function(s){var c=s.calibration||{},next=String(c.status||''),valid=Number(c.validSampleCount)||0;if(next!==prev||valid!==prevValid){return faucetReplaceCalibrationSection('calibration-session','/faucet/calibration/flow?partial=session').then(function(){faucetStartCalibrationCountdown();return faucetFlowCalibrationRefreshSamples(next,prev,valid,prevValid);}).then(function(){prev=next;prevValid=valid;});}}).catch(function(){}).then(function(){if(faucetFlowCalibrationActiveStatus(prev))setTimeout(poll,1000);});}setTimeout(poll,1000);}"
                             "function faucetEstimateMeteringTrial(form){var ns=Number(form.dataset.startupPulses)||0,vs=Number(form.dataset.startupVolume)||0,ps=Number(form.dataset.stablePpl)||0,ts=Number(form.dataset.startupDurationMs)||0,flow=Number(form.dataset.stableFlowMlMin)||0,ml=Number((form.querySelector('[name=targetMl]')||{}).value)||0,sec=Number((form.querySelector('[name=targetSec]')||{}).value)||0,volumeDuration=faucetEstimateDurationForMl(ml,vs,ts,flow),volumePulses=faucetEstimatePulsesForMl(ml,ns,vs,ps),timeVolume=faucetEstimateVolumeForDuration(sec,vs,ts,flow),timePulses=faucetEstimatePulsesForMl(timeVolume,ns,vs,ps),vd=form.querySelector('[data-volume-estimated-duration]'),vp=form.querySelector('[data-volume-estimated-pulses]'),tv=form.querySelector('[data-time-estimated-volume]'),tp=form.querySelector('[data-time-estimated-pulses]');if(vd)vd.textContent=volumeDuration>0?faucetFormatEstimateSeconds(volumeDuration):'-';if(vp)vp.textContent=volumePulses>0?(volumePulses+'P'):'-';if(tv)tv.textContent=timeVolume>0?faucetFormatTrialLiters(timeVolume):'-';if(tp)tp.textContent=timePulses>0?(timePulses+'P'):'-';}"
                             "function faucetOpenMeteringTrial(btn){var modal=document.getElementById('metering-trial-modal');if(!modal)return;var form=modal.querySelector('.metering-trial-form');if(!form)return;form.dataset.startupPulses=btn.dataset.startupPulses||'0';form.dataset.startupVolume=btn.dataset.startupVolume||'0';form.dataset.stablePpl=btn.dataset.stablePpl||'0';form.dataset.startupDurationMs=btn.dataset.startupDurationMs||'0';form.dataset.stableFlowMlMin=btn.dataset.stableFlowMlMin||'0';var ml=form.querySelector('[name=targetMl]'),sec=form.querySelector('[name=targetSec]');if(ml)ml.value=btn.dataset.defaultMl||'1000';if(sec)sec.value=btn.dataset.defaultSec||'60';var label=form.querySelector('[data-trial-label]');if(label)label.textContent=(btn.dataset.trialLabel||'计量方案')+'：容量参数 '+form.dataset.startupPulses+'P / '+form.dataset.startupVolume+'ml / '+form.dataset.stablePpl+'P/L，时间参数 '+faucetFormatStartupSeconds(form.dataset.startupDurationMs)+' / '+form.dataset.stableFlowMlMin+'ml/min';modal.classList.add('is-open');modal.setAttribute('aria-hidden','false');faucetEstimateMeteringTrial(form);}"
                             "function faucetCloseMeteringTrial(){var modal=document.getElementById('metering-trial-modal');if(modal){modal.classList.remove('is-open');modal.setAttribute('aria-hidden','true');}}"
@@ -2477,9 +2636,12 @@ void sendCalibrationPageScript() {
                             "function faucetCloseSchemeDetail(){var modal=document.getElementById('scheme-detail-modal');if(modal){modal.classList.remove('is-open');modal.setAttribute('aria-hidden','true');}}"
                             "function faucetReplaceCalibrationSection(id,url){return fetch(url,{cache:'no-store',credentials:'same-origin'}).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.text();}).then(function(html){var old=document.getElementById(id);if(!old)return;var box=document.createElement('div');box.innerHTML=html;var next=box.querySelector('#'+id);if(next)old.replaceWith(next);});}"
                             "function faucetRefreshCalibrationSamples(){return faucetReplaceCalibrationSection('calibration-samples','/faucet/calibration?partial=samples');}"
+                            "function faucetRefreshFlowCalibrationCore(){return Promise.all([faucetReplaceCalibrationSection('calibration-session','/faucet/calibration/flow?partial=session'),faucetReplaceCalibrationSection('calibration-samples','/faucet/calibration/flow?partial=samples')]).then(function(){faucetStartCalibrationCountdown();faucetStartCalibrationRefresh();});}"
                             "function faucetSubmitSampleCalibration(f){if(typeof once==='function'&&!once(f))return false;fetch('/faucet/calibration',{method:'POST',body:new FormData(f),cache:'no-store',credentials:'same-origin'}).then(function(r){if(!r.ok)return faucetReadCalibrationError(r).then(function(code){throw new Error(code);});return r.json();}).then(function(){return faucetRefreshCalibrationSamples().catch(function(){faucetResetSampleCalibrationForm(f);alert('校准已保存，但页面刷新失败，请手动刷新查看最新状态。');});}).catch(function(e){faucetResetSampleCalibrationForm(f);alert('保存失败：'+faucetCalibrationErrorMessage(e.message));});return false;}"
+                            "function faucetSubmitFlowCalibrationAction(f){if(typeof once==='function'&&!once(f))return false;var fd=new FormData(f);fd.set('ajax','1');fetch('/faucet/calibration/flow',{method:'POST',body:fd,cache:'no-store',credentials:'same-origin'}).then(function(r){if(!r.ok)return faucetReadCalibrationError(r).then(function(code){throw new Error(code);});return r.json();}).then(function(){return faucetRefreshFlowCalibrationCore().catch(function(){alert('操作已保存，但页面刷新失败，请手动刷新查看最新状态。');});}).catch(function(e){faucetResetSampleCalibrationForm(f);alert('操作失败：'+faucetCalibrationErrorMessage(e.message));});return false;}"
                             "function faucetSubmitGenerationAction(f){if(typeof once==='function'&&!once(f))return false;var fd=new FormData(f),action=String(fd.get('action')||'');fetch('/faucet/calibration/flow',{method:'POST',body:fd,cache:'no-store',credentials:'same-origin'}).then(function(r){if(!r.ok)return faucetReadCalibrationError(r).then(function(code){throw new Error(code);});return r.json();}).then(function(){var url='/faucet/calibration/flow?partial=generation&advanced=samples'+(action==='generate_segmented'?'&generated=1':'');return faucetReplaceCalibrationSection('scheme-generation',url).catch(function(){alert('辅助计算已完成，但页面刷新失败，请手动刷新查看最新状态。');});}).catch(function(e){f.dataset.busy='';var b=f.querySelector('[type=submit]');if(b)b.disabled=false;alert('操作失败：'+faucetCalibrationErrorMessage(e.message));});return false;}"
                             "faucetStartCalibrationCountdown();"
+                            "faucetStartCalibrationRefresh();"
                             "</script>");
 }
 
@@ -4256,6 +4418,10 @@ void handleFlowCalibrationPage() {
         }
         if (std::strcmp(text, "schemes") == 0) {
             sendCalibrationParameterPanels();
+        } else if (std::strcmp(text, "session") == 0) {
+            sendFlowCalibrationSessionPanel(g_context.app->snapshot(), waterTaskActive());
+        } else if (std::strcmp(text, "samples") == 0) {
+            sendCalibrationSamplesPanel(configuredPulseObservationWindowSec());
         } else if (std::strcmp(text, "generation-summary") == 0) {
             sendCalibrationGenerationSummaryPanel();
         } else if (std::strcmp(text, "generation") == 0) {
@@ -4283,7 +4449,9 @@ void handleFlowCalibrationPage() {
         }
         MeteringSchemeRecord draft{};
         if (hasPrefill) {
-            initializeManualMeteringScheme(draft, 0, "手工参数", prefill, g_context.nowSeconds ? g_context.nowSeconds() : 0);
+            char name[kMeteringSchemeNameLength]{};
+            const char* prefillName = getParam("name", name, sizeof(name)) && name[0] ? name : "手工参数";
+            initializeManualMeteringScheme(draft, 0, prefillName, prefill, g_context.nowSeconds ? g_context.nowSeconds() : 0);
         }
         sendMeteringSchemeEditPage(true, hasPrefill ? &draft : nullptr);
         return;
@@ -4306,64 +4474,12 @@ void handleFlowCalibrationPage() {
 
     const AppSnapshot snapshot = g_context.app->snapshot();
     const bool taskActive = waterTaskActive();
-    const bool sessionActive = snapshot.calibrationStatus != CalibrationSessionStatus::Idle &&
-                               snapshot.calibrationStatus != CalibrationSessionStatus::Applied &&
-                               snapshot.calibrationStatus != CalibrationSessionStatus::Discarded &&
-                               snapshot.calibrationStatus != CalibrationSessionStatus::Failed;
-    const bool canStartSession = calibrationSessionInactive(snapshot.calibrationStatus) && !taskActive;
-    const bool canDiscardSession = sessionActive && snapshot.calibrationStatus != CalibrationSessionStatus::Running && !taskActive;
-    const bool canEnterActual = snapshot.calibrationStatus == CalibrationSessionStatus::AwaitingActual;
-    const bool canApply = snapshot.calibrationStatus == CalibrationSessionStatus::Generated && !taskActive;
 
     Esp32BaseWeb::sendHeader("流量计校准");
     Esp32BaseWeb::sendChunk("<h2>流量计校准</h2>");
     sendNoticeFromQuery();
-    Esp32BaseWeb::sendChunk("<p class='muted'>本页展示当前计量参数和本次校准样本；本页不提供远程出水或停水能力。</p>");
-    Esp32BaseWeb::sendChunk("<section class='panel calibration-session-panel'><div class='panel-head'><h3>校准流程</h3><div class='calibration-session-badges'>");
-    sendFmt("<span class='status-pill %s'>%s</span>",
-            sessionActive ? "status-warn" : "status-muted",
-            calibrationSessionStatusText(snapshot.calibrationStatus));
-    if (sessionActive) {
-        const std::uint32_t nowSeconds = g_context.nowSeconds ? g_context.nowSeconds() : 0;
-        const std::uint32_t remainingSec =
-            nowSeconds > 0 && snapshot.calibrationIdleExpiresAt > nowSeconds
-                ? snapshot.calibrationIdleExpiresAt - nowSeconds
-                : kCalibrationIdleTimeoutSec;
-        sendFmt("<span class='status-pill status-muted calibration-timeout-pill' data-calibration-countdown data-remaining='%lu'>非出水中 30 分钟无操作自动退出</span>",
-                static_cast<unsigned long>(remainingSec));
-    }
-    Esp32BaseWeb::sendChunk("</div></div><p class='muted'>至少 2 条有效样本后会自动生成参数；3 条以上更稳。到设备旁按 OK 接水，网页只记录实测容量和使用结果。</p><div class='form-actions calibration-primary-actions'>");
-    if (!sessionActive) {
-        Esp32BaseWeb::sendChunk("<form method='post' action='/faucet/calibration/flow' onsubmit='return once(this)'>"
-                                "<input type='hidden' name='action' value='start_session'>");
-        sendFmt("<input class='primary' type='submit' value='开始校准流程'%s></form>",
-                canStartSession ? "" : " disabled");
-    } else {
-        Esp32BaseWeb::sendChunk("<form method='post' action='/faucet/calibration/flow' onsubmit=\"return confirm('确认退出并丢弃本次校准会话？')&&once(this)\">"
-                                "<input type='hidden' name='action' value='discard_session'>");
-        sendFmt("<input class='secondary' type='submit' value='退出校准流程'%s></form>",
-                canDiscardSession ? "" : " disabled");
-    }
-    Esp32BaseWeb::sendChunk("</div>");
-    if (canEnterActual) {
-        Esp32BaseWeb::sendChunk("<form class='sample-calibration-form' method='post' action='/faucet/calibration/flow' onsubmit='return once(this)'>"
-                                "<input type='hidden' name='action' value='save_actual'>"
-                                "<label class='compact-field'><span>本次实测容量</span><span class='estimator-input-row'>"
-                                "<input name='actualMl' type='number' min='");
-        sendFmt("%lu", static_cast<unsigned long>(kCalibrationMinActualMl));
-        Esp32BaseWeb::sendChunk("' max='");
-        sendFmt("%lu", static_cast<unsigned long>(kMaxVolumePresetMl));
-        Esp32BaseWeb::sendChunk("' step='1' required><span class='unit-label'>ml</span></span></label>"
-                                "<div class='form-actions'><input class='primary' type='submit' value='保存有效样本'></form>"
-                                "<form method='post' action='/faucet/calibration/flow' onsubmit=\"return confirm('确认放弃本次出水样本？')&&once(this)\">"
-                                "<input type='hidden' name='action' value='skip_attempt'>"
-                                "<input class='danger' type='submit' value='放弃本次样本'></form></div>");
-    }
-    Esp32BaseWeb::sendChunk("<div class='form-actions calibration-secondary-actions'>"
-                            "<form method='post' action='/faucet/calibration/flow' onsubmit=\"return confirm('确认使用这组计量参数？')&&once(this)\">"
-                            "<input type='hidden' name='action' value='apply_session'>");
-    sendFmt("<input class='primary' type='submit' value='使用这组参数'%s></form></div></section>",
-            canApply ? "" : " disabled");
+    Esp32BaseWeb::sendChunk("<p class='muted'>本页负责录入实测容量、管理样本和应用参数；出水与停水只能在设备本地按键完成。</p>");
+    sendFlowCalibrationSessionPanel(snapshot, taskActive);
     sendCalibrationSamplesPanel(configuredPulseObservationWindowSec());
     Esp32BaseWeb::sendChunk("<div class='calibration-param-layout'>");
     sendActiveMeteringSchemeSummaryPanel();
@@ -4422,20 +4538,13 @@ void handleRecordDetailPage() {
         sendBusyJson("record_detail");
         return;
     }
-    if (!g_context.pulseTraces) {
-        if (rawRequest) {
-            sendPlainTextResponse(503, "脉冲明细缓存不可用。\n");
-            return;
-        }
-        Esp32BaseWeb::sendHeader("脉冲明细");
-        sendFmt("<h2>脉冲明细</h2><p class='err'>脉冲明细缓存不可用。</p><p><a class='btn-link' href='%s'>%s</a></p>",
-                backHref,
-                backLabel);
-        sendPageEnd();
-        return;
-    }
+    bool useSessionTrace = false;
+    std::uint32_t sessionTraceSlot = 0;
     std::uint32_t traceId = 0;
-    if (!getParam("trace", text, sizeof(text)) || !parseU32(text, traceId)) {
+    if (fromCalibration && getParam("slot", text, sizeof(text))) {
+        useSessionTrace = parseU32(text, sessionTraceSlot) && sessionTraceSlot < kCalibrationSessionTraceSlots;
+    }
+    if (!useSessionTrace && (!getParam("trace", text, sizeof(text)) || !parseU32(text, traceId))) {
         if (rawRequest) {
             sendPlainTextResponse(400, "明细编号无效。\n");
             return;
@@ -4455,7 +4564,68 @@ void handleRecordDetailPage() {
         bucketSeconds = 1;
     }
     const WaterPulseTrace* trace = nullptr;
-    trace = g_context.pulseTraces->findById(traceId);
+    WaterPulseTrace sessionTrace{};
+    std::unique_ptr<WaterPulseTraceSample[]> samples;
+    std::size_t loadedSampleCount = 0;
+    if (useSessionTrace) {
+        if (!g_context.calibrationSessionTraces || !g_context.calibrationSessionTraces->ready()) {
+            if (rawRequest) {
+                sendPlainTextResponse(503, "校准会话脉冲数据不可用。\n");
+                return;
+            }
+            Esp32BaseWeb::sendHeader("脉冲明细");
+            sendFmt("<h2>脉冲明细</h2><p class='err'>校准会话脉冲数据不可用。</p><p><a class='btn-link' href='%s'>%s</a></p>",
+                    backHref,
+                    backLabel);
+            sendPageEnd();
+            return;
+        }
+        CalibrationStoredTrace stored{};
+        if (!g_context.calibrationSessionTraces->load(static_cast<std::uint8_t>(sessionTraceSlot), stored)) {
+            if (rawRequest) {
+                sendPlainTextResponse(404, "该校准会话脉冲明细不存在。\n");
+                return;
+            }
+            Esp32BaseWeb::sendHeader("脉冲明细");
+            sendFmt("<h2>脉冲明细</h2><p class='err'>该校准会话脉冲明细不存在。</p><p><a class='btn-link' href='%s'>%s</a></p>",
+                    backHref,
+                    backLabel);
+            sendPageEnd();
+            return;
+        }
+        sessionTrace = stored.trace;
+        trace = &sessionTrace;
+        traceId = sessionTrace.traceId;
+        samples.reset(new (std::nothrow) WaterPulseTraceSample[trace->sampleCount]{});
+        if (samples) {
+            loadedSampleCount = g_context.calibrationSessionTraces->readSamples(
+                static_cast<std::uint8_t>(sessionTraceSlot), samples.get(), trace->sampleCount);
+        }
+    } else {
+        if (!g_context.pulseTraces) {
+            if (rawRequest) {
+                sendPlainTextResponse(503, "脉冲明细缓存不可用。\n");
+                return;
+            }
+            Esp32BaseWeb::sendHeader("脉冲明细");
+            sendFmt("<h2>脉冲明细</h2><p class='err'>脉冲明细缓存不可用。</p><p><a class='btn-link' href='%s'>%s</a></p>",
+                    backHref,
+                    backLabel);
+            sendPageEnd();
+            return;
+        }
+        trace = g_context.pulseTraces->findById(traceId);
+        if (trace) {
+            samples.reset(new (std::nothrow) WaterPulseTraceSample[trace->sampleCount]{});
+            if (samples) {
+                for (std::size_t i = 0; i < trace->sampleCount; ++i) {
+                    const WaterPulseTraceSample* sample = g_context.pulseTraces->sampleAt(*trace, i);
+                    samples[i] = sample ? *sample : WaterPulseTraceSample{};
+                }
+                loadedSampleCount = trace->sampleCount;
+            }
+        }
+    }
     if (!trace) {
         if (rawRequest) {
             sendPlainTextResponse(404, "该脉冲明细不存在或已被 RAM 缓存淘汰。\n");
@@ -4468,10 +4638,7 @@ void handleRecordDetailPage() {
         sendPageEnd();
         return;
     }
-
-    WaterPulseTraceSample* samples = new (std::nothrow) WaterPulseTraceSample[trace->sampleCount]{};
-    if (!samples) {
-        delete[] samples;
+    if (!samples || loadedSampleCount != trace->sampleCount) {
         if (rawRequest) {
             sendPlainTextResponse(500, "内存不足，无法生成脉冲明细。\n");
             return;
@@ -4481,26 +4648,20 @@ void handleRecordDetailPage() {
         sendPageEnd();
         return;
     }
-    for (std::size_t i = 0; i < trace->sampleCount; ++i) {
-        const WaterPulseTraceSample* sample = g_context.pulseTraces ? g_context.pulseTraces->sampleAt(*trace, i) : nullptr;
-        samples[i] = sample ? *sample : WaterPulseTraceSample{};
-    }
     if (rawRequest) {
-        sendPulseTraceRawText(*trace, samples, rawTraceShowAll);
-        delete[] samples;
+        sendPulseTraceRawText(*trace, samples.get(), rawTraceShowAll);
         return;
     }
     WaterPulseTraceBucket* buckets = new (std::nothrow) WaterPulseTraceBucket[trace->sampleCount]{};
     if (!buckets) {
-        delete[] samples;
         Esp32BaseWeb::sendHeader("脉冲明细");
         Esp32BaseWeb::sendChunk("<p class='err'>内存不足，无法生成脉冲明细。</p>");
         sendPageEnd();
         return;
     }
     const std::size_t bucketCount =
-        aggregateWaterPulseTrace(*trace, samples, trace->sampleCount, bucketSeconds, buckets, trace->sampleCount);
-    const WaterPulseTraceAnalysis analysis = analyzeWaterPulseTrace(*trace, samples, trace->sampleCount);
+        aggregateWaterPulseTrace(*trace, samples.get(), trace->sampleCount, bucketSeconds, buckets, trace->sampleCount);
+    const WaterPulseTraceAnalysis analysis = analyzeWaterPulseTrace(*trace, samples.get(), trace->sampleCount);
     std::uint32_t maxDelta = 1;
     std::uint32_t maxRawDelta = 1;
     for (std::size_t i = 0; i < bucketCount; ++i) {
@@ -4508,7 +4669,7 @@ void handleRecordDetailPage() {
         maxRawDelta = std::max(maxRawDelta, buckets[i].rawEdgeDelta);
     }
     const std::uint32_t rawEdgeCount = static_cast<std::uint32_t>(trace->sampleCount);
-    const std::uint32_t effectivePulseCountValue = effectivePulseCount(*trace, samples, trace->sampleCount);
+    const std::uint32_t effectivePulseCountValue = effectivePulseCount(*trace, samples.get(), trace->sampleCount);
     const std::uint32_t filteredEdgeCount =
         rawEdgeCount >= effectivePulseCountValue ? rawEdgeCount - effectivePulseCountValue : 0;
     const std::uint32_t effectiveRateTenths =
@@ -4532,6 +4693,18 @@ void handleRecordDetailPage() {
     const std::size_t traceBytes = sizeof(WaterPulseTrace) + trace->sampleCount * sizeof(WaterPulseTraceSample);
     char traceKb[24]{};
     formatKb(traceBytes, traceKb, sizeof(traceKb));
+    char detailSourceParam[32]{};
+    if (useSessionTrace) {
+        std::snprintf(detailSourceParam,
+                      sizeof(detailSourceParam),
+                      "slot=%u",
+                      static_cast<unsigned>(sessionTraceSlot));
+    } else {
+        std::snprintf(detailSourceParam,
+                      sizeof(detailSourceParam),
+                      "trace=%lu",
+                      static_cast<unsigned long>(traceId));
+    }
     const std::uint32_t traceActualMl = actualMlForSegmentedSample(*trace);
     const bool traceActualSynced = trace->actualMl > 0;
     const bool traceActualFromRecord = !traceActualSynced && traceActualMl > 0;
@@ -4661,13 +4834,12 @@ void handleRecordDetailPage() {
     constexpr std::uint32_t bucketsToShow[] = {1, 2, 3, 4, 5};
     for (std::uint32_t bucket : bucketsToShow) {
         const char* linkClass = bucket == bucketSeconds ? "btn-link page-current" : "btn-link";
-        sendFmt("<a class='%s' aria-current='%s' href='%s?%s%strace=%lu&bucket=%lu' onclick='return faucetLoadTraceChart(this)'>%lus</a>",
+        sendFmt("<a class='%s' aria-current='%s' href='%s?%s%s&bucket=%lu' onclick='return faucetLoadTraceChart(this)'>%lus</a>",
                 linkClass,
                 bucket == bucketSeconds ? "true" : "false",
                 detailPath,
                 contextParam,
-                "",
-                static_cast<unsigned long>(traceId),
+                detailSourceParam,
                 static_cast<unsigned long>(bucket),
                 static_cast<unsigned long>(bucket));
     }
@@ -4774,7 +4946,7 @@ void handleRecordDetailPage() {
     std::uint32_t prevPulseX = left;
     std::uint32_t prevPulseY = baseY;
     for (std::size_t i = 0; i < bucketCount; ++i) {
-        const std::uint32_t chartDelta = bucketRunningPulseDelta(samples, trace->sampleCount, buckets[i]);
+        const std::uint32_t chartDelta = bucketRunningPulseDelta(samples.get(), trace->sampleCount, buckets[i]);
         const std::uint32_t startSec = buckets[i].startSec;
         const std::uint32_t endSec = buckets[i].startSec + buckets[i].durationSec;
         const std::uint32_t startX = left + (startSec * chartWidth) / maxEndSec;
@@ -4797,7 +4969,7 @@ void handleRecordDetailPage() {
         std::uint32_t prevVolumeY = baseY;
         std::uint32_t volumeCumulativePulses = 0;
         for (std::size_t i = 0; i < bucketCount; ++i) {
-            const std::uint32_t chartDelta = bucketRunningPulseDelta(samples, trace->sampleCount, buckets[i]);
+            const std::uint32_t chartDelta = bucketRunningPulseDelta(samples.get(), trace->sampleCount, buckets[i]);
             volumeCumulativePulses += chartDelta;
             const std::uint32_t volumeMl = estimateVolumeMlFromPulses(volumeCumulativePulses, trendMeteringParams);
             char volumeText[24]{};
@@ -4840,7 +5012,7 @@ void handleRecordDetailPage() {
     std::uint32_t effectiveCumulative = 0;
     std::uint32_t rawCumulative = 0;
     for (std::size_t i = 0; i < bucketCount; ++i) {
-        const std::uint32_t chartDelta = bucketRunningPulseDelta(samples, trace->sampleCount, buckets[i]);
+        const std::uint32_t chartDelta = bucketRunningPulseDelta(samples.get(), trace->sampleCount, buckets[i]);
         const std::uint32_t rawDelta = buckets[i].rawEdgeDelta;
         effectiveCumulative += chartDelta;
         rawCumulative += rawDelta;
@@ -4874,13 +5046,12 @@ void handleRecordDetailPage() {
     const std::size_t rawPreviewCount = rawTracePreviewSampleCount(*trace);
     Esp32BaseWeb::sendChunk("<section class='panel detail-data'><div class='panel-head'><h3>原始明细</h3><div class='row-actions'>");
     if (trace->sampleCount > rawPreviewCount) {
-        sendFmt("<a class='btn-link' target='_blank' rel='noopener' href='%s?raw=1&%s%strace=%lu&all=1'>导出所有明细</a>",
+        sendFmt("<a class='btn-link' target='_blank' rel='noopener' href='%s?raw=1&%s%s&all=1'>导出所有明细</a>",
                 detailPath,
                 contextParam,
-                "",
-                static_cast<unsigned long>(traceId));
+                detailSourceParam);
     }
-    const std::uint32_t rawPreviewEffective = effectivePulseCount(*trace, samples, rawPreviewCount);
+    const std::uint32_t rawPreviewEffective = effectivePulseCount(*trace, samples.get(), rawPreviewCount);
     sendFmt("</div></div><p class='hint'>原始边沿 %lu 个，有效 %lu 个，过滤 %lu 个；当前预览前 %lu 个（有效 %lu 个）。</p>"
             "<table class='raw-trace-table'><tr><th>序号</th><th>距任务开始</th><th>与上一边沿间隔</th><th>是否有效</th><th>有效累计</th></tr>",
             static_cast<unsigned long>(trace->sampleCount),
@@ -4918,7 +5089,6 @@ void handleRecordDetailPage() {
     Esp32BaseWeb::sendChunk("</table></section>");
     Esp32BaseWeb::sendChunk("<script>function faucetLoadTraceChart(a){if(!window.fetch)return true;fetch(a.href,{cache:'no-store',credentials:'same-origin'}).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.text();}).then(function(html){var box=document.createElement('div');box.innerHTML=html;var next=box.querySelector('#pulse-trend');var old=document.getElementById('pulse-trend');if(next&&old){old.replaceWith(next);history.replaceState(null,'',a.href);}}).catch(function(){location.href=a.href;});return false;}</script>");
 
-    delete[] samples;
     delete[] buckets;
     sendPageEnd();
 }
@@ -5451,6 +5621,29 @@ void handleFlowCalibrationPost() {
         Esp32BaseWeb::redirectSeeOther("/faucet/calibration/flow?error=invalid_value");
         return;
     }
+    const bool ajax = Esp32BaseWeb::hasParam("ajax");
+    auto respondFlowCalibrationFailure = [ajax](const char* failure) {
+        if (!ajax) {
+            redirectFlowCalibrationFailure(failure);
+            return;
+        }
+        char json[80]{};
+        std::snprintf(json, sizeof(json), "{\"error\":\"%s\"}", failure ? failure : "save_failed");
+        Esp32BaseWeb::sendJson(400, json);
+    };
+    auto respondFlowCalibrationResult = [ajax](bool ok, const char* success, const char* failure) {
+        if (!ajax) {
+            redirectFlowCalibrationResult(ok, success, failure);
+            return;
+        }
+        if (ok) {
+            Esp32BaseWeb::sendJson(200, "{\"ok\":true}");
+            return;
+        }
+        char json[80]{};
+        std::snprintf(json, sizeof(json), "{\"error\":\"%s\"}", failure ? failure : "save_failed");
+        Esp32BaseWeb::sendJson(400, json);
+    };
     if (std::strcmp(text, "start_session") == 0) {
         if (waterTaskActive()) {
             redirectFlowCalibrationFailure("busy");
@@ -5477,17 +5670,17 @@ void handleFlowCalibrationPost() {
         std::uint32_t actualMl = 0;
         if (!getParam("actualMl", text, sizeof(text)) || !parseU32(text, actualMl) ||
             actualMl < kCalibrationMinActualMl || actualMl > kMaxVolumePresetMl) {
-            redirectFlowCalibrationFailure("invalid_value");
+            respondFlowCalibrationFailure("invalid_value");
             return;
         }
-        redirectFlowCalibrationResult(g_context.app && g_context.app->submitCalibrationActualForWeb(
+        respondFlowCalibrationResult(g_context.app && g_context.app->submitCalibrationActualForWeb(
                                                        actualMl, g_context.nowSeconds ? g_context.nowSeconds() : 0),
                                       "actual",
                                       "save_failed");
         return;
     }
     if (std::strcmp(text, "skip_attempt") == 0) {
-        redirectFlowCalibrationResult(g_context.app && g_context.app->skipCalibrationAttemptForWeb(
+        respondFlowCalibrationResult(g_context.app && g_context.app->skipCalibrationAttemptForWeb(
                                                        CalibrationSkipReason::Mistake,
                                                        g_context.nowSeconds ? g_context.nowSeconds() : 0),
                                       "attempt_skipped",
@@ -5516,14 +5709,14 @@ void handleFlowCalibrationPost() {
         std::uint32_t attemptIndex = 0;
         if (!getParam("attemptIndex", text, sizeof(text)) || !parseU32(text, attemptIndex) ||
             attemptIndex >= kCalibrationMaxAttempts) {
-            redirectFlowCalibrationFailure("invalid_value");
+            respondFlowCalibrationFailure("invalid_value");
             return;
         }
         if (waterTaskActive()) {
-            redirectFlowCalibrationFailure("busy");
+            respondFlowCalibrationFailure("busy");
             return;
         }
-        redirectFlowCalibrationResult(g_context.app && g_context.app->removeCalibrationSessionSampleForWeb(
+        respondFlowCalibrationResult(g_context.app && g_context.app->removeCalibrationSessionSampleForWeb(
                                                        static_cast<std::uint8_t>(attemptIndex),
                                                        g_context.nowSeconds ? g_context.nowSeconds() : 0),
                                       "sample_removed",

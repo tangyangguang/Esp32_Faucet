@@ -172,6 +172,32 @@ bool WaterController::confirmStart(std::uint32_t nowMs) {
     return true;
 }
 
+bool WaterController::startUntargeted(std::uint32_t nowMs) {
+    if (state_ != WaterState::Idle && state_ != WaterState::Error) {
+        return false;
+    }
+    if (!selectedPresetConfig()) {
+        return false;
+    }
+    activePreset_ = selectedPreset_;
+    state_ = WaterState::Running;
+    valveOpen_ = true;
+    activeMode_ = WaterMode::Volume;
+    targetValue_ = 0;
+    confirmStartMs_ = 0;
+    runStartMs_ = nowMs;
+    pausedStartMs_ = 0;
+    accumulatedPausedMs_ = 0;
+    volumeMl_ = 0;
+    noFlowLastVolumeMl_ = 0;
+    noFlowLastActivityMs_ = nowMs;
+    highFlowStartMs_ = 0;
+    lastElapsedSec_ = 0;
+    lastError_ = WaterResult::Completed;
+    clearResult();
+    return true;
+}
+
 bool WaterController::adjustTarget(std::int32_t delta) {
     if (state_ != WaterState::Confirm || delta == 0) {
         return false;

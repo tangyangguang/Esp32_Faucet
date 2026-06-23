@@ -70,7 +70,7 @@
 | --- | --- | --- |
 | `KeyCancelDown` | `CANCEL` ISR/tick | 出水中最高优先级软件停止 |
 | `KeyOkShort` | 四键输入 | 确认、启动、暂停、继续 |
-| `KeyOkLong` | 四键输入 | 确认/暂停页不切换步进；结果页按住 OK 超过 5 秒进入现场校准 |
+| `KeyOkLong` | 四键输入 | 确认/暂停/结果页不触发额外功能 |
 | `KeyPlusShort` | 四键输入 | 待机选择下一个预设；确认页按配置步进增加本次目标值 |
 | `KeyMinusShort` | 四键输入 | 待机选择上一个预设；确认页按配置步进减少本次目标值 |
 | `ConfirmTimeout` | timer | 二次确认超时 |

@@ -196,7 +196,22 @@ void test_color_display_covers_idle_confirm_running_pause_result_alert_calibrati
     frame = presenter.render(calReady, 2400, true);
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(ColorDisplayPage::CalibrationReady),
                             static_cast<std::uint8_t>(frame.page));
-    assertTextEquals("校准出水", frame.title);
+    assertTextEquals("等待本地出水", frame.title);
+
+    AppSnapshot calRunning = makeSnapshot(WaterState::Running, WaterMode::Volume, 1500, 920);
+    calRunning.localMode = LocalUiMode::Calibration;
+    calRunning.calibrationStatus = CalibrationSessionStatus::Running;
+    calRunning.water.targetValue = 0;
+    calRunning.water.elapsedSec = 222;
+    calRunning.displayFlowMlPerMin = 12800;
+    frame = presenter.render(calRunning, 2450, true);
+    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(ColorDisplayPage::CalibrationReady),
+                            static_cast<std::uint8_t>(frame.page));
+    assertTextEquals("校准出水中", frame.title);
+    assertTextEquals("0.92", frame.mainValue);
+    assertTextEquals("已用", frame.metrics[0].label);
+    assertTextEquals("实时流速", frame.metrics[2].label);
+    assertTextEquals("停止", frame.hints[0]);
 
     AppSnapshot calEntry = makeSnapshot(WaterState::Idle, WaterMode::Volume, 1500, 920);
     calEntry.localMode = LocalUiMode::RecordCalibration;
@@ -358,13 +373,13 @@ void test_st7789_driver_uses_tft_espi_verified_no_cs_init_path_and_spi_mode() {
     std::fclose(file);
     TEST_ASSERT_GREATER_THAN_size_t(0, read);
 
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "kSt7789SpiHz = 10000000UL"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "kSt7789SpiHz = 27000000UL"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "kSt7789SpiMode = SPI_MODE3"));
     TEST_ASSERT_NULL(std::strstr(buffer, "kSt7789SpiMode = SPI_MODE2"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "kCmdRamCtrl = 0xB0"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "kCmdInvOn"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "tftInit"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "renderFrame(frame, fullRedraw)"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "renderFrame(frame, true)"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "beginBufferedFrame(fullRedraw)"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "if (fullRedraw && !buffered)"));
     TEST_ASSERT_NULL(std::strstr(buffer, "data(buffer, sizeof(buffer));\n    data(buffer, sizeof(buffer));"));
@@ -508,7 +523,7 @@ void test_st7789_layout_buffers_full_redraws_and_fits_confirm_and_hints() {
         source, "drawText(static_cast<std::int16_t>(x + 6), static_cast<std::int16_t>(y + 4), sensor.label"));
 }
 
-void test_st7789_same_page_updates_do_not_force_full_redraw() {
+void test_st7789_updates_use_buffered_frames_to_avoid_visible_erase() {
     FILE* file = std::fopen("src/drivers/St7789Display.cpp", "r");
     TEST_ASSERT_NOT_NULL(file);
 
@@ -519,12 +534,18 @@ void test_st7789_same_page_updates_do_not_force_full_redraw() {
 
     TEST_ASSERT_NULL(std::strstr(source, "const bool runningPage"));
     TEST_ASSERT_NULL(std::strstr(source, "!runningPage"));
-    TEST_ASSERT_NOT_NULL(std::strstr(source, "const bool fullRedraw = !lastFrameValid_ || !lastFrame_.on || frame.page != lastFrame_.page"));
-    TEST_ASSERT_NOT_NULL(std::strstr(source, "renderPartialFrame(frame, lastFrame_)"));
-    TEST_ASSERT_NOT_NULL(std::strstr(source, "renderStandbyPartialFrame"));
-    TEST_ASSERT_NOT_NULL(std::strstr(source, "renderConfirmPartialFrame"));
-    TEST_ASSERT_NOT_NULL(std::strstr(source, "fillRect(20, 64, 200, 64, kBg)"));
-    TEST_ASSERT_NOT_NULL(std::strstr(source, "fillRect(26, 66, 188, 92, kPanel2)"));
+    TEST_ASSERT_NOT_NULL(std::strstr(source, "renderFrame(frame, true)"));
+    TEST_ASSERT_NULL(std::strstr(source, "renderPartialFrame(frame, lastFrame_)"));
+    TEST_ASSERT_NULL(std::strstr(source, "renderStandbyPartialFrame"));
+    TEST_ASSERT_NULL(std::strstr(source, "renderConfirmPartialFrame"));
+
+    FILE* platformFile = std::fopen("platformio.ini", "r");
+    TEST_ASSERT_NOT_NULL(platformFile);
+    char platform[12000]{};
+    const std::size_t platformRead = std::fread(platform, 1, sizeof(platform) - 1, platformFile);
+    std::fclose(platformFile);
+    TEST_ASSERT_GREATER_THAN_size_t(0, platformRead);
+    TEST_ASSERT_NOT_NULL(std::strstr(platform, "-D SPI_FREQUENCY=27000000"));
 }
 
 int main(int argc, char** argv) {
@@ -546,6 +567,6 @@ int main(int argc, char** argv) {
     RUN_TEST(test_st7789_standby_cards_use_black_background_and_fit_text);
     RUN_TEST(test_st7789_layout_uses_padded_badges_and_non_overlapping_cards);
     RUN_TEST(test_st7789_layout_buffers_full_redraws_and_fits_confirm_and_hints);
-    RUN_TEST(test_st7789_same_page_updates_do_not_force_full_redraw);
+    RUN_TEST(test_st7789_updates_use_buffered_frames_to_avoid_visible_erase);
     return UNITY_END();
 }

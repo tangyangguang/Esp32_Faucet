@@ -281,13 +281,48 @@ ColorDisplayFrame ColorDisplayPresenter::render(const AppSnapshot& snapshot,
 
     if (snapshot.localMode == LocalUiMode::Calibration) {
         frame.page = ColorDisplayPage::CalibrationReady;
-        copyText(frame.state, "本地校准");
+        copyText(frame.state, "校准");
         char tag[8]{};
         std::snprintf(tag, sizeof(tag), "%u/3", static_cast<unsigned>(snapshot.calibrationValidSampleCount));
         copyText(frame.tag, tag);
-        copyText(frame.title, "校准出水");
-        formatLiters(frame.mainValue, sizeof(frame.mainValue), snapshot.water.targetValue);
-        copyText(frame.mainUnit, "L");
+        if (snapshot.calibrationStatus == CalibrationSessionStatus::Running ||
+            snapshot.water.state == WaterState::Running) {
+            copyText(frame.tag, "出水中");
+            copyText(frame.title, "校准出水中");
+            formatLiters(frame.mainValue, sizeof(frame.mainValue), snapshot.water.volumeMl);
+            copyText(frame.mainUnit, "L");
+            char elapsed[12]{};
+            char remaining[12]{};
+            char flow[12]{};
+            formatElapsed(elapsed, sizeof(elapsed), snapshot.water.elapsedSec);
+            const std::uint32_t remainingSec =
+                snapshot.calibrationMaxRunSec > snapshot.water.elapsedSec
+                    ? snapshot.calibrationMaxRunSec - snapshot.water.elapsedSec
+                    : 0;
+            formatElapsed(remaining, sizeof(remaining), remainingSec);
+            formatFlowLpm(flow, sizeof(flow), snapshot.displayFlowMlPerMin);
+            addMetric(frame, "已用", elapsed);
+            addMetric(frame, "最长剩余", remaining);
+            addMetric(frame, "实时流速", flow, "L/min");
+            setHints(frame, "停止", "网页录入");
+            return frame;
+        }
+        if (snapshot.calibrationStatus == CalibrationSessionStatus::AwaitingActual) {
+            copyText(frame.tag, "待录入");
+            copyText(frame.title, "等待网页录入");
+            formatLiters(frame.mainValue, sizeof(frame.mainValue), snapshot.water.volumeMl);
+            copyText(frame.mainUnit, "L");
+            char elapsed[12]{};
+            formatElapsed(elapsed, sizeof(elapsed), snapshot.water.elapsedSec);
+            addMetric(frame, "本次用时", elapsed);
+            addMetric(frame, "有效样本", tag);
+            addMetric(frame, "下一步", "网页");
+            setHints(frame, "网页录入", "勿重启");
+            return frame;
+        }
+        copyText(frame.title, "等待本地出水");
+        std::snprintf(frame.mainValue, sizeof(frame.mainValue), "%u", static_cast<unsigned>(snapshot.calibrationValidSampleCount));
+        copyText(frame.mainUnit, "条");
         char valid[12]{};
         std::snprintf(valid, sizeof(valid), "%u条", static_cast<unsigned>(snapshot.calibrationValidSampleCount));
         addMetric(frame, "有效样本", valid);
@@ -298,7 +333,7 @@ ColorDisplayFrame ColorDisplayPresenter::render(const AppSnapshot& snapshot,
         formatTemperature(temp, sizeof(temp), snapshot.sensors.temperatureCentiC);
         addMetric(frame, "TDS", tds);
         addMetric(frame, "水温", temp, "°C");
-        setHints(frame, "出水", "退出", "本地");
+        setHints(frame, "开始", "网页", "退出");
         return frame;
     }
 
@@ -339,7 +374,7 @@ ColorDisplayFrame ColorDisplayPresenter::render(const AppSnapshot& snapshot,
         formatTemperature(temp, sizeof(temp), hasRecordSensors ? resultTemp : snapshot.sensors.temperatureCentiC);
         addMetric(frame, "均TDS", tds);
         addMetric(frame, "均水温", temp, "°C");
-        setHints(frame, "返回", "校准", "30s");
+        setHints(frame, "返回", "网页", "30s");
         return frame;
     }
 

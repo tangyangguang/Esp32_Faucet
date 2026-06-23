@@ -274,6 +274,15 @@ void pressAndReleaseMinus(AppController& app, std::uint32_t baseMs) {
     app.tick(input({false, false, false, false}, baseMs + 60 + kButtonDebounceMs, (baseMs + 60 + kButtonDebounceMs) * 1000UL, 1000));
 }
 
+void pressAndReleaseCancelAt(AppController& app, std::uint32_t baseMs, std::uint32_t nowSeconds) {
+    app.tick(input({true, false, false, false}, baseMs, baseMs * 1000UL, nowSeconds));
+    app.tick(input({true, false, false, false}, baseMs + kButtonDebounceMs, (baseMs + kButtonDebounceMs) * 1000UL, nowSeconds));
+    app.tick(input({false, false, false, false}, baseMs + 60, (baseMs + 60) * 1000UL, nowSeconds));
+    app.tick(input({false, false, false, false}, baseMs + 60 + kButtonDebounceMs,
+                   (baseMs + 60 + kButtonDebounceMs) * 1000UL,
+                   nowSeconds));
+}
+
 void finishVolumeRun(AppController& app) {
     app.resetInputs({false, false, false, false}, 0);
     pressAndReleaseOk(app, 100);
@@ -497,6 +506,9 @@ void finishLocalCalibrationRun(CalibrationAppFixture& fixture,
                             finishMs,
                             finishMs * 1000UL,
                             nowSeconds + finishMs / 1000UL));
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationSessionStatus::Running),
+                            static_cast<unsigned>(fixture.app->snapshot().calibrationStatus));
+    pressAndReleaseCancelAt(*fixture.app, finishMs + 100, nowSeconds + (finishMs + 100) / 1000UL);
 
     TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationSessionStatus::AwaitingActual),
                             static_cast<unsigned>(fixture.app->snapshot().calibrationStatus));
@@ -1013,7 +1025,7 @@ void test_app_controller_starting_calibration_from_idle_enters_preparing() {
 
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(LocalUiMode::Calibration),
                             static_cast<std::uint8_t>(app.snapshot().localMode));
-    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationSessionStatus::Preparing),
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationSessionStatus::WaitingLocalRun),
                             static_cast<unsigned>(app.snapshot().calibrationStatus));
     TEST_ASSERT_EQUAL_UINT8(0, app.snapshot().calibrationAttemptCount);
     TEST_ASSERT_EQUAL_UINT8(0, app.snapshot().calibrationValidSampleCount);
@@ -1068,7 +1080,7 @@ void test_app_controller_starting_calibration_twice_is_rejected() {
 
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(LocalUiMode::Calibration),
                             static_cast<std::uint8_t>(app.snapshot().localMode));
-    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationSessionStatus::Preparing),
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationSessionStatus::WaitingLocalRun),
                             static_cast<unsigned>(app.snapshot().calibrationStatus));
 }
 
@@ -1243,9 +1255,6 @@ void test_app_controller_local_ok_starts_calibration_run_and_completion_awaits_a
 
     TEST_ASSERT_TRUE(app.startCalibrationSessionForWeb(1714502400));
     app.resetInputs({false, false, false, false}, 0);
-    pressAndReleaseOk(app, 100);
-    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationSessionStatus::WaitingLocalRun),
-                            static_cast<unsigned>(app.snapshot().calibrationStatus));
     pressAndReleaseOk(app, 300);
     TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationSessionStatus::Running),
                             static_cast<unsigned>(app.snapshot().calibrationStatus));
@@ -1288,6 +1297,43 @@ void test_app_controller_local_ok_starts_calibration_run_and_completion_awaits_a
     TEST_ASSERT_EQUAL_size_t(valid.trace.sampleCount, sampleStore.readSamples(sampleId, copied, 4096));
     TEST_ASSERT_TRUE(app.saveCalibrationSessionSampleToLongTermForWeb(0, 1714502404, sampleId));
     TEST_ASSERT_EQUAL_size_t(1, sampleStore.list(longTermSamples, kCalibrationLongTermSampleSlots));
+}
+
+void test_app_controller_calibration_run_ignores_preset_target_until_local_cancel() {
+    CalibrationAppFixture fixture;
+    fixture.config.presets[0].value = 1500;
+    fixture.createApp();
+
+    TEST_ASSERT_TRUE(fixture.app->startCalibrationSessionForWeb(1714502400));
+    fixture.app->resetInputs({false, false, false, false}, 0);
+    pressAndReleaseOkAt(*fixture.app, 300, 1714502400);
+
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationSessionStatus::Running),
+                            static_cast<unsigned>(fixture.app->snapshot().calibrationStatus));
+    TEST_ASSERT_EQUAL_UINT32(0, fixture.app->snapshot().water.targetValue);
+
+    for (std::uint32_t i = 0; i < 500; ++i) {
+        fixture.app->onFlowPulse(1000000UL + i * 5000UL);
+    }
+    fixture.app->tick(input({false, false, false, false}, 4200, 4200000UL, 1714502404));
+
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationSessionStatus::Running),
+                            static_cast<unsigned>(fixture.app->snapshot().calibrationStatus));
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(WaterState::Running),
+                            static_cast<unsigned>(fixture.app->snapshot().water.state));
+    TEST_ASSERT_GREATER_THAN_UINT32(fixture.config.presets[0].value, fixture.app->snapshot().water.volumeMl);
+    TEST_ASSERT_EQUAL_size_t(0, fixture.records.records.size());
+
+    pressAndReleaseCancelAt(*fixture.app, 4300, 1714502404);
+
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationSessionStatus::AwaitingActual),
+                            static_cast<unsigned>(fixture.app->snapshot().calibrationStatus));
+    TEST_ASSERT_EQUAL_size_t(1, fixture.records.records.size());
+    TEST_ASSERT_EQUAL_UINT32(0, fixture.records.records[0].targetValue);
+    CalibrationSessionRecord persisted{};
+    TEST_ASSERT_TRUE(fixture.sessionStore.load(persisted));
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationSessionStatus::AwaitingActual),
+                            static_cast<unsigned>(persisted.status));
 }
 
 void test_app_controller_generates_calibration_session_candidate() {
@@ -1348,6 +1394,22 @@ void test_app_controller_auto_generates_after_second_valid_calibration_sample() 
     TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationSessionStatus::Generated),
                             static_cast<unsigned>(snapshot.calibrationStatus));
     TEST_ASSERT_TRUE(fixture.app->applyGeneratedCalibrationForWeb(1714502600));
+}
+
+void test_app_controller_generated_calibration_can_continue_collecting_samples() {
+    CalibrationAppFixture fixture;
+    saveOneValidOnePendingSession(fixture, 1714502400);
+    fixture.createApp();
+    TEST_ASSERT_TRUE(fixture.app->submitCalibrationActualForWeb(7500, 1714502500));
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationSessionStatus::Generated),
+                            static_cast<unsigned>(fixture.app->snapshot().calibrationStatus));
+
+    pressAndReleaseOkAt(*fixture.app, 2000, 1714502600);
+
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationSessionStatus::Running),
+                            static_cast<unsigned>(fixture.app->snapshot().calibrationStatus));
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(WaterState::Running),
+                            static_cast<unsigned>(fixture.app->snapshot().water.state));
 }
 
 void test_app_controller_submit_actual_succeeds_when_auto_refresh_cannot_generate() {
@@ -2049,15 +2111,15 @@ void test_app_controller_result_display_exits_after_configured_timeout() {
         app.onFlowPulse(1000000UL + i * 2000UL);
     }
     app.tick(input({false, false, false, false}, 5000, 5000000, 1714502400));
-    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(LocalUiMode::Result),
-                            static_cast<std::uint8_t>(app.snapshot().localMode));
+    TEST_ASSERT_NOT_EQUAL(static_cast<std::uint8_t>(LocalUiMode::RecordCalibration),
+                          static_cast<std::uint8_t>(app.snapshot().localMode));
 
     app.tick(input({false, false, false, false}, 7000, 7000000, 1714502402));
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(LocalUiMode::Normal),
                             static_cast<std::uint8_t>(app.snapshot().localMode));
 }
 
-void test_app_controller_result_ok_hold_enters_local_record_calibration_after_5s() {
+void test_app_controller_result_ok_hold_does_not_enter_local_record_calibration() {
     SystemConfig config = makeDefaultConfig();
     StatisticsStore statistics;
     statistics.reset({20260506, 202619, 202605});
@@ -2068,25 +2130,24 @@ void test_app_controller_result_ok_hold_enters_local_record_calibration_after_5s
     applyTestMeteringScheme(app);
 
     finishVolumeRun(app);
-    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(LocalUiMode::Result),
-                            static_cast<std::uint8_t>(app.snapshot().localMode));
+    TEST_ASSERT_NOT_EQUAL(static_cast<std::uint8_t>(LocalUiMode::RecordCalibration),
+                          static_cast<std::uint8_t>(app.snapshot().localMode));
     TEST_ASSERT_TRUE(app.snapshot().calibrationReady);
 
     app.tick(input({false, true, false, false}, 6000, 6000000, 1714502401));
     app.tick(input({false, true, false, false}, 6000 + kButtonDebounceMs + kButtonLongPressMs,
                    (6000 + kButtonDebounceMs + kButtonLongPressMs) * 1000UL,
                    1714502402));
-    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(LocalUiMode::Result),
-                            static_cast<std::uint8_t>(app.snapshot().localMode));
+    TEST_ASSERT_NOT_EQUAL(static_cast<std::uint8_t>(LocalUiMode::RecordCalibration),
+                          static_cast<std::uint8_t>(app.snapshot().localMode));
 
     app.tick(input({false, true, false, false}, 11000, 11000000, 1714502406));
-    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(LocalUiMode::RecordCalibration),
+    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(LocalUiMode::Result),
                             static_cast<std::uint8_t>(app.snapshot().localMode));
-    TEST_ASSERT_EQUAL_UINT32(1500, app.snapshot().calibrationActualMl);
-    TEST_ASSERT_EQUAL_UINT32(100, app.snapshot().calibrationStepMl);
+    TEST_ASSERT_EQUAL_size_t(0, calibrations.calibrations.size());
 }
 
-void test_app_controller_local_record_calibration_adjusts_and_saves_actual() {
+void test_app_controller_local_record_calibration_buttons_do_not_save_actual() {
     SystemConfig config = makeDefaultConfig();
     StatisticsStore statistics;
     statistics.reset({20260506, 202619, 202605});
@@ -2101,16 +2162,13 @@ void test_app_controller_local_record_calibration_adjusts_and_saves_actual() {
     app.tick(input({false, true, false, false}, 11000, 11000000, 1714502406));
 
     pressAndReleasePlus(app, 11200);
-    TEST_ASSERT_EQUAL_UINT32(1600, app.snapshot().calibrationActualMl);
     pressAndReleaseMinus(app, 11400);
-    TEST_ASSERT_EQUAL_UINT32(1500, app.snapshot().calibrationActualMl);
     pressAndReleasePlus(app, 11600);
     pressAndReleaseOk(app, 11800);
 
-    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(LocalUiMode::Result),
-                            static_cast<std::uint8_t>(app.snapshot().localMode));
-    TEST_ASSERT_EQUAL_size_t(1, calibrations.calibrations.size());
-    TEST_ASSERT_EQUAL_UINT32(1600, calibrations.calibrations[0].actualMl);
+    TEST_ASSERT_NOT_EQUAL(static_cast<std::uint8_t>(LocalUiMode::RecordCalibration),
+                          static_cast<std::uint8_t>(app.snapshot().localMode));
+    TEST_ASSERT_EQUAL_size_t(0, calibrations.calibrations.size());
 }
 
 void test_app_controller_snapshot_reports_current_flow_rate() {
@@ -2243,8 +2301,10 @@ int main(int argc, char** argv) {
     RUN_TEST(test_app_controller_calibration_ready_and_generated_time_out_from_last_action);
     RUN_TEST(test_app_controller_reboot_drops_awaiting_actual_when_ram_trace_missing);
     RUN_TEST(test_app_controller_local_ok_starts_calibration_run_and_completion_awaits_actual);
+    RUN_TEST(test_app_controller_calibration_run_ignores_preset_target_until_local_cancel);
     RUN_TEST(test_app_controller_generates_calibration_session_candidate);
     RUN_TEST(test_app_controller_auto_generates_after_second_valid_calibration_sample);
+    RUN_TEST(test_app_controller_generated_calibration_can_continue_collecting_samples);
     RUN_TEST(test_app_controller_submit_actual_succeeds_when_auto_refresh_cannot_generate);
     RUN_TEST(test_app_controller_removed_valid_sample_clears_generated_candidate);
     RUN_TEST(test_app_controller_remove_sample_session_save_failure_keeps_original_trace);
@@ -2257,8 +2317,8 @@ int main(int argc, char** argv) {
     RUN_TEST(test_app_controller_pause_timeout_trace_is_not_marked_error_and_can_calibrate);
     RUN_TEST(test_app_controller_applies_calibration_from_pause_timeout_record);
     RUN_TEST(test_app_controller_result_display_exits_after_configured_timeout);
-    RUN_TEST(test_app_controller_result_ok_hold_enters_local_record_calibration_after_5s);
-    RUN_TEST(test_app_controller_local_record_calibration_adjusts_and_saves_actual);
+    RUN_TEST(test_app_controller_result_ok_hold_does_not_enter_local_record_calibration);
+    RUN_TEST(test_app_controller_local_record_calibration_buttons_do_not_save_actual);
     RUN_TEST(test_app_controller_snapshot_reports_current_flow_rate);
     RUN_TEST(test_app_controller_uses_window_flow_for_high_flow_safety);
     RUN_TEST(test_app_controller_uses_shared_run_flow_reset_helper);

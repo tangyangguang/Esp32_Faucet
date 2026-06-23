@@ -527,7 +527,7 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "sendDurationSeconds(pauseTotalUs)"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "<tr><th>暂停后恢复</th><td>%s</td></tr>"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "暂停后恢复出水，属于多段出水，不参与启动段和分段校准拟合。"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "effectivePulseCount(*trace, samples, trace->sampleCount)"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "effectivePulseCount(*trace, samples.get(), trace->sampleCount)"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "bucketRunningPulseDelta"));
     TEST_ASSERT_NULL(std::strstr(buffer, "bucketOnlyHasRunningSamples"));
     TEST_ASSERT_NULL(std::strstr(buffer, "bucketRunning ? bucketRunningPulseDelta(samples, trace->sampleCount, buckets[i]) : 0"));
@@ -681,8 +681,8 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NOT_NULL(std::strstr(samplesPanel, "<h3>本次校准样本</h3>"));
     TEST_ASSERT_NOT_NULL(std::strstr(samplesPanel, "这里记录当前校准会话的接水记录"));
     TEST_ASSERT_NOT_NULL(std::strstr(samplesPanel,
-                                     "<table class='calibration-sample-table'><tr><th>时间</th><th>时长</th><th>目标容量</th><th>估算出水</th><th>量杯实测</th><th>总脉冲</th><th>前 %u 秒脉冲</th><th>稳态识别</th><th>样本来源</th><th>校准用途</th><th>操作</th></tr>"));
-    TEST_ASSERT_NOT_NULL(std::strstr(samplesPanel, "colspan='11'>还没有本次校准样本"));
+                                     "<table class='calibration-sample-table'><tr><th>时间</th><th>时长</th><th>目标容量</th><th>估算出水</th><th>量杯实测</th><th>总脉冲</th><th>前 %u 秒脉冲</th><th>脉冲明细</th><th>稳态识别</th><th>样本来源</th><th>校准用途</th><th>操作</th></tr>"));
+    TEST_ASSERT_NOT_NULL(std::strstr(samplesPanel, "colspan='12'>还没有本次校准样本"));
     TEST_ASSERT_NULL(std::strstr(samplesPanel, "sampleSeconds"));
     TEST_ASSERT_NULL(std::strstr(samplesPanel, "sample-window-form"));
     TEST_ASSERT_NULL(std::strstr(samplesPanel, "前几秒脉冲总数"));
@@ -694,7 +694,11 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "configuredPulseObservationWindowSec"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "kDefaultPulseObservationWindowSec"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "kMaxPulseObservationWindowSec"));
-    TEST_ASSERT_NULL(std::strstr(samplesPanel, "\">查看</a>"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "sendCalibrationAttemptTraceLink"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "/faucet/calibration/detail?from=calibration&slot=%u&bucket=1"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "g_context.pulseTraces->findByRecord(attempt.record)"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "/faucet/calibration/detail?from=calibration&trace=%lu&bucket=1"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, ">脉冲明细</a>"));
     TEST_ASSERT_NULL(std::strstr(buffer, "name='action' value='save_latest_trace'"));
     TEST_ASSERT_NULL(std::strstr(buffer, "name='action' value='delete_latest_trace'"));
     TEST_ASSERT_NULL(std::strstr(buffer, "handleTraceSaveApi"));
@@ -868,7 +872,7 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NULL(std::strstr(schemeList, "scheme-meta-lines"));
     TEST_ASSERT_NULL(std::strstr(schemeList, "meteringSchemeSourceName(scheme.sourceType)"));
     TEST_ASSERT_NOT_NULL(std::strstr(schemeList, "meteringSchemeUsedEverForWeb(scheme) ? \"已使用\" : \"未使用\""));
-    TEST_ASSERT_NOT_NULL(std::strstr(schemeList, "sendManualParameterLink(\"复制参数\", scheme.params)"));
+    TEST_ASSERT_NOT_NULL(std::strstr(schemeList, "sendManualParameterLink(\"复制参数\", scheme)"));
     TEST_ASSERT_NOT_NULL(std::strstr(schemeList, "sendSchemeDetailButton(scheme, activeId)"));
     TEST_ASSERT_NOT_NULL(std::strstr(schemeList, "sendMeteringTrialButton"));
     TEST_ASSERT_NULL(std::strstr(schemeList, "canDeleteMeteringScheme(scheme, activeId)"));
@@ -1468,7 +1472,7 @@ void test_calibration_requested_ui_adjustments_are_enforced() {
     TEST_ASSERT_NULL(findWithin(samplesPanel, generationPanel, "CalibrationSessionRecord session{}"));
     TEST_ASSERT_NOT_NULL(findWithin(samplesPanel, generationPanel, "new (std::nothrow) CalibrationSessionRecord"));
     TEST_ASSERT_NOT_NULL(findWithin(samplesPanel, generationPanel, "sendCalibrationSessionAttemptRow(*session, attempt"));
-    TEST_ASSERT_NOT_NULL(findWithin(samplesPanel, generationPanel, "colspan='11'>还没有本次校准样本"));
+    TEST_ASSERT_NOT_NULL(findWithin(samplesPanel, generationPanel, "colspan='12'>还没有本次校准样本"));
     TEST_ASSERT_NULL(findWithin(samplesPanel, generationPanel, "CalibrationSampleListItem"));
     TEST_ASSERT_NULL(findWithin(samplesPanel, generationPanel, "std::sort(sampleItems"));
     TEST_ASSERT_NULL(std::strstr(buffer, "const WaterUsageSummary summary = aggregateWaterRecords"));
@@ -1753,6 +1757,23 @@ void test_home_status_script_discards_stale_status_responses() {
     TEST_ASSERT_NOT_NULL(std::strstr(script, "faucetApplyHomeStatus(s,seq);"));
 }
 
+void test_flow_calibration_active_refresh_uses_status_api_not_full_page_reload() {
+    FILE* file = std::fopen("src/web/FaucetWeb.cpp", "rb");
+    TEST_ASSERT_NOT_NULL(file);
+    static char buffer[420000]{};
+    const std::size_t read = std::fread(buffer, 1, sizeof(buffer) - 1, file);
+    std::fclose(file);
+    TEST_ASSERT_GREATER_THAN_size_t(0, read);
+
+    const char* refresh = std::strstr(buffer, "function faucetStartCalibrationRefresh");
+    TEST_ASSERT_NOT_NULL(refresh);
+    const char* nextFunction = std::strstr(refresh, "function faucetEstimateMeteringTrial");
+    TEST_ASSERT_NOT_NULL(nextFunction);
+    TEST_ASSERT_NOT_NULL(findWithin(refresh, nextFunction, "fetch('/api/faucet/status'"));
+    TEST_ASSERT_NULL(findWithin(refresh, nextFunction, "window.location.assign"));
+    TEST_ASSERT_NULL(findWithin(refresh, nextFunction, "location.reload"));
+}
+
 void test_business_post_handlers_use_post_allowed_guard() {
     FILE* file = std::fopen("src/web/FaucetWeb.cpp", "rb");
     TEST_ASSERT_NOT_NULL(file);
@@ -1952,5 +1973,6 @@ int main(int argc, char** argv) {
     RUN_TEST(test_main_loop_routes_cancel_stop_through_debounced_button_input);
     RUN_TEST(test_esp32_file_backend_has_create_sized_fallback_for_fresh_littlefs_files);
     RUN_TEST(test_web_handler_mapping_does_not_duplicate_route_paths);
+    RUN_TEST(test_flow_calibration_active_refresh_uses_status_api_not_full_page_reload);
     return UNITY_END();
 }

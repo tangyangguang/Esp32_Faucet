@@ -729,6 +729,8 @@ void test_calibration_home_shows_three_expanded_sections_without_flow_tables() {
     TEST_ASSERT_TRUE(body.find("<h3>当前计量参数</h3>") < body.find("<h3>温度校准</h3>"));
     TEST_ASSERT_TRUE(body.find("<h3>温度校准</h3>") < body.find("<h3>水质校准</h3>"));
     TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("href='/faucet/calibration/flow'"));
+    TEST_ASSERT_EQUAL(std::string::npos, body.find("href='/faucet/calibration/flow?manual=1'"));
+    TEST_ASSERT_EQUAL(std::string::npos, body.find("href='/faucet/calibration/flow#metering-history'"));
     TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("进入温度校准"));
     TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("进入水质校准"));
     TEST_ASSERT_EQUAL(std::string::npos, body.find("本次校准接水记录"));
@@ -736,6 +738,30 @@ void test_calibration_home_shows_three_expanded_sections_without_flow_tables() {
     TEST_ASSERT_EQUAL(std::string::npos, body.find("保存参考温度"));
     TEST_ASSERT_EQUAL(std::string::npos, body.find("保存为校准点"));
     TEST_ASSERT_EQUAL(std::string::npos, body.find("<details"));
+}
+
+void test_flow_calibration_refresh_preserves_active_session_state() {
+    WebFixture fixture;
+    TEST_ASSERT_TRUE(fixture.app.startCalibrationSessionForWeb(testNowSeconds()));
+    registerRoutes();
+
+    Esp32BaseWeb::nativeTestBeginRequest(Esp32BaseWeb::METHOD_GET, "/faucet/calibration");
+    Esp32BaseWeb::nativeTestSetAuthenticated(true);
+    Esp32BaseWeb::nativeTestSetSameOrigin(true);
+    TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch("/faucet/calibration", Esp32BaseWeb::METHOD_GET));
+    const std::string homeBody = Esp32BaseWeb::nativeTestResponse().body;
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, homeBody.find("继续流量计校准"));
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, homeBody.find("等待本地出水"));
+
+    Esp32BaseWeb::nativeTestBeginRequest(Esp32BaseWeb::METHOD_GET, "/faucet/calibration/flow");
+    Esp32BaseWeb::nativeTestSetAuthenticated(true);
+    Esp32BaseWeb::nativeTestSetSameOrigin(true);
+    TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch("/faucet/calibration/flow", Esp32BaseWeb::METHOD_GET));
+    const std::string& flowBody = Esp32BaseWeb::nativeTestResponse().body;
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, flowBody.find("等待本地出水"));
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, flowBody.find("设备正在等待本地 OK 开始校准出水"));
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, flowBody.find("data-calibration-refresh"));
+    TEST_ASSERT_EQUAL(std::string::npos, flowBody.find("value='开始校准流程'"));
 }
 
 void test_calibration_page_initial_render_shows_tds_controls() {
@@ -907,6 +933,7 @@ void test_flow_calibration_manual_input_prefills_copied_parameters() {
     Esp32BaseWeb::nativeTestSetAuthenticated(true);
     Esp32BaseWeb::nativeTestSetSameOrigin(true);
     Esp32BaseWeb::nativeTestSetParam("manual", "1");
+    Esp32BaseWeb::nativeTestSetParam("name", "kitchen copied");
     Esp32BaseWeb::nativeTestSetParam("startupPulseCount", "12");
     Esp32BaseWeb::nativeTestSetParam("startupVolumeMl", "345");
     Esp32BaseWeb::nativeTestSetParam("stablePulsePerLiter", "1234");
@@ -918,16 +945,19 @@ void test_flow_calibration_manual_input_prefills_copied_parameters() {
     TEST_ASSERT_EQUAL(200, Esp32BaseWeb::nativeTestResponse().code);
     const std::string& body = Esp32BaseWeb::nativeTestResponse().body;
     TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("<h2>手工输入参数</h2>"));
+    const std::size_t nameField = body.find("name='name'");
     const std::size_t startupPulseField = body.find("name='startupPulseCount'");
     const std::size_t startupVolumeField = body.find("name='startupVolumeMl'");
     const std::size_t stablePplField = body.find("name='stablePulsePerLiter'");
     const std::size_t startupDurationField = body.find("name='startupDurationSec'");
     const std::size_t stableFlowField = body.find("name='stableFlowMlPerMin'");
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, nameField);
     TEST_ASSERT_NOT_EQUAL(std::string::npos, startupPulseField);
     TEST_ASSERT_NOT_EQUAL(std::string::npos, startupVolumeField);
     TEST_ASSERT_NOT_EQUAL(std::string::npos, stablePplField);
     TEST_ASSERT_NOT_EQUAL(std::string::npos, startupDurationField);
     TEST_ASSERT_NOT_EQUAL(std::string::npos, stableFlowField);
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("value='kitchen copied'", nameField));
     TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("value='12'", startupPulseField));
     TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("value='345'", startupVolumeField));
     TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("value='1234'", stablePplField));
@@ -1151,7 +1181,7 @@ void test_flow_calibration_session_start_redirects_success_from_idle() {
                              Esp32BaseWeb::nativeTestResponseHeader("Location"));
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(LocalUiMode::Calibration),
                             static_cast<std::uint8_t>(fixture.app.snapshot().localMode));
-    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationSessionStatus::Preparing),
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationSessionStatus::WaitingLocalRun),
                             static_cast<unsigned>(fixture.app.snapshot().calibrationStatus));
 }
 
@@ -1170,7 +1200,7 @@ void test_calibration_session_start_recovers_missing_session_file_after_format()
     TEST_ASSERT_EQUAL_STRING("/faucet/calibration/flow?saved=session_started",
                              Esp32BaseWeb::nativeTestResponseHeader("Location"));
     TEST_ASSERT_TRUE(fixture.calibrationFiles.exists("/cal-session.bin"));
-    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationSessionStatus::Preparing),
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationSessionStatus::WaitingLocalRun),
                             static_cast<unsigned>(fixture.app.snapshot().calibrationStatus));
 }
 
@@ -1328,10 +1358,40 @@ void test_flow_calibration_sample_table_only_shows_remove_for_active_samples() {
     TEST_ASSERT_EQUAL(200, Esp32BaseWeb::nativeTestResponse().code);
     const std::string& body = Esp32BaseWeb::nativeTestResponse().body;
     TEST_ASSERT_EQUAL_size_t(2, countOccurrences(body, "value='remove_sample'"));
+    TEST_ASSERT_NOT_EQUAL(std::string::npos,
+                          body.find("href='/faucet/calibration/detail?from=calibration&slot=0&bucket=1'"));
+    TEST_ASSERT_NOT_EQUAL(std::string::npos,
+                          body.find("href='/faucet/calibration/detail?from=calibration&slot=1&bucket=1'"));
+    TEST_ASSERT_EQUAL(std::string::npos, body.find("RAM 已淘汰"));
     const std::size_t removedStatus = body.find("已移除");
     TEST_ASSERT_NOT_EQUAL(std::string::npos, removedStatus);
     const std::size_t nextRemove = body.find("value='remove_sample'", removedStatus);
     TEST_ASSERT_EQUAL(std::string::npos, nextRemove);
+}
+
+void test_calibration_detail_reads_persisted_session_trace_without_ram_cache() {
+    WebFixture fixture;
+    CalibrationSessionRecord session = makeCalibrationSession(77, testNowSeconds());
+    session.status = CalibrationSessionStatus::WaitingLocalRun;
+    saveWebSessionAttempt(fixture.traceStore, session, 0, CalibrationAttemptStatus::Valid, 1500);
+    TEST_ASSERT_TRUE(fixture.sessionStore.save(session));
+    registerRoutes();
+
+    Esp32BaseWeb::nativeTestBeginRequest(Esp32BaseWeb::METHOD_GET, "/faucet/calibration/detail");
+    Esp32BaseWeb::nativeTestSetAuthenticated(true);
+    Esp32BaseWeb::nativeTestSetSameOrigin(true);
+    Esp32BaseWeb::nativeTestSetParam("from", "calibration");
+    Esp32BaseWeb::nativeTestSetParam("slot", "0");
+    Esp32BaseWeb::nativeTestSetParam("bucket", "1");
+
+    TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch("/faucet/calibration/detail", Esp32BaseWeb::METHOD_GET));
+
+    TEST_ASSERT_EQUAL(200, Esp32BaseWeb::nativeTestResponse().code);
+    const std::string& body = Esp32BaseWeb::nativeTestResponse().body;
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("<h2>脉冲明细</h2>"));
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("href='/faucet/calibration/detail?from=calibration&slot=0&bucket=2'"));
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("原始明细"));
+    TEST_ASSERT_EQUAL(std::string::npos, body.find("RAM 缓存淘汰"));
 }
 
 void test_tds_calibration_start_redirects_busy_to_calibration_page() {
@@ -1538,6 +1598,7 @@ int main(int, char**) {
     RUN_TEST(test_after_format_fs_notification_notifies_app_storage_rebuild);
     RUN_TEST(test_stats_page_initial_render_shows_complete_report);
     RUN_TEST(test_calibration_home_shows_three_expanded_sections_without_flow_tables);
+    RUN_TEST(test_flow_calibration_refresh_preserves_active_session_state);
     RUN_TEST(test_calibration_page_initial_render_shows_tds_controls);
     RUN_TEST(test_tds_calibration_prioritizes_two_point_flow);
     RUN_TEST(test_temperature_calibration_uses_simple_card_and_celsius_input);
@@ -1566,6 +1627,7 @@ int main(int, char**) {
     RUN_TEST(test_flow_calibration_remove_sample_redirects_invalid_state_when_sample_not_removable);
     RUN_TEST(test_flow_calibration_remove_sample_redirects_busy_without_changing_sample);
     RUN_TEST(test_flow_calibration_sample_table_only_shows_remove_for_active_samples);
+    RUN_TEST(test_calibration_detail_reads_persisted_session_trace_without_ram_cache);
     RUN_TEST(test_tds_calibration_start_redirects_busy_to_calibration_page);
     RUN_TEST(test_tds_calibration_start_redirects_success_from_idle);
     RUN_TEST(test_tds_calibration_start_redirects_invalid_state_when_session_exists);

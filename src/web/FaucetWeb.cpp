@@ -1927,9 +1927,7 @@ void sendCalibrationPageScript() {
                             "function faucetOpenSchemeDetail(btn){var modal=document.getElementById('scheme-detail-modal');if(!modal)return;var d=btn.dataset;faucetSetSchemeDetail(modal,'id',d.detailId);faucetSetSchemeDetail(modal,'name',d.detailName);faucetSetSchemeDetail(modal,'status',d.detailStatus);faucetSetSchemeDetail(modal,'source',d.detailSource);faucetSetSchemeDetail(modal,'createdAt',d.detailCreatedAt);faucetSetSchemeDetail(modal,'startupPulses',d.detailStartupPulses);faucetSetSchemeDetail(modal,'startupVolume',d.detailStartupVolume);faucetSetSchemeDetail(modal,'stablePpl',d.detailStablePpl);faucetSetSchemeDetail(modal,'startupDuration',d.detailStartupDuration);faucetSetSchemeDetail(modal,'stableFlow',d.detailStableFlow);faucetSetSchemeDetail(modal,'sampleCount',d.detailSampleCount);faucetSetSchemeDetail(modal,'actualRange',d.detailActualRange);faucetSetSchemeDetail(modal,'maxError',d.detailMaxError);modal.classList.add('is-open');modal.setAttribute('aria-hidden','false');}"
                             "function faucetCloseSchemeDetail(){var modal=document.getElementById('scheme-detail-modal');if(modal){modal.classList.remove('is-open');modal.setAttribute('aria-hidden','true');}}"
                             "function faucetReplaceCalibrationSection(id,url){return fetch(url,{cache:'no-store',credentials:'same-origin'}).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.text();}).then(function(html){var old=document.getElementById(id);if(!old)return;var box=document.createElement('div');box.innerHTML=html;var next=box.querySelector('#'+id);if(next)old.replaceWith(next);});}"
-                            "function faucetRefreshCalibrationSamples(){return faucetReplaceCalibrationSection('calibration-samples','/faucet/calibration?partial=samples');}"
                             "function faucetRefreshFlowCalibrationCore(){return Promise.all([faucetReplaceCalibrationSection('calibration-session','/faucet/calibration/flow?partial=session'),faucetReplaceCalibrationSection('calibration-samples','/faucet/calibration/flow?partial=samples')]).then(function(){faucetStartCalibrationCountdown();faucetStartCalibrationRefresh();});}"
-                            "function faucetSubmitSampleCalibration(f){if(typeof once==='function'&&!once(f))return false;fetch('/faucet/calibration',{method:'POST',body:new FormData(f),cache:'no-store',credentials:'same-origin'}).then(function(r){if(!r.ok)return faucetReadCalibrationError(r).then(function(code){throw new Error(code);});return r.json();}).then(function(){return faucetRefreshCalibrationSamples().catch(function(){faucetResetSampleCalibrationForm(f);alert('校准已保存，但页面刷新失败，请手动刷新查看最新状态。');});}).catch(function(e){faucetResetSampleCalibrationForm(f);alert('保存失败：'+faucetCalibrationErrorMessage(e.message));});return false;}"
                             "function faucetSubmitFlowCalibrationAction(f){if(typeof once==='function'&&!once(f))return false;var fd=new FormData(f);fd.set('ajax','1');fetch('/faucet/calibration/flow',{method:'POST',body:fd,cache:'no-store',credentials:'same-origin'}).then(function(r){if(!r.ok)return faucetReadCalibrationError(r).then(function(code){throw new Error(code);});return r.json();}).then(function(){return faucetRefreshFlowCalibrationCore().catch(function(){alert('操作已保存，但页面刷新失败，请手动刷新查看最新状态。');});}).catch(function(e){faucetResetSampleCalibrationForm(f);alert('操作失败：'+faucetCalibrationErrorMessage(e.message));});return false;}"
                             "faucetStartCalibrationCountdown();"
                             "faucetStartCalibrationRefresh();"
@@ -3671,6 +3669,11 @@ void handleCalibrationPage() {
     }
 
     const AppSnapshot snapshot = g_context.app->snapshot();
+    if (!calibrationSessionInactive(snapshot.calibrationStatus)) {
+        Esp32BaseWeb::redirectSeeOther("/faucet/calibration/flow");
+        return;
+    }
+
     Esp32BaseWeb::sendHeader("校准");
     Esp32BaseWeb::sendChunk("<h2>校准</h2>");
     sendNoticeFromQuery();

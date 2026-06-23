@@ -744,7 +744,7 @@ void test_calibration_home_shows_three_expanded_sections_without_flow_tables() {
     TEST_ASSERT_EQUAL(std::string::npos, body.find("<details"));
 }
 
-void test_flow_calibration_refresh_preserves_active_session_state() {
+void test_calibration_home_redirects_active_flow_session_to_workflow() {
     WebFixture fixture;
     TEST_ASSERT_TRUE(fixture.app.startCalibrationSessionForWeb(testNowSeconds()));
     registerRoutes();
@@ -753,9 +753,15 @@ void test_flow_calibration_refresh_preserves_active_session_state() {
     Esp32BaseWeb::nativeTestSetAuthenticated(true);
     Esp32BaseWeb::nativeTestSetSameOrigin(true);
     TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch("/faucet/calibration", Esp32BaseWeb::METHOD_GET));
-    const std::string homeBody = Esp32BaseWeb::nativeTestResponse().body;
-    TEST_ASSERT_NOT_EQUAL(std::string::npos, homeBody.find("继续流量计校准"));
-    TEST_ASSERT_NOT_EQUAL(std::string::npos, homeBody.find("等待本地出水"));
+
+    TEST_ASSERT_EQUAL(303, Esp32BaseWeb::nativeTestResponse().code);
+    TEST_ASSERT_EQUAL_STRING("/faucet/calibration/flow", Esp32BaseWeb::nativeTestResponseHeader("Location"));
+}
+
+void test_flow_calibration_page_preserves_active_session_state() {
+    WebFixture fixture;
+    TEST_ASSERT_TRUE(fixture.app.startCalibrationSessionForWeb(testNowSeconds()));
+    registerRoutes();
 
     Esp32BaseWeb::nativeTestBeginRequest(Esp32BaseWeb::METHOD_GET, "/faucet/calibration/flow");
     Esp32BaseWeb::nativeTestSetAuthenticated(true);
@@ -1625,7 +1631,8 @@ int main(int, char**) {
     RUN_TEST(test_after_format_fs_notification_notifies_app_storage_rebuild);
     RUN_TEST(test_stats_page_initial_render_shows_complete_report);
     RUN_TEST(test_calibration_home_shows_three_expanded_sections_without_flow_tables);
-    RUN_TEST(test_flow_calibration_refresh_preserves_active_session_state);
+    RUN_TEST(test_calibration_home_redirects_active_flow_session_to_workflow);
+    RUN_TEST(test_flow_calibration_page_preserves_active_session_state);
     RUN_TEST(test_calibration_page_initial_render_shows_tds_controls);
     RUN_TEST(test_tds_calibration_prioritizes_two_point_flow);
     RUN_TEST(test_temperature_calibration_uses_simple_card_and_celsius_input);

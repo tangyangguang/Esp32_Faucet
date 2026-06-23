@@ -619,7 +619,7 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NULL(std::strstr(buffer, "saveRamTraceToDevice"));
     TEST_ASSERT_NULL(std::strstr(buffer, "calibration?saved=actual"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "faucetShowSampleCalibration"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "faucetSubmitSampleCalibration"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "faucetSubmitFlowCalibrationAction"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "faucetReplaceCalibrationSection"));
     TEST_ASSERT_NULL(std::strstr(buffer, "fetch('/faucet/calibration?partial=latest'"));
     TEST_ASSERT_NULL(std::strstr(buffer, "name='ajax' value='1'"));
@@ -1190,15 +1190,15 @@ void test_calibration_page_reports_specific_errors_and_hides_stale_generated_res
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "faucetCalibrationErrorMessage"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "no_calibration_record"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "这条样本不可校准"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "保存失败："));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "操作失败："));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "'HTTP 401':'认证已失效，请刷新页面重新登录。'"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "'HTTP 404':'保存接口路径不存在，请刷新页面后重试。'"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "credentials:'same-origin'"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "fetch('/faucet/calibration',{method:'POST'"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "fetch('/faucet/calibration/flow',{method:'POST'"));
     TEST_ASSERT_NULL(std::strstr(buffer, "fetch(f.action,{method:'POST'"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "fetch('/faucet/calibration',{method:'POST',body:new FormData(f),cache:'no-store',credentials:'same-origin'}"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "fetch('/faucet/calibration/flow',{method:'POST',body:fd,cache:'no-store',credentials:'same-origin'}"));
     TEST_ASSERT_NULL(std::strstr(buffer, "faucetSubmitGenerationAction"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "校准已保存，但页面刷新失败，请手动刷新查看最新状态。"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "操作已保存，但页面刷新失败，请手动刷新查看最新状态。"));
     TEST_ASSERT_NULL(std::strstr(buffer, "辅助计算已完成，但页面刷新失败，请手动刷新查看最新状态。"));
     TEST_ASSERT_NULL(std::strstr(buffer, "alert('保存失败，请稍后重试。')"));
     TEST_ASSERT_NULL(std::strstr(buffer, "样本质量提醒"));
@@ -1407,8 +1407,10 @@ void test_calibration_requested_ui_adjustments_are_enforced() {
     TEST_ASSERT_NULL(std::strstr(buffer, "const WaterUsageSummary summary = aggregateWaterRecords"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "aggregateWaterRecordsInto"));
 
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "faucetRefreshCalibrationSamples"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "return faucetRefreshCalibrationSamples()"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "faucetRefreshFlowCalibrationCore"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "/faucet/calibration/flow?partial=samples"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "/faucet/calibration?partial=samples"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "faucetSubmitSampleCalibration"));
     TEST_ASSERT_NULL(std::strstr(buffer, "function faucetRefreshCalibrationPanels()"));
     TEST_ASSERT_NULL(std::strstr(buffer, "Promise.all([faucetReplaceCalibrationSection('scheme-generation'"));
 

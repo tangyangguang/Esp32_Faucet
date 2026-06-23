@@ -52,8 +52,6 @@ constexpr std::uint32_t kPulseTraceBucketMs = 500;
 constexpr std::uint32_t kPulseTraceStartupDetailMs = 15000;
 constexpr std::size_t kPulseTraceMaxBucketsPerTrace = 1200;
 constexpr std::size_t kPulseTraceMaxStartupEdgesPerTrace = 4096;
-constexpr std::uint32_t kPulseTraceMaxRawEdgesPerTrace = 4096;
-constexpr std::uint32_t kPulseTraceSamplesPerTrace = kPulseTraceMaxRawEdgesPerTrace;
 
 constexpr std::uint32_t kDefaultValveFullPowerSec = 5;
 constexpr std::uint8_t kDefaultValveHoldDutyPercent = 70;

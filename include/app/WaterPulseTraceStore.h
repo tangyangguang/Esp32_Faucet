@@ -45,8 +45,6 @@ struct WaterPulseTrace {
     std::uint32_t traceId;
     std::uint32_t startTime;
     WaterRecord record;
-    std::size_t sampleStart;
-    std::size_t sampleCount;
     std::size_t bucketStart;
     std::size_t bucketCount;
     std::size_t startupEdgeStart;
@@ -60,7 +58,6 @@ struct WaterPulseTrace {
     WaterPulseTraceState finalState;
     std::uint8_t flags;
     bool finished;
-    bool truncated;
     bool resumedAfterPause;
     bool pauseWindowOverflow;
     bool hasEffectivePulse;
@@ -71,9 +68,10 @@ struct WaterPulseTrace {
 struct WaterPulseTraceStats {
     std::size_t traceCount;
     std::size_t traceCapacity;
-    std::size_t sampleCount;
-    std::size_t sampleCapacity;
-    std::size_t sampleCapacityPerTrace;
+    std::size_t bucketCount;
+    std::size_t bucketCapacity;
+    std::size_t startupEdgeCount;
+    std::size_t startupEdgeCapacity;
     std::size_t usedBytes;
     std::uint32_t oldestStartTime;
     std::uint32_t latestStartTime;
@@ -114,9 +112,7 @@ struct WaterPulseTraceBucket {
     std::uint32_t startSec;
     std::uint32_t durationSec;
     std::uint32_t pulseDelta;
-    std::uint32_t rawEdgeDelta;
     std::uint32_t cumulativePulses;
-    std::uint32_t cumulativeRawEdges;
     WaterPulseTraceState state;
 };
 
@@ -172,11 +168,6 @@ class WaterPulseTraceStore {
 public:
     WaterPulseTraceStore(WaterPulseTrace* traces,
                          std::size_t traceCapacity,
-                         WaterPulseTraceSample* samples,
-                         std::size_t sampleCapacity,
-                         std::size_t recentTraceLimit);
-    WaterPulseTraceStore(WaterPulseTrace* traces,
-                         std::size_t traceCapacity,
                          WaterPulseTraceBucketSample* buckets,
                          std::size_t bucketCapacity,
                          WaterPulseTraceSample* startupEdges,
@@ -186,7 +177,6 @@ public:
     void setRecentTraceLimit(std::size_t recentTraceLimit);
     std::uint32_t beginTrace(std::uint32_t startTime, std::uint32_t pulseMinIntervalUs);
     bool appendPulseEdge(std::uint32_t traceId, std::uint32_t elapsedUs);
-    bool appendRawEdge(std::uint32_t traceId, std::uint32_t elapsedUs);
     bool finishTrace(std::uint32_t traceId,
                      const WaterRecord& record,
                      WaterPulseTraceState finalState,
@@ -200,7 +190,6 @@ public:
     WaterPulseTrace* findById(std::uint32_t traceId);
     const WaterPulseTrace* findByRecord(const WaterRecord& record) const;
     const WaterPulseTrace* traceAt(std::size_t index) const;
-    const WaterPulseTraceSample* sampleAt(const WaterPulseTrace& trace, std::size_t index) const;
     const WaterPulseTraceBucketSample* bucketAt(const WaterPulseTrace& trace, std::size_t index) const;
     const WaterPulseTraceSample* startupEdgeAt(const WaterPulseTrace& trace, std::size_t index) const;
     WaterPulseTraceStats stats() const;
@@ -215,9 +204,6 @@ private:
     WaterPulseTrace* traces_;
     std::size_t traceCapacity_;
     std::size_t traceCount_;
-    WaterPulseTraceSample* samples_;
-    std::size_t sampleCapacity_;
-    std::size_t sampleCount_;
     WaterPulseTraceBucketSample* buckets_;
     std::size_t bucketCapacity_;
     std::size_t bucketCount_;
@@ -229,26 +215,23 @@ private:
 };
 
 std::size_t aggregateWaterPulseTrace(const WaterPulseTrace& trace,
-                                     const WaterPulseTraceSample* samples,
-                                     std::size_t sampleCount,
+                                     const WaterPulseTraceBucketSample* compactBuckets,
+                                     std::size_t compactBucketCount,
                                      std::uint32_t bucketSeconds,
                                      WaterPulseTraceBucket* buckets,
                                      std::size_t bucketCapacity);
 
 WaterPulseTraceAnalysis analyzeWaterPulseTrace(const WaterPulseTrace& trace,
-                                               const WaterPulseTraceSample* samples,
-                                               std::size_t sampleCount);
+                                               const WaterPulseTraceBucketSample* compactBuckets,
+                                               std::size_t compactBucketCount);
 WaterPulseTraceAnalysis analyzeWaterPulseTrace(const WaterPulseTrace& trace,
-                                               const WaterPulseTraceSample* samples,
-                                               std::size_t sampleCount,
+                                               const WaterPulseTraceBucketSample* compactBuckets,
+                                               std::size_t compactBucketCount,
                                                const SegmentedCalibrationOptions& options);
 WaterPulseTraceAnalysis analyzeWaterPulseTrace(const WaterPulseTrace& trace, const WaterPulseTraceStore& store);
 WaterPulseTraceAnalysis analyzeWaterPulseTrace(const WaterPulseTrace& trace,
                                                const WaterPulseTraceStore& store,
                                                const SegmentedCalibrationOptions& options);
-std::uint32_t effectivePulseCount(const WaterPulseTrace& trace,
-                                  const WaterPulseTraceSample* samples,
-                                  std::size_t sampleCount);
 bool waterPulseTraceAnalysisEligible(const WaterPulseTrace& trace);
 
 std::size_t aggregateWaterPulseTrace(const WaterPulseTrace& trace,

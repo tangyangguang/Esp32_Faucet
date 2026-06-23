@@ -7,6 +7,7 @@
 #include "app/WaterSensorManager.h"
 #include "app/WaterRecordCalibrationStore.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <cstring>
 #include <map>
@@ -351,9 +352,21 @@ void saveCalibrationSessionSample(CalibrationSessionTraceStore& traceStore,
                                   std::uint32_t stablePulses,
                                   std::uint32_t stableSeconds) {
     WaterPulseTraceSample samples[2048]{};
+    WaterPulseTraceBucketSample buckets[kPulseTraceMaxBucketsPerTrace]{};
     const std::size_t sampleCount =
         fillCalibrationSamples(samples, 2048, startupPulses, stablePulses, stableSeconds);
     TEST_ASSERT_GREATER_THAN_size_t(0, sampleCount);
+    std::size_t bucketCount = 0;
+    std::size_t startupEdgeCount = 0;
+    for (std::size_t i = 0; i < sampleCount; ++i) {
+        const std::size_t bucketIndex = samples[i].elapsedUs / (kPulseTraceBucketMs * 1000UL);
+        TEST_ASSERT_LESS_THAN_size_t(kPulseTraceMaxBucketsPerTrace, bucketIndex);
+        ++buckets[bucketIndex].pulseCount;
+        bucketCount = std::max(bucketCount, bucketIndex + 1);
+        if (samples[i].elapsedUs < kPulseTraceStartupDetailMs * 1000UL) {
+            ++startupEdgeCount;
+        }
+    }
     const std::uint32_t totalPulses = startupPulses + stablePulses;
     WaterRecord record = calibrationRecord(startTime, totalPulses, actualMl);
     record.durationSec = 5 + stableSeconds;
@@ -365,13 +378,14 @@ void saveCalibrationSessionSample(CalibrationSessionTraceStore& traceStore,
     stored.trace.traceId = slot + 1;
     stored.trace.startTime = startTime;
     stored.trace.record = record;
-    stored.trace.sampleCount = sampleCount;
+    stored.trace.bucketCount = bucketCount;
+    stored.trace.startupEdgeCount = startupEdgeCount;
     stored.trace.totalPulses = totalPulses;
     stored.trace.actualMl = actualMl;
     stored.trace.pulseMinIntervalUs = kDefaultPulseMinIntervalUs;
     stored.trace.finalState = WaterPulseTraceState::Completed;
     stored.trace.finished = true;
-    TEST_ASSERT_TRUE(traceStore.savePending(slot, stored, samples, sampleCount));
+    TEST_ASSERT_TRUE(traceStore.savePending(slot, stored, buckets, bucketCount, samples, startupEdgeCount));
     TEST_ASSERT_TRUE(traceStore.commitValid(slot, actualMl, startTime + 10));
 
     CalibrationAttempt attempt{};
@@ -406,7 +420,8 @@ struct CalibrationAppFixture {
     CalibrationSessionFileStore sessionStore;
     CalibrationSessionTraceStore traceStore;
     WaterPulseTrace ramTraces[4]{};
-    WaterPulseTraceSample ramSamples[4096]{};
+    WaterPulseTraceBucketSample ramBuckets[4096]{};
+    WaterPulseTraceSample ramStartupEdges[4096]{};
     WaterPulseTraceStore pulseTraces;
     AppController* app = nullptr;
 
@@ -415,7 +430,7 @@ struct CalibrationAppFixture {
           schemes(backend, "/schemes.bin"),
           sessionStore(backend, "/cal-session.bin"),
           traceStore(backend, "/cal-traces.bin"),
-          pulseTraces(ramTraces, 4, ramSamples, 4096, 4) {
+          pulseTraces(ramTraces, 4, ramBuckets, 4096, ramStartupEdges, 4096, 4) {
         statistics.reset({20260506, 202619, 202605});
         TEST_ASSERT_TRUE(prepareMeteringScheme(schemes, 225, active));
         TEST_ASSERT_TRUE(sessionStore.begin());
@@ -519,7 +534,7 @@ void savePendingRamCalibrationAttempt(CalibrationAppFixture& fixture,
     const std::uint32_t traceId = fixture.pulseTraces.beginTrace(startTime, kDefaultPulseMinIntervalUs);
     TEST_ASSERT_NOT_EQUAL_UINT32(0, traceId);
     for (std::size_t i = 0; i < sampleCount; ++i) {
-        TEST_ASSERT_TRUE(fixture.pulseTraces.appendRawEdge(traceId, samples[i].elapsedUs));
+        TEST_ASSERT_TRUE(fixture.pulseTraces.appendPulseEdge(traceId, samples[i].elapsedUs));
     }
 
     const std::uint32_t totalPulses = startupPulses + stablePulses;
@@ -548,7 +563,7 @@ void savePendingRamCalibrationAttemptWithRawEdges(CalibrationAppFixture& fixture
     const std::uint32_t traceId = fixture.pulseTraces.beginTrace(startTime, kDefaultPulseMinIntervalUs);
     TEST_ASSERT_NOT_EQUAL_UINT32(0, traceId);
     for (std::size_t i = 0; i < edgeCount; ++i) {
-        TEST_ASSERT_TRUE(fixture.pulseTraces.appendRawEdge(traceId, elapsedUs[i]));
+        TEST_ASSERT_TRUE(fixture.pulseTraces.appendPulseEdge(traceId, elapsedUs[i]));
     }
 
     WaterRecord record = calibrationRecord(startTime, static_cast<std::uint32_t>(edgeCount), actualMl);
@@ -1259,8 +1274,9 @@ void test_app_controller_reboot_drops_awaiting_actual_when_ram_trace_missing() {
     MemoryRecordWriter records;
     MemoryCalibrationWriter calibrations;
     WaterPulseTrace traces[1]{};
-    WaterPulseTraceSample samples[4096]{};
-    WaterPulseTraceStore pulseTraces(traces, 1, samples, 4096, 1);
+    WaterPulseTraceBucketSample buckets[4096]{};
+    WaterPulseTraceSample startupEdges[4096]{};
+    WaterPulseTraceStore pulseTraces(traces, 1, buckets, 4096, startupEdges, 4096, 1);
     MemoryFileBackend backend;
     CalibrationSessionFileStore sessionStore(backend, "/cal-session.bin");
     CalibrationSessionTraceStore traceStore(backend, "/cal-traces.bin");
@@ -1302,8 +1318,9 @@ void test_app_controller_local_ok_starts_calibration_run_and_completion_awaits_a
     MemoryRecordWriter records;
     MemoryCalibrationWriter calibrations;
     WaterPulseTrace traces[1]{};
-    WaterPulseTraceSample samples[4096]{};
-    WaterPulseTraceStore pulseTraces(traces, 1, samples, 4096, 1);
+    WaterPulseTraceBucketSample buckets[4096]{};
+    WaterPulseTraceSample startupEdges[4096]{};
+    WaterPulseTraceStore pulseTraces(traces, 1, buckets, 4096, startupEdges, 4096, 1);
     MemoryFileBackend backend;
     CalibrationSessionFileStore sessionStore(backend, "/cal-session.bin");
     CalibrationSessionTraceStore traceStore(backend, "/cal-traces.bin");
@@ -1350,8 +1367,8 @@ void test_app_controller_local_ok_starts_calibration_run_and_completion_awaits_a
     TEST_ASSERT_TRUE(valid.valid);
     TEST_ASSERT_FALSE(valid.pendingActual);
     TEST_ASSERT_EQUAL_UINT32(520, valid.actualMl);
-    WaterPulseTraceSample copied[4096]{};
-    TEST_ASSERT_EQUAL_size_t(valid.trace.sampleCount, traceStore.readSamples(0, copied, 4096));
+    WaterPulseTraceBucketSample copied[64]{};
+    TEST_ASSERT_EQUAL_size_t(valid.trace.bucketCount, traceStore.readBuckets(0, copied, 64));
 }
 
 void test_app_controller_saves_long_high_pulse_calibration_without_raw_edge_truncation() {
@@ -1378,7 +1395,6 @@ void test_app_controller_saves_long_high_pulse_calibration_without_raw_edge_trun
     CalibrationStoredTrace stored{};
     TEST_ASSERT_TRUE(fixture.traceStore.load(0, stored));
     TEST_ASSERT_TRUE(stored.valid);
-    TEST_ASSERT_FALSE(stored.trace.truncated);
     TEST_ASSERT_EQUAL_UINT32(15750, stored.trace.totalPulses);
     TEST_ASSERT_TRUE(stored.trace.bucketCount > 400);
     TEST_ASSERT_TRUE(stored.trace.startupEdgeCount > 900);
@@ -1654,9 +1670,9 @@ void test_app_controller_reuses_removed_trace_slot_without_overwriting_valid_sam
     TEST_ASSERT_NOT_EQUAL_UINT8(pending.attempts[1].sessionTraceSlot, pending.attempts[2].sessionTraceSlot);
     const WaterPulseTrace* pendingTrace = fixture.pulseTraces.findByRecord(pending.attempts[2].record);
     TEST_ASSERT_NOT_NULL(pendingTrace);
-    TEST_ASSERT_FALSE(pendingTrace->truncated);
+    TEST_ASSERT_FALSE((pendingTrace->flags & kPulseTraceFlagBucketOverflow) != 0);
     TEST_ASSERT_FALSE(pendingTrace->resumedAfterPause);
-    TEST_ASSERT_GREATER_THAN_size_t(0, pendingTrace->sampleCount);
+    TEST_ASSERT_GREATER_THAN_size_t(0, pendingTrace->bucketCount);
     TEST_ASSERT_GREATER_THAN_UINT32(0, pendingTrace->totalPulses);
 
     TEST_ASSERT_TRUE(fixture.app->submitCalibrationActualForWeb(9500, 1714502670));
@@ -1806,8 +1822,9 @@ void test_app_controller_pause_timeout_trace_is_not_marked_error_and_can_calibra
     FilterStore filters(config.filters);
     MemoryRecordWriter records;
     WaterPulseTrace traces[2]{};
-    WaterPulseTraceSample samples[700]{};
-    WaterPulseTraceStore pulseTraces(traces, 2, samples, 700, 2);
+    WaterPulseTraceBucketSample buckets[700]{};
+    WaterPulseTraceSample startupEdges[700]{};
+    WaterPulseTraceStore pulseTraces(traces, 2, buckets, 700, startupEdges, 700, 2);
     AppController app(config, statistics, filters, records, &pulseTraces);
     applyTestMeteringScheme(app);
 
@@ -1926,8 +1943,9 @@ void test_app_controller_pause_resume_then_completion_updates_persistence_once()
     FilterStore filters(config.filters);
     MemoryRecordWriter records;
     WaterPulseTrace traces[2]{};
-    WaterPulseTraceSample samples[2000]{};
-    WaterPulseTraceStore pulseTraces(traces, 2, samples, 2000, 2);
+    WaterPulseTraceBucketSample buckets[2000]{};
+    WaterPulseTraceSample startupEdges[2000]{};
+    WaterPulseTraceStore pulseTraces(traces, 2, buckets, 2000, startupEdges, 2000, 2);
     AppController app(config, statistics, filters, records, &pulseTraces);
     applyTestMeteringScheme(app);
 
@@ -2003,8 +2021,9 @@ void test_app_controller_normal_output_does_not_collect_ram_pulse_trace() {
     FilterStore filters(config.filters);
     MemoryRecordWriter records;
     WaterPulseTrace traces[2]{};
-    WaterPulseTraceSample samples[700]{};
-    WaterPulseTraceStore pulseTraces(traces, 2, samples, 700, 2);
+    WaterPulseTraceBucketSample buckets[700]{};
+    WaterPulseTraceSample startupEdges[700]{};
+    WaterPulseTraceStore pulseTraces(traces, 2, buckets, 700, startupEdges, 700, 2);
     AppController app(config, statistics, filters, records, &pulseTraces);
     applyTestMeteringScheme(app);
 

@@ -30,10 +30,6 @@ public:
     bool clearForNewSession(std::uint32_t sessionId);
     bool savePending(std::uint8_t slot,
                      const CalibrationStoredTrace& trace,
-                     const WaterPulseTraceSample* samples,
-                     std::size_t sampleCount);
-    bool savePending(std::uint8_t slot,
-                     const CalibrationStoredTrace& trace,
                      const WaterPulseTraceBucketSample* buckets,
                      std::size_t bucketCount,
                      const WaterPulseTraceSample* startupEdges,
@@ -41,7 +37,6 @@ public:
     bool commitValid(std::uint8_t slot, std::uint32_t actualMl, std::uint32_t savedAt);
     bool invalidate(std::uint8_t slot);
     bool load(std::uint8_t slot, CalibrationStoredTrace& trace) const;
-    std::size_t readSamples(std::uint8_t slot, WaterPulseTraceSample* output, std::size_t outputCapacity) const;
     std::size_t readBuckets(std::uint8_t slot,
                             WaterPulseTraceBucketSample* output,
                             std::size_t outputCapacity) const;

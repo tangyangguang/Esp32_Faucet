@@ -132,10 +132,9 @@ WaterRecord makeRecord(std::uint32_t startTime, std::uint32_t pulses, std::uint3
 void appendPulseBucket(WaterPulseTraceStore& store, std::uint32_t id, std::uint32_t value) {
     const WaterPulseTrace* trace = store.findById(id);
     TEST_ASSERT_NOT_NULL(trace);
-    const std::uint32_t sec =
-        trace->sampleCount == 0 ? 0 : store.sampleAt(*trace, trace->sampleCount - 1)->elapsedUs / 1000000UL + 1;
+    const std::uint32_t sec = static_cast<std::uint32_t>((trace->bucketCount + 1U) / 2U);
     for (std::uint32_t i = 0; i < value; ++i) {
-        TEST_ASSERT_TRUE(store.appendRawEdge(id, sec * 1000000UL + i * 10000UL));
+        TEST_ASSERT_TRUE(store.appendPulseEdge(id, sec * 1000000UL + i * 10000UL));
     }
 }
 
@@ -209,8 +208,9 @@ void test_trace_store_bucket_overflow_keeps_counting_totals() {
 
 void test_trace_store_records_seconds_and_reports_memory_stats() {
     WaterPulseTrace traces[4]{};
-    WaterPulseTraceSample samples[32]{};
-    WaterPulseTraceStore store(traces, 4, samples, 32, 4);
+    WaterPulseTraceBucketSample buckets[32]{};
+    WaterPulseTraceSample startupEdges[32]{};
+    WaterPulseTraceStore store(traces, 4, buckets, 32, startupEdges, 32, 4);
 
     const std::uint32_t id = store.beginTrace(1000, kDefaultPulseMinIntervalUs);
     TEST_ASSERT_NOT_EQUAL_UINT32(0, id);
@@ -220,25 +220,27 @@ void test_trace_store_records_seconds_and_reports_memory_stats() {
 
     WaterPulseTraceStats stats = store.stats();
     TEST_ASSERT_EQUAL_size_t(1, stats.traceCount);
-    TEST_ASSERT_EQUAL_size_t(5, stats.sampleCount);
+    TEST_ASSERT_EQUAL_size_t(3, stats.bucketCount);
+    TEST_ASSERT_EQUAL_size_t(5, stats.startupEdgeCount);
     TEST_ASSERT_EQUAL_size_t(4, stats.traceCapacity);
-    TEST_ASSERT_EQUAL_size_t(kPulseTraceSamplesPerTrace, stats.sampleCapacityPerTrace);
     TEST_ASSERT_GREATER_THAN_UINT32(0, stats.usedBytes);
 
     const WaterPulseTrace* trace = store.findById(id);
     TEST_ASSERT_NOT_NULL(trace);
-    TEST_ASSERT_EQUAL_UINT16(5, trace->sampleCount);
+    TEST_ASSERT_EQUAL_size_t(3, trace->bucketCount);
+    TEST_ASSERT_EQUAL_size_t(5, trace->startupEdgeCount);
     TEST_ASSERT_EQUAL_UINT32(5, trace->totalPulses);
-    TEST_ASSERT_FALSE(trace->truncated);
-    TEST_ASSERT_EQUAL_UINT32(0, store.sampleAt(*trace, 0)->elapsedUs);
-    TEST_ASSERT_EQUAL_UINT32(10000, store.sampleAt(*trace, 1)->elapsedUs);
-    TEST_ASSERT_EQUAL_UINT32(1000000, store.sampleAt(*trace, 2)->elapsedUs);
+    TEST_ASSERT_EQUAL_UINT16(2, store.bucketAt(*trace, 0)->pulseCount);
+    TEST_ASSERT_EQUAL_UINT16(0, store.bucketAt(*trace, 1)->pulseCount);
+    TEST_ASSERT_EQUAL_UINT16(3, store.bucketAt(*trace, 2)->pulseCount);
+    TEST_ASSERT_EQUAL_UINT32(1000000, store.startupEdgeAt(*trace, 2)->elapsedUs);
 }
 
 void test_trace_store_does_not_synthesize_edges_to_match_record_duration() {
     WaterPulseTrace traces[2]{};
-    WaterPulseTraceSample samples[16]{};
-    WaterPulseTraceStore store(traces, 2, samples, 16, 2);
+    WaterPulseTraceBucketSample buckets[16]{};
+    WaterPulseTraceSample startupEdges[32]{};
+    WaterPulseTraceStore store(traces, 2, buckets, 16, startupEdges, 32, 2);
 
     const std::uint32_t id = store.beginTrace(1000, kDefaultPulseMinIntervalUs);
     appendPulseBucket(store, id, 8);
@@ -249,7 +251,7 @@ void test_trace_store_does_not_synthesize_edges_to_match_record_duration() {
 
     const WaterPulseTrace* trace = store.findById(id);
     TEST_ASSERT_NOT_NULL(trace);
-    TEST_ASSERT_EQUAL_size_t(16, trace->sampleCount);
+    TEST_ASSERT_EQUAL_size_t(3, trace->bucketCount);
     TEST_ASSERT_EQUAL_UINT32(16, trace->totalPulses);
     TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(WaterPulseTraceState::Completed),
                             static_cast<unsigned>(trace->finalState));
@@ -257,8 +259,9 @@ void test_trace_store_does_not_synthesize_edges_to_match_record_duration() {
 
 void test_trace_store_drops_oldest_when_recent_trace_count_is_exceeded() {
     WaterPulseTrace traces[4]{};
-    WaterPulseTraceSample samples[64]{};
-    WaterPulseTraceStore store(traces, 4, samples, 64, 2);
+    WaterPulseTraceBucketSample buckets[64]{};
+    WaterPulseTraceSample startupEdges[64]{};
+    WaterPulseTraceStore store(traces, 4, buckets, 64, startupEdges, 64, 2);
 
     const std::uint32_t first = store.beginTrace(1000, kDefaultPulseMinIntervalUs);
     appendPulseBucket(store, first, 1);
@@ -283,29 +286,34 @@ void test_trace_store_drops_oldest_when_recent_trace_count_is_exceeded() {
 
 void test_trace_store_marks_trace_truncated_after_single_trace_sample_limit() {
     WaterPulseTrace traces[2]{};
-    WaterPulseTraceSample samples[kPulseTraceSamplesPerTrace + 4]{};
-    WaterPulseTraceStore store(traces, 2, samples, kPulseTraceSamplesPerTrace + 4, 2);
+    WaterPulseTraceBucketSample buckets[kPulseTraceMaxBucketsPerTrace]{};
+    WaterPulseTraceSample startupEdges[kPulseTraceMaxStartupEdgesPerTrace]{};
+    WaterPulseTraceStore store(
+        traces, 2, buckets, kPulseTraceMaxBucketsPerTrace, startupEdges, kPulseTraceMaxStartupEdgesPerTrace, 2);
     const std::uint32_t id = store.beginTrace(1000, kDefaultPulseMinIntervalUs);
-    for (std::size_t i = 0; i < kPulseTraceSamplesPerTrace; ++i) {
-        appendPulseBucket(store, id, 1);
+    for (std::size_t i = 0; i < kPulseTraceMaxBucketsPerTrace; ++i) {
+        TEST_ASSERT_TRUE(store.appendPulseEdge(
+            id, static_cast<std::uint32_t>(i * kPulseTraceBucketMs * 1000UL)));
     }
 
-    appendPulseBucket(store, id, 5);
-    TEST_ASSERT_TRUE(store.finishTrace(id, makeRecord(1000, kPulseTraceSamplesPerTrace + 5, 1000),
+    TEST_ASSERT_TRUE(store.appendPulseEdge(
+        id, static_cast<std::uint32_t>(kPulseTraceMaxBucketsPerTrace * kPulseTraceBucketMs * 1000UL)));
+    TEST_ASSERT_TRUE(store.finishTrace(id, makeRecord(1000, kPulseTraceMaxBucketsPerTrace + 1, 1000),
                                       WaterPulseTraceState::Completed));
 
     const WaterPulseTrace* trace = store.findById(id);
     TEST_ASSERT_NOT_NULL(trace);
-    TEST_ASSERT_TRUE(trace->truncated);
-    TEST_ASSERT_EQUAL_size_t(kPulseTraceSamplesPerTrace, trace->sampleCount);
-    TEST_ASSERT_EQUAL_UINT32(kPulseTraceSamplesPerTrace + 5, trace->totalPulses);
-    TEST_ASSERT_EQUAL_size_t(kPulseTraceSamplesPerTrace, store.stats().sampleCount);
+    TEST_ASSERT_TRUE((trace->flags & kPulseTraceFlagBucketOverflow) != 0);
+    TEST_ASSERT_EQUAL_size_t(kPulseTraceMaxBucketsPerTrace, trace->bucketCount);
+    TEST_ASSERT_EQUAL_UINT32(kPulseTraceMaxBucketsPerTrace + 1, trace->totalPulses);
+    TEST_ASSERT_EQUAL_size_t(kPulseTraceMaxBucketsPerTrace, store.stats().bucketCount);
 }
 
 void test_trace_analysis_finds_stable_start_after_slow_ramp() {
     WaterPulseTrace traces[2]{};
-    WaterPulseTraceSample samples[80]{};
-    WaterPulseTraceStore store(traces, 2, samples, 80, 2);
+    WaterPulseTraceBucketSample buckets[80]{};
+    WaterPulseTraceSample startupEdges[80]{};
+    WaterPulseTraceStore store(traces, 2, buckets, 80, startupEdges, 80, 2);
     const std::uint32_t id = store.beginTrace(1000, kDefaultPulseMinIntervalUs);
     const std::uint16_t values[] = {1, 2, 3, 5, 6, 7, 7, 7, 6, 7, 7, 7};
     for (std::uint16_t value : values) {
@@ -324,8 +332,9 @@ void test_trace_analysis_finds_stable_start_after_slow_ramp() {
 
 void test_trace_analysis_rejects_pause_resume_trace_for_startup_calibration() {
     WaterPulseTrace traces[1]{};
-    WaterPulseTraceSample samples[80]{};
-    WaterPulseTraceStore store(traces, 1, samples, 80, 1);
+    WaterPulseTraceBucketSample buckets[80]{};
+    WaterPulseTraceSample startupEdges[80]{};
+    WaterPulseTraceStore store(traces, 1, buckets, 80, startupEdges, 80, 1);
     const std::uint32_t id = store.beginTrace(1000, kDefaultPulseMinIntervalUs);
     const std::uint16_t values[] = {1, 2, 3, 5, 6, 7, 7, 7, 6, 7, 7, 7};
     for (std::uint16_t value : values) {
@@ -343,8 +352,9 @@ void test_trace_analysis_rejects_pause_resume_trace_for_startup_calibration() {
 
 void test_trace_store_records_pause_windows() {
     WaterPulseTrace traces[1]{};
-    WaterPulseTraceSample samples[16]{};
-    WaterPulseTraceStore store(traces, 1, samples, 16, 1);
+    WaterPulseTraceBucketSample buckets[16]{};
+    WaterPulseTraceSample startupEdges[16]{};
+    WaterPulseTraceStore store(traces, 1, buckets, 16, startupEdges, 16, 1);
     const std::uint32_t id = store.beginTrace(1000, kDefaultPulseMinIntervalUs);
     fillTrace(store, id, {2, 2});
 
@@ -364,8 +374,9 @@ void test_trace_store_records_pause_windows() {
 
 void test_trace_store_closes_open_pause_window_on_finish() {
     WaterPulseTrace traces[1]{};
-    WaterPulseTraceSample samples[16]{};
-    WaterPulseTraceStore store(traces, 1, samples, 16, 1);
+    WaterPulseTraceBucketSample buckets[16]{};
+    WaterPulseTraceSample startupEdges[16]{};
+    WaterPulseTraceStore store(traces, 1, buckets, 16, startupEdges, 16, 1);
     const std::uint32_t id = store.beginTrace(1000, kDefaultPulseMinIntervalUs);
     fillTrace(store, id, {2, 2});
 
@@ -383,8 +394,9 @@ void test_trace_store_closes_open_pause_window_on_finish() {
 
 void test_trace_bucket_aggregation_sums_pulses_by_selected_seconds() {
     WaterPulseTrace traces[1]{};
-    WaterPulseTraceSample samples[16]{};
-    WaterPulseTraceStore store(traces, 1, samples, 16, 1);
+    WaterPulseTraceBucketSample compactBuckets[16]{};
+    WaterPulseTraceSample startupEdges[16]{};
+    WaterPulseTraceStore store(traces, 1, compactBuckets, 16, startupEdges, 16, 1);
     const std::uint32_t id = store.beginTrace(1000, kDefaultPulseMinIntervalUs);
     for (std::uint16_t value : {1, 2, 3, 4, 5}) {
         appendPulseBucket(store, id, value);
@@ -404,8 +416,9 @@ void test_trace_bucket_aggregation_sums_pulses_by_selected_seconds() {
 
 void test_trace_bucket_aggregation_accepts_four_second_bucket() {
     WaterPulseTrace traces[1]{};
-    WaterPulseTraceSample samples[16]{};
-    WaterPulseTraceStore store(traces, 1, samples, 16, 1);
+    WaterPulseTraceBucketSample compactBuckets[16]{};
+    WaterPulseTraceSample startupEdges[16]{};
+    WaterPulseTraceStore store(traces, 1, compactBuckets, 16, startupEdges, 16, 1);
     const std::uint32_t id = store.beginTrace(1000, kDefaultPulseMinIntervalUs);
     for (std::uint16_t value : {1, 2, 3, 4, 5}) {
         appendPulseBucket(store, id, value);
@@ -600,8 +613,9 @@ void test_segmented_calibration_removes_single_outlier_before_final_fit() {
 
 void test_trace_analysis_options_change_stable_window() {
     WaterPulseTrace traces[2]{};
-    WaterPulseTraceSample samples[120]{};
-    WaterPulseTraceStore store(traces, 2, samples, 120, 2);
+    WaterPulseTraceBucketSample buckets[120]{};
+    WaterPulseTraceSample startupEdges[120]{};
+    WaterPulseTraceStore store(traces, 2, buckets, 120, startupEdges, 120, 2);
     const std::uint32_t id = store.beginTrace(1000, kDefaultPulseMinIntervalUs);
     fillTrace(store, id, {1, 2, 2, 3, 9, 9, 10, 9, 10, 9, 10, 9});
     TEST_ASSERT_TRUE(store.finishTrace(id, makeRecord(1000, 83, 5000), WaterPulseTraceState::Completed));
@@ -619,8 +633,9 @@ void test_trace_analysis_options_change_stable_window() {
 
 void test_trace_store_updates_actual_ml_by_record() {
     WaterPulseTrace traces[2]{};
-    WaterPulseTraceSample samples[16]{};
-    WaterPulseTraceStore ram(traces, 2, samples, 16, 2);
+    WaterPulseTraceBucketSample buckets[16]{};
+    WaterPulseTraceSample startupEdges[16]{};
+    WaterPulseTraceStore ram(traces, 2, buckets, 16, startupEdges, 16, 2);
     const std::uint32_t id = ram.beginTrace(1000, kDefaultPulseMinIntervalUs);
     fillTrace(ram, id, {2, 3, 4});
     WaterRecord record = makeRecord(1000, 9, 1000);

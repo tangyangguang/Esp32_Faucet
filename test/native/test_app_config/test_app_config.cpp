@@ -46,7 +46,10 @@ void test_default_config_matches_product_defaults() {
     TEST_ASSERT_EQUAL_UINT16(kDefaultCalibrationMaxRelativeErrorTenthPercent,
                              config.calibrationMaxRelativeErrorTenthPercent);
     TEST_ASSERT_EQUAL_UINT16(50, config.calibrationMaxRelativeErrorTenthPercent);
-    TEST_ASSERT_EQUAL_UINT32(4096, kPulseTraceMaxRawEdgesPerTrace);
+    TEST_ASSERT_EQUAL_UINT32(500, kPulseTraceBucketMs);
+    TEST_ASSERT_EQUAL_UINT32(15000, kPulseTraceStartupDetailMs);
+    TEST_ASSERT_EQUAL_size_t(1200, kPulseTraceMaxBucketsPerTrace);
+    TEST_ASSERT_EQUAL_size_t(4096, kPulseTraceMaxStartupEdgesPerTrace);
     TEST_ASSERT_EQUAL_UINT32(kDefaultValveFullPowerSec, config.valveFullPowerSec);
     TEST_ASSERT_EQUAL_UINT32(5, config.valveFullPowerSec);
     TEST_ASSERT_EQUAL_UINT8(kDefaultValveHoldDutyPercent, config.valveHoldDutyPercent);

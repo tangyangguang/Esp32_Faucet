@@ -21,52 +21,11 @@ std::uint32_t roundU32(float value) {
     return value <= 0.0f ? 0 : static_cast<std::uint32_t>(std::lround(value));
 }
 
-bool isEffectiveSample(const WaterPulseTraceSample* samples,
-                       std::size_t index,
-                       std::uint32_t pulseMinIntervalUs) {
-    if (!samples) {
-        return false;
-    }
-    if (index == 0) {
-        return true;
-    }
-    const std::uint32_t minInterval = std::max<std::uint32_t>(1, pulseMinIntervalUs);
-    std::uint32_t lastEffectiveElapsedUs = samples[0].elapsedUs;
-    for (std::size_t i = 1; i < index; ++i) {
-        if (samples[i].elapsedUs >= lastEffectiveElapsedUs &&
-            samples[i].elapsedUs - lastEffectiveElapsedUs >= minInterval) {
-            lastEffectiveElapsedUs = samples[i].elapsedUs;
-        }
-    }
-    return samples[index].elapsedUs >= lastEffectiveElapsedUs &&
-           samples[index].elapsedUs - lastEffectiveElapsedUs >= minInterval;
-}
-
 std::size_t bucketIndexForElapsedUs(std::uint32_t elapsedUs) {
     return elapsedUs / (kPulseTraceBucketMs * 1000UL);
 }
 
 }  // namespace
-
-WaterPulseTraceStore::WaterPulseTraceStore(WaterPulseTrace* traces,
-                                           std::size_t traceCapacity,
-                                           WaterPulseTraceSample* samples,
-                                           std::size_t sampleCapacity,
-                                           std::size_t recentTraceLimit)
-    : traces_(traces),
-      traceCapacity_(traceCapacity),
-      traceCount_(0),
-      samples_(samples),
-      sampleCapacity_(sampleCapacity),
-      sampleCount_(0),
-      buckets_(nullptr),
-      bucketCapacity_(0),
-      bucketCount_(0),
-      startupEdges_(nullptr),
-      startupEdgeCapacity_(0),
-      startupEdgeCount_(0),
-      recentTraceLimit_(recentTraceLimit),
-      nextTraceId_(1) {}
 
 WaterPulseTraceStore::WaterPulseTraceStore(WaterPulseTrace* traces,
                                            std::size_t traceCapacity,
@@ -78,9 +37,6 @@ WaterPulseTraceStore::WaterPulseTraceStore(WaterPulseTrace* traces,
     : traces_(traces),
       traceCapacity_(traceCapacity),
       traceCount_(0),
-      samples_(nullptr),
-      sampleCapacity_(0),
-      sampleCount_(0),
       buckets_(buckets),
       bucketCapacity_(bucketCapacity),
       bucketCount_(0),
@@ -96,9 +52,8 @@ void WaterPulseTraceStore::setRecentTraceLimit(std::size_t recentTraceLimit) {
 }
 
 std::uint32_t WaterPulseTraceStore::beginTrace(std::uint32_t startTime, std::uint32_t pulseMinIntervalUs) {
-    const bool hasRawStorage = samples_ && sampleCapacity_ > 0;
-    const bool hasCompactStorage = buckets_ && bucketCapacity_ > 0 && startupEdges_ && startupEdgeCapacity_ > 0;
-    if (!traces_ || traceCapacity_ == 0 || (!hasRawStorage && !hasCompactStorage)) {
+    if (!traces_ || traceCapacity_ == 0 || !buckets_ || bucketCapacity_ == 0 || !startupEdges_ ||
+        startupEdgeCapacity_ == 0) {
         return 0;
     }
     enforceBudget();
@@ -114,7 +69,6 @@ std::uint32_t WaterPulseTraceStore::beginTrace(std::uint32_t startTime, std::uin
         nextTraceId_ = 1;
     }
     trace.startTime = startTime;
-    trace.sampleStart = sampleCount_;
     trace.bucketStart = bucketCount_;
     trace.startupEdgeStart = startupEdgeCount_;
     trace.pulseMinIntervalUs =
@@ -129,37 +83,15 @@ bool WaterPulseTraceStore::appendPulseEdge(std::uint32_t traceId, std::uint32_t 
     if (!trace || trace->finished) {
         return false;
     }
-    if (samples_ && trace->sampleCount > 0) {
-        const WaterPulseTraceSample* previous = sampleAt(*trace, trace->sampleCount - 1);
-        if (!previous || elapsedUs < previous->elapsedUs) {
-            trace->truncated = true;
-            return false;
-        }
-    }
-    if (samples_ && trace->sampleCount >= kPulseTraceMaxRawEdgesPerTrace) {
-        trace->truncated = true;
-    } else if (samples_) {
-        while (sampleCount_ >= sampleCapacity_) {
-            dropOldest();
-            trace = findById(traceId);
-            if (!trace || trace->finished) {
-                return false;
-            }
-        }
-        samples_[sampleCount_++] = WaterPulseTraceSample{elapsedUs};
-        ++trace->sampleCount;
-    }
-
     const std::uint32_t minInterval = std::max<std::uint32_t>(1, trace->pulseMinIntervalUs);
+    if (trace->hasEffectivePulse && elapsedUs < trace->lastEffectiveElapsedUs) {
+        return false;
+    }
     if (trace->hasEffectivePulse && elapsedUs >= trace->lastEffectiveElapsedUs &&
         elapsedUs - trace->lastEffectiveElapsedUs < minInterval) {
         ++trace->minIntervalFilteredCount;
         enforceBudget();
         return findById(traceId) != nullptr;
-    }
-    if (trace->hasEffectivePulse && elapsedUs < trace->lastEffectiveElapsedUs) {
-        trace->truncated = true;
-        return false;
     }
 
     ++trace->totalPulses;
@@ -203,10 +135,6 @@ bool WaterPulseTraceStore::appendPulseEdge(std::uint32_t traceId, std::uint32_t 
     return findById(traceId) != nullptr;
 }
 
-bool WaterPulseTraceStore::appendRawEdge(std::uint32_t traceId, std::uint32_t elapsedUs) {
-    return appendPulseEdge(traceId, elapsedUs);
-}
-
 bool WaterPulseTraceStore::finishTrace(std::uint32_t traceId,
                                        const WaterRecord& record,
                                        WaterPulseTraceState finalState,
@@ -222,9 +150,6 @@ bool WaterPulseTraceStore::finishTrace(std::uint32_t traceId,
         }
     }
     trace->record = record;
-    if (samples_) {
-        trace->totalPulses = effectivePulseCount(*trace, &samples_[trace->sampleStart], trace->sampleCount);
-    }
     if (record.pulseCount > 0) {
         trace->totalPulses = record.pulseCount;
     }
@@ -313,13 +238,6 @@ const WaterPulseTrace* WaterPulseTraceStore::traceAt(std::size_t index) const {
     return index < traceCount_ ? &traces_[index] : nullptr;
 }
 
-const WaterPulseTraceSample* WaterPulseTraceStore::sampleAt(const WaterPulseTrace& trace, std::size_t index) const {
-    if (!samples_ || index >= trace.sampleCount || trace.sampleStart + index >= sampleCount_) {
-        return nullptr;
-    }
-    return &samples_[trace.sampleStart + index];
-}
-
 const WaterPulseTraceBucketSample* WaterPulseTraceStore::bucketAt(const WaterPulseTrace& trace,
                                                                   std::size_t index) const {
     if (!buckets_ || index >= trace.bucketCount || trace.bucketStart + index >= bucketCount_) {
@@ -340,9 +258,10 @@ WaterPulseTraceStats WaterPulseTraceStore::stats() const {
     WaterPulseTraceStats out{};
     out.traceCount = traceCount_;
     out.traceCapacity = traceCapacity_;
-    out.sampleCount = sampleCount_;
-    out.sampleCapacity = sampleCapacity_;
-    out.sampleCapacityPerTrace = kPulseTraceMaxRawEdgesPerTrace;
+    out.bucketCount = bucketCount_;
+    out.bucketCapacity = bucketCapacity_;
+    out.startupEdgeCount = startupEdgeCount_;
+    out.startupEdgeCapacity = startupEdgeCapacity_;
     out.usedBytes = usedBytes();
     if (traceCount_ > 0) {
         out.oldestStartTime = traces_[0].startTime;
@@ -356,8 +275,8 @@ std::size_t WaterPulseTraceStore::count() const {
 }
 
 std::size_t WaterPulseTraceStore::usedBytes() const {
-    return traceCount_ * sizeof(WaterPulseTrace) + sampleCount_ * sizeof(WaterPulseTraceSample) +
-           bucketCount_ * sizeof(WaterPulseTraceBucketSample) + startupEdgeCount_ * sizeof(WaterPulseTraceSample);
+    return traceCount_ * sizeof(WaterPulseTrace) + bucketCount_ * sizeof(WaterPulseTraceBucketSample) +
+           startupEdgeCount_ * sizeof(WaterPulseTraceSample);
 }
 
 void WaterPulseTraceStore::enforceBudget() {
@@ -370,13 +289,9 @@ void WaterPulseTraceStore::enforceBudget() {
 
 void WaterPulseTraceStore::dropOldest() {
     if (traceCount_ == 0) {
-        sampleCount_ = 0;
+        bucketCount_ = 0;
+        startupEdgeCount_ = 0;
         return;
-    }
-    const std::size_t removedSamples = traces_[0].sampleCount;
-    if (removedSamples > 0 && removedSamples <= sampleCount_) {
-        std::memmove(samples_, samples_ + removedSamples, (sampleCount_ - removedSamples) * sizeof(WaterPulseTraceSample));
-        sampleCount_ -= removedSamples;
     }
     const std::size_t removedBuckets = traces_[0].bucketCount;
     if (removedBuckets > 0 && removedBuckets <= bucketCount_) {
@@ -393,7 +308,6 @@ void WaterPulseTraceStore::dropOldest() {
         startupEdgeCount_ -= removedStartupEdges;
     }
     for (std::size_t i = 1; i < traceCount_; ++i) {
-        traces_[i].sampleStart -= removedSamples;
         traces_[i].bucketStart -= removedBuckets;
         traces_[i].startupEdgeStart -= removedStartupEdges;
         traces_[i - 1] = traces_[i];
@@ -411,61 +325,50 @@ std::size_t WaterPulseTraceStore::indexOf(std::uint32_t traceId) const {
 }
 
 std::size_t aggregateWaterPulseTrace(const WaterPulseTrace& trace,
-                                     const WaterPulseTraceSample* samples,
-                                     std::size_t sampleCount,
+                                     const WaterPulseTraceBucketSample* compactBuckets,
+                                     std::size_t compactBucketCount,
                                      std::uint32_t bucketSeconds,
                                      WaterPulseTraceBucket* buckets,
                                      std::size_t bucketCapacity) {
-    if (!samples || !buckets || bucketCapacity == 0 || sampleCount == 0) {
+    if (!compactBuckets || !buckets || bucketCapacity == 0 || compactBucketCount == 0) {
         return 0;
     }
     if (bucketSeconds != 2 && bucketSeconds != 3 && bucketSeconds != 4 && bucketSeconds != 5) {
         bucketSeconds = 1;
     }
+    const std::size_t compactPerOutput =
+        std::max<std::size_t>(1, static_cast<std::size_t>(bucketSeconds * 1000UL / kPulseTraceBucketMs));
     std::size_t bucketCount = 0;
     std::uint32_t cumulative = 0;
-    std::uint32_t cumulativeRaw = 0;
-    std::size_t i = 0;
-    while (i < sampleCount && bucketCount < bucketCapacity) {
+    for (std::size_t i = 0; i < compactBucketCount && bucketCount < bucketCapacity; i += compactPerOutput) {
         WaterPulseTraceBucket bucket{};
-        bucket.startSec = (samples[i].elapsedUs / 1000000UL / bucketSeconds) * bucketSeconds;
+        bucket.startSec = static_cast<std::uint32_t>((i * kPulseTraceBucketMs) / 1000UL);
         bucket.durationSec = bucketSeconds;
         bucket.state = trace.finalState == WaterPulseTraceState::Running ? WaterPulseTraceState::Running
                                                                          : trace.finalState;
-        const std::uint32_t bucketEndSec = bucket.startSec + bucketSeconds;
-        while (i < sampleCount && samples[i].elapsedUs / 1000000UL < bucketEndSec) {
-            ++bucket.rawEdgeDelta;
-            if (isEffectiveSample(samples, i, trace.pulseMinIntervalUs)) {
-                ++bucket.pulseDelta;
+        const std::uint32_t bucketStartUs = bucket.startSec * 1000000UL;
+        const std::uint32_t bucketEndUs = (bucket.startSec + bucket.durationSec) * 1000000UL;
+        for (std::uint8_t p = 0; p < trace.pauseWindowCount; ++p) {
+            const WaterPulseTracePauseWindow& pause = trace.pauseWindows[p];
+            const std::uint32_t pauseEndUs = pause.endElapsedUs == 0 ? bucketEndUs : pause.endElapsedUs;
+            if (pause.startElapsedUs < bucketEndUs && pauseEndUs > bucketStartUs) {
+                bucket.state = WaterPulseTraceState::Paused;
+                break;
             }
-            ++i;
+        }
+        const std::size_t end = std::min(compactBucketCount, i + compactPerOutput);
+        for (std::size_t j = i; j < end; ++j) {
+            bucket.pulseDelta += compactBuckets[j].pulseCount;
         }
         cumulative += bucket.pulseDelta;
-        cumulativeRaw += bucket.rawEdgeDelta;
         bucket.cumulativePulses = cumulative;
-        bucket.cumulativeRawEdges = cumulativeRaw;
         buckets[bucketCount++] = bucket;
     }
     return bucketCount;
 }
 
-std::uint32_t effectivePulseCount(const WaterPulseTrace& trace,
-                                  const WaterPulseTraceSample* samples,
-                                  std::size_t sampleCount) {
-    if (!samples || sampleCount == 0) {
-        return 0;
-    }
-    std::uint32_t count = 0;
-    for (std::size_t i = 0; i < sampleCount; ++i) {
-        if (isEffectiveSample(samples, i, trace.pulseMinIntervalUs)) {
-            ++count;
-        }
-    }
-    return count;
-}
-
 bool waterPulseTraceAnalysisEligible(const WaterPulseTrace& trace) {
-    return !trace.resumedAfterPause && !trace.truncated && trace.sampleCount > 0;
+    return !trace.resumedAfterPause && (trace.flags & kPulseTraceFlagBucketOverflow) == 0 && trace.bucketCount > 0;
 }
 
 SegmentedCalibrationOptions defaultSegmentedCalibrationOptions() {
@@ -492,22 +395,16 @@ SegmentedCalibrationOptions segmentedCalibrationOptionsFromConfig(const SystemCo
     };
 }
 
-WaterPulseTraceAnalysis analyzeWaterPulseTrace(const WaterPulseTrace& trace,
-                                               const WaterPulseTraceSample* samples,
-                                               std::size_t sampleCount) {
-    return analyzeWaterPulseTrace(trace, samples, sampleCount, defaultSegmentedCalibrationOptions());
-}
+namespace {
 
-WaterPulseTraceAnalysis analyzeWaterPulseTrace(const WaterPulseTrace& trace,
-                                               const WaterPulseTraceSample* samples,
-                                               std::size_t sampleCount,
-                                               const SegmentedCalibrationOptions& options) {
+WaterPulseTraceAnalysis analyzeCompactBuckets(const WaterPulseTrace& trace,
+                                              const WaterPulseTraceBucketSample* compactBuckets,
+                                              std::size_t compactBucketCount,
+                                              const SegmentedCalibrationOptions& options) {
     WaterPulseTraceAnalysis out{};
-    if (!samples || sampleCount < 6 || !waterPulseTraceAnalysisEligible(trace)) {
+    if (!compactBuckets || compactBucketCount == 0 || !waterPulseTraceAnalysisEligible(trace)) {
         return out;
     }
-    const std::uint32_t pulseMinIntervalUs =
-        options.pulseMinIntervalUsOverride == 0 ? trace.pulseMinIntervalUs : options.pulseMinIntervalUsOverride;
     const std::uint32_t stableWindowSec =
         std::min<std::uint32_t>(std::max<std::uint32_t>(options.stableWindowSec, kMinCalibrationStableWindowSec),
                                 kMaxCalibrationStableWindowSec);
@@ -515,7 +412,9 @@ WaterPulseTraceAnalysis analyzeWaterPulseTrace(const WaterPulseTrace& trace,
         std::max<std::uint32_t>(options.stableTolerancePercent, kMinCalibrationStableTolerancePercent),
         kMaxCalibrationStableTolerancePercent);
     const std::uint32_t durationSec =
-        trace.record.durationSec > 0 ? trace.record.durationSec : (samples[sampleCount - 1].elapsedUs / 1000000UL + 1);
+        trace.record.durationSec > 0
+            ? trace.record.durationSec
+            : static_cast<std::uint32_t>((compactBucketCount * kPulseTraceBucketMs + 999UL) / 1000UL);
     if (durationSec < 6 || stableWindowSec > durationSec) {
         return out;
     }
@@ -523,10 +422,11 @@ WaterPulseTraceAnalysis analyzeWaterPulseTrace(const WaterPulseTrace& trace,
     if (!perSecond) {
         return out;
     }
-    for (std::size_t i = 0; i < sampleCount; ++i) {
-        const std::uint32_t sec = samples[i].elapsedUs / 1000000UL;
-        if (sec < durationSec && isEffectiveSample(samples, i, pulseMinIntervalUs) && perSecond[sec] < UINT16_MAX) {
-            ++perSecond[sec];
+    for (std::size_t i = 0; i < compactBucketCount; ++i) {
+        const std::uint32_t sec = static_cast<std::uint32_t>((i * kPulseTraceBucketMs) / 1000UL);
+        if (sec < durationSec) {
+            const std::uint32_t total = perSecond[sec] + compactBuckets[i].pulseCount;
+            perSecond[sec] = total > UINT16_MAX ? UINT16_MAX : static_cast<std::uint16_t>(total);
         }
     }
     std::uint32_t runningCount = 0;
@@ -588,6 +488,21 @@ WaterPulseTraceAnalysis analyzeWaterPulseTrace(const WaterPulseTrace& trace,
     }
     delete[] perSecond;
     return out;
+}
+
+}  // namespace
+
+WaterPulseTraceAnalysis analyzeWaterPulseTrace(const WaterPulseTrace& trace,
+                                               const WaterPulseTraceBucketSample* compactBuckets,
+                                               std::size_t compactBucketCount) {
+    return analyzeWaterPulseTrace(trace, compactBuckets, compactBucketCount, defaultSegmentedCalibrationOptions());
+}
+
+WaterPulseTraceAnalysis analyzeWaterPulseTrace(const WaterPulseTrace& trace,
+                                               const WaterPulseTraceBucketSample* compactBuckets,
+                                               std::size_t compactBucketCount,
+                                               const SegmentedCalibrationOptions& options) {
+    return analyzeCompactBuckets(trace, compactBuckets, compactBucketCount, options);
 }
 
 bool computeSegmentedCalibration(const SegmentedCalibrationSample* samples,
@@ -794,16 +709,17 @@ WaterPulseTraceAnalysis analyzeWaterPulseTrace(const WaterPulseTrace& trace, con
 WaterPulseTraceAnalysis analyzeWaterPulseTrace(const WaterPulseTrace& trace,
                                                const WaterPulseTraceStore& store,
                                                const SegmentedCalibrationOptions& options) {
-    WaterPulseTraceSample* samples = new (std::nothrow) WaterPulseTraceSample[trace.sampleCount]{};
-    if (!samples) {
+    WaterPulseTraceBucketSample* compactBuckets =
+        new (std::nothrow) WaterPulseTraceBucketSample[trace.bucketCount]{};
+    if (!compactBuckets) {
         return WaterPulseTraceAnalysis{};
     }
-    for (std::size_t i = 0; i < trace.sampleCount; ++i) {
-        const WaterPulseTraceSample* sample = store.sampleAt(trace, i);
-        samples[i] = sample ? *sample : WaterPulseTraceSample{};
+    for (std::size_t i = 0; i < trace.bucketCount; ++i) {
+        const WaterPulseTraceBucketSample* bucket = store.bucketAt(trace, i);
+        compactBuckets[i] = bucket ? *bucket : WaterPulseTraceBucketSample{};
     }
-    const WaterPulseTraceAnalysis result = analyzeWaterPulseTrace(trace, samples, trace.sampleCount, options);
-    delete[] samples;
+    const WaterPulseTraceAnalysis result = analyzeCompactBuckets(trace, compactBuckets, trace.bucketCount, options);
+    delete[] compactBuckets;
     return result;
 }
 
@@ -812,17 +728,18 @@ std::size_t aggregateWaterPulseTrace(const WaterPulseTrace& trace,
                                      std::uint32_t bucketSeconds,
                                      WaterPulseTraceBucket* buckets,
                                      std::size_t bucketCapacity) {
-    WaterPulseTraceSample* samples = new (std::nothrow) WaterPulseTraceSample[trace.sampleCount]{};
-    if (!samples) {
+    WaterPulseTraceBucketSample* compactBuckets =
+        new (std::nothrow) WaterPulseTraceBucketSample[trace.bucketCount]{};
+    if (!compactBuckets) {
         return 0;
     }
-    for (std::size_t i = 0; i < trace.sampleCount; ++i) {
-        const WaterPulseTraceSample* sample = store.sampleAt(trace, i);
-        samples[i] = sample ? *sample : WaterPulseTraceSample{};
+    for (std::size_t i = 0; i < trace.bucketCount; ++i) {
+        const WaterPulseTraceBucketSample* bucket = store.bucketAt(trace, i);
+        compactBuckets[i] = bucket ? *bucket : WaterPulseTraceBucketSample{};
     }
     const std::size_t result =
-        aggregateWaterPulseTrace(trace, samples, trace.sampleCount, bucketSeconds, buckets, bucketCapacity);
-    delete[] samples;
+        aggregateWaterPulseTrace(trace, compactBuckets, trace.bucketCount, bucketSeconds, buckets, bucketCapacity);
+    delete[] compactBuckets;
     return result;
 }
 

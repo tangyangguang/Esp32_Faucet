@@ -203,7 +203,6 @@ SampleIndexEntry makeEntry(const CalibrationStoredTrace& trace,
     entry.trace = trace.trace;
     entry.trace.bucketCount = bucketCount;
     entry.trace.startupEdgeCount = startupEdgeCount;
-    entry.trace.sampleStart = 0;
     entry.trace.bucketStart = 0;
     entry.trace.startupEdgeStart = 0;
     entry.trace.actualMl = trace.actualMl;
@@ -222,7 +221,6 @@ CalibrationStoredTrace storedFromEntry(const SampleIndexEntry& entry) {
     trace.trace = entry.trace;
     trace.trace.bucketCount = entry.bucketCount;
     trace.trace.startupEdgeCount = entry.startupEdgeCount;
-    trace.trace.sampleStart = 0;
     trace.trace.bucketStart = 0;
     trace.trace.startupEdgeStart = 0;
     trace.trace.actualMl = entry.actualMl;
@@ -362,13 +360,6 @@ bool CalibrationSessionTraceStore::clearForNewSession(std::uint32_t sessionId) {
 
 bool CalibrationSessionTraceStore::savePending(std::uint8_t slot,
                                                const CalibrationStoredTrace& trace,
-                                               const WaterPulseTraceSample* samples,
-                                               std::size_t sampleCount) {
-    return savePending(slot, trace, nullptr, 0, samples, sampleCount);
-}
-
-bool CalibrationSessionTraceStore::savePending(std::uint8_t slot,
-                                               const CalibrationStoredTrace& trace,
                                                const WaterPulseTraceBucketSample* buckets,
                                                std::size_t bucketCount,
                                                const WaterPulseTraceSample* startupEdges,
@@ -418,12 +409,6 @@ bool CalibrationSessionTraceStore::load(std::uint8_t slot, CalibrationStoredTrac
     }
     trace = storedFromEntry(entry);
     return true;
-}
-
-std::size_t CalibrationSessionTraceStore::readSamples(std::uint8_t slot,
-                                                      WaterPulseTraceSample* output,
-                                                      std::size_t outputCapacity) const {
-    return readStartupEdges(slot, output, outputCapacity);
 }
 
 std::size_t CalibrationSessionTraceStore::readBuckets(std::uint8_t slot,

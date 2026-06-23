@@ -7,6 +7,7 @@
 #include "app/WaterRecordCalibrationStore.h"
 #include "web/FaucetWeb.h"
 
+#include <algorithm>
 #include <cstring>
 #include <map>
 #include <string>
@@ -372,8 +373,20 @@ void saveWebSessionAttempt(CalibrationSessionTraceStore& traceStore,
 
     if (status == CalibrationAttemptStatus::Valid || status == CalibrationAttemptStatus::PendingActual) {
         WaterPulseTraceSample samples[512]{};
+        WaterPulseTraceBucketSample buckets[kPulseTraceMaxBucketsPerTrace]{};
         const std::size_t sampleCount = fillWebCalibrationSamples(samples, 512, 40, attempt.record.pulseCount - 40, 6);
         TEST_ASSERT_GREATER_THAN_size_t(0, sampleCount);
+        std::size_t bucketCount = 0;
+        std::size_t startupEdgeCount = 0;
+        for (std::size_t i = 0; i < sampleCount; ++i) {
+            const std::size_t bucketIndex = samples[i].elapsedUs / (kPulseTraceBucketMs * 1000UL);
+            TEST_ASSERT_LESS_THAN_size_t(kPulseTraceMaxBucketsPerTrace, bucketIndex);
+            ++buckets[bucketIndex].pulseCount;
+            bucketCount = std::max(bucketCount, bucketIndex + 1);
+            if (samples[i].elapsedUs < kPulseTraceStartupDetailMs * 1000UL) {
+                ++startupEdgeCount;
+            }
+        }
 
         CalibrationStoredTrace stored{};
         stored.pendingActual = true;
@@ -382,13 +395,14 @@ void saveWebSessionAttempt(CalibrationSessionTraceStore& traceStore,
         stored.trace.traceId = slot + 1;
         stored.trace.startTime = attempt.record.startTime;
         stored.trace.record = attempt.record;
-        stored.trace.sampleCount = sampleCount;
+        stored.trace.bucketCount = bucketCount;
+        stored.trace.startupEdgeCount = startupEdgeCount;
         stored.trace.totalPulses = attempt.record.pulseCount;
         stored.trace.actualMl = actualMl;
         stored.trace.pulseMinIntervalUs = kDefaultPulseMinIntervalUs;
         stored.trace.finalState = WaterPulseTraceState::Completed;
         stored.trace.finished = true;
-        TEST_ASSERT_TRUE(traceStore.savePending(slot, stored, samples, sampleCount));
+        TEST_ASSERT_TRUE(traceStore.savePending(slot, stored, buckets, bucketCount, samples, startupEdgeCount));
         if (status == CalibrationAttemptStatus::Valid) {
             TEST_ASSERT_TRUE(traceStore.commitValid(slot, actualMl, attempt.record.startTime + 10));
         }
@@ -1376,7 +1390,9 @@ void test_calibration_detail_reads_persisted_session_trace_without_ram_cache() {
     const std::string& body = Esp32BaseWeb::nativeTestResponse().body;
     TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("<h2>脉冲明细</h2>"));
     TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("href='/faucet/calibration/detail?from=calibration&slot=0&bucket=2'"));
-    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("原始明细"));
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("时间桶明细"));
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("启动边沿"));
+    TEST_ASSERT_EQUAL(std::string::npos, body.find("原始明细"));
     TEST_ASSERT_EQUAL(std::string::npos, body.find("RAM 缓存淘汰"));
 }
 

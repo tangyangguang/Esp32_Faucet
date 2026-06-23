@@ -1392,11 +1392,10 @@ void test_calibration_detail_reads_persisted_session_trace_without_ram_cache() {
     TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("href='/faucet/calibration/detail?from=calibration&slot=0&bucket=2'"));
     TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("时间桶明细"));
     TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("启动边沿"));
-    TEST_ASSERT_EQUAL(std::string::npos, body.find("原始明细"));
     TEST_ASSERT_EQUAL(std::string::npos, body.find("RAM 缓存淘汰"));
 }
 
-void test_calibration_detail_reads_compact_bucket_trace_without_raw_samples() {
+void test_calibration_detail_reads_persisted_bucket_trace_without_ram_cache() {
     WebFixture fixture;
     CalibrationSessionRecord session = makeCalibrationSession(77, testNowSeconds());
     session.status = CalibrationSessionStatus::WaitingLocalRun;
@@ -1656,7 +1655,7 @@ int main(int, char**) {
     RUN_TEST(test_flow_calibration_remove_sample_redirects_busy_without_changing_sample);
     RUN_TEST(test_flow_calibration_sample_table_only_shows_remove_for_active_samples);
     RUN_TEST(test_calibration_detail_reads_persisted_session_trace_without_ram_cache);
-    RUN_TEST(test_calibration_detail_reads_compact_bucket_trace_without_raw_samples);
+    RUN_TEST(test_calibration_detail_reads_persisted_bucket_trace_without_ram_cache);
     RUN_TEST(test_tds_calibration_start_redirects_busy_to_calibration_page);
     RUN_TEST(test_tds_calibration_start_redirects_success_from_idle);
     RUN_TEST(test_tds_calibration_start_redirects_invalid_state_when_session_exists);

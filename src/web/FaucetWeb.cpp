@@ -2220,7 +2220,7 @@ void sendNoticeFromQuery() {
     } else if (std::strcmp(text, "metering_storage_unavailable") == 0) {
         message = "计量方案存储不可用；请检查存储状态，系统不会自动删除原文件。";
     } else if (std::strcmp(text, "no_calibration_record") == 0) {
-        message = "最新记录没有可用的原始脉冲，不能用于校准。";
+        message = "最新记录没有可用的有效脉冲，不能用于校准。";
     } else if (std::strcmp(text, "calibration_mark_failed") == 0) {
         message = "实测记录保存失败，请重试。";
     } else if (std::strcmp(text, "calibration_unchanged") == 0) {

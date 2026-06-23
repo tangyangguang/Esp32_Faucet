@@ -284,7 +284,7 @@ void test_trace_store_drops_oldest_when_recent_trace_count_is_exceeded() {
     TEST_ASSERT_EQUAL_size_t(2, store.stats().traceCount);
 }
 
-void test_trace_store_marks_trace_truncated_after_single_trace_sample_limit() {
+void test_trace_store_marks_bucket_overflow_after_single_trace_bucket_limit() {
     WaterPulseTrace traces[2]{};
     WaterPulseTraceBucketSample buckets[kPulseTraceMaxBucketsPerTrace]{};
     WaterPulseTraceSample startupEdges[kPulseTraceMaxStartupEdgesPerTrace]{};
@@ -657,7 +657,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_trace_store_records_seconds_and_reports_memory_stats);
     RUN_TEST(test_trace_store_does_not_synthesize_edges_to_match_record_duration);
     RUN_TEST(test_trace_store_drops_oldest_when_recent_trace_count_is_exceeded);
-    RUN_TEST(test_trace_store_marks_trace_truncated_after_single_trace_sample_limit);
+    RUN_TEST(test_trace_store_marks_bucket_overflow_after_single_trace_bucket_limit);
     RUN_TEST(test_trace_analysis_finds_stable_start_after_slow_ramp);
     RUN_TEST(test_trace_analysis_rejects_pause_resume_trace_for_startup_calibration);
     RUN_TEST(test_trace_store_records_pause_windows);

@@ -552,14 +552,14 @@ void savePendingRamCalibrationAttempt(CalibrationAppFixture& fixture,
     TEST_ASSERT_TRUE(appendCalibrationAttempt(session, attempt));
 }
 
-void savePendingRamCalibrationAttemptWithRawEdges(CalibrationAppFixture& fixture,
-                                                  CalibrationSessionRecord& session,
-                                                  std::uint8_t slot,
-                                                  std::uint32_t startTime,
-                                                  std::uint32_t actualMl,
-                                                  const std::uint32_t* elapsedUs,
-                                                  std::size_t edgeCount,
-                                                  std::uint32_t durationSec) {
+void savePendingRamCalibrationAttemptWithPulseEdges(CalibrationAppFixture& fixture,
+                                                    CalibrationSessionRecord& session,
+                                                    std::uint8_t slot,
+                                                    std::uint32_t startTime,
+                                                    std::uint32_t actualMl,
+                                                    const std::uint32_t* elapsedUs,
+                                                    std::size_t edgeCount,
+                                                    std::uint32_t durationSec) {
     const std::uint32_t traceId = fixture.pulseTraces.beginTrace(startTime, kDefaultPulseMinIntervalUs);
     TEST_ASSERT_NOT_EQUAL_UINT32(0, traceId);
     for (std::size_t i = 0; i < edgeCount; ++i) {
@@ -1371,7 +1371,7 @@ void test_app_controller_local_ok_starts_calibration_run_and_completion_awaits_a
     TEST_ASSERT_EQUAL_size_t(valid.trace.bucketCount, traceStore.readBuckets(0, copied, 64));
 }
 
-void test_app_controller_saves_long_high_pulse_calibration_without_raw_edge_truncation() {
+void test_app_controller_saves_long_high_pulse_calibration_without_bucket_overflow() {
     CompactTraceCalibrationAppFixture fixture;
     fixture.createApp();
 
@@ -1506,7 +1506,7 @@ void test_app_controller_saves_unstable_actual_without_counting_valid_sample() {
         3000000UL,
         4000000UL,
     };
-    savePendingRamCalibrationAttemptWithRawEdges(
+    savePendingRamCalibrationAttemptWithPulseEdges(
         fixture, session, 1, 1714502410, 7500, unstableEdges, 5, 8);
     session.status = CalibrationSessionStatus::AwaitingActual;
     session.validSampleCount = countValidCalibrationSamples(session);
@@ -1752,7 +1752,7 @@ void test_app_controller_applies_generated_session_scheme_and_keeps_old_scheme()
                             static_cast<unsigned>(app.snapshot().calibrationStatus));
 }
 
-void test_app_controller_applies_calibration_from_raw_record() {
+void test_app_controller_applies_calibration_from_record_actual() {
     SystemConfig config = makeDefaultConfig();
     StatisticsStore statistics;
     FilterStore filters(config.filters);
@@ -2433,7 +2433,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_app_controller_calibration_ready_and_generated_time_out_from_last_action);
     RUN_TEST(test_app_controller_reboot_drops_awaiting_actual_when_ram_trace_missing);
     RUN_TEST(test_app_controller_local_ok_starts_calibration_run_and_completion_awaits_actual);
-    RUN_TEST(test_app_controller_saves_long_high_pulse_calibration_without_raw_edge_truncation);
+    RUN_TEST(test_app_controller_saves_long_high_pulse_calibration_without_bucket_overflow);
     RUN_TEST(test_app_controller_calibration_run_ignores_preset_target_until_local_cancel);
     RUN_TEST(test_app_controller_generates_calibration_session_candidate);
     RUN_TEST(test_app_controller_auto_generates_after_second_valid_calibration_sample);
@@ -2446,7 +2446,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_app_controller_reuses_removed_trace_slot_without_overwriting_valid_sample);
     RUN_TEST(test_app_controller_remove_one_of_three_valid_samples_regenerates_candidate);
     RUN_TEST(test_app_controller_applies_generated_session_scheme_and_keeps_old_scheme);
-    RUN_TEST(test_app_controller_applies_calibration_from_raw_record);
+    RUN_TEST(test_app_controller_applies_calibration_from_record_actual);
     RUN_TEST(test_app_controller_small_record_calibration_keeps_metering_parameters);
     RUN_TEST(test_app_controller_pause_timeout_trace_is_not_marked_error_and_can_calibrate);
     RUN_TEST(test_app_controller_applies_calibration_from_pause_timeout_record);

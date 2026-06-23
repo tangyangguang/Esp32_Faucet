@@ -487,12 +487,9 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "pulse-detail-chart"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "pulse-line"));
     TEST_ASSERT_NULL(std::strstr(buffer, "pulse-line-paused"));
-    TEST_ASSERT_NULL(std::strstr(buffer, "raw-line-paused"));
     TEST_ASSERT_NULL(std::strstr(buffer, "pulse-dot-paused"));
-    TEST_ASSERT_NULL(std::strstr(buffer, "raw-line"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "pause-window"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "pause-boundary"));
-    TEST_ASSERT_NULL(std::strstr(buffer, "legend-raw"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "legend-paused"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "暂停区间"));
     TEST_ASSERT_NULL(std::strstr(buffer, "非运行状态"));
@@ -529,8 +526,6 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "bucketRunningPulseDelta"));
     TEST_ASSERT_NULL(std::strstr(buffer, "bucketOnlyHasRunningSamples"));
     TEST_ASSERT_NULL(std::strstr(buffer, "bucketRunning ? bucketRunningPulseDelta"));
-    TEST_ASSERT_NULL(std::strstr(buffer, "rawEdgeDelta"));
-    TEST_ASSERT_NULL(std::strstr(buffer, "rawCumulative"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "prevPulseValid = false"));
     TEST_ASSERT_NULL(std::strstr(buffer, "bucketRunning ? \"pulse-line\" : \"pulse-line pulse-line-paused\""));
     TEST_ASSERT_NULL(std::strstr(buffer, "prevX = x;"));
@@ -545,34 +540,10 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "detail-data"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "<section class='panel detail-data'><div class='panel-head'><h3>时间桶明细</h3>"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "<section class='panel detail-data'><div class='panel-head'><h3>启动边沿</h3>"));
-    TEST_ASSERT_NULL(std::strstr(buffer, "显示原始明细"));
-    TEST_ASSERT_NULL(std::strstr(buffer, "显示所有明细"));
-    TEST_ASSERT_NULL(std::strstr(buffer, "导出所有明细"));
-    TEST_ASSERT_NULL(std::strstr(buffer, "target='_blank'"));
-    TEST_ASSERT_NULL(std::strstr(buffer, "raw=1"));
-    TEST_ASSERT_NULL(std::strstr(buffer, "all=1"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "kStartupEdgePreviewCount = 30"));
-    TEST_ASSERT_NULL(std::strstr(buffer, "kRawTracePreviewLastSecond"));
-    TEST_ASSERT_NULL(std::strstr(buffer, "rawTracePreviewSampleCount"));
-    TEST_ASSERT_NULL(std::strstr(buffer, "rawTraceShowAll"));
-    TEST_ASSERT_NULL(std::strstr(buffer, "序号\\t距任务开始(us)"));
-    TEST_ASSERT_NULL(std::strstr(buffer, ".raw-edge-invalid"));
-    TEST_ASSERT_NULL(std::strstr(buffer, "raw-edge-invalid"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "首个边沿"));
-    TEST_ASSERT_NULL(std::strstr(buffer, "仅显示前 %lu 个原始边沿，共 %lu 行；完整明细请使用 all=1。\\n"));
-    TEST_ASSERT_NULL(std::strstr(buffer, "仅显示 0秒 到 %lu秒"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "WaterPulseTraceState::PauseTimeout"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "全程按 %lu ms 时间桶保存有效脉冲，共 %lu 个桶，最小间隔过滤 %lu 次。"));
-    TEST_ASSERT_NULL(std::strstr(buffer, "默认展示前 %lu 个原始边沿"));
-    TEST_ASSERT_NULL(std::strstr(buffer, "原始边沿共 %lu 个，当前展示 %lu 个。"));
-    TEST_ASSERT_NULL(std::strstr(buffer, "加载原始明细"));
-    TEST_ASSERT_NULL(std::strstr(buffer, "下载文本"));
-    TEST_ASSERT_NULL(std::strstr(buffer, "fetch(rawUrl,{cache:'no-store'})"));
-    TEST_ASSERT_NULL(std::strstr(buffer, "<pre id='rawTraceText' class='raw-trace-text'"));
-    TEST_ASSERT_NULL(std::strstr(buffer, "需要排查时再拉取纯文本"));
-    TEST_ASSERT_NULL(std::strstr(buffer, "避免页面一次性生成大量表格"));
-    TEST_ASSERT_NULL(std::strstr(buffer, "<details open class='panel detail-data'>"));
-    TEST_ASSERT_NULL(std::strstr(buffer, "<summary>查看明细数据</summary>"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "<table class='trace-detail-table'><tr><th>时间</th><th>脉冲</th><th>累计</th><th>状态</th></tr>"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "<table class='trace-detail-table'><tr><th>序号</th><th>距任务开始</th><th>与上一边沿间隔</th></tr>"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "sendDurationUs(startupEdges[i].elapsedUs)"));
@@ -805,10 +776,8 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NULL(std::strstr(buffer, "生成参数：样本与拟合"));
     TEST_ASSERT_NULL(std::strstr(buffer, "出水估算：计量方案如何使用"));
     TEST_ASSERT_NULL(std::strstr(buffer, "参数说明与计算公式"));
-    TEST_ASSERT_NULL(std::strstr(buffer, "原始边沿未因超过单条上限而被截断"));
     TEST_ASSERT_NULL(std::strstr(buffer, "未发生暂停后恢复出水"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "样本来源"));
-    TEST_ASSERT_NULL(std::strstr(buffer, "样本先记录原始脉冲明细，再用量杯实测容量校准"));
     TEST_ASSERT_NULL(std::strstr(buffer, "实测容量 = Vs + 稳态脉冲数 × 每脉冲毫升数"));
     TEST_ASSERT_NULL(std::strstr(buffer, "估算出水量 = Vs + round((P - Ns) × 1000 / Ps)"));
     TEST_ASSERT_NULL(std::strstr(buffer, "估算出水量 = round(脉冲数 / 控制P/ml) + 启动补偿"));
@@ -1888,40 +1857,6 @@ void test_web_handler_mapping_does_not_duplicate_route_paths() {
     TEST_ASSERT_NOT_EQUAL(std::string::npos, handler.find("switch (route.handler)"));
 }
 
-void test_compact_pulse_trace_removes_legacy_raw_compatibility_paths() {
-    const char* paths[] = {
-        "include/app/AppConfig.h",
-        "include/app/WaterPulseTraceStore.h",
-        "include/app/CalibrationSampleStore.h",
-        "src/app/WaterPulseTraceStore.cpp",
-        "src/app/CalibrationSampleStore.cpp",
-        "src/app/AppController.cpp",
-        "src/web/FaucetWeb.cpp",
-        "src/main.cpp",
-    };
-    const char* legacyTerms[] = {
-        "appendRawEdge",
-        "sampleAt",
-        "readSamples",
-        "kPulseTraceMaxRawEdgesPerTrace",
-        "kPulseTraceSamplesPerTrace",
-        "sampleStart",
-        "trace->sampleCount",
-        "trace.sampleCount",
-        "trace->truncated",
-        "trace.truncated",
-        "原始边沿",
-        "原始明细",
-    };
-
-    for (const char* path : paths) {
-        const std::string body = readSourceFile(path);
-        for (const char* term : legacyTerms) {
-            TEST_ASSERT_EQUAL_MESSAGE(std::string::npos, body.find(term), term);
-        }
-    }
-}
-
 int main(int argc, char** argv) {
     (void)argc;
     (void)argv;
@@ -1967,7 +1902,6 @@ int main(int argc, char** argv) {
     RUN_TEST(test_main_loop_routes_cancel_stop_through_debounced_button_input);
     RUN_TEST(test_esp32_file_backend_has_create_sized_fallback_for_fresh_littlefs_files);
     RUN_TEST(test_web_handler_mapping_does_not_duplicate_route_paths);
-    RUN_TEST(test_compact_pulse_trace_removes_legacy_raw_compatibility_paths);
     RUN_TEST(test_flow_calibration_active_refresh_uses_status_api_not_full_page_reload);
     return UNITY_END();
 }

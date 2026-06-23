@@ -55,43 +55,54 @@ MeteringSchemeRecord defaultRuntimeMeteringScheme() {
     return scheme;
 }
 
-bool appendSessionCalibrationSample(const CalibrationStoredTrace& stored,
-                                    const CalibrationSessionTraceStore& traceStore,
-                                    std::uint8_t slot,
-                                    const SegmentedCalibrationOptions& options,
+CalibrationSampleSummary makeCalibrationSummary(const WaterPulseTrace& trace,
+                                                const WaterPulseTraceSample* samples,
+                                                std::size_t sampleCount,
+                                                std::uint32_t actualMl,
+                                                const SegmentedCalibrationOptions& options) {
+    CalibrationSampleSummary summary{};
+    summary.actualMl = actualMl;
+    summary.totalPulses = trace.totalPulses;
+    summary.rejectedPulses = trace.record.rejectedPulseCount;
+    summary.durationSec = trace.record.durationSec;
+    summary.truncated = trace.truncated;
+    summary.resumedAfterPause = trace.resumedAfterPause;
+    if (!samples || sampleCount == 0 || trace.truncated || trace.resumedAfterPause || actualMl < kCalibrationMinActualMl ||
+        trace.totalPulses == 0) {
+        return summary;
+    }
+    const WaterPulseTraceAnalysis analysis = analyzeWaterPulseTrace(trace, samples, sampleCount, options);
+    summary.stable = analysis.stable;
+    summary.startupPulseCount = analysis.startupPulseCount;
+    summary.stablePulseCount = analysis.stablePulseCount;
+    summary.stableStartSec = analysis.stableStartSec;
+    summary.stablePulsePerSec = analysis.stablePulsePerSec;
+    summary.usableForGeneration = true;
+    return summary;
+}
+
+bool appendSummaryCalibrationSample(const CalibrationAttempt& attempt,
                                     SegmentedCalibrationSample* samples,
                                     std::size_t sampleCapacity,
                                     std::uint32_t* sourceIds,
                                     std::size_t& sampleCount) {
-    if (!samples || !sourceIds || sampleCount >= sampleCapacity || !stored.valid || stored.pendingActual ||
-        stored.actualMl == 0 || stored.trace.sampleCount < 6 || stored.trace.totalPulses == 0 ||
-        stored.trace.truncated || stored.trace.resumedAfterPause) {
-        return false;
-    }
-    WaterPulseTraceSample* traceSamples = new (std::nothrow) WaterPulseTraceSample[stored.trace.sampleCount]{};
-    if (!traceSamples) {
-        return false;
-    }
-    const std::size_t copied = traceStore.readSamples(slot, traceSamples, stored.trace.sampleCount);
-    if (copied != stored.trace.sampleCount) {
-        delete[] traceSamples;
-        return false;
-    }
-    const WaterPulseTraceAnalysis analysis =
-        analyzeWaterPulseTrace(stored.trace, traceSamples, stored.trace.sampleCount, options);
-    delete[] traceSamples;
-    if (!analysis.stable || analysis.stablePulseCount == 0) {
+    if (!samples || !sourceIds || sampleCount >= sampleCapacity ||
+        attempt.status != CalibrationAttemptStatus::Valid || !attempt.summary.usableForGeneration ||
+        attempt.summary.actualMl == 0 || attempt.summary.totalPulses == 0 ||
+        attempt.summary.truncated || attempt.summary.resumedAfterPause ||
+        !attempt.summary.stable || attempt.summary.stablePulseCount == 0) {
         return false;
     }
     samples[sampleCount] = SegmentedCalibrationSample{
-        stored.actualMl,
-        stored.trace.totalPulses,
-        analysis.startupPulseCount,
-        analysis.stablePulseCount,
-        analysis.stableStartSec,
-        analysis.stablePulsePerSec,
+        attempt.summary.actualMl,
+        attempt.summary.totalPulses,
+        attempt.summary.startupPulseCount,
+        attempt.summary.stablePulseCount,
+        attempt.summary.stableStartSec,
+        attempt.summary.stablePulsePerSec,
     };
-    sourceIds[sampleCount] = stored.trace.traceId == 0 ? static_cast<std::uint32_t>(slot + 1) : stored.trace.traceId;
+    sourceIds[sampleCount] =
+        attempt.record.startTime == 0 ? static_cast<std::uint32_t>(attempt.attemptIndex + 1) : attempt.record.startTime;
     ++sampleCount;
     return true;
 }
@@ -142,7 +153,6 @@ AppController::AppController(const SystemConfig& config,
                              WaterRecordCalibrationWriter* recordCalibrations,
                              CalibrationSessionFileStore* calibrationSessions,
                              CalibrationSessionTraceStore* calibrationSessionTraces,
-                             CalibrationLongTermSampleStore* calibrationLongTermSamples,
                              WaterSensorManager* waterSensors)
     : AppController(config,
                     defaultRuntimeMeteringScheme(),
@@ -154,7 +164,6 @@ AppController::AppController(const SystemConfig& config,
                     recordCalibrations,
                     calibrationSessions,
                     calibrationSessionTraces,
-                    calibrationLongTermSamples,
                     waterSensors) {}
 
 AppController::AppController(const SystemConfig& config,
@@ -167,7 +176,6 @@ AppController::AppController(const SystemConfig& config,
                              WaterRecordCalibrationWriter* recordCalibrations,
                              CalibrationSessionFileStore* calibrationSessions,
                              CalibrationSessionTraceStore* calibrationSessionTraces,
-                             CalibrationLongTermSampleStore* calibrationLongTermSamples,
                              WaterSensorManager* waterSensors)
     : AppController(config,
                     activeScheme,
@@ -179,7 +187,6 @@ AppController::AppController(const SystemConfig& config,
                     recordCalibrations,
                     calibrationSessions,
                     calibrationSessionTraces,
-                    calibrationLongTermSamples,
                     waterSensors) {}
 
 AppController::AppController(const SystemConfig& config,
@@ -192,7 +199,6 @@ AppController::AppController(const SystemConfig& config,
                              WaterRecordCalibrationWriter* recordCalibrations,
                              CalibrationSessionFileStore* calibrationSessions,
                              CalibrationSessionTraceStore* calibrationSessionTraces,
-                             CalibrationLongTermSampleStore* calibrationLongTermSamples,
                              WaterSensorManager* waterSensors)
     : config_(config),
       activeMeteringScheme_(activeScheme),
@@ -210,7 +216,6 @@ AppController::AppController(const SystemConfig& config,
       waterSensors_(waterSensors),
       calibrationSessions_(calibrationSessions),
       calibrationSessionTraces_(calibrationSessionTraces),
-      calibrationLongTermSamples_(calibrationLongTermSamples),
       calibrationSession_{},
       activeTraceId_(0),
       activeTraceStartUs_(0),
@@ -492,7 +497,6 @@ bool AppController::applyConfig(const SystemConfig& config) {
 
 bool AppController::applyActiveMeteringScheme(const MeteringSchemeRecord& activeScheme) {
     if (!canApplyConfig() || !activeScheme.recordUsed ||
-        activeScheme.deleted ||
         !validMeteringSchemeParameters(activeScheme.params)) {
         return false;
     }
@@ -571,6 +575,20 @@ bool AppController::submitCalibrationActualForWeb(std::uint32_t actualMl, std::u
             samples[i] = *sample;
         }
     }
+    const CalibrationSampleSummary summary =
+        makeCalibrationSummary(*trace,
+                               samples,
+                               trace->sampleCount,
+                               actualMl,
+                               segmentedCalibrationOptionsFromConfig(config_));
+    if (!summary.usableForGeneration) {
+        delete[] samples;
+        attempt.status = CalibrationAttemptStatus::Invalid;
+        attempt.invalidReason = CalibrationInvalidReason::AnalysisFailed;
+        calibrationSession_.updatedAt = nowSeconds;
+        saveCalibrationSession();
+        return false;
+    }
     CalibrationStoredTrace stored{};
     stored.pendingActual = true;
     stored.sessionId = calibrationSession_.sessionId;
@@ -598,6 +616,7 @@ bool AppController::submitCalibrationActualForWeb(std::uint32_t actualMl, std::u
     delete[] samples;
 
     attempt.actualMl = actualMl;
+    attempt.summary = summary;
     attempt.status = CalibrationAttemptStatus::Valid;
     attempt.invalidReason = CalibrationInvalidReason::None;
     calibrationSession_.validSampleCount = countValidCalibrationSamples(calibrationSession_);
@@ -612,74 +631,6 @@ bool AppController::submitCalibrationActualForWeb(std::uint32_t actualMl, std::u
     clearCalibrationCandidate();
     calibrationSession_.status = calibrationCanStartAttempt(calibrationSession_) ? CalibrationSessionStatus::WaitingLocalRun
                                                                                 : CalibrationSessionStatus::Failed;
-    return saveCalibrationSession();
-}
-
-bool AppController::saveCalibrationSessionSampleToLongTermForWeb(std::uint8_t attemptIndex,
-                                                                 std::uint32_t nowSeconds,
-                                                                 std::uint32_t& sampleId) {
-    sampleId = 0;
-    if (!calibrationLongTermSamples_ || !calibrationLongTermSamples_->ready() || !calibrationSessionTraces_ ||
-        !calibrationSessionTraces_->ready() || water_.snapshot().state != WaterState::Idle) {
-        return false;
-    }
-
-    const CalibrationAttempt* selected = nullptr;
-    for (std::uint8_t i = 0; i < calibrationSession_.attemptCount && i < kCalibrationMaxAttempts; ++i) {
-        const CalibrationAttempt& attempt = calibrationSession_.attempts[i];
-        if (attempt.attemptIndex == attemptIndex) {
-            selected = &attempt;
-            break;
-        }
-    }
-    if (!selected || selected->status != CalibrationAttemptStatus::Valid ||
-        selected->sessionTraceSlot >= kCalibrationSessionTraceSlots) {
-        return false;
-    }
-
-    std::unique_ptr<CalibrationStoredTrace[]> existing(
-        new (std::nothrow) CalibrationStoredTrace[kCalibrationLongTermSampleSlots]{});
-    if (!existing) {
-        return false;
-    }
-    const std::size_t existingCount =
-        calibrationLongTermSamples_->list(existing.get(), kCalibrationLongTermSampleSlots);
-    for (std::size_t i = 0; i < existingCount; ++i) {
-        if (existing[i].sessionId == calibrationSession_.sessionId &&
-            existing[i].attemptIndex == selected->attemptIndex) {
-            sampleId = existing[i].sampleId;
-            calibrationSession_.updatedAt = nowSeconds;
-            return saveCalibrationSession();
-        }
-    }
-
-    CalibrationStoredTrace stored{};
-    if (!calibrationSessionTraces_->load(selected->sessionTraceSlot, stored) || !stored.valid ||
-        stored.pendingActual || stored.actualMl == 0 || stored.trace.sampleCount == 0 ||
-        stored.trace.sampleCount > kPulseTraceMaxRawEdgesPerTrace) {
-        return false;
-    }
-
-    WaterPulseTraceSample* samples = new (std::nothrow) WaterPulseTraceSample[stored.trace.sampleCount]{};
-    if (!samples) {
-        return false;
-    }
-    const std::size_t copied =
-        calibrationSessionTraces_->readSamples(selected->sessionTraceSlot, samples, stored.trace.sampleCount);
-    if (copied != stored.trace.sampleCount) {
-        delete[] samples;
-        return false;
-    }
-    stored.sessionId = calibrationSession_.sessionId;
-    stored.attemptIndex = selected->attemptIndex;
-    stored.savedAt = nowSeconds;
-    const bool saved = calibrationLongTermSamples_->save(stored, samples, copied, sampleId);
-    delete[] samples;
-    if (!saved) {
-        return false;
-    }
-    calibrationSession_.updatedAt = nowSeconds;
-    pendingBeep_ = BeepPattern::Done;
     return saveCalibrationSession();
 }
 
@@ -770,8 +721,7 @@ bool AppController::refreshCalibrationCandidate(std::uint32_t nowSeconds) {
         calibrationSession_.status == CalibrationSessionStatus::Failed) {
         return false;
     }
-    if (!meteringSchemes_ || !meteringSchemes_->ready() || !calibrationSessionTraces_ ||
-        !calibrationSessionTraces_->ready() || !calibrationCanQuickGenerate(calibrationSession_) ||
+    if (!meteringSchemes_ || !meteringSchemes_->ready() || !calibrationCanQuickGenerate(calibrationSession_) ||
         water_.snapshot().state != WaterState::Idle) {
         calibrationSession_.status = calibrationCanStartAttempt(calibrationSession_) ? CalibrationSessionStatus::WaitingLocalRun
                                                                                     : CalibrationSessionStatus::Failed;
@@ -789,22 +739,7 @@ bool AppController::refreshCalibrationCandidate(std::uint32_t nowSeconds) {
     const SegmentedCalibrationOptions options = segmentedCalibrationOptionsFromConfig(config_);
     for (std::uint8_t i = 0; i < calibrationSession_.attemptCount && i < kCalibrationMaxAttempts; ++i) {
         const CalibrationAttempt& attempt = calibrationSession_.attempts[i];
-        if (attempt.status != CalibrationAttemptStatus::Valid ||
-            attempt.sessionTraceSlot >= kCalibrationSessionTraceSlots) {
-            continue;
-        }
-        CalibrationStoredTrace stored{};
-        if (!calibrationSessionTraces_->load(attempt.sessionTraceSlot, stored)) {
-            continue;
-        }
-        appendSessionCalibrationSample(stored,
-                                       *calibrationSessionTraces_,
-                                       attempt.sessionTraceSlot,
-                                       options,
-                                       samples.get(),
-                                       kCalibrationMaxValidSamples,
-                                       sourceIds,
-                                       sampleCount);
+        appendSummaryCalibrationSample(attempt, samples.get(), kCalibrationMaxValidSamples, sourceIds, sampleCount);
     }
 
     SegmentedCalibrationResult result{};
@@ -1510,10 +1445,6 @@ void AppController::processResult(std::uint32_t startTime,
             std::min<std::uint32_t>(kMaxVolumePresetMl,
                                     std::max<std::uint32_t>(kCalibrationMinActualMl, record.volumeMl));
         localCalibrationStepMl_ = kLocalRecordCalibrationStepMl;
-    }
-    if (lastRecordWriteOk_ && meteringSchemes_ && !activeMeteringScheme_.usedEver) {
-        activeMeteringScheme_.usedEver = true;
-        meteringSchemes_->markUsedAfterRecordWrite(activeMeteringScheme_.id);
     }
     if (periodKeysValid) {
         statistics_.addWater(result.volumeMl, periodKeys);

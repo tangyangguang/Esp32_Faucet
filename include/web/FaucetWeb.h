@@ -5,7 +5,6 @@
 namespace faucet {
 
 class AppController;
-class CalibrationLongTermSampleStore;
 class CalibrationSessionFileStore;
 class CalibrationSessionTraceStore;
 class ConfigStore;
@@ -49,7 +48,6 @@ struct FaucetWebContext {
     MeteringSchemeStore* meteringSchemes;
     CalibrationSessionFileStore* calibrationSessions;
     CalibrationSessionTraceStore* calibrationSessionTraces;
-    CalibrationLongTermSampleStore* calibrationLongTermSamples;
     WaterPulseTraceStore* pulseTraces;
     FaucetNowSeconds nowSeconds;
     FaucetBootId bootId;

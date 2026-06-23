@@ -11,6 +11,11 @@ CalibrationAttempt validAttempt(std::uint8_t index, std::uint32_t actualMl) {
     attempt.attemptIndex = index;
     attempt.actualMl = actualMl;
     attempt.record.pulseCount = 1;
+    attempt.summary.actualMl = actualMl;
+    attempt.summary.totalPulses = 1;
+    attempt.summary.stable = true;
+    attempt.summary.stablePulseCount = 1;
+    attempt.summary.usableForGeneration = true;
     attempt.status = CalibrationAttemptStatus::Valid;
     return attempt;
 }
@@ -67,6 +72,8 @@ void test_valid_status_zero_pulses_does_not_count_for_quick_generation() {
     CalibrationSessionRecord session = makeCalibrationSession(1, 1770000000);
     CalibrationAttempt zeroPulses = validAttempt(0, 500);
     zeroPulses.record.pulseCount = 0;
+    zeroPulses.summary.totalPulses = 0;
+    zeroPulses.summary.usableForGeneration = false;
 
     TEST_ASSERT_TRUE(appendCalibrationAttempt(session, zeroPulses));
     TEST_ASSERT_TRUE(appendCalibrationAttempt(session, validAttempt(1, 1000)));
@@ -118,6 +125,24 @@ void test_three_valid_samples_are_recommended() {
                             static_cast<unsigned>(calibrationCoverageQuality(session)));
 }
 
+void test_valid_summary_counts_as_valid_sample() {
+    CalibrationSessionRecord session = makeCalibrationSession(1, 1770000000);
+    CalibrationAttempt attempt{};
+    attempt.attemptIndex = 0;
+    attempt.status = CalibrationAttemptStatus::Valid;
+    attempt.actualMl = 1500;
+    attempt.record.pulseCount = 0;
+    attempt.summary.actualMl = 1500;
+    attempt.summary.totalPulses = 360;
+    attempt.summary.stable = true;
+    attempt.summary.stablePulseCount = 320;
+    attempt.summary.usableForGeneration = true;
+
+    TEST_ASSERT_TRUE(appendCalibrationAttempt(session, attempt));
+
+    TEST_ASSERT_EQUAL_UINT8(1, countValidCalibrationSamples(session));
+}
+
 void test_max_valid_samples_stop_new_runs() {
     CalibrationSessionRecord session = makeCalibrationSession(1, 1770000000);
 
@@ -125,19 +150,19 @@ void test_max_valid_samples_stop_new_runs() {
         TEST_ASSERT_TRUE(appendCalibrationAttempt(session, validAttempt(i, 500 + static_cast<std::uint32_t>(i) * 500)));
     }
 
-    TEST_ASSERT_EQUAL_UINT8(10, kCalibrationMaxValidSamples);
-    TEST_ASSERT_EQUAL_UINT8(10, countValidCalibrationSamples(session));
+    TEST_ASSERT_EQUAL_UINT8(6, kCalibrationMaxValidSamples);
+    TEST_ASSERT_EQUAL_UINT8(6, countValidCalibrationSamples(session));
     TEST_ASSERT_FALSE(calibrationCanStartAttempt(session));
-    TEST_ASSERT_FALSE(appendCalibrationAttempt(session, validAttempt(10, 3500)));
+    TEST_ASSERT_FALSE(appendCalibrationAttempt(session, validAttempt(6, 3500)));
 }
 
-void test_session_allows_ten_valid_samples() {
+void test_session_allows_six_valid_samples() {
     CalibrationSessionRecord session = makeCalibrationSession(1, 1770000000);
-    for (std::uint8_t i = 0; i < 10; ++i) {
+    for (std::uint8_t i = 0; i < 6; ++i) {
         TEST_ASSERT_TRUE(appendCalibrationAttempt(session, validAttempt(i, 500 + static_cast<std::uint32_t>(i) * 250)));
     }
-    TEST_ASSERT_EQUAL_UINT8(10, kCalibrationMaxValidSamples);
-    TEST_ASSERT_EQUAL_UINT8(10, countValidCalibrationSamples(session));
+    TEST_ASSERT_EQUAL_UINT8(6, kCalibrationMaxValidSamples);
+    TEST_ASSERT_EQUAL_UINT8(6, countValidCalibrationSamples(session));
     TEST_ASSERT_FALSE(calibrationCanStartAttempt(session));
 }
 
@@ -152,8 +177,8 @@ void test_max_attempts_stop_session_when_not_ready() {
         TEST_ASSERT_TRUE(appendCalibrationAttempt(session, attempt));
     }
 
-    TEST_ASSERT_EQUAL_UINT8(16, kCalibrationMaxAttempts);
-    TEST_ASSERT_EQUAL_UINT8(16, countCalibrationAttempts(session));
+    TEST_ASSERT_EQUAL_UINT8(6, kCalibrationMaxAttempts);
+    TEST_ASSERT_EQUAL_UINT8(6, countCalibrationAttempts(session));
     TEST_ASSERT_FALSE(calibrationCanStartAttempt(session));
     CalibrationAttempt extra{};
     extra.status = CalibrationAttemptStatus::Skipped;
@@ -238,8 +263,9 @@ int main(int argc, char** argv) {
     RUN_TEST(test_two_valid_samples_allow_quick_generation);
     RUN_TEST(test_two_narrow_valid_samples_allow_quick_generation);
     RUN_TEST(test_three_valid_samples_are_recommended);
+    RUN_TEST(test_valid_summary_counts_as_valid_sample);
     RUN_TEST(test_max_valid_samples_stop_new_runs);
-    RUN_TEST(test_session_allows_ten_valid_samples);
+    RUN_TEST(test_session_allows_six_valid_samples);
     RUN_TEST(test_max_attempts_stop_session_when_not_ready);
     RUN_TEST(test_skipped_attempt_does_not_count_as_valid);
     RUN_TEST(test_removed_sample_does_not_count_as_valid);

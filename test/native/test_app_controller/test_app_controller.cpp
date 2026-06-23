@@ -380,6 +380,16 @@ void saveCalibrationSessionSample(CalibrationSessionTraceStore& traceStore,
     attempt.record = record;
     attempt.targetHintMl = actualMl;
     attempt.actualMl = actualMl;
+    attempt.summary.actualMl = actualMl;
+    attempt.summary.totalPulses = totalPulses;
+    attempt.summary.rejectedPulses = record.rejectedPulseCount;
+    attempt.summary.durationSec = record.durationSec;
+    attempt.summary.stable = true;
+    attempt.summary.startupPulseCount = startupPulses;
+    attempt.summary.stablePulseCount = stablePulses;
+    attempt.summary.stableStartSec = 5;
+    attempt.summary.stablePulsePerSec = static_cast<float>(stablePulses) / static_cast<float>(stableSeconds);
+    attempt.summary.usableForGeneration = stablePulses > 0 && actualMl >= kCalibrationMinActualMl;
     attempt.status = CalibrationAttemptStatus::Valid;
     TEST_ASSERT_TRUE(appendCalibrationAttempt(session, attempt));
 }
@@ -395,7 +405,6 @@ struct CalibrationAppFixture {
     MeteringSchemeRecord active{};
     CalibrationSessionFileStore sessionStore;
     CalibrationSessionTraceStore traceStore;
-    CalibrationLongTermSampleStore sampleStore;
     WaterPulseTrace ramTraces[4]{};
     WaterPulseTraceSample ramSamples[4096]{};
     WaterPulseTraceStore pulseTraces;
@@ -406,13 +415,11 @@ struct CalibrationAppFixture {
           schemes(backend, "/schemes.bin"),
           sessionStore(backend, "/cal-session.bin"),
           traceStore(backend, "/cal-traces.bin"),
-          sampleStore(backend, "/cal-samples.bin"),
           pulseTraces(ramTraces, 4, ramSamples, 4096, 4) {
         statistics.reset({20260506, 202619, 202605});
         TEST_ASSERT_TRUE(prepareMeteringScheme(schemes, 225, active));
         TEST_ASSERT_TRUE(sessionStore.begin());
         TEST_ASSERT_TRUE(traceStore.begin());
-        TEST_ASSERT_TRUE(sampleStore.begin());
     }
 
     ~CalibrationAppFixture() {
@@ -429,8 +436,7 @@ struct CalibrationAppFixture {
                                 &pulseTraces,
                                 &calibrations,
                                 &sessionStore,
-                                &traceStore,
-                                &sampleStore);
+                                &traceStore);
     }
 
     void createAppWithoutMeteringStore() {
@@ -441,8 +447,7 @@ struct CalibrationAppFixture {
                                 &pulseTraces,
                                 &calibrations,
                                 &sessionStore,
-                                &traceStore,
-                                &sampleStore);
+                                &traceStore);
     }
 };
 
@@ -547,7 +552,7 @@ void test_app_snapshot_contains_water_sensor_snapshot() {
     WaterSensorManager sensors(adc);
     sensors.configure(config);
     sensors.begin();
-    AppController app(config, statistics, filters, records, nullptr, nullptr, nullptr, nullptr, nullptr, &sensors);
+    AppController app(config, statistics, filters, records, nullptr, nullptr, nullptr, nullptr, &sensors);
 
     app.tick(input({false, false, false, false}, 1000, 1000000, 1714502400));
 
@@ -575,7 +580,7 @@ void test_temperature_reference_calibration_sets_offset_from_raw_temperature() {
     WaterSensorManager sensors(adc);
     sensors.configure(config);
     sensors.begin();
-    AppController app(config, statistics, filters, records, nullptr, nullptr, nullptr, nullptr, nullptr, &sensors);
+    AppController app(config, statistics, filters, records, nullptr, nullptr, nullptr, nullptr, &sensors);
 
     app.tick(input({false, false, false, false}, 1000, 1000000, 1714502400));
 
@@ -598,7 +603,7 @@ void test_temperature_reference_calibration_rejects_disabled_temperature_sensor(
     WaterSensorManager sensors(adc);
     sensors.configure(config);
     sensors.begin();
-    AppController app(config, statistics, filters, records, nullptr, nullptr, nullptr, nullptr, nullptr, &sensors);
+    AppController app(config, statistics, filters, records, nullptr, nullptr, nullptr, nullptr, &sensors);
 
     app.tick(input({false, false, false, false}, 1000, 1000000, 1714502400));
 
@@ -619,7 +624,7 @@ void test_app_records_sensor_summary_on_completed_run() {
     WaterSensorManager sensors(adc);
     sensors.configure(config);
     sensors.begin();
-    AppController app(config, statistics, filters, records, nullptr, nullptr, nullptr, nullptr, nullptr, &sensors);
+    AppController app(config, statistics, filters, records, nullptr, nullptr, nullptr, nullptr, &sensors);
     applyTestMeteringScheme(app);
 
     app.resetInputs({false, false, false, false}, 0);
@@ -649,7 +654,7 @@ void test_app_rejects_tds_calibration_when_running() {
     FakeAdcReader adc;
     WaterSensorManager sensors(adc);
     sensors.configure(config);
-    AppController app(config, statistics, filters, records, nullptr, nullptr, nullptr, nullptr, nullptr, &sensors);
+    AppController app(config, statistics, filters, records, nullptr, nullptr, nullptr, nullptr, &sensors);
     applyTestMeteringScheme(app);
     app.resetInputs({false, false, false, false}, 0);
     pressAndReleaseOk(app, 100);
@@ -671,7 +676,7 @@ void test_app_tds_point_calibration_apply_persists_to_config() {
     WaterSensorManager sensors(adc);
     sensors.configure(config);
     TEST_ASSERT_TRUE(sensors.begin());
-    AppController app(config, statistics, filters, records, nullptr, nullptr, nullptr, nullptr, nullptr, &sensors);
+    AppController app(config, statistics, filters, records, nullptr, nullptr, nullptr, nullptr, &sensors);
 
     TEST_ASSERT_TRUE(app.startTdsCalibrationSessionForWeb(1714502400));
     TEST_ASSERT_TRUE(app.startTdsCalibrationPointForWeb(160, 1714502401));
@@ -701,7 +706,7 @@ void test_app_expires_idle_tds_calibration_session_from_tick() {
     WaterSensorManager sensors(adc);
     sensors.configure(config);
     TEST_ASSERT_TRUE(sensors.begin());
-    AppController app(config, statistics, filters, records, nullptr, nullptr, nullptr, nullptr, nullptr, &sensors);
+    AppController app(config, statistics, filters, records, nullptr, nullptr, nullptr, nullptr, &sensors);
 
     TEST_ASSERT_TRUE(app.startTdsCalibrationSessionForWeb(1714502400));
 
@@ -710,7 +715,7 @@ void test_app_expires_idle_tds_calibration_session_from_tick() {
     TEST_ASSERT_FALSE(app.tdsCalibrationSnapshot().sessionActive);
 }
 
-void test_app_controller_successful_record_writes_scheme_id_and_marks_scheme_used_once() {
+void test_app_controller_successful_record_writes_scheme_id_without_mutating_scheme_history() {
     SystemConfig config = makeDefaultConfig();
     StatisticsStore statistics;
     statistics.reset({20260506, 202619, 202605});
@@ -729,11 +734,11 @@ void test_app_controller_successful_record_writes_scheme_id_and_marks_scheme_use
     TEST_ASSERT_EQUAL_UINT32(active.id, records.records[0].meteringSchemeId);
     MeteringSchemeRecord updated{};
     TEST_ASSERT_TRUE(schemes.findById(active.id, updated));
-    TEST_ASSERT_FALSE(updated.deleted);
-    TEST_ASSERT_TRUE(updated.usedEver);
+    TEST_ASSERT_TRUE(updated.recordUsed);
+    TEST_ASSERT_EQUAL_UINT32(active.id, updated.id);
 }
 
-void test_app_controller_record_write_failure_does_not_mark_scheme_used() {
+void test_app_controller_record_write_failure_keeps_scheme_history_unchanged() {
     SystemConfig config = makeDefaultConfig();
     StatisticsStore statistics;
     statistics.reset({20260506, 202619, 202605});
@@ -751,11 +756,11 @@ void test_app_controller_record_write_failure_does_not_mark_scheme_used() {
     TEST_ASSERT_FALSE(app.lastRecordWriteOk());
     MeteringSchemeRecord updated{};
     TEST_ASSERT_TRUE(schemes.findById(active.id, updated));
-    TEST_ASSERT_FALSE(updated.deleted);
-    TEST_ASSERT_FALSE(updated.usedEver);
+    TEST_ASSERT_TRUE(updated.recordUsed);
+    TEST_ASSERT_EQUAL_UINT32(active.id, updated.id);
 }
 
-void test_app_controller_record_write_success_locks_active_scheme_even_if_used_mark_persist_fails() {
+void test_app_controller_record_write_success_does_not_depend_on_scheme_history_update() {
     SystemConfig config = makeDefaultConfig();
     StatisticsStore statistics;
     statistics.reset({20260506, 202619, 202605});
@@ -771,10 +776,9 @@ void test_app_controller_record_write_success_locks_active_scheme_even_if_used_m
     finishVolumeRun(app);
 
     TEST_ASSERT_TRUE(app.lastRecordWriteOk());
-    TEST_ASSERT_TRUE(app.activeMeteringScheme().usedEver);
     MeteringSchemeRecord persisted{};
     TEST_ASSERT_TRUE(schemes.findById(active.id, persisted));
-    TEST_ASSERT_FALSE(persisted.usedEver);
+    TEST_ASSERT_TRUE(persisted.recordUsed);
 }
 
 void test_app_controller_starts_after_double_ok_and_opens_valve() {
@@ -1006,10 +1010,8 @@ void test_app_controller_starting_calibration_from_idle_enters_preparing() {
     MemoryFileBackend backend;
     CalibrationSessionFileStore sessionStore(backend, "/cal-session.bin");
     CalibrationSessionTraceStore traceStore(backend, "/cal-traces.bin");
-    CalibrationLongTermSampleStore sampleStore(backend, "/cal-samples.bin");
     TEST_ASSERT_TRUE(sessionStore.begin());
     TEST_ASSERT_TRUE(traceStore.begin());
-    TEST_ASSERT_TRUE(sampleStore.begin());
     AppController app(config,
                       statistics,
                       filters,
@@ -1017,8 +1019,7 @@ void test_app_controller_starting_calibration_from_idle_enters_preparing() {
                       nullptr,
                       nullptr,
                       &sessionStore,
-                      &traceStore,
-                      &sampleStore);
+                      &traceStore);
     applyTestMeteringScheme(app);
 
     TEST_ASSERT_TRUE(app.startCalibrationSessionForWeb(1714502400));
@@ -1041,11 +1042,9 @@ void test_app_controller_starting_calibration_while_running_is_rejected() {
     MemoryFileBackend backend;
     CalibrationSessionFileStore sessionStore(backend, "/cal-session.bin");
     CalibrationSessionTraceStore traceStore(backend, "/cal-traces.bin");
-    CalibrationLongTermSampleStore sampleStore(backend, "/cal-samples.bin");
     TEST_ASSERT_TRUE(sessionStore.begin());
     TEST_ASSERT_TRUE(traceStore.begin());
-    TEST_ASSERT_TRUE(sampleStore.begin());
-    AppController app(config, statistics, filters, records, nullptr, nullptr, &sessionStore, &traceStore, &sampleStore);
+    AppController app(config, statistics, filters, records, nullptr, nullptr, &sessionStore, &traceStore);
     applyTestMeteringScheme(app);
 
     app.resetInputs({false, false, false, false}, 0);
@@ -1068,11 +1067,9 @@ void test_app_controller_starting_calibration_twice_is_rejected() {
     MemoryFileBackend backend;
     CalibrationSessionFileStore sessionStore(backend, "/cal-session.bin");
     CalibrationSessionTraceStore traceStore(backend, "/cal-traces.bin");
-    CalibrationLongTermSampleStore sampleStore(backend, "/cal-samples.bin");
     TEST_ASSERT_TRUE(sessionStore.begin());
     TEST_ASSERT_TRUE(traceStore.begin());
-    TEST_ASSERT_TRUE(sampleStore.begin());
-    AppController app(config, statistics, filters, records, nullptr, nullptr, &sessionStore, &traceStore, &sampleStore);
+    AppController app(config, statistics, filters, records, nullptr, nullptr, &sessionStore, &traceStore);
     applyTestMeteringScheme(app);
 
     TEST_ASSERT_TRUE(app.startCalibrationSessionForWeb(1714502400));
@@ -1093,11 +1090,9 @@ void test_app_controller_calibration_preparing_times_out_to_discarded() {
     MemoryFileBackend backend;
     CalibrationSessionFileStore sessionStore(backend, "/cal-session.bin");
     CalibrationSessionTraceStore traceStore(backend, "/cal-traces.bin");
-    CalibrationLongTermSampleStore sampleStore(backend, "/cal-samples.bin");
     TEST_ASSERT_TRUE(sessionStore.begin());
     TEST_ASSERT_TRUE(traceStore.begin());
-    TEST_ASSERT_TRUE(sampleStore.begin());
-    AppController app(config, statistics, filters, records, nullptr, nullptr, &sessionStore, &traceStore, &sampleStore);
+    AppController app(config, statistics, filters, records, nullptr, nullptr, &sessionStore, &traceStore);
     applyTestMeteringScheme(app);
 
     TEST_ASSERT_TRUE(app.startCalibrationSessionForWeb(1714502400));
@@ -1123,10 +1118,8 @@ void test_app_controller_calibration_ready_and_generated_time_out_from_last_acti
     TEST_ASSERT_TRUE(prepareMeteringScheme(schemes, 225, active));
     CalibrationSessionFileStore sessionStore(backend, "/cal-session.bin");
     CalibrationSessionTraceStore traceStore(backend, "/cal-traces.bin");
-    CalibrationLongTermSampleStore sampleStore(backend, "/cal-samples.bin");
     TEST_ASSERT_TRUE(sessionStore.begin());
     TEST_ASSERT_TRUE(traceStore.begin());
-    TEST_ASSERT_TRUE(sampleStore.begin());
 
     CalibrationSessionRecord session = makeCalibrationSession(79, 1714502400);
     saveCalibrationSessionSample(traceStore, session, 0, 1714502401, 1500, 40, 210, 6);
@@ -1145,8 +1138,7 @@ void test_app_controller_calibration_ready_and_generated_time_out_from_last_acti
                       nullptr,
                       &calibrations,
                       &sessionStore,
-                      &traceStore,
-                      &sampleStore);
+                      &traceStore);
     TEST_ASSERT_EQUAL_UINT32(1714502500 + kCalibrationIdleTimeoutSec,
                              app.snapshot().calibrationIdleExpiresAt);
 
@@ -1169,8 +1161,7 @@ void test_app_controller_calibration_ready_and_generated_time_out_from_last_acti
                             nullptr,
                             &calibrations,
                             &sessionStore,
-                            &traceStore,
-                            &sampleStore);
+                            &traceStore);
     TEST_ASSERT_TRUE(generated.generateCalibrationForWeb(1714505100));
     TEST_ASSERT_EQUAL_UINT32(1714505100 + kCalibrationIdleTimeoutSec,
                              generated.snapshot().calibrationIdleExpiresAt);
@@ -1192,10 +1183,8 @@ void test_app_controller_reboot_drops_awaiting_actual_when_ram_trace_missing() {
     MemoryFileBackend backend;
     CalibrationSessionFileStore sessionStore(backend, "/cal-session.bin");
     CalibrationSessionTraceStore traceStore(backend, "/cal-traces.bin");
-    CalibrationLongTermSampleStore sampleStore(backend, "/cal-samples.bin");
     TEST_ASSERT_TRUE(sessionStore.begin());
     TEST_ASSERT_TRUE(traceStore.begin());
-    TEST_ASSERT_TRUE(sampleStore.begin());
 
     CalibrationSessionRecord session = makeCalibrationSession(77, 1714502400);
     session.status = CalibrationSessionStatus::AwaitingActual;
@@ -1214,8 +1203,7 @@ void test_app_controller_reboot_drops_awaiting_actual_when_ram_trace_missing() {
                            &pulseTraces,
                            &calibrations,
                            &sessionStore,
-                           &traceStore,
-                           &sampleStore);
+                           &traceStore);
 
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(LocalUiMode::Calibration),
                             static_cast<std::uint8_t>(rebooted.snapshot().localMode));
@@ -1238,10 +1226,8 @@ void test_app_controller_local_ok_starts_calibration_run_and_completion_awaits_a
     MemoryFileBackend backend;
     CalibrationSessionFileStore sessionStore(backend, "/cal-session.bin");
     CalibrationSessionTraceStore traceStore(backend, "/cal-traces.bin");
-    CalibrationLongTermSampleStore sampleStore(backend, "/cal-samples.bin");
     TEST_ASSERT_TRUE(sessionStore.begin());
     TEST_ASSERT_TRUE(traceStore.begin());
-    TEST_ASSERT_TRUE(sampleStore.begin());
     AppController app(config,
                       statistics,
                       filters,
@@ -1249,8 +1235,7 @@ void test_app_controller_local_ok_starts_calibration_run_and_completion_awaits_a
                       &pulseTraces,
                       &calibrations,
                       &sessionStore,
-                      &traceStore,
-                      &sampleStore);
+                      &traceStore);
     applyTestMeteringScheme(app);
 
     TEST_ASSERT_TRUE(app.startCalibrationSessionForWeb(1714502400));
@@ -1283,20 +1268,9 @@ void test_app_controller_local_ok_starts_calibration_run_and_completion_awaits_a
     TEST_ASSERT_TRUE(traceStore.load(0, valid));
     TEST_ASSERT_TRUE(valid.valid);
     TEST_ASSERT_FALSE(valid.pendingActual);
-    CalibrationStoredTrace longTermSamples[kCalibrationLongTermSampleSlots]{};
-    TEST_ASSERT_EQUAL_size_t(0, sampleStore.list(longTermSamples, kCalibrationLongTermSampleSlots));
-
-    std::uint32_t sampleId = 0;
-    TEST_ASSERT_TRUE(app.saveCalibrationSessionSampleToLongTermForWeb(0, 1714502403, sampleId));
-    TEST_ASSERT_NOT_EQUAL_UINT32(0, sampleId);
-    TEST_ASSERT_EQUAL_size_t(1, sampleStore.list(longTermSamples, kCalibrationLongTermSampleSlots));
-    TEST_ASSERT_EQUAL_UINT32(sampleId, longTermSamples[0].sampleId);
-    TEST_ASSERT_EQUAL_UINT32(520, longTermSamples[0].actualMl);
-
+    TEST_ASSERT_EQUAL_UINT32(520, valid.actualMl);
     WaterPulseTraceSample copied[4096]{};
-    TEST_ASSERT_EQUAL_size_t(valid.trace.sampleCount, sampleStore.readSamples(sampleId, copied, 4096));
-    TEST_ASSERT_TRUE(app.saveCalibrationSessionSampleToLongTermForWeb(0, 1714502404, sampleId));
-    TEST_ASSERT_EQUAL_size_t(1, sampleStore.list(longTermSamples, kCalibrationLongTermSampleSlots));
+    TEST_ASSERT_EQUAL_size_t(valid.trace.sampleCount, traceStore.readSamples(0, copied, 4096));
 }
 
 void test_app_controller_calibration_run_ignores_preset_target_until_local_cancel() {
@@ -1348,10 +1322,8 @@ void test_app_controller_generates_calibration_session_candidate() {
     TEST_ASSERT_TRUE(prepareMeteringScheme(schemes, 225, active));
     CalibrationSessionFileStore sessionStore(backend, "/cal-session.bin");
     CalibrationSessionTraceStore traceStore(backend, "/cal-traces.bin");
-    CalibrationLongTermSampleStore sampleStore(backend, "/cal-samples.bin");
     TEST_ASSERT_TRUE(sessionStore.begin());
     TEST_ASSERT_TRUE(traceStore.begin());
-    TEST_ASSERT_TRUE(sampleStore.begin());
 
     CalibrationSessionRecord session = makeCalibrationSession(77, 1714502400);
     saveCalibrationSessionSample(traceStore, session, 0, 1714502401, 1500, 40, 210, 6);
@@ -1369,8 +1341,7 @@ void test_app_controller_generates_calibration_session_candidate() {
                       nullptr,
                       &calibrations,
                       &sessionStore,
-                      &traceStore,
-                      &sampleStore);
+                      &traceStore);
     MeteringSchemeRecord beforeGenerate[4]{};
     const std::size_t beforeGenerateCount = schemes.list(beforeGenerate, 4, true);
 
@@ -1585,10 +1556,8 @@ void test_app_controller_applies_generated_session_scheme_and_keeps_old_scheme()
     const std::uint32_t oldActiveId = active.id;
     CalibrationSessionFileStore sessionStore(backend, "/cal-session.bin");
     CalibrationSessionTraceStore traceStore(backend, "/cal-traces.bin");
-    CalibrationLongTermSampleStore sampleStore(backend, "/cal-samples.bin");
     TEST_ASSERT_TRUE(sessionStore.begin());
     TEST_ASSERT_TRUE(traceStore.begin());
-    TEST_ASSERT_TRUE(sampleStore.begin());
 
     CalibrationSessionRecord session = makeCalibrationSession(78, 1714502400);
     saveCalibrationSessionSample(traceStore, session, 0, 1714502401, 1500, 40, 210, 6);
@@ -1606,8 +1575,7 @@ void test_app_controller_applies_generated_session_scheme_and_keeps_old_scheme()
                       nullptr,
                       &calibrations,
                       &sessionStore,
-                      &traceStore,
-                      &sampleStore);
+                      &traceStore);
     TEST_ASSERT_TRUE(app.generateCalibrationForWeb(1714502500));
     TEST_ASSERT_TRUE(app.applyGeneratedCalibrationForWeb(1714502600));
 
@@ -1619,7 +1587,6 @@ void test_app_controller_applies_generated_session_scheme_and_keeps_old_scheme()
     MeteringSchemeRecord oldScheme{};
     TEST_ASSERT_TRUE(schemes.findById(oldActiveId, oldScheme));
     TEST_ASSERT_TRUE(oldScheme.recordUsed);
-    TEST_ASSERT_FALSE(oldScheme.deleted);
     TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationSessionStatus::Applied),
                             static_cast<unsigned>(app.snapshot().calibrationStatus));
 }
@@ -2254,7 +2221,8 @@ void test_app_controller_calibration_paths_avoid_large_stack_arrays() {
     const std::string body = readAppControllerSource();
     TEST_ASSERT_EQUAL(std::string::npos, body.find("CalibrationStoredTrace existing[kCalibrationLongTermSampleSlots]"));
     TEST_ASSERT_EQUAL(std::string::npos, body.find("SegmentedCalibrationSample samples[kCalibrationMaxValidSamples]"));
-    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("new (std::nothrow) CalibrationStoredTrace[kCalibrationLongTermSampleSlots]"));
+    TEST_ASSERT_EQUAL(std::string::npos, body.find("kCalibrationLongTermSampleSlots"));
+    TEST_ASSERT_EQUAL(std::string::npos, body.find("saveCalibrationSessionSampleToLongTermForWeb"));
     TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("new (std::nothrow) SegmentedCalibrationSample[kCalibrationMaxValidSamples]"));
 }
 
@@ -2271,9 +2239,9 @@ int main(int argc, char** argv) {
     RUN_TEST(test_app_rejects_tds_calibration_when_running);
     RUN_TEST(test_app_tds_point_calibration_apply_persists_to_config);
     RUN_TEST(test_app_expires_idle_tds_calibration_session_from_tick);
-    RUN_TEST(test_app_controller_successful_record_writes_scheme_id_and_marks_scheme_used_once);
-    RUN_TEST(test_app_controller_record_write_failure_does_not_mark_scheme_used);
-    RUN_TEST(test_app_controller_record_write_success_locks_active_scheme_even_if_used_mark_persist_fails);
+    RUN_TEST(test_app_controller_successful_record_writes_scheme_id_without_mutating_scheme_history);
+    RUN_TEST(test_app_controller_record_write_failure_keeps_scheme_history_unchanged);
+    RUN_TEST(test_app_controller_record_write_success_does_not_depend_on_scheme_history_update);
     RUN_TEST(test_app_controller_starts_after_double_ok_and_opens_valve);
     RUN_TEST(test_app_controller_stale_cancel_fast_path_does_not_block_confirm_ok_start);
     RUN_TEST(test_app_controller_cancel_raw_dominates_pending_ok_release);

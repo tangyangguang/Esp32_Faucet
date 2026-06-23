@@ -55,7 +55,6 @@ constexpr const char* kWaterRecordCalibrationPath = "/faucet_record_cal_v1.bin";
 constexpr const char* kMeteringSchemePath = "/faucet_metering_schemes_v6.bin";
 constexpr const char* kCalibrationSessionPath = "/faucet_cal_session_v1.bin";
 constexpr const char* kCalibrationSessionTracePath = "/faucet_cal_session_traces_v1.bin";
-constexpr const char* kCalibrationLongTermSamplesPath = "/faucet_cal_samples_v1.bin";
 
 class PersistentRecordWriter : public faucet::WaterRecordWriter, public faucet::WaterRecordReader {
 public:
@@ -183,8 +182,6 @@ faucet::WaterRecordCalibrationFileStore g_recordCalibrationFile(
 faucet::MeteringSchemeStore g_meteringSchemes(g_waterRecordBackend, kMeteringSchemePath);
 faucet::CalibrationSessionFileStore g_calibrationSession(g_waterRecordBackend, kCalibrationSessionPath);
 faucet::CalibrationSessionTraceStore g_calibrationSessionTraces(g_waterRecordBackend, kCalibrationSessionTracePath);
-faucet::CalibrationLongTermSampleStore g_calibrationLongTermSamples(g_waterRecordBackend,
-                                                                    kCalibrationLongTermSamplesPath);
 PersistentRecordWriter g_records;
 PersistentRecordCalibrationStore g_recordCalibrations;
 faucet::WaterPulseTrace* g_pulseTraceRecords = nullptr;
@@ -431,12 +428,8 @@ void initializeApplication() {
     }
     const bool calibrationSessionReady = g_calibrationSession.begin();
     const bool calibrationSessionTracesReady = g_calibrationSessionTraces.begin();
-    const bool calibrationLongTermSamplesReady = g_calibrationLongTermSamples.begin();
     if (!calibrationSessionReady || !calibrationSessionTracesReady) {
         ESP32BASE_LOG_W("app", "guided calibration session storage unavailable");
-    }
-    if (!calibrationLongTermSamplesReady) {
-        ESP32BASE_LOG_W("app", "calibration long-term sample library unavailable");
     }
     g_recordStoreInitComplete = waterRecordReady && calibrationSessionReady;
     logStartupPhase("record_store_ready");
@@ -482,7 +475,6 @@ void initializeApplication() {
             &g_recordCalibrations,
             &g_calibrationSession,
             &g_calibrationSessionTraces,
-            &g_calibrationLongTermSamples,
             &g_waterSensors);
     } else {
         g_app = new (std::nothrow) faucet::AppController(
@@ -494,7 +486,6 @@ void initializeApplication() {
             &g_recordCalibrations,
             &g_calibrationSession,
             &g_calibrationSessionTraces,
-            &g_calibrationLongTermSamples,
             &g_waterSensors);
     }
     if (!g_app) {
@@ -518,7 +509,6 @@ void initializeApplication() {
                                  &g_meteringSchemes,
                                  &g_calibrationSession,
                                  &g_calibrationSessionTraces,
-                                 &g_calibrationLongTermSamples,
                                  g_pulseTraces,
                                  currentSeconds,
                                  currentBootId,

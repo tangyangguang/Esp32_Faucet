@@ -42,10 +42,7 @@ public:
                       const MeteringParameters& params,
                       std::uint32_t nowSeconds,
                       std::uint32_t& newId);
-    bool updateScheme(const MeteringSchemeRecord& edited, std::uint32_t nowSeconds);
     bool setActiveScheme(std::uint32_t schemeId, std::uint32_t nowSeconds);
-    bool deleteScheme(std::uint32_t schemeId, std::uint32_t nowSeconds);
-    bool markUsedAfterRecordWrite(std::uint32_t schemeId);
 
 private:
     bool validPath() const;
@@ -57,7 +54,7 @@ private:
     bool writeRecord(std::size_t slot, const MeteringSchemeRecord& record);
     bool findSlotById(std::uint32_t id, MeteringSchemeRecord& output, std::size_t& slot) const;
     bool findFreeSlot(std::size_t& slot) const;
-    bool findReusableSlot(std::size_t& slot) const;
+    bool findOldestNonCurrentSlot(std::size_t& slot) const;
     bool writeOrAppendAt(std::size_t offset, const std::uint8_t* data, std::size_t len);
     std::size_t recordOffset(std::size_t slot) const;
     std::size_t expectedFileSize() const;

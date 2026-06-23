@@ -8,8 +8,9 @@ namespace {
 
 bool isValidSample(const CalibrationAttempt& attempt) {
     return attempt.status == CalibrationAttemptStatus::Valid &&
-           attempt.actualMl >= kCalibrationMinActualMl &&
-           attempt.record.pulseCount > 0;
+           attempt.summary.usableForGeneration &&
+           attempt.summary.actualMl >= kCalibrationMinActualMl &&
+           attempt.summary.totalPulses > 0;
 }
 
 std::uint32_t validSampleSpanMl(const CalibrationSessionRecord& session) {
@@ -22,12 +23,12 @@ std::uint32_t validSampleSpanMl(const CalibrationSessionRecord& session) {
             continue;
         }
         if (!found) {
-            minMl = attempt.actualMl;
-            maxMl = attempt.actualMl;
+            minMl = attempt.summary.actualMl;
+            maxMl = attempt.summary.actualMl;
             found = true;
         } else {
-            minMl = std::min(minMl, attempt.actualMl);
-            maxMl = std::max(maxMl, attempt.actualMl);
+            minMl = std::min(minMl, attempt.summary.actualMl);
+            maxMl = std::max(maxMl, attempt.summary.actualMl);
         }
     }
     return found ? maxMl - minMl : 0;

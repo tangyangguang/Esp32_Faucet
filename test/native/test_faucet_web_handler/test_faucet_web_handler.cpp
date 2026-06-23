@@ -320,49 +320,6 @@ std::size_t fillWebCalibrationSamples(WaterPulseTraceSample* samples,
     return count;
 }
 
-void saveLongTermWebSample(CalibrationLongTermSampleStore& sampleStore,
-                           std::uint32_t actualMl,
-                           std::uint32_t startupPulses,
-                           std::uint32_t stablePulses,
-                           std::uint32_t stableSeconds) {
-    WaterPulseTraceSample samples[2048]{};
-    const std::size_t sampleCount =
-        fillWebCalibrationSamples(samples, 2048, startupPulses, stablePulses, stableSeconds);
-    TEST_ASSERT_GREATER_THAN_size_t(0, sampleCount);
-    CalibrationStoredTrace stored{};
-    stored.valid = true;
-    stored.pendingActual = false;
-    stored.sessionId = 42;
-    stored.attemptIndex = 1;
-    stored.actualMl = actualMl;
-    stored.savedAt = 1714502400UL;
-    stored.trace.traceId = 700;
-    stored.trace.startTime = 1714502400UL;
-    stored.trace.record = WaterRecord{
-        1714502400UL,
-        actualMl,
-        actualMl,
-        startupPulses + stablePulses,
-        0,
-        static_cast<std::uint16_t>(5 + stableSeconds),
-        WaterMode::Volume,
-        WaterResult::Completed,
-        0,
-        99,
-        7,
-        {0, 0, 0, 0},
-    };
-    stored.trace.sampleCount = sampleCount;
-    stored.trace.totalPulses = startupPulses + stablePulses;
-    stored.trace.actualMl = actualMl;
-    stored.trace.pulseMinIntervalUs = kDefaultPulseMinIntervalUs;
-    stored.trace.finalState = WaterPulseTraceState::Completed;
-    stored.trace.finished = true;
-    std::uint32_t sampleId = 0;
-    TEST_ASSERT_TRUE(sampleStore.save(stored, samples, sampleCount, sampleId));
-    TEST_ASSERT_NOT_EQUAL_UINT32(0, sampleId);
-}
-
 std::uint32_t testNowSeconds() {
     return 1714502400UL;
 }
@@ -466,7 +423,6 @@ struct WebFixture {
     MeteringSchemeStore meteringSchemes{calibrationFiles, "/metering-schemes.bin"};
     CalibrationSessionFileStore sessionStore{calibrationFiles, "/cal-session.bin"};
     CalibrationSessionTraceStore traceStore{calibrationFiles, "/cal-traces.bin"};
-    CalibrationLongTermSampleStore sampleStore{calibrationFiles, "/cal-samples.bin"};
     FakeAdcReader adc;
     WaterSensorManager waterSensors{adc};
     AppController app{config,
@@ -477,7 +433,6 @@ struct WebFixture {
                       &calibrations,
                       &sessionStore,
                       &traceStore,
-                      &sampleStore,
                       &waterSensors};
 
     WebFixture() {
@@ -488,7 +443,6 @@ struct WebFixture {
         waterSensors.begin();
         TEST_ASSERT_TRUE(sessionStore.begin());
         TEST_ASSERT_TRUE(traceStore.begin());
-        TEST_ASSERT_TRUE(sampleStore.begin());
         applyTestMeteringScheme(app);
         installContext(records);
     }
@@ -506,7 +460,6 @@ struct WebFixture {
         context.meteringSchemes = &meteringSchemes;
         context.calibrationSessions = &sessionStore;
         context.calibrationSessionTraces = &traceStore;
-        context.calibrationLongTermSamples = &sampleStore;
         context.nowSeconds = testNowSeconds;
         context.bootId = testBootId;
         context.afterFormatFs = countAfterFormatFsNotification;
@@ -885,7 +838,6 @@ void test_temperature_calibration_post_accepts_celsius_decimal_input() {
 
 void test_flow_calibration_center_initial_render_shows_current_parameter_workflow() {
     WebFixture fixture;
-    saveLongTermWebSample(fixture.sampleStore, 1200, 45, 360, 12);
     fixture.calibrationFiles.longTermSampleBulkReads = 0;
     fixture.calibrationFiles.meteringSchemeRecordReads = 0;
     registerRoutes();
@@ -992,10 +944,8 @@ void test_flow_calibration_manual_save_becomes_active_parameter() {
                              Esp32BaseWeb::nativeTestResponseHeader("Location"));
 }
 
-void test_advanced_sample_library_does_not_present_primary_apply_flow() {
+void test_advanced_sample_library_request_renders_normal_calibration_page_without_legacy_tools() {
     WebFixture fixture;
-    saveLongTermWebSample(fixture.sampleStore, 1200, 45, 360, 12);
-    saveLongTermWebSample(fixture.sampleStore, 3600, 45, 1080, 36);
     registerRoutes();
     Esp32BaseWeb::nativeTestBeginRequest(Esp32BaseWeb::METHOD_GET, "/faucet/calibration/flow");
     Esp32BaseWeb::nativeTestSetAuthenticated(true);
@@ -1007,14 +957,15 @@ void test_advanced_sample_library_does_not_present_primary_apply_flow() {
 
     TEST_ASSERT_EQUAL(200, Esp32BaseWeb::nativeTestResponse().code);
     const std::string& body = Esp32BaseWeb::nativeTestResponse().body;
-    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("高级样本库"));
-    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("辅助计算"));
-    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("带入手工输入"));
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("<h2>流量计校准</h2>"));
+    TEST_ASSERT_EQUAL(std::string::npos, body.find("高级样本库"));
+    TEST_ASSERT_EQUAL(std::string::npos, body.find("辅助计算"));
+    TEST_ASSERT_EQUAL(std::string::npos, body.find("带入手工输入"));
     TEST_ASSERT_EQUAL(std::string::npos, body.find("保存为新方案"));
     TEST_ASSERT_EQUAL(std::string::npos, body.find("应用到当前参数"));
 }
 
-void test_flow_calibration_notice_uses_history_sample_language() {
+void test_flow_calibration_notice_ignores_removed_long_term_sample_language() {
     WebFixture fixture;
     registerRoutes();
     Esp32BaseWeb::nativeTestBeginRequest(Esp32BaseWeb::METHOD_GET, "/faucet/calibration/flow");
@@ -1026,12 +977,12 @@ void test_flow_calibration_notice_uses_history_sample_language() {
 
     TEST_ASSERT_EQUAL(200, Esp32BaseWeb::nativeTestResponse().code);
     const std::string& body = Esp32BaseWeb::nativeTestResponse().body;
-    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("样本已存入历史样本"));
+    TEST_ASSERT_EQUAL(std::string::npos, body.find("样本已存入历史样本"));
     TEST_ASSERT_EQUAL(std::string::npos, body.find("样本已存入长期样本库"));
     TEST_ASSERT_EQUAL(std::string::npos, body.find("长期样本库已满"));
 }
 
-void test_flow_calibration_error_uses_history_sample_language() {
+void test_flow_calibration_error_ignores_removed_long_term_sample_full_message() {
     WebFixture fixture;
     registerRoutes();
     Esp32BaseWeb::nativeTestBeginRequest(Esp32BaseWeb::METHOD_GET, "/faucet/calibration/flow");
@@ -1043,7 +994,7 @@ void test_flow_calibration_error_uses_history_sample_language() {
 
     TEST_ASSERT_EQUAL(200, Esp32BaseWeb::nativeTestResponse().code);
     const std::string& body = Esp32BaseWeb::nativeTestResponse().body;
-    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("历史样本已满"));
+    TEST_ASSERT_EQUAL(std::string::npos, body.find("历史样本已满"));
     TEST_ASSERT_EQUAL(std::string::npos, body.find("长期样本库已满"));
     TEST_ASSERT_EQUAL(std::string::npos, body.find("请先生成参数"));
 }
@@ -1234,7 +1185,6 @@ void test_flow_calibration_remove_sample_redirects_success() {
                            &fixture.calibrations,
                            &fixture.sessionStore,
                            &fixture.traceStore,
-                           &fixture.sampleStore,
                            &fixture.waterSensors);
     applyTestMeteringScheme(reloaded);
     fixture.installContext(reloaded, fixture.records);
@@ -1297,7 +1247,6 @@ void test_flow_calibration_remove_sample_redirects_invalid_state_when_sample_not
                            &fixture.calibrations,
                            &fixture.sessionStore,
                            &fixture.traceStore,
-                           &fixture.sampleStore,
                            &fixture.waterSensors);
     applyTestMeteringScheme(reloaded);
     fixture.installContext(reloaded, fixture.records);
@@ -1608,9 +1557,9 @@ int main(int, char**) {
     RUN_TEST(test_flow_calibration_history_uses_parameter_language);
     RUN_TEST(test_flow_calibration_manual_input_prefills_copied_parameters);
     RUN_TEST(test_flow_calibration_manual_save_becomes_active_parameter);
-    RUN_TEST(test_advanced_sample_library_does_not_present_primary_apply_flow);
-    RUN_TEST(test_flow_calibration_notice_uses_history_sample_language);
-    RUN_TEST(test_flow_calibration_error_uses_history_sample_language);
+    RUN_TEST(test_advanced_sample_library_request_renders_normal_calibration_page_without_legacy_tools);
+    RUN_TEST(test_flow_calibration_notice_ignores_removed_long_term_sample_language);
+    RUN_TEST(test_flow_calibration_error_ignores_removed_long_term_sample_full_message);
     RUN_TEST(test_flow_calibration_center_uses_no_collapsed_sections);
     RUN_TEST(test_running_water_allows_read_only_business_pages);
     RUN_TEST(test_filter_reset_handler_rejects_missing_auth_before_context_work);

@@ -8,8 +8,7 @@
 
 namespace faucet {
 
-constexpr std::size_t kCalibrationSessionTraceSlots = 10;
-constexpr std::size_t kCalibrationLongTermSampleSlots = 5;
+constexpr std::size_t kCalibrationSessionTraceSlots = 6;
 
 struct CalibrationStoredTrace {
     bool valid = false;
@@ -37,32 +36,6 @@ public:
     bool invalidate(std::uint8_t slot);
     bool load(std::uint8_t slot, CalibrationStoredTrace& trace) const;
     std::size_t readSamples(std::uint8_t slot, WaterPulseTraceSample* output, std::size_t outputCapacity) const;
-    std::size_t capacity() const;
-    bool ready() const;
-    AppStorageStatus status() const;
-    const char* storageName() const;
-
-private:
-    WaterRecordFileBackend& backend_;
-    const char* path_;
-    bool ready_;
-    AppStorageStatus status_;
-};
-
-class CalibrationLongTermSampleStore {
-public:
-    CalibrationLongTermSampleStore(WaterRecordFileBackend& backend, const char* path);
-
-    bool begin();
-    bool clear();
-    bool save(const CalibrationStoredTrace& trace,
-              const WaterPulseTraceSample* samples,
-              std::size_t sampleCount,
-              std::uint32_t& sampleId);
-    bool remove(std::uint32_t sampleId);
-    bool load(std::uint32_t sampleId, CalibrationStoredTrace& trace) const;
-    std::size_t readSamples(std::uint32_t sampleId, WaterPulseTraceSample* output, std::size_t outputCapacity) const;
-    std::size_t list(CalibrationStoredTrace* output, std::size_t outputCapacity) const;
     std::size_t capacity() const;
     bool ready() const;
     AppStorageStatus status() const;

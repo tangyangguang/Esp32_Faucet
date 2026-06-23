@@ -9,7 +9,7 @@ namespace faucet {
 namespace {
 
 constexpr std::uint32_t kMeteringSchemeStoreMagic = 0x314D5346UL;  // FSM1
-constexpr std::uint16_t kMeteringSchemeStoreVersion = 6;
+constexpr std::uint16_t kMeteringSchemeStoreVersion = 7;
 constexpr std::size_t kCopyChunkSize = 256;
 
 std::uint32_t headerChecksum(MeteringSchemeStoreHeader header) {
@@ -137,7 +137,7 @@ bool MeteringSchemeStore::begin() {
         return false;
     }
     MeteringSchemeRecord active{};
-    if (!activeScheme(active) || active.deleted || !validMeteringSchemeParameters(active.params)) {
+    if (!activeScheme(active) || !validMeteringSchemeParameters(active.params)) {
         ready_ = false;
         status_ = AppStorageStatus::Corrupt;
         return false;
@@ -162,7 +162,7 @@ std::uint32_t MeteringSchemeStore::activeSchemeId() const {
 }
 
 bool MeteringSchemeStore::activeScheme(MeteringSchemeRecord& output) const {
-    return findById(header_.activeSchemeId, output) && !output.deleted;
+    return findById(header_.activeSchemeId, output);
 }
 
 bool MeteringSchemeStore::findById(std::uint32_t id, MeteringSchemeRecord& output) const {
@@ -173,6 +173,7 @@ bool MeteringSchemeStore::findById(std::uint32_t id, MeteringSchemeRecord& outpu
 std::size_t MeteringSchemeStore::list(MeteringSchemeRecord* output,
                                       std::size_t outputCapacity,
                                       bool includeDeleted) const {
+    (void)includeDeleted;
     if (!ready() || !output || outputCapacity == 0) {
         return 0;
     }
@@ -188,7 +189,7 @@ std::size_t MeteringSchemeStore::list(MeteringSchemeRecord* output,
         std::size_t copied = 0;
         for (std::size_t slot = 0; slot < slotCount && copied < outputCapacity; ++slot) {
             const MeteringSchemeRecord& record = records[slot];
-            if (record.recordUsed && (includeDeleted || !record.deleted)) {
+            if (record.recordUsed) {
                 if (&output[copied] != &record) {
                     output[copied] = record;
                 }
@@ -209,7 +210,7 @@ std::size_t MeteringSchemeStore::list(MeteringSchemeRecord* output,
         if (!readRecord(slot, record)) {
             return copied;
         }
-        if (record.recordUsed && (includeDeleted || !record.deleted)) {
+        if (record.recordUsed) {
             output[copied++] = record;
         }
     }
@@ -232,7 +233,7 @@ bool MeteringSchemeStore::saveCandidateAsNew(const MeteringSchemeCandidate& cand
     }
 
     std::size_t slot = 0;
-    if (!findFreeSlot(slot) && !findReusableSlot(slot)) {
+    if (!findFreeSlot(slot) && !findOldestNonCurrentSlot(slot)) {
         newId = 0;
         return false;
     }
@@ -271,7 +272,7 @@ bool MeteringSchemeStore::createManual(const char* name,
     }
 
     std::size_t slot = 0;
-    if (!findFreeSlot(slot) && !findReusableSlot(slot)) {
+    if (!findFreeSlot(slot) && !findOldestNonCurrentSlot(slot)) {
         newId = 0;
         return false;
     }
@@ -295,22 +296,6 @@ bool MeteringSchemeStore::createManual(const char* name,
     return true;
 }
 
-bool MeteringSchemeStore::updateScheme(const MeteringSchemeRecord& edited, std::uint32_t nowSeconds) {
-    if (!ready() || edited.id == 0) {
-        return false;
-    }
-    MeteringSchemeRecord current{};
-    std::size_t slot = 0;
-    if (!findSlotById(edited.id, current, slot)) {
-        return false;
-    }
-    MeteringSchemeEdit edit = makeMeteringSchemeEdit(edited);
-    if (!updateMeteringSchemeRecord(current, edit, nowSeconds)) {
-        return false;
-    }
-    return writeRecord(slot, current);
-}
-
 bool MeteringSchemeStore::setActiveScheme(std::uint32_t schemeId, std::uint32_t nowSeconds) {
     (void)nowSeconds;
     if (!ready()) {
@@ -318,8 +303,7 @@ bool MeteringSchemeStore::setActiveScheme(std::uint32_t schemeId, std::uint32_t 
     }
     MeteringSchemeRecord record{};
     std::size_t slot = 0;
-    if (!findSlotById(schemeId, record, slot) || record.deleted ||
-        !validMeteringSchemeParameters(record.params)) {
+    if (!findSlotById(schemeId, record, slot) || !validMeteringSchemeParameters(record.params)) {
         return false;
     }
     MeteringSchemeStoreHeader previous = header_;
@@ -330,36 +314,6 @@ bool MeteringSchemeStore::setActiveScheme(std::uint32_t schemeId, std::uint32_t 
         return false;
     }
     return true;
-}
-
-bool MeteringSchemeStore::deleteScheme(std::uint32_t schemeId, std::uint32_t nowSeconds) {
-    if (!ready()) {
-        return false;
-    }
-    MeteringSchemeRecord record{};
-    std::size_t slot = 0;
-    if (!findSlotById(schemeId, record, slot) || !canDeleteMeteringScheme(record, header_.activeSchemeId)) {
-        return false;
-    }
-    record.deleted = true;
-    record.updatedAt = nowSeconds;
-    return writeRecord(slot, record);
-}
-
-bool MeteringSchemeStore::markUsedAfterRecordWrite(std::uint32_t schemeId) {
-    if (!ready()) {
-        return false;
-    }
-    MeteringSchemeRecord record{};
-    std::size_t slot = 0;
-    if (!findSlotById(schemeId, record, slot) || record.deleted) {
-        return false;
-    }
-    if (record.usedEver) {
-        return true;
-    }
-    record.usedEver = true;
-    return writeRecord(slot, record);
 }
 
 bool MeteringSchemeStore::validPath() const {
@@ -398,7 +352,7 @@ bool MeteringSchemeStore::repairNextSchemeId() {
             continue;
         }
         maxId = std::max(maxId, record.id);
-        if (record.id == header_.activeSchemeId && !record.deleted) {
+        if (record.id == header_.activeSchemeId) {
             activeFound = true;
         }
     }
@@ -539,21 +493,25 @@ bool MeteringSchemeStore::findFreeSlot(std::size_t& slot) const {
     return false;
 }
 
-bool MeteringSchemeStore::findReusableSlot(std::size_t& slot) const {
+bool MeteringSchemeStore::findOldestNonCurrentSlot(std::size_t& slot) const {
     if (!ready()) {
         return false;
     }
     bool found = false;
+    std::uint32_t bestCreatedAt = UINT32_MAX;
     std::uint32_t bestId = UINT32_MAX;
     for (std::size_t i = 0; i < header_.slotCount; ++i) {
         MeteringSchemeRecord record{};
         if (!readRecord(i, record)) {
             return false;
         }
-        if (!record.recordUsed || !record.deleted || record.id == header_.activeSchemeId) {
+        if (!record.recordUsed || record.id == header_.activeSchemeId) {
             continue;
         }
-        if (record.id < bestId) {
+        const bool older = record.createdAt < bestCreatedAt ||
+                           (record.createdAt == bestCreatedAt && record.id < bestId);
+        if (older) {
+            bestCreatedAt = record.createdAt;
             bestId = record.id;
             slot = i;
             found = true;

@@ -8,8 +8,8 @@ namespace faucet {
 
 constexpr std::uint8_t kCalibrationMinQuickSamples = 2;
 constexpr std::uint8_t kCalibrationRecommendedSamples = 3;
-constexpr std::uint8_t kCalibrationMaxValidSamples = 10;
-constexpr std::uint8_t kCalibrationMaxAttempts = 16;
+constexpr std::uint8_t kCalibrationMaxValidSamples = 6;
+constexpr std::uint8_t kCalibrationMaxAttempts = 6;
 constexpr std::uint32_t kCalibrationIdleTimeoutSec = 30 * 60;
 constexpr std::uint32_t kCalibrationMinActualMl = 100;
 constexpr std::uint32_t kCalibrationMinVolumeSpanMl = 500;
@@ -63,6 +63,21 @@ enum class CalibrationCoverageQuality : std::uint8_t {
     Recommended,
 };
 
+struct CalibrationSampleSummary {
+    std::uint32_t actualMl = 0;
+    std::uint32_t totalPulses = 0;
+    std::uint32_t rejectedPulses = 0;
+    std::uint32_t durationSec = 0;
+    bool truncated = false;
+    bool resumedAfterPause = false;
+    bool stable = false;
+    std::uint32_t startupPulseCount = 0;
+    std::uint32_t stablePulseCount = 0;
+    std::uint32_t stableStartSec = 0;
+    float stablePulsePerSec = 0.0f;
+    bool usableForGeneration = false;
+};
+
 struct CalibrationAttempt {
     std::uint8_t attemptIndex = 0;
     std::uint8_t sessionTraceSlot = 255;
@@ -74,6 +89,7 @@ struct CalibrationAttempt {
     CalibrationInvalidReason invalidReason = CalibrationInvalidReason::None;
     bool resumedAfterPause = false;
     bool truncated = false;
+    CalibrationSampleSummary summary{};
 };
 
 struct CalibrationSessionRecord {

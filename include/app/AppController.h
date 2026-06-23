@@ -111,7 +111,6 @@ public:
                   WaterRecordCalibrationWriter* recordCalibrations = nullptr,
                   CalibrationSessionFileStore* calibrationSessions = nullptr,
                   CalibrationSessionTraceStore* calibrationSessionTraces = nullptr,
-                  CalibrationLongTermSampleStore* calibrationLongTermSamples = nullptr,
                   WaterSensorManager* waterSensors = nullptr);
     AppController(const SystemConfig& config,
                   const MeteringSchemeRecord& activeScheme,
@@ -123,7 +122,6 @@ public:
                   WaterRecordCalibrationWriter* recordCalibrations = nullptr,
                   CalibrationSessionFileStore* calibrationSessions = nullptr,
                   CalibrationSessionTraceStore* calibrationSessionTraces = nullptr,
-                  CalibrationLongTermSampleStore* calibrationLongTermSamples = nullptr,
                   WaterSensorManager* waterSensors = nullptr);
 
     void resetInputs(ButtonLevels levels, std::uint32_t nowMs);
@@ -149,9 +147,6 @@ public:
     bool startCalibrationSessionForWeb(std::uint32_t nowSeconds);
     bool discardCalibrationSessionForWeb(std::uint32_t nowSeconds);
     bool submitCalibrationActualForWeb(std::uint32_t actualMl, std::uint32_t nowSeconds);
-    bool saveCalibrationSessionSampleToLongTermForWeb(std::uint8_t attemptIndex,
-                                                      std::uint32_t nowSeconds,
-                                                      std::uint32_t& sampleId);
     bool removeCalibrationSessionSampleForWeb(std::uint8_t attemptIndex, std::uint32_t nowSeconds);
     bool skipCalibrationAttemptForWeb(CalibrationSkipReason reason, std::uint32_t nowSeconds);
     bool generateCalibrationForWeb(std::uint32_t nowSeconds);
@@ -178,7 +173,6 @@ private:
                   WaterRecordCalibrationWriter* recordCalibrations,
                   CalibrationSessionFileStore* calibrationSessions,
                   CalibrationSessionTraceStore* calibrationSessionTraces,
-                  CalibrationLongTermSampleStore* calibrationLongTermSamples,
                   WaterSensorManager* waterSensors);
 
     void handleButtonEvent(ButtonEvent event,
@@ -246,7 +240,6 @@ private:
     WaterSensorManager* waterSensors_;
     CalibrationSessionFileStore* calibrationSessions_;
     CalibrationSessionTraceStore* calibrationSessionTraces_;
-    CalibrationLongTermSampleStore* calibrationLongTermSamples_;
     CalibrationSessionRecord calibrationSession_;
     MeteringSchemeCandidate calibrationCandidate_;
     std::uint32_t activeTraceId_;

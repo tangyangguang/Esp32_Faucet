@@ -8,7 +8,7 @@
 namespace faucet {
 
 constexpr std::size_t kMeteringSchemeNameLength = 32;
-constexpr std::size_t kMeteringSchemeStoreSlotCount = 50;
+constexpr std::size_t kMeteringSchemeStoreSlotCount = 20;
 constexpr const char* kDefaultMeteringSchemeName = "YF-S201 默认计量方案";
 constexpr std::uint32_t kDefaultStartupPulseCount = 8;
 constexpr std::uint32_t kDefaultStartupVolumeMl = 130;
@@ -27,26 +27,15 @@ enum class MeteringSchemeSource : std::uint8_t {
     Default = 0,
     CalibrationSession = 1,
     Manual = 2,
-    LongTermSamples = 4,
-};
-
-enum class MeteringSchemeEditKind : std::uint8_t {
-    NameOnly = 0,
-    MeteringOrApplicability = 1,
-    NoChange = 2,
 };
 
 struct MeteringSchemeRecord {
     std::uint32_t id = 0;
     bool recordUsed = false;
-    bool deleted = false;
     char name[kMeteringSchemeNameLength]{};
     MeteringParameters params{};
     MeteringSchemeSource sourceType = MeteringSchemeSource::Default;
-    std::uint32_t revision = 0;
     std::uint32_t createdAt = 0;
-    std::uint32_t updatedAt = 0;
-    bool usedEver = false;
     std::uint16_t sampleCount = 0;
     std::uint32_t minActualMl = 0;
     std::uint32_t maxActualMl = 0;
@@ -81,11 +70,6 @@ struct MeteringSchemeCollection {
     std::size_t capacity = 0;
     std::uint32_t activeSchemeId = 0;
     std::uint32_t nextSchemeId = 0;
-};
-
-struct MeteringSchemeEdit {
-    char name[kMeteringSchemeNameLength]{};
-    MeteringParameters params{};
 };
 
 struct MeteringTargetEstimate {
@@ -125,14 +109,5 @@ bool createManualMeteringScheme(MeteringSchemeCollection& schemes,
                                 const MeteringParameters& params,
                                 std::uint32_t nowSeconds,
                                 std::uint32_t& newSchemeId);
-
-MeteringSchemeEdit makeMeteringSchemeEdit(const MeteringSchemeRecord& scheme);
-MeteringSchemeEditKind classifyMeteringSchemeEdit(const MeteringSchemeRecord& scheme,
-                                                  const MeteringSchemeEdit& edit);
-bool updateMeteringSchemeRecord(MeteringSchemeRecord& scheme,
-                                const MeteringSchemeEdit& edit,
-                                std::uint32_t nowSeconds);
-
-bool canDeleteMeteringScheme(const MeteringSchemeRecord& scheme, std::uint32_t activeSchemeId);
 
 }  // namespace faucet

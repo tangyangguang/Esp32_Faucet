@@ -364,7 +364,7 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NULL(std::strstr(buffer, "明细条数"));
     TEST_ASSERT_NULL(std::strstr(buffer, "records-diagnostic-strip"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "active-metering-card"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "sample-coverage-diagnostic"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "sample-coverage-diagnostic"));
     TEST_ASSERT_NULL(std::strstr(buffer, "trace-cache-diagnostic"));
     TEST_ASSERT_NULL(std::strstr(buffer, "saved-trace-diagnostic"));
     TEST_ASSERT_NULL(std::strstr(buffer, "trace-storage-diagnostic"));
@@ -377,10 +377,10 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "record.meteringSchemeId = parsed"));
     TEST_ASSERT_NULL(std::strstr(buffer, "findRecordMeteringSnapshot"));
     TEST_ASSERT_NULL(std::strstr(buffer, "g_context.recordMeteringSnapshots->findAny"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "样本覆盖"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "本次校准样本"));
     TEST_ASSERT_NULL(std::strstr(buffer, "生成计量参数"));
     TEST_ASSERT_NULL(std::strstr(buffer, "<h3>计量方案生成</h3>"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "辅助计算"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "辅助计算"));
     TEST_ASSERT_NULL(std::strstr(buffer, "<h3>参数生成</h3>"));
     TEST_ASSERT_NULL(std::strstr(buffer, "生成候选参数"));
     TEST_ASSERT_NULL(std::strstr(buffer, "明细存储"));
@@ -396,19 +396,19 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "启动脉冲数"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "启动水量"));
     TEST_ASSERT_NULL(std::strstr(buffer, "启动等效"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "可生成样本"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "有效样本"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "calibration-session-layout"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "calibration-kpi-grid"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "calibration-kpi-main"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "metering-active-summary"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "metering-active-grid"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, ".diagnostic-metric strong{display:block;color:var(--text);font-size:14px;line-height:1.25;font-weight:650;font-variant-numeric:tabular-nums;white-space:normal;overflow-wrap:anywhere}"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "长期样本 <b>%u条</b>"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "长期样本 <b>%u条</b>"));
     TEST_ASSERT_NULL(std::strstr(buffer, "设备明细 <b>%u条</b>"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "已测容量 <b>%u条</b>"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "还需 <b>%s</b>"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "已测容量 <b>%u条</b>"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "还需 <b>%s</b>"));
     TEST_ASSERT_NULL(std::strstr(buffer, "建议补偿"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "拟合误差"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "拟合误差"));
     TEST_ASSERT_NULL(std::strstr(buffer, "候选已生成"));
     TEST_ASSERT_NULL(std::strstr(buffer, "void sendSegmentedMeteringPanel()"));
     TEST_ASSERT_NULL(std::strstr(buffer, "void sendPulseTraceCachePanel()"));
@@ -437,12 +437,12 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NULL(std::strstr(buffer, "metric-grid calibration-param-grid"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "calibration-param-layout"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "calibration-slot-table"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "scheme-edit-form"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "scheme-edit-section"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "manual-param-form"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "manual-param-section"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "容量估算计量参数"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "时间估算计量参数"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "当前参数：保存后会立即影响后续出水估算。"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, ".scheme-edit-grid{display:grid;grid-template-columns:repeat(12,1fr)"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "当前参数：保存后会立即影响后续出水估算。"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, ".manual-param-grid{display:grid;grid-template-columns:repeat(12,1fr)"));
     TEST_ASSERT_NULL(std::strstr(buffer, ".calibration-slot-form{display:grid;grid-template-columns"));
     TEST_ASSERT_NULL(std::strstr(buffer, "<h3>候选方案</h3>"));
     TEST_ASSERT_NULL(std::strstr(buffer, "暂无候选方案"));
@@ -469,11 +469,9 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NULL(std::strstr(meteringPageSource, "sendSegmentedMeteringPanel"));
     TEST_ASSERT_NULL(std::strstr(meteringPageSource, "sendLongTermSampleLibraryPanel"));
     const char* schemePanelCall = std::strstr(meteringPageSource, "sendCalibrationParameterPanels()");
-    const char* generationPanelCall = schemePanelCall ? std::strstr(schemePanelCall, "sendCalibrationGenerationPanel()") : nullptr;
     TEST_ASSERT_NOT_NULL(schemePanelCall);
-    TEST_ASSERT_NOT_NULL(generationPanelCall);
-    TEST_ASSERT_TRUE(schemePanelCall < generationPanelCall);
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "长期样本库"));
+    TEST_ASSERT_NULL(std::strstr(schemePanelCall, "sendCalibrationGenerationPanel()"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "长期样本库"));
     TEST_ASSERT_NULL(std::strstr(meteringPageSource, "sendPulseTraceCachePanel"));
     TEST_ASSERT_NULL(std::strstr(calibrationHandler, "<a class='btn-link' href='/faucet/records'>历史记录</a>"));
     const char* registerHandler = std::strstr(buffer, "bool registerFaucetWeb() {");
@@ -655,7 +653,7 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "faucetSubmitSampleCalibration"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "faucetReplaceCalibrationSection"));
     TEST_ASSERT_NULL(std::strstr(buffer, "fetch('/faucet/calibration?partial=latest'"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "name='ajax' value='1'"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "name='ajax' value='1'"));
     TEST_ASSERT_NULL(std::strstr(buffer, "href='#confirm-latest-volume'"));
     TEST_ASSERT_NULL(std::strstr(buffer, "applyCalibrationFromRecord(record, actualMl)"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "校准已保存。"));
@@ -671,11 +669,10 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NULL(latestPanelSource);
     const char* samplesPanelSource = std::strstr(buffer, "void sendCalibrationSamplesPanel");
     TEST_ASSERT_NOT_NULL(samplesPanelSource);
-    const char* generationPanelSource = std::strstr(buffer, "void sendCalibrationGenerationPanel");
-    TEST_ASSERT_NOT_NULL(generationPanelSource);
-    TEST_ASSERT_TRUE(samplesPanelSource < generationPanelSource);
+    const char* samplesPanelEnd = std::strstr(samplesPanelSource, "const char* calibrationSessionStatusCode");
+    TEST_ASSERT_NOT_NULL(samplesPanelEnd);
     char samplesPanel[20000]{};
-    const std::size_t samplesLen = static_cast<std::size_t>(generationPanelSource - samplesPanelSource);
+    const std::size_t samplesLen = static_cast<std::size_t>(samplesPanelEnd - samplesPanelSource);
     TEST_ASSERT_LESS_THAN(sizeof(samplesPanel), samplesLen + 1);
     std::memcpy(samplesPanel, samplesPanelSource, samplesLen);
     TEST_ASSERT_NOT_NULL(std::strstr(samplesPanel, "<h3>本次校准样本</h3>"));
@@ -704,12 +701,12 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NULL(std::strstr(buffer, "handleTraceSaveApi"));
     TEST_ASSERT_NULL(std::strstr(buffer, "handleSaveLatestTraceApi"));
     TEST_ASSERT_NULL(std::strstr(buffer, "明细文件"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "name='action' value='generate_segmented'"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "name='action' value='generate_segmented'"));
     TEST_ASSERT_NULL(std::strstr(buffer, "name='action' value='save_generated_scheme'"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "name='action' value='discard_generated_scheme'"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "name='action' value='discard_generated_scheme'"));
     TEST_ASSERT_NULL(std::strstr(buffer, "name='action' value='save_candidate_scheme'"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "name='action' value='create_metering_scheme'"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "name='action' value='edit_metering_scheme'"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "name='action' value='edit_metering_scheme'"));
     TEST_ASSERT_NULL(std::strstr(buffer, "name='action' value='set_active_metering_scheme'"));
     TEST_ASSERT_NULL(std::strstr(buffer, "handleDisableMeteringSchemeApi"));
     TEST_ASSERT_NULL(std::strstr(buffer, "name='action' value='delete_metering_scheme'"));
@@ -718,13 +715,10 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NULL(std::strstr(buffer, "name='action' value='apply_segmented'"));
     TEST_ASSERT_NULL(std::strstr(buffer, "name='action' value='restore_segmented'"));
     TEST_ASSERT_NULL(std::strstr(buffer, "保存为新方案"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "放弃计算结果"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "计算结果"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "带入手工输入"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "class='form-actions generated-result-actions'"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, ".generated-result-actions{align-items:flex-end}"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "sample-coverage-compact"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "generated-scheme-layout"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "放弃计算结果"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "class='form-actions generated-result-actions'"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "sample-coverage-compact"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "generated-scheme-layout"));
     TEST_ASSERT_NULL(std::strstr(buffer, "generated-estimator"));
     TEST_ASSERT_NULL(std::strstr(buffer, "试算目标水量"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, ">测算</button>"));
@@ -750,15 +744,14 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "faucetEstimateDurationForMl"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "faucetEstimateVolumeForDuration"));
     TEST_ASSERT_NULL(std::strstr(buffer, "时长按当前有效样本平均流速估算"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "calibration-generation-settings"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "generated-residual-table"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "误差偏大"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "重新辅助计算"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "calibration-generation-settings"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "generated-residual-table"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "重新辅助计算"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "使用这组参数"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "createdScheme"));
     TEST_ASSERT_NULL(std::strstr(buffer, "faucetEstimateGeneratedScheme"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "faucetSubmitGenerationAction"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "name='ajax' value='1'"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "faucetSubmitGenerationAction"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "name='ajax' value='1'"));
     const char* calibrationPost = std::strstr(buffer, "void handleCalibrationPost()");
     TEST_ASSERT_NOT_NULL(calibrationPost);
     const char* calibrationPostEnd = std::strstr(calibrationPost, "bool persistFilterConfig");
@@ -774,8 +767,8 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NOT_NULL(recordsApiActionBuffer);
     TEST_ASSERT_TRUE(recordsApiActionBuffer < recordsApiEnd);
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "href='/faucet/calibration/flow?manual=1'"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "href='/faucet/calibration/flow?manual=1&startupPulseCount=%lu"));
-    const char* schemeEditSource = std::strstr(buffer, "void sendMeteringSchemeEditPage");
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "href='/faucet/calibration/flow?manual=1&name="));
+    const char* schemeEditSource = std::strstr(buffer, "void sendManualMeteringParameterPage");
     TEST_ASSERT_NOT_NULL(schemeEditSource);
     TEST_ASSERT_NULL(std::strstr(schemeEditSource, "scheme ? scheme->params : defaultMeteringParameters()"));
     TEST_ASSERT_NOT_NULL(std::strstr(schemeEditSource, "scheme ? scheme->params : MeteringParameters{}"));
@@ -794,19 +787,19 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NULL(std::strstr(schemeEditSource, "installationLabel"));
     TEST_ASSERT_NULL(std::strstr(schemeEditSource, "conditionLabel"));
     TEST_ASSERT_NULL(std::strstr(schemeEditSource, "userNote"));
-    TEST_ASSERT_NOT_NULL(std::strstr(schemeEditSource, "scheme-edit-actions"));
+    TEST_ASSERT_NOT_NULL(std::strstr(schemeEditSource, "manual-param-actions"));
     const char* createSchemeApi = std::strstr(buffer, "void handleCreateMeteringSchemeApi() {");
     TEST_ASSERT_NOT_NULL(createSchemeApi);
-    const char* editSchemeApi = std::strstr(createSchemeApi, "void handleEditMeteringSchemeApi() {");
-    TEST_ASSERT_NOT_NULL(editSchemeApi);
-    TEST_ASSERT_NOT_NULL(findWithin(createSchemeApi, editSchemeApi, "if (!getParam(\"name\", name, sizeof(name))"));
-    TEST_ASSERT_NOT_NULL(findWithin(createSchemeApi, editSchemeApi, "name[0] =="));
-    TEST_ASSERT_NULL(findWithin(createSchemeApi, editSchemeApi, "std::snprintf(name, sizeof(name), \"手工方案\")"));
+    const char* createSchemeApiEnd = std::strstr(createSchemeApi, "void handleFiltersApi()");
+    TEST_ASSERT_NOT_NULL(createSchemeApiEnd);
+    TEST_ASSERT_NOT_NULL(findWithin(createSchemeApi, createSchemeApiEnd, "if (!getParam(\"name\", name, sizeof(name))"));
+    TEST_ASSERT_NOT_NULL(findWithin(createSchemeApi, createSchemeApiEnd, "name[0] =="));
+    TEST_ASSERT_NULL(findWithin(createSchemeApi, createSchemeApiEnd, "std::snprintf(name, sizeof(name), \"手工方案\")"));
     TEST_ASSERT_NULL(std::strstr(buffer, "启用只切换当前计量参数"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "action='/faucet/calibration'"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "action='/faucet/calibration/flow'"));
     TEST_ASSERT_NULL(std::strstr(buffer, "<span class='status-pill status-muted'>手动执行</span>"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "辅助计算只扫描满足有效条件的数据"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "辅助计算只扫描满足有效条件的数据"));
     TEST_ASSERT_NULL(std::strstr(buffer, "<section class='panel calibration-help-panel'>"));
     TEST_ASSERT_NULL(std::strstr(buffer, "<h3>计量说明</h3>"));
     TEST_ASSERT_NULL(std::strstr(buffer, "查看计量说明"));
@@ -829,8 +822,8 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "<h3>本次校准样本</h3>"));
     TEST_ASSERT_NULL(std::strstr(buffer, "<h3>本次校准接水记录</h3>"));
     TEST_ASSERT_NULL(std::strstr(buffer, "<h3>有效样本</h3>"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "计量方案生成只使用长期样本库"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "历史样本 #"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "计量方案生成只使用长期样本库"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "历史样本 #"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "calibration-timeout-pill"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "data-calibration-countdown"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "data-remaining"));
@@ -853,7 +846,7 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "容量已校准"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "来自校准容量记录"));
     const char* schemeListSource = std::strstr(buffer, "void sendCalibrationParameterPanels");
-    const char* formulaPanelSource = std::strstr(buffer, "void sendMeteringSchemeEditPage");
+    const char* formulaPanelSource = std::strstr(buffer, "void sendManualMeteringParameterPage");
     TEST_ASSERT_NOT_NULL(schemeListSource);
     TEST_ASSERT_NOT_NULL(formulaPanelSource);
     char schemeList[32000]{};
@@ -870,8 +863,8 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NULL(std::strstr(schemeList, "<th>来源</th>"));
     TEST_ASSERT_NULL(std::strstr(schemeList, "<th>使用</th>"));
     TEST_ASSERT_NULL(std::strstr(schemeList, "scheme-meta-lines"));
-    TEST_ASSERT_NULL(std::strstr(schemeList, "meteringSchemeSourceName(scheme.sourceType)"));
-    TEST_ASSERT_NOT_NULL(std::strstr(schemeList, "meteringSchemeUsedEverForWeb(scheme) ? \"已使用\" : \"未使用\""));
+    TEST_ASSERT_NOT_NULL(std::strstr(schemeList, "meteringSchemeSourceName(scheme.sourceType)"));
+    TEST_ASSERT_NULL(std::strstr(schemeList, "meteringSchemeUsedEverForWeb(scheme) ? \"已使用\" : \"未使用\""));
     TEST_ASSERT_NOT_NULL(std::strstr(schemeList, "sendManualParameterLink(\"复制参数\", scheme)"));
     TEST_ASSERT_NOT_NULL(std::strstr(schemeList, "sendSchemeDetailButton(scheme, activeId)"));
     TEST_ASSERT_NOT_NULL(std::strstr(schemeList, "sendMeteringTrialButton"));
@@ -891,8 +884,8 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "返回校准"));
     TEST_ASSERT_NULL(std::strstr(buffer, "returnTo' value='calibration'"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "const char* detailPath = fromCalibration ? \"/faucet/calibration/detail\" : \"/faucet/records/detail\""));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "actualMlForSegmentedSample(*trace)"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "actualMlForSegmentedSample(trace)"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "actualMlForTrace(*trace)"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "actualMlForSegmentedSample"));
     TEST_ASSERT_NULL(std::strstr(buffer, "保存为分段样本"));
     TEST_ASSERT_NULL(std::strstr(buffer, "保存并自动校准"));
     TEST_ASSERT_NULL(std::strstr(buffer, "启动阶段的等效脉冲/升"));
@@ -1155,7 +1148,7 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "目标全程平均 P/L"));
 }
 
-void test_metering_generation_uses_long_term_sample_library_for_auxiliary_calculation() {
+void test_metering_generation_no_longer_uses_long_term_sample_library_for_auxiliary_calculation() {
     FILE* file = std::fopen("src/web/FaucetWeb.cpp", "rb");
     TEST_ASSERT_NOT_NULL(file);
     static char buffer[420000]{};
@@ -1163,19 +1156,13 @@ void test_metering_generation_uses_long_term_sample_library_for_auxiliary_calcul
     std::fclose(file);
     TEST_ASSERT_GREATER_THAN_size_t(0, read);
 
-    const char* helper = std::strstr(buffer, "bool appendSegmentedSampleFromLongTermSample");
-    TEST_ASSERT_NOT_NULL(helper);
-    const char* collect = std::strstr(helper, "SegmentedSampleDiagnostics collectSegmentedSampleDiagnostics");
-    TEST_ASSERT_NOT_NULL(collect);
-    const char* collectEnd = std::strstr(collect, "bool ensureMeteringSchemesReady");
-    TEST_ASSERT_NOT_NULL(collectEnd);
-    TEST_ASSERT_NOT_NULL(findWithin(helper, collectEnd, "g_context.calibrationLongTermSamples->list"));
-    TEST_ASSERT_NOT_NULL(findWithin(helper, collectEnd, "readSamples(stored.sampleId"));
-    TEST_ASSERT_NULL(findWithin(collect, collectEnd, "g_context.savedPulseTraces->list"));
-
+    TEST_ASSERT_NULL(std::strstr(buffer, "appendSegmentedSampleFromLongTermSample"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "collectSegmentedSampleDiagnostics"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "calibrationLongTermSamples"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "kCalibrationLongTermSampleSlots"));
     TEST_ASSERT_NULL(std::strstr(buffer, "void handleSaveGeneratedSchemeApi() {"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "带入手工输入前不会改变当前计量"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "sendFmt(\"<a class='btn-link primary' href='/faucet/calibration/flow?manual=1"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "带入手工输入前不会改变当前计量"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "sendFmt(\"<a class='btn-link primary' href='/faucet/calibration/flow?manual=1"));
 }
 
 void test_calibration_page_avoids_large_metering_scheme_stack_arrays() {
@@ -1188,7 +1175,7 @@ void test_calibration_page_avoids_large_metering_scheme_stack_arrays() {
 
     const char* panel = std::strstr(buffer, "void sendCalibrationParameterPanels()");
     TEST_ASSERT_NOT_NULL(panel);
-    const char* nextFunction = std::strstr(panel, "const char* segmentedRejectReasonText(");
+    const char* nextFunction = std::strstr(panel, "void sendManualMeteringParameterPage(");
     TEST_ASSERT_NOT_NULL(nextFunction);
 
     const char* schemePointer = std::strstr(panel, "MeteringSchemeRecord* schemes");
@@ -1207,23 +1194,15 @@ void test_calibration_page_avoids_large_metering_scheme_stack_arrays() {
     TEST_ASSERT_NULL(findWithin(panel, nextFunction, "list(schemes, 10, true)"));
 
     const char* diagnostics = std::strstr(buffer, "SegmentedSampleDiagnostics collectSegmentedSampleDiagnostics");
-    TEST_ASSERT_NOT_NULL(diagnostics);
-    const char* diagnosticsEnd = std::strstr(diagnostics, "bool ensureMeteringSchemesReady");
-    TEST_ASSERT_NOT_NULL(diagnosticsEnd);
-    TEST_ASSERT_NOT_NULL(std::strstr(diagnostics, "SegmentedCalibrationSample* samples"));
-    TEST_ASSERT_NOT_NULL(std::strstr(diagnostics, "WaterRecord* seenRecords"));
-    TEST_ASSERT_NOT_NULL(std::strstr(diagnostics, "new (std::nothrow) SegmentedCalibrationSample[kSegmentedCalibrationMaxSamples]"));
-    TEST_ASSERT_NOT_NULL(std::strstr(diagnostics, "new (std::nothrow) WaterRecord[kSegmentedCalibrationMaxSamples]"));
-    TEST_ASSERT_NOT_NULL(std::strstr(diagnostics, "delete[] samples"));
-    TEST_ASSERT_NOT_NULL(std::strstr(diagnostics, "delete[] seenRecords"));
-    TEST_ASSERT_TRUE(std::strstr(diagnostics, "SegmentedCalibrationSample samples[kSegmentedCalibrationMaxSamples]") == nullptr ||
-                     std::strstr(diagnostics, "SegmentedCalibrationSample samples[kSegmentedCalibrationMaxSamples]") > diagnosticsEnd);
-    TEST_ASSERT_TRUE(std::strstr(diagnostics, "WaterRecord seenRecords[kSegmentedCalibrationMaxSamples]") == nullptr ||
-                     std::strstr(diagnostics, "WaterRecord seenRecords[kSegmentedCalibrationMaxSamples]") > diagnosticsEnd);
+    TEST_ASSERT_NULL(diagnostics);
+    TEST_ASSERT_NULL(std::strstr(buffer, "SegmentedCalibrationSample* samples"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "WaterRecord* seenRecords"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "new (std::nothrow) SegmentedCalibrationSample[kSegmentedCalibrationMaxSamples]"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "new (std::nothrow) WaterRecord[kSegmentedCalibrationMaxSamples]"));
 
     const char* samplesPanel = std::strstr(buffer, "void sendCalibrationSamplesPanel");
     TEST_ASSERT_NOT_NULL(samplesPanel);
-    const char* samplesPanelEnd = std::strstr(samplesPanel, "void sendCalibrationGenerationPanel");
+    const char* samplesPanelEnd = std::strstr(samplesPanel, "const char* calibrationSessionStatusCode");
     TEST_ASSERT_NOT_NULL(samplesPanelEnd);
     TEST_ASSERT_NULL(std::strstr(samplesPanel, "WaterRecord* listed"));
     TEST_ASSERT_NULL(std::strstr(samplesPanel, "new (std::nothrow) WaterRecord[kSavedPulseTraceMaxCountLimit]"));
@@ -1250,27 +1229,21 @@ void test_calibration_page_reports_specific_errors_and_hides_stale_generated_res
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "fetch('/faucet/calibration',{method:'POST'"));
     TEST_ASSERT_NULL(std::strstr(buffer, "fetch(f.action,{method:'POST'"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "fetch('/faucet/calibration',{method:'POST',body:new FormData(f),cache:'no-store',credentials:'same-origin'}"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "faucetSubmitGenerationAction"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "faucetSubmitGenerationAction"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "校准已保存，但页面刷新失败，请手动刷新查看最新状态。"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "辅助计算已完成，但页面刷新失败，请手动刷新查看最新状态。"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "辅助计算已完成，但页面刷新失败，请手动刷新查看最新状态。"));
     TEST_ASSERT_NULL(std::strstr(buffer, "alert('保存失败，请稍后重试。')"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "样本质量提醒"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "容量跨度不足"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "拟合误差偏大"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "样本偏少，建议补充不同容量样本"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "样本质量提醒"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "容量跨度不足"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "拟合误差偏大"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "样本偏少，建议补充不同容量样本"));
 
     const char* panel = std::strstr(buffer, "void sendCalibrationGenerationPanel");
-    TEST_ASSERT_NOT_NULL(panel);
-    const char* nextFunction = std::strstr(panel, "void sendCalibrationPageScript");
-    TEST_ASSERT_NOT_NULL(nextFunction);
-    const char* requested = std::strstr(panel, "generationResultRequested()");
-    const char* candidateReady = std::strstr(panel, "const bool candidateReady");
-    TEST_ASSERT_NOT_NULL(requested);
-    TEST_ASSERT_NOT_NULL(candidateReady);
-    TEST_ASSERT_TRUE(requested < candidateReady);
-    TEST_ASSERT_TRUE(candidateReady < nextFunction);
-    TEST_ASSERT_NOT_NULL(std::strstr(panel, "generated-summary-grid"));
-    TEST_ASSERT_NOT_NULL(std::strstr(panel, "带入手工输入前不会改变当前计量参数"));
+    TEST_ASSERT_NULL(panel);
+    TEST_ASSERT_NULL(std::strstr(buffer, "generationResultRequested()"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "const bool candidateReady"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "generated-summary-grid"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "带入手工输入前不会改变当前计量参数"));
 }
 
 void test_pulse_trace_and_calibration_pages_keep_saved_and_ram_sources_consistent() {
@@ -1300,12 +1273,12 @@ void test_pulse_trace_and_calibration_pages_keep_saved_and_ram_sources_consisten
     TEST_ASSERT_NULL(findWithin(recordDetailPage, detailEnd, "删除设备明细"));
     TEST_ASSERT_NULL(findWithin(recordDetailPage, detailEnd, "保存设备明细"));
     TEST_ASSERT_NULL(findWithin(recordDetailPage, detailEnd, "savedSource || alreadySaved"));
-    TEST_ASSERT_NOT_NULL(std::strstr(recordDetailPage, "计量方案生成只使用长期样本库，不直接扫描 RAM 明细"));
+    TEST_ASSERT_NOT_NULL(std::strstr(recordDetailPage, "参数生成使用每次校准保存时提取的摘要，不重复扫描原始明细"));
 
     const char* samplesPanel = std::strstr(buffer, "void sendCalibrationSamplesPanel");
-    const char* generationPanel = std::strstr(buffer, "void sendCalibrationGenerationPanel");
     TEST_ASSERT_NOT_NULL(samplesPanel);
-    TEST_ASSERT_NOT_NULL(generationPanel);
+    const char* samplesPanelEnd = std::strstr(samplesPanel, "const char* calibrationSessionStatusCode");
+    TEST_ASSERT_NOT_NULL(samplesPanelEnd);
     const char* sessionLoad = std::strstr(samplesPanel, "g_context.calibrationSessions->load(*session)");
     const char* attemptLoop = std::strstr(samplesPanel, "session->attempts[i]");
     const char* sessionRow = std::strstr(samplesPanel, "sendCalibrationSessionAttemptRow(*session, attempt");
@@ -1314,15 +1287,12 @@ void test_pulse_trace_and_calibration_pages_keep_saved_and_ram_sources_consisten
     TEST_ASSERT_NOT_NULL(sessionRow);
     TEST_ASSERT_NULL(std::strstr(samplesPanel, "traceAlreadyListed"));
     TEST_ASSERT_NULL(std::strstr(samplesPanel, "sampleItems"));
-    TEST_ASSERT_TRUE(sessionLoad < generationPanel);
-    TEST_ASSERT_TRUE(attemptLoop < generationPanel);
-    TEST_ASSERT_TRUE(sessionRow < generationPanel);
+    TEST_ASSERT_TRUE(sessionLoad < samplesPanelEnd);
+    TEST_ASSERT_TRUE(attemptLoop < samplesPanelEnd);
+    TEST_ASSERT_TRUE(sessionRow < samplesPanelEnd);
 
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "generateSegmentedCalibrationResultFromSavedSamples"));
-    const char* generateFunction = std::strstr(buffer, "bool generateSegmentedCalibrationResultFromSavedSamples()");
-    TEST_ASSERT_NOT_NULL(generateFunction);
-    TEST_ASSERT_NOT_NULL(std::strstr(generateFunction, "collectSegmentedSampleDiagnostics(false)"));
-    TEST_ASSERT_NULL(std::strstr(generateFunction, "collectSegmentedSampleDiagnostics(true)"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "generateSegmentedCalibrationResultFromSavedSamples"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "collectSegmentedSampleDiagnostics"));
 }
 
 void test_sendfmt_uses_dynamic_fallback_for_long_markup() {
@@ -1364,7 +1334,7 @@ void test_metering_scheme_page_uses_active_card_and_table_layout() {
     TEST_ASSERT_NULL(placeholderPanel);
     const char* panel = std::strstr(buffer, "void sendCalibrationParameterPanels()");
     TEST_ASSERT_NOT_NULL(panel);
-    const char* nextFunction = std::strstr(panel, "void sendMeteringSchemeEditPage");
+    const char* nextFunction = std::strstr(panel, "void sendManualMeteringParameterPage");
     TEST_ASSERT_NOT_NULL(nextFunction);
 
     TEST_ASSERT_NOT_NULL(findWithin(summaryPanel, panel, "active-metering-card"));
@@ -1378,10 +1348,10 @@ void test_metering_scheme_page_uses_active_card_and_table_layout() {
     TEST_ASSERT_NULL(std::strstr(panel, "历史使用："));
     TEST_ASSERT_NULL(std::strstr(panel, "scheme-meta-lines"));
     TEST_ASSERT_NOT_NULL(findWithin(summaryPanel, panel, "sendActiveMeteringSchemeCard"));
-    TEST_ASSERT_NOT_NULL(std::strstr(panel, "meteringSchemeUsedEverForWeb(scheme) ? \"已使用\" : \"未使用\""));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "error=scheme_locked"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "current.deleted || meteringSchemeUsedEverForWeb(current)"));
-    TEST_ASSERT_NULL(std::strstr(panel, "meteringSchemeSourceName(scheme.sourceType)"));
+    TEST_ASSERT_NULL(std::strstr(panel, "meteringSchemeUsedEverForWeb(scheme) ? \"已使用\" : \"未使用\""));
+    TEST_ASSERT_NULL(std::strstr(buffer, "error=scheme_locked"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "current.deleted || meteringSchemeUsedEverForWeb(current)"));
+    TEST_ASSERT_NOT_NULL(std::strstr(panel, "meteringSchemeSourceName(scheme.sourceType)"));
     TEST_ASSERT_NULL(findWithin(panel, nextFunction, "scheme-param-table"));
     TEST_ASSERT_NOT_NULL(findWithin(panel, nextFunction, "metering-scheme-list"));
     TEST_ASSERT_NULL(findWithin(panel, nextFunction, "metering-scheme-row"));
@@ -1400,7 +1370,7 @@ void test_metering_scheme_page_uses_active_card_and_table_layout() {
     TEST_ASSERT_NULL(std::strstr(buffer, "min-width:520px"));
 }
 
-void test_metering_samples_and_generation_are_combined() {
+void test_metering_samples_remain_without_long_term_generation_panel() {
     FILE* file = std::fopen("src/web/FaucetWeb.cpp", "rb");
     TEST_ASSERT_NOT_NULL(file);
     static char buffer[420000]{};
@@ -1408,24 +1378,15 @@ void test_metering_samples_and_generation_are_combined() {
     std::fclose(file);
     TEST_ASSERT_GREATER_THAN_size_t(0, read);
 
-    const char* panel = std::strstr(buffer, "void sendCalibrationGenerationPanel()");
-    TEST_ASSERT_NOT_NULL(panel);
-    const char* nextFunction = std::strstr(panel, "void sendCalibrationPageScript");
-    TEST_ASSERT_NOT_NULL(nextFunction);
-
-    TEST_ASSERT_NOT_NULL(std::strstr(panel, "<h3>高级样本库</h3>"));
-    TEST_ASSERT_NOT_NULL(std::strstr(panel, "name='action' value='generate_segmented'"));
-    TEST_ASSERT_NOT_NULL(std::strstr(panel, "sendLongTermSampleLibraryTable()"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "<th>时间</th><th>实测容量</th><th>总脉冲</th><th>数据点</th><th>样本状态</th>"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "colspan='5'>还没有长期样本"));
-    TEST_ASSERT_NOT_NULL(std::strstr(panel, "sample-coverage-diagnostic"));
-    TEST_ASSERT_NOT_NULL(std::strstr(panel, "generated-summary-grid"));
-    TEST_ASSERT_NOT_NULL(std::strstr(panel, "generated-summary-card"));
-    TEST_ASSERT_NOT_NULL(std::strstr(panel, "generated-residual-table"));
-    TEST_ASSERT_NULL(findWithin(panel, nextFunction, "generated-scheme-table"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "void sendCalibrationSamplesPanel"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "<h3>本次校准样本</h3>"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "void sendCalibrationGenerationPanel()"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "<h3>高级样本库</h3>"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "name='action' value='generate_segmented'"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "sendLongTermSampleLibraryTable()"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "colspan='5'>还没有长期样本"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "generated-residual-table"));
     TEST_ASSERT_NULL(std::strstr(buffer, "void sendLongTermSampleLibraryPanel()"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, ".generated-summary-grid"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, ".generated-summary-card"));
 }
 
 void test_calibration_requested_ui_adjustments_are_enforced() {
@@ -1467,14 +1428,14 @@ void test_calibration_requested_ui_adjustments_are_enforced() {
 
     const char* samplesPanel = std::strstr(buffer, "void sendCalibrationSamplesPanel");
     TEST_ASSERT_NOT_NULL(samplesPanel);
-    const char* generationPanel = std::strstr(samplesPanel, "void sendGeneratedSampleResiduals");
-    TEST_ASSERT_NOT_NULL(generationPanel);
-    TEST_ASSERT_NULL(findWithin(samplesPanel, generationPanel, "CalibrationSessionRecord session{}"));
-    TEST_ASSERT_NOT_NULL(findWithin(samplesPanel, generationPanel, "new (std::nothrow) CalibrationSessionRecord"));
-    TEST_ASSERT_NOT_NULL(findWithin(samplesPanel, generationPanel, "sendCalibrationSessionAttemptRow(*session, attempt"));
-    TEST_ASSERT_NOT_NULL(findWithin(samplesPanel, generationPanel, "colspan='12'>还没有本次校准样本"));
-    TEST_ASSERT_NULL(findWithin(samplesPanel, generationPanel, "CalibrationSampleListItem"));
-    TEST_ASSERT_NULL(findWithin(samplesPanel, generationPanel, "std::sort(sampleItems"));
+    const char* samplesPanelEnd = std::strstr(samplesPanel, "const char* calibrationSessionStatusCode");
+    TEST_ASSERT_NOT_NULL(samplesPanelEnd);
+    TEST_ASSERT_NULL(findWithin(samplesPanel, samplesPanelEnd, "CalibrationSessionRecord session{}"));
+    TEST_ASSERT_NOT_NULL(findWithin(samplesPanel, samplesPanelEnd, "new (std::nothrow) CalibrationSessionRecord"));
+    TEST_ASSERT_NOT_NULL(findWithin(samplesPanel, samplesPanelEnd, "sendCalibrationSessionAttemptRow(*session, attempt"));
+    TEST_ASSERT_NOT_NULL(findWithin(samplesPanel, samplesPanelEnd, "colspan='12'>还没有本次校准样本"));
+    TEST_ASSERT_NULL(findWithin(samplesPanel, samplesPanelEnd, "CalibrationSampleListItem"));
+    TEST_ASSERT_NULL(findWithin(samplesPanel, samplesPanelEnd, "std::sort(sampleItems"));
     TEST_ASSERT_NULL(std::strstr(buffer, "const WaterUsageSummary summary = aggregateWaterRecords"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "aggregateWaterRecordsInto"));
 
@@ -1485,7 +1446,7 @@ void test_calibration_requested_ui_adjustments_are_enforced() {
 
     const char* schemeList = std::strstr(buffer, "void sendCalibrationParameterPanels");
     TEST_ASSERT_NOT_NULL(schemeList);
-    const char* schemeEdit = std::strstr(schemeList, "void sendMeteringSchemeEditPage");
+    const char* schemeEdit = std::strstr(schemeList, "void sendManualMeteringParameterPage");
     TEST_ASSERT_NOT_NULL(schemeEdit);
     TEST_ASSERT_NULL(findWithin(schemeList, schemeEdit, "使用这组参数"));
     TEST_ASSERT_NULL(findWithin(schemeList, schemeEdit, "确认使用这组计量参数？"));
@@ -1703,7 +1664,7 @@ void test_web_record_and_calibration_paths_avoid_large_stack_buffers() {
     TEST_ASSERT_NULL(std::strstr(buffer, "CalibrationStoredTrace longTermSamples[kCalibrationLongTermSampleSlots]"));
     TEST_ASSERT_NULL(std::strstr(buffer, "CalibrationStoredTrace samples[kCalibrationLongTermSampleSlots]"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "new (std::nothrow) WaterRecord[kDefaultRecordPageSize]"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "new (std::nothrow) CalibrationStoredTrace[kCalibrationLongTermSampleSlots]"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "new (std::nothrow) CalibrationStoredTrace[kCalibrationLongTermSampleSlots]"));
 }
 
 void test_main_enables_ota_mark_valid_after_runtime_health_check() {
@@ -1859,7 +1820,7 @@ void test_storage_status_and_persistence_retry_are_explicit() {
     TEST_ASSERT_NOT_NULL(std::strstr(webBuffer, "appStorageStatusCode"));
     TEST_ASSERT_NOT_NULL(std::strstr(webBuffer, "文件损坏"));
     TEST_ASSERT_NOT_NULL(std::strstr(webBuffer, "格式不兼容"));
-    TEST_ASSERT_NOT_NULL(std::strstr(webBuffer, "长期样本库已满，请先手动删除不需要的样本"));
+    TEST_ASSERT_NULL(std::strstr(webBuffer, "长期样本库已满，请先手动删除不需要的样本"));
     TEST_ASSERT_NOT_NULL(std::strstr(webBuffer, "metering_storage_unavailable"));
 
     FILE* mainFile = std::fopen("src/main.cpp", "rb");
@@ -1946,13 +1907,13 @@ int main(int argc, char** argv) {
     RUN_TEST(test_web_page_source_has_no_remote_water_control_forms);
     RUN_TEST(test_web_page_source_links_cacheable_app_css);
     RUN_TEST(test_web_page_source_contains_expected_ui_improvements);
-    RUN_TEST(test_metering_generation_uses_long_term_sample_library_for_auxiliary_calculation);
+    RUN_TEST(test_metering_generation_no_longer_uses_long_term_sample_library_for_auxiliary_calculation);
     RUN_TEST(test_calibration_page_avoids_large_metering_scheme_stack_arrays);
     RUN_TEST(test_calibration_page_reports_specific_errors_and_hides_stale_generated_result);
     RUN_TEST(test_pulse_trace_and_calibration_pages_keep_saved_and_ram_sources_consistent);
     RUN_TEST(test_sendfmt_uses_dynamic_fallback_for_long_markup);
     RUN_TEST(test_metering_scheme_page_uses_active_card_and_table_layout);
-    RUN_TEST(test_metering_samples_and_generation_are_combined);
+    RUN_TEST(test_metering_samples_remain_without_long_term_generation_panel);
     RUN_TEST(test_calibration_requested_ui_adjustments_are_enforced);
     RUN_TEST(test_main_source_uses_cached_display_frame_for_web_status);
     RUN_TEST(test_main_source_wires_metering_scheme_store_without_snapshot_store);

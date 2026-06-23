@@ -296,9 +296,8 @@ void test_pulse_observation_window_is_editable_in_app_config_page() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "kDefaultPulseObservationWindowSec"));
 }
 
-void test_calibration_sample_stores_are_small_and_initialized_after_record_store() {
-    TEST_ASSERT_EQUAL_size_t(10, kCalibrationSessionTraceSlots);
-    TEST_ASSERT_EQUAL_size_t(5, kCalibrationLongTermSampleSlots);
+void test_calibration_session_trace_store_is_small_and_initialized_after_record_store() {
+    TEST_ASSERT_EQUAL_size_t(6, kCalibrationSessionTraceSlots);
 
     FILE* file = std::fopen("src/main.cpp", "rb");
     TEST_ASSERT_NOT_NULL(file);
@@ -313,11 +312,10 @@ void test_calibration_sample_stores_are_small_and_initialized_after_record_store
     TEST_ASSERT_NOT_NULL(end);
 
     const char* sessionTracePath = std::strstr(init, "kCalibrationSessionTracePath");
-    const char* longTermPath = std::strstr(init, "kCalibrationLongTermSamplesPath");
     TEST_ASSERT_TRUE(sessionTracePath == nullptr || sessionTracePath > end);
-    TEST_ASSERT_TRUE(longTermPath == nullptr || longTermPath > end);
     TEST_ASSERT_NOT_NULL(std::strstr(init, "g_calibrationSessionTraces.begin()"));
-    TEST_ASSERT_NOT_NULL(std::strstr(init, "g_calibrationLongTermSamples.begin()"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "kCalibrationLongTermSamplesPath"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "g_calibrationLongTermSamples"));
 }
 
 int main(int argc, char** argv) {
@@ -334,6 +332,6 @@ int main(int argc, char** argv) {
     RUN_TEST(test_record_page_size_and_filter_life_helpers);
     RUN_TEST(test_recent_pulse_trace_count_is_not_editable_in_app_config_page);
     RUN_TEST(test_pulse_observation_window_is_editable_in_app_config_page);
-    RUN_TEST(test_calibration_sample_stores_are_small_and_initialized_after_record_store);
+    RUN_TEST(test_calibration_session_trace_store_is_small_and_initialized_after_record_store);
     return UNITY_END();
 }

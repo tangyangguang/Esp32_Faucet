@@ -95,6 +95,8 @@ private:
         std::uint16_t tdsMax = 0;
         std::uint32_t voltageSum = 0;
         std::uint16_t count = 0;
+        std::uint16_t tempCount = 0;
+        std::uint16_t tdsCount = 0;
         std::uint16_t flags = 0;
         bool fallback = false;
     };

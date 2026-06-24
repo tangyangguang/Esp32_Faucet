@@ -36,6 +36,12 @@ private:
     void fillRect(std::int16_t x, std::int16_t y, std::int16_t w, std::int16_t h, std::uint16_t color);
     bool beginBufferedFrame(bool fullRedraw);
     void endBufferedFrame(bool buffered);
+    bool beginBufferedRegion(std::int16_t x,
+                             std::int16_t y,
+                             std::int16_t w,
+                             std::int16_t h,
+                             std::uint16_t background);
+    void endBufferedRegion(bool buffered, std::int16_t x, std::int16_t y);
     void fillRoundRect(std::int16_t x,
                        std::int16_t y,
                        std::int16_t w,
@@ -143,6 +149,7 @@ private:
     void drawTopBar(const ColorDisplayFrame& frame, std::uint16_t accent);
     void drawHintSlot(std::int16_t x, std::int16_t y, std::int16_t w, const char* text);
     void drawHints(const ColorDisplayFrame& frame);
+    void drawRunningFrameDynamicRegions(const ColorDisplayFrame& frame, std::uint16_t accent);
     void renderFrame(const ColorDisplayFrame& frame, bool fullRedraw);
 
     std::uint8_t sclkPin_;

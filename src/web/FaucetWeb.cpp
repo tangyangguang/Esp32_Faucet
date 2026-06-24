@@ -96,6 +96,7 @@ void redirectFlowCalibrationResult(bool ok, const char* success, const char* fai
 void formatWaterRecordTime(const WaterRecord& record, char* out, std::size_t len);
 void formatWaterRecordListTime(const WaterRecord& record, char* out, std::size_t len);
 void formatRecordTime(std::uint32_t seconds, char* out, std::size_t len);
+void formatSecondsValue(std::uint32_t seconds, char* out, std::size_t len);
 void formatFlowLitersPerMin(std::uint32_t flowMlPerMin, char* out, std::size_t len);
 void sendNoticeFromQuery();
 void sendPageEnd();
@@ -358,7 +359,9 @@ void sendLitersMl(std::uint32_t ml) {
 
 void sendTargetValue(const WaterRecord& record) {
     if (record.mode == WaterMode::Time) {
-        sendFmt("%lu 秒", static_cast<unsigned long>(record.targetValue));
+        char seconds[24]{};
+        formatSecondsValue(record.targetValue, seconds, sizeof(seconds));
+        Esp32BaseWeb::sendChunk(seconds);
         return;
     }
     sendLiters(record.targetValue);
@@ -443,14 +446,16 @@ void formatRecordPresetLabel(const WaterRecord& record, char* out, std::size_t l
     }
     char target[24]{};
     formatRecordTargetValue(record, target, sizeof(target));
+    const char* mode = record.mode == WaterMode::Time ? "时间模式" : "容量模式";
     if (record.selectedPreset < kPresetCount) {
         std::snprintf(out,
                       len,
-                      "预设 %u · %s",
+                      "预设 %u · %s · %s",
                       static_cast<unsigned>(record.selectedPreset) + 1U,
+                      mode,
                       target);
     } else {
-        std::snprintf(out, len, "未知预设 · %s", target);
+        std::snprintf(out, len, "%s · %s", mode, target);
     }
 }
 
@@ -680,15 +685,6 @@ std::uint32_t actualMlForTrace(const WaterPulseTrace& trace) {
     }
     WaterRecordCalibration calibration{};
     return findRecordCalibration(trace.record, calibration) ? calibration.actualMl : 0;
-}
-
-std::uint32_t measuredPulsePerLiter(const WaterRecord& record, const WaterRecordCalibration& calibration) {
-    if (record.pulseCount == 0 || calibration.actualMl == 0) {
-        return 0;
-    }
-    return static_cast<std::uint32_t>(
-        (static_cast<std::uint64_t>(record.pulseCount) * 1000ULL + calibration.actualMl / 2ULL) /
-        calibration.actualMl);
 }
 
 bool copyRamTraceBuckets(const WaterPulseTrace& trace,
@@ -1718,6 +1714,19 @@ void sendFlowCalibrationSessionPanel(const AppSnapshot& snapshot, bool taskActiv
             canApply ? "" : " disabled");
 }
 
+void formatCentiTemperature(std::int32_t centi, char* out, std::size_t len) {
+    if (!out || len == 0) {
+        return;
+    }
+    const std::int32_t absCenti = centi < 0 ? -centi : centi;
+    std::snprintf(out,
+                  len,
+                  "%s%ld.%02ld C",
+                  centi < 0 ? "-" : "",
+                  static_cast<long>(absCenti / 100),
+                  static_cast<long>(absCenti % 100));
+}
+
 void formatSensorTemperature(const SensorValue& value, char* out, std::size_t len) {
     if (!out || len == 0) {
         return;
@@ -1726,12 +1735,58 @@ void formatSensorTemperature(const SensorValue& value, char* out, std::size_t le
         std::snprintf(out, len, "-");
         return;
     }
+    formatCentiTemperature(value.value, out, len);
+}
+
+void formatSensorTemperatureNumber(const SensorValue& value, char* out, std::size_t len) {
+    if (!out || len == 0) {
+        return;
+    }
+    if (!value.valid) {
+        std::snprintf(out, len, "--");
+        return;
+    }
     const std::int32_t centi = value.value;
+    const std::int32_t absCenti = centi < 0 ? -centi : centi;
     std::snprintf(out,
                   len,
-                  "%ld.%02ld C",
-                  static_cast<long>(centi / 100),
-                  static_cast<long>(std::abs(static_cast<int>(centi % 100))));
+                  "%s%ld.%02ld",
+                  centi < 0 ? "-" : "",
+                  static_cast<long>(absCenti / 100),
+                  static_cast<long>(absCenti % 100));
+}
+
+void formatWaterRecordTemperature(const WaterRecord& record, char* out, std::size_t len) {
+    if (!out || len == 0) {
+        return;
+    }
+    if (record.sensorSampleCount == 0 || (record.sensorFlags & kWaterSensorFlagTempInvalid) != 0) {
+        std::snprintf(out, len, "--");
+        return;
+    }
+    formatCentiTemperature(record.temperatureAvgCentiC, out, len);
+}
+
+void formatWaterRecordTds(const WaterRecord& record, char* out, std::size_t len) {
+    if (!out || len == 0) {
+        return;
+    }
+    if (record.sensorSampleCount == 0 || (record.sensorFlags & kWaterSensorFlagTdsInvalid) != 0) {
+        std::snprintf(out, len, "--");
+        return;
+    }
+    std::snprintf(out, len, "%u ppm", static_cast<unsigned>(record.tdsAvgPpm));
+}
+
+void formatSensorIntegerNumber(const SensorValue& value, char* out, std::size_t len) {
+    if (!out || len == 0) {
+        return;
+    }
+    if (!value.valid) {
+        std::snprintf(out, len, "--");
+        return;
+    }
+    std::snprintf(out, len, "%ld", static_cast<long>(value.value));
 }
 
 void formatSensorIntegerValue(const SensorValue& value, const char* unit, char* out, std::size_t len) {
@@ -1743,6 +1798,86 @@ void formatSensorIntegerValue(const SensorValue& value, const char* unit, char* 
         return;
     }
     std::snprintf(out, len, "%ld %s", static_cast<long>(value.value), unit ? unit : "");
+}
+
+bool parseI16(const char* text, std::int16_t& value) {
+    if (!text || !*text) {
+        return false;
+    }
+    char* end = nullptr;
+    const long parsed = std::strtol(text, &end, 10);
+    if (!end || *end != '\0' || parsed < INT16_MIN || parsed > INT16_MAX) {
+        return false;
+    }
+    value = static_cast<std::int16_t>(parsed);
+    return true;
+}
+
+const char* tdsCalibrationModeText(TdsCalibrationMode mode);
+
+const char* recordTdsCalibrationText(const WaterRecord& record) {
+    if (record.sensorSampleCount == 0) {
+        return "--";
+    }
+    if (record.tdsCalibratedAtRun != 0 && (record.sensorFlags & kWaterSensorFlagTdsUncalibrated) == 0) {
+        return tdsCalibrationModeText(static_cast<TdsCalibrationMode>(record.tdsCalibrationModeAtRun));
+    }
+    return "未校准";
+}
+
+void sendWaterRecordSensorRows(const WaterRecord& record) {
+    char temperatureAvg[24]{};
+    char temperatureMin[24]{};
+    char temperatureMax[24]{};
+    char tdsAvg[24]{};
+    formatWaterRecordTemperature(record, temperatureAvg, sizeof(temperatureAvg));
+    if ((record.sensorFlags & kWaterSensorFlagTempInvalid) != 0 || record.sensorSampleCount == 0) {
+        std::snprintf(temperatureMin, sizeof(temperatureMin), "--");
+        std::snprintf(temperatureMax, sizeof(temperatureMax), "--");
+    } else {
+        formatCentiTemperature(record.temperatureMinCentiC, temperatureMin, sizeof(temperatureMin));
+        formatCentiTemperature(record.temperatureMaxCentiC, temperatureMax, sizeof(temperatureMax));
+    }
+    formatWaterRecordTds(record, tdsAvg, sizeof(tdsAvg));
+
+    Esp32BaseWeb::sendChunk("<section class='panel record-detail-card'><h3>水质传感器</h3><table class='kv'>");
+    if (record.sensorSampleCount == 0) {
+        Esp32BaseWeb::sendChunk("<tr><th>水温</th><td>--</td></tr>"
+                                "<tr><th>TDS</th><td>--</td></tr>"
+                                "<tr><th>样本数</th><td>0</td></tr>");
+    } else {
+        sendFmt("<tr><th>水温平均</th><td>%s</td></tr>"
+                "<tr><th>水温范围</th><td>%s - %s</td></tr>"
+                "<tr><th>TDS 平均</th><td>%s</td></tr>"
+                "<tr><th>TDS 范围</th><td>",
+                temperatureAvg,
+                temperatureMin,
+                temperatureMax,
+                tdsAvg);
+        if ((record.sensorFlags & kWaterSensorFlagTdsInvalid) != 0) {
+            Esp32BaseWeb::sendChunk("--");
+        } else {
+            sendFmt("%u ppm - %u ppm",
+                    static_cast<unsigned>(record.tdsMinPpm),
+                    static_cast<unsigned>(record.tdsMaxPpm));
+        }
+        sendFmt("</td></tr>"
+                "<tr><th>TDS 电压平均</th><td>%u mV</td></tr>"
+                "<tr><th>样本数</th><td>%u</td></tr>"
+                "<tr><th>TDS 校准</th><td>%s</td></tr>"
+                "<tr><th>TDS 校准版本</th><td>%u</td></tr>"
+                "<tr><th>温度补偿</th><td>%s</td></tr>"
+                "<tr><th>25C 回退</th><td>%s</td></tr>"
+                "<tr><th>传感器标志</th><td>0x%04x</td></tr>",
+                static_cast<unsigned>(record.tdsVoltageAvgMv),
+                static_cast<unsigned>(record.sensorSampleCount),
+                recordTdsCalibrationText(record),
+                static_cast<unsigned>(record.tdsCalibrationRevisionAtRun),
+                record.tdsTemperatureCompensatedAtRun ? "开启" : "关闭",
+                record.tdsTempFallback25CAtRun ? "是" : "否",
+                static_cast<unsigned>(record.sensorFlags));
+    }
+    Esp32BaseWeb::sendChunk("</table></section>");
 }
 
 const char* tdsCalibrationModeText(TdsCalibrationMode mode) {
@@ -2346,13 +2481,14 @@ void sendAppCss() {
     Esp32BaseWeb::sendChunk(".records-top-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:0;margin:0 0 10px;align-items:stretch;background:var(--surface);border:1px solid var(--line);border-radius:6px;box-shadow:0 1px 2px rgba(20,34,38,.025);overflow:hidden}"
                             ".records-top-grid .records-diagnostic-panel{display:flex;flex-direction:column;min-width:0;margin:0;padding:10px 12px;border:0;border-left:1px solid #edf2f1;border-radius:0;box-shadow:none}.records-top-grid .records-diagnostic-panel:first-child{border-left:0}"
                             ".diagnostic-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px}.diagnostic-head h3{padding:0;margin:0;border:0;font-size:13px;font-weight:750;white-space:nowrap}.diagnostic-metric-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px 10px;margin:0}.diagnostic-metric-grid.three{grid-template-columns:repeat(2,minmax(0,1fr))}.diagnostic-metric{min-width:0}.diagnostic-metric span{display:block;margin-bottom:2px;color:var(--muted);font-size:11px;font-weight:600}.diagnostic-metric strong{display:block;color:var(--text);font-size:14px;line-height:1.25;font-weight:650;font-variant-numeric:tabular-nums;white-space:normal;overflow-wrap:anywhere}.metering-status-diagnostic .diagnostic-metric strong{font-size:15px}.diagnostic-foot{display:flex;flex-wrap:wrap;gap:4px 10px;margin-top:auto;padding-top:7px;border-top:1px solid #f1f4f3;color:var(--muted);font-size:11px;line-height:1.35;font-variant-numeric:tabular-nums}.diagnostic-foot b{color:#52616b;font-weight:650;white-space:nowrap}.ram-badge{background:#eef6f8;color:#246270}.flash-badge{background:#f5f1e8;color:#73520f}.trace-badge{display:inline-flex;align-items:center;min-height:22px;padding:0 8px;border:1px solid #cfe4dc;border-radius:999px;background:var(--accent-soft);color:#17635b;font-size:12px;font-weight:700;line-height:1;white-space:nowrap;vertical-align:middle}.trace-source-link{text-decoration:none}.trace-source-link:hover,.trace-source-link:focus-visible{background:#10574e;border-color:#10574e;color:#fff}"
-                            ".pulse-cell,.pulse-total-cell,.record-flow-cell{font-variant-numeric:tabular-nums;white-space:nowrap}.pulse-main{display:inline-flex;align-items:baseline;gap:7px;white-space:nowrap}.inline-note{display:inline-flex;align-items:center;min-height:20px;margin-left:6px;padding:0 7px;border-radius:999px;background:#eef3f2;color:var(--muted);font-size:12px;font-weight:500;white-space:nowrap}.inline-note.ok,.measured-note{background:#e8f4ee;color:#21634c}");
+                            ".record-flow-cell{font-variant-numeric:tabular-nums;white-space:nowrap}.inline-note{display:inline-flex;align-items:center;min-height:20px;margin-left:6px;padding:0 7px;border-radius:999px;background:#eef3f2;color:var(--muted);font-size:12px;font-weight:500;white-space:nowrap}.inline-note.ok,.measured-note{background:#e8f4ee;color:#21634c}");
+    Esp32BaseWeb::sendChunk(".record-detail-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:10px 0 0}.record-detail-card{margin:0}.record-detail-card table{margin:0}.record-detail-card h3{font-size:15px}");
     Esp32BaseWeb::sendChunk(".pulse-detail-chart{padding:10px 0 2px;overflow-x:auto}.pulse-detail-chart svg{display:block;width:100%;min-width:760px;height:auto}.pulse-detail-chart .axis{stroke:#d9e0df;stroke-width:1}.pulse-detail-chart .grid-line{stroke:#edf2f1;stroke-width:1}.pulse-line{fill:none;stroke:var(--accent);stroke-width:3;stroke-linejoin:round;stroke-linecap:round}.volume-line{fill:none;stroke:#9aa7a9;stroke-width:1.5;stroke-linejoin:round;stroke-linecap:round;opacity:.62}.volume-line-paused{stroke-dasharray:5 5;opacity:.55}.pulse-dot{fill:var(--surface);stroke:var(--accent);stroke-width:2}.pause-window{fill:#f2e7cd;opacity:.42}.pause-boundary{stroke:#9c6a12;stroke-width:2;stroke-dasharray:7 5;opacity:.7}.stable-line{stroke:#a36b10;stroke-width:2;stroke-dasharray:7 5}.chart-label{font-size:12px;fill:var(--muted)}.chart-y-label{text-anchor:end}.chart-x-label{text-anchor:middle}.chart-legend{display:flex;align-items:center;gap:14px;flex-wrap:wrap;color:var(--muted);font-size:12px;margin:6px 0 0}.legend-mark{display:inline-block;width:18px;height:3px;border-radius:999px;margin-right:5px;vertical-align:middle}.legend-pulse{background:var(--accent)}.legend-volume{background:#9aa7a9;opacity:.65}.legend-paused{background:transparent;border-top:3px dashed #9c6a12;height:0;border-radius:0}.legend-stable{background:#a36b10}.trace-frequency{margin-left:auto}.trace-frequency-label{color:var(--muted);font-size:12px;font-weight:650;margin-right:3px}.trace-frequency a.page-current{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:750}");
     Esp32BaseWeb::sendChunk(".grid,.metric-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin:0 0 12px}"
                             ".metric-card{padding:12px 14px;min-height:54px}.metric-card.primary{border-color:#b8d7cf;background:#f7fbfa}.metric-card span{display:block;color:var(--muted);font-size:13px;font-weight:500;margin-bottom:4px}.metric-card strong{display:block;color:var(--text);font-size:18px;line-height:1.2;font-weight:500}"
                             ".machine-status{padding:14px 16px;margin:0 0 14px;border-color:#d8e1e6;background:#fbfcfd}"
-                            ".machine-main{display:grid;grid-template-columns:minmax(280px,.36fr) minmax(0,.64fr);gap:16px;align-items:stretch}.machine-main.compact{grid-template-columns:minmax(250px,.36fr) minmax(0,.64fr)}.machine-hero{position:relative;display:flex;flex-direction:column;justify-content:center;min-height:106px}.machine-main:not(.compact) .machine-hero{justify-content:space-between;min-height:146px}.machine-hero-head{display:grid;grid-template-columns:max-content minmax(0,1fr);align-items:center;gap:14px}.machine-hero strong{display:block;font-size:31px;line-height:1.05;font-weight:700}.machine-screen-footer{position:absolute;left:0;bottom:0;display:inline-flex;align-items:center;gap:5px;min-height:22px;color:#8a949b;font-size:12px;font-weight:400;line-height:1}.machine-main:not(.compact) .machine-screen-footer{position:static;margin-top:10px}.machine-screen-footer #screenStatus{color:#7f8a92;font-weight:500}.machine-context{display:flex;flex-direction:column;gap:6px;min-width:0}.machine-alert{margin:0;color:#8a6f3d;font-size:13px;font-weight:400;line-height:1.35}.machine-progress-alert{margin:8px 0 0;text-align:left}.next-preset-control{display:grid;grid-template-columns:30px minmax(0,1fr) 30px;gap:7px;align-items:center;max-width:430px}.preset-step{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;margin:0;padding:0;border:1px solid #dce4ea;border-radius:6px;background:#fff;color:#315f68;font-size:20px;line-height:1;cursor:pointer}.preset-step:hover,.preset-step:focus-visible{background:#10574e;border-color:#10574e;color:#fff}.next-preset-copy{min-width:0}.next-preset-copy>span{display:block;color:var(--muted);font-size:11px;font-weight:600;line-height:1.1;margin-bottom:2px}.next-preset-copy strong{display:block;color:#35424c;font-size:13px;font-weight:650;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.next-preset-copy small{display:block;margin-top:3px;color:var(--muted);font-size:11px;line-height:1.18;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.machine-progress{margin:14px 0 0}.machine-progress-head{display:flex;align-items:center;justify-content:space-between;gap:10px;color:var(--muted);font-size:13px;font-weight:400;margin-bottom:7px}.progress{height:9px;background:#e2e9e7;border-radius:999px;overflow:hidden}.progress span{display:block;height:100%;background:var(--accent);border-radius:999px}.machine-overview{display:flex;flex-direction:column;gap:8px;min-width:0}.machine-task-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}.machine-task-card{display:flex;flex-direction:column;justify-content:center;min-height:68px;padding:11px 12px;border:1px solid #dde6eb;border-radius:7px;background:#fff;box-shadow:0 1px 2px rgba(16,24,40,.025)}.machine-task-card span{display:block;color:var(--muted);font-size:12px;font-weight:400;margin-bottom:3px}.machine-task-card strong{display:block;color:var(--text);font-size:17px;line-height:1.2;font-weight:600}.machine-task-card small{display:block;margin-top:4px;color:var(--muted);font-size:11px;line-height:1.2;font-weight:400;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.machine-status-strip{display:flex;align-items:center;gap:7px;flex-wrap:wrap}.machine-status-item{display:inline-flex;align-items:center;gap:5px;min-height:28px;padding:0 9px;border:1px solid #dce4ea;border-radius:999px;background:#f7f9fb;color:#66737c;font-size:12px;font-weight:400;line-height:1}.machine-status-note-only{align-items:center;white-space:nowrap}.machine-status-item strong{color:#35424c;font-size:13px;font-weight:600;line-height:1}.machine-status-value{color:#35424c;font-size:13px;font-weight:400;line-height:1}.machine-status-note{color:#7a858e;font-size:11px;font-weight:400;line-height:1;white-space:nowrap}");
-    Esp32BaseWeb::sendChunk(".today-layout{display:grid;grid-template-columns:minmax(190px,.28fr) minmax(0,1.72fr);gap:12px;margin:0 0 14px}.today-summary-card{display:flex;flex-direction:column;justify-content:flex-start;min-height:92px;padding:14px 16px}.today-summary-label{display:block;color:var(--muted);font-size:13px;font-weight:400;line-height:1.35;margin-bottom:6px}.today-total-main{display:block;color:var(--text);font-size:26px;line-height:1.05;font-weight:700}.today-total-meta{display:flex;align-items:center;flex-wrap:wrap;gap:3px 8px;color:var(--muted);font-size:13px;font-weight:400;margin-top:8px}.today-meta-item{display:inline-flex;align-items:baseline;gap:3px;white-space:nowrap}.today-meta-item+.today-meta-item:before{content:'·';margin-right:5px;color:#a2adb4}.today-meta-value{color:#52616b;font-weight:500}.today-records{padding:8px 10px;overflow-x:auto}.today-record-table{min-width:680px;margin:0;border:0;border-radius:0;box-shadow:none;background:transparent;font-size:13px}.today-record-table th,.today-record-table td{padding:6px 8px}.today-record-table th{background:transparent}.today-record-table .record-duration{white-space:nowrap}.today-record-table .status-pill{justify-content:center}");
+                            ".machine-main{display:grid;grid-template-columns:minmax(280px,.36fr) minmax(0,.64fr);gap:16px;align-items:stretch}.machine-main.compact{grid-template-columns:minmax(250px,.36fr) minmax(0,.64fr)}.machine-hero{position:relative;display:flex;flex-direction:column;justify-content:center;min-height:106px}.machine-main:not(.compact) .machine-hero{justify-content:space-between;min-height:146px}.machine-hero-head{display:grid;grid-template-columns:max-content minmax(0,1fr);align-items:center;gap:14px}.machine-hero strong{display:block;font-size:31px;line-height:1.05;font-weight:700}.machine-screen-footer{position:absolute;left:0;bottom:0;display:inline-flex;align-items:center;gap:5px;min-height:22px;color:#8a949b;font-size:12px;font-weight:400;line-height:1}.machine-main:not(.compact) .machine-screen-footer{position:static;margin-top:10px}.machine-screen-footer #screenStatus{color:#7f8a92;font-weight:500}.machine-context{display:flex;flex-direction:column;gap:6px;min-width:0}.machine-alert{margin:0;color:#8a6f3d;font-size:13px;font-weight:400;line-height:1.35}.machine-progress-alert{margin:8px 0 0;text-align:left}.next-preset-control{display:grid;grid-template-columns:30px minmax(0,1fr) 30px;gap:7px;align-items:center;max-width:430px}.preset-step{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;margin:0;padding:0;border:1px solid #dce4ea;border-radius:6px;background:#fff;color:#315f68;font-size:20px;line-height:1;cursor:pointer}.preset-step:hover,.preset-step:focus-visible{background:#10574e;border-color:#10574e;color:#fff}.next-preset-copy{min-width:0}.next-preset-copy>span{display:block;color:var(--muted);font-size:11px;font-weight:600;line-height:1.1;margin-bottom:2px}.next-preset-copy strong{display:block;color:#35424c;font-size:13px;font-weight:650;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.next-preset-copy small{display:block;margin-top:3px;color:var(--muted);font-size:11px;line-height:1.18;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.machine-progress{margin:14px 0 0}.machine-progress-head{display:flex;align-items:center;justify-content:space-between;gap:10px;color:var(--muted);font-size:13px;font-weight:400;margin-bottom:7px}.progress{height:9px;background:#e2e9e7;border-radius:999px;overflow:hidden}.progress span{display:block;height:100%;background:var(--accent);border-radius:999px}.machine-overview{display:flex;flex-direction:column;gap:8px;min-width:0}.machine-task-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}.machine-task-card{display:flex;flex-direction:column;justify-content:center;min-height:68px;padding:11px 12px;border:1px solid #dde6eb;border-radius:7px;background:#fff;box-shadow:0 1px 2px rgba(16,24,40,.025)}.machine-task-card span{display:block;color:var(--muted);font-size:12px;font-weight:400;margin-bottom:3px}.machine-task-card strong{display:block;color:var(--text);font-size:17px;line-height:1.2;font-weight:600}.machine-task-card small{display:block;margin-top:4px;color:var(--muted);font-size:11px;line-height:1.2;font-weight:400;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.machine-status-strip{display:flex;align-items:center;gap:7px;flex-wrap:wrap}.machine-status-item{display:inline-flex;align-items:center;gap:5px;min-height:28px;padding:0 9px;border:1px solid #dce4ea;border-radius:999px;background:#f7f9fb;color:#66737c;font-size:12px;font-weight:400;line-height:1}.machine-status-item strong{color:#35424c;font-size:13px;font-weight:600;line-height:1}.machine-status-value{color:#35424c;font-size:13px;font-weight:400;line-height:1}.sensor-unit{color:#7a858e;font-size:11px;font-weight:400;line-height:1}.machine-status-note{color:#7a858e;font-size:11px;font-weight:400;line-height:1;white-space:nowrap}");
+    Esp32BaseWeb::sendChunk(".today-layout{display:grid;grid-template-columns:minmax(190px,.28fr) minmax(0,1.72fr);gap:12px;margin:0 0 14px}.today-summary-card{display:flex;flex-direction:column;justify-content:flex-start;min-height:92px;padding:14px 16px}.today-summary-label{display:block;color:var(--muted);font-size:13px;font-weight:400;line-height:1.35;margin-bottom:6px}.today-total-main{display:block;color:var(--text);font-size:26px;line-height:1.05;font-weight:700}.today-total-meta{display:flex;align-items:center;flex-wrap:wrap;gap:3px 8px;color:var(--muted);font-size:13px;font-weight:400;margin-top:8px}.today-meta-item{display:inline-flex;align-items:baseline;gap:3px;white-space:nowrap}.today-meta-item+.today-meta-item:before{content:'·';margin-right:5px;color:#a2adb4}.today-meta-value{color:#52616b;font-weight:500}.today-records{padding:8px 10px;overflow-x:auto}.today-record-table{min-width:760px;margin:0;border:0;border-radius:0;box-shadow:none;background:transparent;font-size:13px}.today-record-table th,.today-record-table td{padding:6px 8px}.today-record-table th{background:transparent}.today-record-table .record-duration{white-space:nowrap}.today-record-table .status-pill{justify-content:center}");
     Esp32BaseWeb::sendChunk(".filter-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:10px;margin:0 0 12px}.filter-card{padding:12px 14px;min-height:128px}.filter-head{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:8px}.filter-head strong{font-size:16px;line-height:1.25;font-weight:750}"
                             ".filter-meta{display:grid;gap:4px;color:var(--muted);font-size:13px;margin-top:10px}.dual-progress{display:grid;gap:7px;margin:8px 0 10px}.filter-progress-row{display:grid;grid-template-columns:48px 1fr;gap:8px;align-items:center;color:var(--muted);font-size:12px}.filter-track{display:block;height:7px;background:#edf3f1;border:1px solid #d7e3e0;border-radius:999px;overflow:hidden}.filter-progress-fill{display:block;height:100%;border-radius:999px}.day-progress{background:var(--accent)}.flow-progress{background:#c9822c}");
     Esp32BaseWeb::sendChunk(".status-pill{display:inline-flex;align-items:center;min-height:22px;padding:0 9px;border-radius:999px;background:#eef2f2;color:#55616a;font-size:12px;font-weight:650;line-height:1;white-space:nowrap}.status-ok{background:#e8f4ee;color:#21634c;border-color:#bdddcf}.status-warn{background:#fff7e6;color:#7a520e;border-color:#eed28f}.status-error{background:#fff0ee;color:#9b3328;border-color:#efc1ba}.status-muted{background:#eef2f2;color:#66737c;border-color:#d8e0df}.calibration-session-badges{display:flex;align-items:center;gap:6px;flex-wrap:wrap}.warn{display:inline-block;background:#fff8e6;border:1px solid #ead28b;border-radius:8px;padding:7px 9px;color:#6b4a12;margin:0 0 10px}.filter-used-days{font-variant-numeric:tabular-nums}.filter-progress-label{display:grid;grid-template-columns:48px 1fr;gap:6px;align-items:center;color:var(--muted);font-size:12px}");
@@ -2372,7 +2508,7 @@ void sendAppCss() {
     Esp32BaseWeb::sendChunk(".scheme-created-row{background:#fffdf4}.disabled-row{background:#f7f8f8;color:#8a949b}.disabled-row td{color:#8a949b}.disabled-row .status-pill{background:#eef0f0;color:#7b858d}.disabled-row a{color:#6f7a82}"
                             "@media(max-width:1040px){.records-top-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.records-top-grid .records-diagnostic-panel{border-left:1px solid #edf2f1;border-top:1px solid #edf2f1}.records-top-grid .records-diagnostic-panel:nth-child(odd){border-left:0}.records-top-grid .records-diagnostic-panel:nth-child(-n+2){border-top:0}.calibration-session-layout{grid-template-columns:1fr}.metering-active-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}"
                             "@media(max-width:820px){.machine-main,.machine-main.compact,.today-layout{grid-template-columns:1fr}.machine-hero{min-height:0}.machine-hero strong{font-size:26px}.machine-hero-head{grid-template-columns:1fr;align-items:start;gap:5px}.machine-screen-footer{position:static;margin-top:8px}.machine-progress{margin-bottom:0}.machine-task-grid{grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}}"
-                            "@media(max-width:720px){body{padding:10px}.form-grid,.manual-param-grid,.temperature-calibration-summary,.tds-calibration-summary{grid-template-columns:1fr}.span-2,.span-3,.span-4,.span-5,.span-6,.span-8,.span-12,.scheme-span-4,.scheme-span-12{grid-column:1/-1}.usage-grid{grid-template-columns:1fr}.daily-chart svg{min-width:680px}}"
+                            "@media(max-width:720px){body{padding:10px}.form-grid,.manual-param-grid,.temperature-calibration-summary,.tds-calibration-summary,.record-detail-grid{grid-template-columns:1fr}.span-2,.span-3,.span-4,.span-5,.span-6,.span-8,.span-12,.scheme-span-4,.scheme-span-12{grid-column:1/-1}.usage-grid{grid-template-columns:1fr}.daily-chart svg{min-width:680px}}"
                             "@media(max-width:620px){.records-top-grid{grid-template-columns:1fr}.records-top-grid .records-diagnostic-panel{border-left:0;border-top:1px solid #edf2f1}.records-top-grid .records-diagnostic-panel:first-child{border-top:0}.sample-calibration-form{grid-template-columns:1fr}.calibration-kpi-grid{grid-template-columns:1fr}.metering-active-grid{grid-template-columns:1fr}.metering-active-head{align-items:flex-start;flex-direction:column}}"
                             "@media(max-width:520px){.grid,.metric-grid,.diagnostic-metric-grid,.diagnostic-metric-grid.three,.coverage-metric-row,.filter-cards,.machine-task-grid{grid-template-columns:1fr}.metric-card{min-height:0}.pager{align-items:flex-start}.page-size{width:100%}.kv th{width:34%}}");
 }
@@ -2626,11 +2762,12 @@ void sendMachineStatusItemNote(const char* valueId, const char* noteId, const ch
             note);
 }
 
-void sendMachineStatusNoteOnlyItem(const char* noteId, const char* label, const char* note) {
-    sendFmt("<span class='machine-status-item machine-status-note-only'><span>%s</span><small id='%s' class='machine-status-note'>%s</small></span>",
+void sendMachineStatusSensorItem(const char* valueId, const char* label, const char* value, const char* unit) {
+    sendFmt("<span class='machine-status-item'><span>%s</span><strong id='%s'>%s</strong><small class='sensor-unit'>%s</small></span>",
             label,
-            noteId,
-            note);
+            valueId,
+            value,
+            unit);
 }
 
 void formatPresetTarget(const PresetConfig& preset, char* out, std::size_t len) {
@@ -2922,25 +3059,6 @@ void sendMachineStatusCard(const AppSnapshot& snapshot, bool screenOn) {
     formatFlowNumber(snapshot.currentFlowMlPerMin, currentFlow, sizeof(currentFlow));
     char currentFlowMeta[40]{};
     formatFlowMeta(snapshot.runAverageFlowMlPerMin, currentFlowMeta, sizeof(currentFlowMeta));
-    char meteringParams[96]{};
-    if (validMeteringSchemeParameters(snapshot.meteringParams)) {
-        char startupVolume[20]{};
-        char startupDuration[20]{};
-        char stableFlow[24]{};
-        formatLitersFixed3Compact(snapshot.meteringParams.startupVolumeMl, startupVolume, sizeof(startupVolume));
-        formatMillisecondsSecondsCompact(snapshot.meteringParams.startupDurationMs, startupDuration, sizeof(startupDuration));
-        formatFlowLitersPerMinCompact(snapshot.meteringParams.stableFlowMlPerMin, stableFlow, sizeof(stableFlow));
-        std::snprintf(meteringParams,
-                      sizeof(meteringParams),
-                      "启动段 %luP · %s · %s / 稳态段 %luP/L · %s",
-                      static_cast<unsigned long>(snapshot.meteringParams.startupPulseCount),
-                      startupVolume,
-                      startupDuration,
-                      static_cast<unsigned long>(snapshot.meteringParams.stablePulsePerLiter),
-                      stableFlow);
-    } else {
-        std::snprintf(meteringParams, sizeof(meteringParams), "未校准");
-    }
     char droppedPulses[24]{};
     std::snprintf(droppedPulses, sizeof(droppedPulses), "%lu", static_cast<unsigned long>(snapshot.flowDroppedPulses));
     char valvePwmDuty[12]{};
@@ -2951,6 +3069,18 @@ void sendMachineStatusCard(const AppSnapshot& snapshot, bool screenOn) {
                   "%lus全功率→%u%%保持",
                   static_cast<unsigned long>(g_context.config->valveFullPowerSec),
                   static_cast<unsigned>(g_context.config->valveHoldDutyPercent));
+    char currentTemperature[24]{};
+    if (snapshot.temperatureSensorEnabled && snapshot.sensors.temperatureCentiC.valid) {
+        formatSensorTemperatureNumber(snapshot.sensors.temperatureCentiC, currentTemperature, sizeof(currentTemperature));
+    } else {
+        std::snprintf(currentTemperature, sizeof(currentTemperature), "--");
+    }
+    char currentTds[24]{};
+    if (snapshot.tdsSensorEnabled && snapshot.sensors.tdsPpm.valid) {
+        formatSensorIntegerNumber(snapshot.sensors.tdsPpm, currentTds, sizeof(currentTds));
+    } else {
+        std::snprintf(currentTds, sizeof(currentTds), "--");
+    }
 
     const bool showResult = snapshot.water.state == WaterState::Error || snapshot.localMode == LocalUiMode::Result;
     const bool showRunningNote = snapshot.water.state == WaterState::Running;
@@ -2980,8 +3110,9 @@ void sendMachineStatusCard(const AppSnapshot& snapshot, bool screenOn) {
     sendMachineTaskCard("currentFlowCard", "currentFlowValue", "currentFlowMeta", "流速", currentFlow, currentFlowMeta, false);
     Esp32BaseWeb::sendChunk("</div><div class='machine-status-strip'>");
     sendMachineStatusItem("valveStatus", "阀门", snapshot.water.valveOpen ? "开" : "关");
+    sendMachineStatusSensorItem("temperatureStatus", "水温", currentTemperature, "C");
+    sendMachineStatusSensorItem("tdsStatus", "TDS", currentTds, "ppm");
     sendMachineStatusItemNote("valvePwmDuty", "valvePwmNote", "PWM", valvePwmDuty, valvePwmNote);
-    sendMachineStatusNoteOnlyItem("meteringParams", "计量参数", meteringParams);
     sendMachineStatusItem("resultStatus", "结果", resultText(snapshot.water.lastResult), "resultItem", !showResult);
     sendMachineStatusItem("droppedPulses", "丢弃脉冲", droppedPulses, "droppedPulsesItem", snapshot.flowDroppedPulses == 0);
     Esp32BaseWeb::sendChunk("</div></div></div></section>");
@@ -3054,25 +3185,27 @@ void sendTodayOverview(const TodayOverview& overview) {
     } else if (overview.latestCount == 0) {
         Esp32BaseWeb::sendChunk("<p class='hint'>今天还没有接水记录。</p>");
     } else {
-        Esp32BaseWeb::sendChunk("<table class='today-record-table'><tr><th>开始</th><th>停止</th><th>用时</th><th>实际出水</th><th>预设目标</th><th>结果</th></tr>");
+        Esp32BaseWeb::sendChunk("<table class='today-record-table'><tr><th>时间</th><th>用时</th><th>实际出水</th><th>水温</th><th>TDS</th><th>预设目标</th><th>结果</th></tr>");
         for (std::size_t i = 0; i < overview.latestCount; ++i) {
             char startTime[12]{};
-            char stopTime[12]{};
             char duration[24]{};
             char volume[24]{};
+            char temperature[24]{};
+            char tds[24]{};
             char preset[48]{};
-            const std::uint32_t stopSecond = overview.latest[i].startTime + overview.latest[i].durationSec;
             formatRecordTimeOfDay(overview.latest[i].startTime, startTime, sizeof(startTime));
-            formatRecordTimeOfDay(stopSecond, stopTime, sizeof(stopTime));
             formatSecondsValue(overview.latest[i].durationSec, duration, sizeof(duration));
             formatLiters(overview.latest[i].volumeMl, volume, sizeof(volume));
+            formatWaterRecordTemperature(overview.latest[i], temperature, sizeof(temperature));
+            formatWaterRecordTds(overview.latest[i], tds, sizeof(tds));
             formatRecordPresetLabel(overview.latest[i], preset, sizeof(preset));
-            sendFmt("<tr><td>%s</td><td>%s</td><td class='record-duration'>%s</td><td>%s</td><td>%s</td>"
+            sendFmt("<tr><td>%s</td><td class='record-duration'>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td>"
                     "<td><span class='status-pill %s'>%s</span></td></tr>",
                     startTime,
-                    stopTime,
                     duration,
                     volume,
+                    temperature,
+                    tds,
                     preset,
                     resultStatusClass(overview.latest[i].result),
                     resultText(overview.latest[i].result));
@@ -3111,6 +3244,8 @@ void sendHomeAutoRefreshScript() {
                             "function faucetFlowLitersPerMinCompact(ml){var n=Math.max(0,Math.round(Number(ml)||0));return n>0?Math.floor(n/1000)+'.'+String(n%1000).padStart(3,'0')+'L/min':'-';}"
                             "function faucetFlowValue(ml){var n=Number(ml)||0;var c=Math.round(n/10);return n>0?Math.floor(c/100)+'.'+String(c%100).padStart(2,'0'):'-';}"
                             "function faucetFlowMeta(ml){return 'L/min · 本次平均 '+faucetFlowValue(ml);}"
+                            "function faucetSensorTemp(v){if(!v||!v.enabled||v.currentCentiC==null)return '--';var c=Number(v.currentCentiC)||0;var s=c<0?'-':'';c=Math.abs(c);return s+Math.floor(c/100)+'.'+String(c%100).padStart(2,'0');}"
+                            "function faucetSensorTds(v){if(!v||!v.enabled||v.currentPpm==null)return '--';return String(Number(v.currentPpm)||0);}"
                             "function faucetMillisSecondsCompact(ms){ms=Math.max(0,Math.round(Number(ms)||0));if(ms%1000===0)return Math.floor(ms/1000)+'S';var c=Math.round(ms/10);return Math.floor(c/100)+'.'+String(c%100).padStart(2,'0')+'S';}"
                             "function faucetSeconds(s){s=Number(s)||0;if(s>=3600){return Math.floor(s/3600)+' 小时 '+Math.floor((s%3600)/60)+' 分 '+(s%60)+' 秒';}if(s>=60){return Math.floor(s/60)+' 分 '+(s%60)+' 秒';}return s+' 秒';}"
                             "function faucetStateText(s){return {idle:'待机',confirm:'确认',running:'出水中',paused:'暂停',error:'异常'}[s]||'未知';}"
@@ -3143,7 +3278,6 @@ void sendHomeAutoRefreshScript() {
                             "var base=s.mode==='time'?s.elapsedSec:s.volumeMl;"
                             "var pct=s.targetValue>0?Math.min(100,Math.floor(base*100/s.targetValue)):0;"
                             "var metering=s.metering||{};"
-                            "var meteringParams=(metering.stablePulsePerLiter>0)?('启动段 '+(metering.startupPulseCount||0)+'P · '+faucetLiters3Compact(metering.startupVolumeMl||0)+' · '+faucetMillisSecondsCompact(metering.startupDurationMs||0)+' / 稳态段 '+metering.stablePulsePerLiter+'P/L · '+faucetFlowLitersPerMinCompact(metering.stableFlowMlPerMin||0)):'未校准';"
                             "var estimate=s.targetEstimate||{};"
                             "var targetMeta=faucetTargetMeta(s.mode,estimate);"
                             "faucetHomeActive=shown;"
@@ -3161,9 +3295,10 @@ void sendHomeAutoRefreshScript() {
                             "faucetSet('remainingMeta','完成 '+pct+'%');"
                             "faucetSet('resultStatus',faucetResultText(s.lastResult));"
                             "faucetSet('valveStatus',s.valveOpen?'开':'关');"
+                            "faucetSet('temperatureStatus',faucetSensorTemp(s.sensor&&s.sensor.temperature));"
+                            "faucetSet('tdsStatus',faucetSensorTds(s.sensor&&s.sensor.tds));"
                             "faucetSet('valvePwmDuty',s.valveDutyPercent+'%');"
                             "faucetSet('valvePwmNote',s.valveFullPowerSec+'s全功率→'+s.valveHoldDutyPercent+'%保持');"
-                            "faucetSet('meteringParams',meteringParams);"
                             "faucetSet('screenStatus',s.screenOn?'亮屏':'休眠');"
                             "faucetSet('droppedPulses',Number(s.flowDroppedPulses)||0);"
                             "faucetToggle('resultItem',s.state==='error');"
@@ -3558,7 +3693,7 @@ void handleRecordsPage() {
         }
     }
     Esp32BaseWeb::sendChunk("<table><tr><th>时间</th><th>模式</th><th>目标</th><th>出水</th>"
-                            "<th>用时</th><th>流速</th><th>全程平均</th><th>总脉冲</th><th>结果</th><th>操作</th></tr>");
+                            "<th>用时</th><th>流速</th><th>水温</th><th>TDS</th><th>结果</th><th>操作</th></tr>");
     for (std::size_t i = 0; i < count; ++i) {
         char startTime[40]{};
         formatWaterRecordListTime(records[i], startTime, sizeof(startTime));
@@ -3572,12 +3707,14 @@ void handleRecordsPage() {
         } else {
             calibrated = findRecordCalibration(records[i], calibration);
         }
-        const std::uint32_t estimatedFullRunPulsePerLiter =
-            fullRunPulsePerLiter(records[i].pulseCount, records[i].volumeMl);
         const std::uint32_t displayVolumeMl = calibrated ? calibration.actualMl : records[i].volumeMl;
         char recordFlow[24]{};
         const std::uint32_t averageFlow = recordFlowMlPerMin(displayVolumeMl, records[i].durationSec);
         formatFlowLitersPerMin(averageFlow, recordFlow, sizeof(recordFlow));
+        char temperature[24]{};
+        char tds[24]{};
+        formatWaterRecordTemperature(records[i], temperature, sizeof(temperature));
+        formatWaterRecordTds(records[i], tds, sizeof(tds));
         Esp32BaseWeb::sendChunk("<tr><td>");
         Esp32BaseWeb::sendChunk(startTime);
         Esp32BaseWeb::sendChunk("</td><td>");
@@ -3598,28 +3735,14 @@ void handleRecordsPage() {
         } else {
             Esp32BaseWeb::sendChunk("<span class='muted'>-</span>");
         }
-        Esp32BaseWeb::sendChunk("</td><td class='pulse-cell'>");
-        if (estimatedFullRunPulsePerLiter > 0) {
-            sendFmt("<span class='pulse-main'>%luP/L</span>", static_cast<unsigned long>(estimatedFullRunPulsePerLiter));
-        } else {
-            Esp32BaseWeb::sendChunk("<span class='muted'>-</span>");
-        }
-        if (calibrated) {
-            sendFmt("<span class='inline-note ok'>实测 %luP/L</span>",
-                    static_cast<unsigned long>(measuredPulsePerLiter(records[i], calibration)));
-        }
-        sendFmt("</td><td class='pulse-total-cell'>%luP",
-                static_cast<unsigned long>(records[i].pulseCount));
-        if (records[i].rejectedPulseCount > 0) {
-            sendFmt("<span class='inline-note'>滤%luP</span>",
-                    static_cast<unsigned long>(records[i].rejectedPulseCount));
-        }
+        sendFmt("</td><td>%s</td><td>%s", temperature, tds);
         sendFmt("</td><td><span class='status-pill %s'>%s</span>",
                 resultStatusClass(records[i].result),
                 resultText(records[i].result));
         Esp32BaseWeb::sendChunk("</td><td><div class='row-actions'>");
-        sendFmt("<a class='btn-link' href='/faucet/records/detail?info=1&start=%lu&volume=%lu&target=%lu&pulses=%lu&rejected=%lu&duration=%lu&mode=%u&result=%u&preset=%u&scheme=%lu'>详情</a>",
+        sendFmt("<a class='btn-link' href='/faucet/records/detail?info=1&start=%lu&boot=%lu&volume=%lu&target=%lu&pulses=%lu&rejected=%lu&duration=%lu&mode=%u&result=%u&preset=%u&tempAvg=%d&tempMin=%d&tempMax=%d&tdsAvg=%u&tdsMin=%u&tdsMax=%u&tdsMv=%u&sensorSamples=%u&sensorFlags=%u&tdsRev=%u&tdsMode=%u&tdsCal=%u&tdsComp=%u&tdsFallback=%u&scheme=%lu'>详情</a>",
                 static_cast<unsigned long>(records[i].startTime),
+                static_cast<unsigned long>(waterRecordBootId(records[i])),
                 static_cast<unsigned long>(records[i].volumeMl),
                 static_cast<unsigned long>(records[i].targetValue),
                 static_cast<unsigned long>(records[i].pulseCount),
@@ -3628,6 +3751,20 @@ void handleRecordsPage() {
                 static_cast<unsigned>(records[i].mode),
                 static_cast<unsigned>(records[i].result),
                 static_cast<unsigned>(records[i].selectedPreset),
+                static_cast<int>(records[i].temperatureAvgCentiC),
+                static_cast<int>(records[i].temperatureMinCentiC),
+                static_cast<int>(records[i].temperatureMaxCentiC),
+                static_cast<unsigned>(records[i].tdsAvgPpm),
+                static_cast<unsigned>(records[i].tdsMinPpm),
+                static_cast<unsigned>(records[i].tdsMaxPpm),
+                static_cast<unsigned>(records[i].tdsVoltageAvgMv),
+                static_cast<unsigned>(records[i].sensorSampleCount),
+                static_cast<unsigned>(records[i].sensorFlags),
+                static_cast<unsigned>(records[i].tdsCalibrationRevisionAtRun),
+                static_cast<unsigned>(records[i].tdsCalibrationModeAtRun),
+                static_cast<unsigned>(records[i].tdsCalibratedAtRun),
+                static_cast<unsigned>(records[i].tdsTemperatureCompensatedAtRun),
+                static_cast<unsigned>(records[i].tdsTempFallback25CAtRun),
                 static_cast<unsigned long>(records[i].meteringSchemeId));
         Esp32BaseWeb::sendChunk("</div></td></tr>");
     }
@@ -3645,8 +3782,12 @@ void handleRecordInfoPage() {
     char text[24]{};
     WaterRecord record{};
     std::uint32_t parsed = 0;
+    std::int16_t parsedI16 = 0;
     if (getParam("start", text, sizeof(text)) && parseU32(text, parsed)) {
         record.startTime = parsed;
+    }
+    if (getParam("boot", text, sizeof(text)) && parseU32(text, parsed)) {
+        markWaterRecordBootId(record, parsed);
     }
     if (getParam("volume", text, sizeof(text)) && parseU32(text, parsed)) {
         record.volumeMl = parsed;
@@ -3672,31 +3813,84 @@ void handleRecordInfoPage() {
     if (getParam("preset", text, sizeof(text)) && parseU32(text, parsed)) {
         record.selectedPreset = static_cast<std::uint8_t>(parsed);
     }
+    if (getParam("tempAvg", text, sizeof(text)) && parseI16(text, parsedI16)) {
+        record.temperatureAvgCentiC = parsedI16;
+    }
+    if (getParam("tempMin", text, sizeof(text)) && parseI16(text, parsedI16)) {
+        record.temperatureMinCentiC = parsedI16;
+    }
+    if (getParam("tempMax", text, sizeof(text)) && parseI16(text, parsedI16)) {
+        record.temperatureMaxCentiC = parsedI16;
+    }
+    if (getParam("tdsAvg", text, sizeof(text)) && parseU32(text, parsed)) {
+        record.tdsAvgPpm = static_cast<std::uint16_t>(parsed);
+    }
+    if (getParam("tdsMin", text, sizeof(text)) && parseU32(text, parsed)) {
+        record.tdsMinPpm = static_cast<std::uint16_t>(parsed);
+    }
+    if (getParam("tdsMax", text, sizeof(text)) && parseU32(text, parsed)) {
+        record.tdsMaxPpm = static_cast<std::uint16_t>(parsed);
+    }
+    if (getParam("tdsMv", text, sizeof(text)) && parseU32(text, parsed)) {
+        record.tdsVoltageAvgMv = static_cast<std::uint16_t>(parsed);
+    }
+    if (getParam("sensorSamples", text, sizeof(text)) && parseU32(text, parsed)) {
+        record.sensorSampleCount = static_cast<std::uint16_t>(parsed);
+    }
+    if (getParam("sensorFlags", text, sizeof(text)) && parseU32(text, parsed)) {
+        record.sensorFlags = static_cast<std::uint16_t>(parsed);
+    }
+    if (getParam("tdsRev", text, sizeof(text)) && parseU32(text, parsed)) {
+        record.tdsCalibrationRevisionAtRun = static_cast<std::uint16_t>(parsed);
+    }
+    if (getParam("tdsMode", text, sizeof(text)) && parseU32(text, parsed)) {
+        record.tdsCalibrationModeAtRun = static_cast<std::uint8_t>(parsed);
+    }
+    if (getParam("tdsCal", text, sizeof(text)) && parseU32(text, parsed)) {
+        record.tdsCalibratedAtRun = static_cast<std::uint8_t>(parsed);
+    }
+    if (getParam("tdsComp", text, sizeof(text)) && parseU32(text, parsed)) {
+        record.tdsTemperatureCompensatedAtRun = static_cast<std::uint8_t>(parsed);
+    }
+    if (getParam("tdsFallback", text, sizeof(text)) && parseU32(text, parsed)) {
+        record.tdsTempFallback25CAtRun = static_cast<std::uint8_t>(parsed);
+    }
     if (getParam("scheme", text, sizeof(text)) && parseU32(text, parsed)) {
         record.meteringSchemeId = parsed;
     }
     char startTime[40]{};
     formatWaterRecordListTime(record, startTime, sizeof(startTime));
+    char duration[24]{};
+    formatSecondsValue(record.durationSec, duration, sizeof(duration));
+    char averageFlow[24]{};
+    formatFlowLitersPerMin(recordFlowMlPerMin(record.volumeMl, record.durationSec), averageFlow, sizeof(averageFlow));
+    char task[64]{};
+    formatRecordPresetLabel(record, task, sizeof(task));
     sendPageStart("接水详情");
     Esp32BaseWeb::sendChunk("<h2>接水详情</h2><div class='form-actions'><a class='btn-link' href='/faucet/records'>返回记录</a></div>"
-                            "<section class='panel'><h3>记录信息</h3><table class='kv'>");
-    sendFmt("<tr><th>开始时间</th><td>%s</td></tr>", startTime);
-    Esp32BaseWeb::sendChunk("<tr><th>模式</th><td>");
-    Esp32BaseWeb::sendChunk(modeText(record.mode));
-    Esp32BaseWeb::sendChunk("</td></tr><tr><th>目标</th><td>");
+                            "<div class='record-detail-grid'><section class='panel record-detail-card'><h3>出水结果</h3><table class='kv'>");
+    sendFmt("<tr><th>开始时间</th><td>%s</td></tr>"
+            "<tr><th>持续时间</th><td>%s</td></tr>"
+            "<tr><th>结果</th><td><span class='status-pill %s'>%s</span></td></tr>",
+            startTime,
+            duration,
+            resultStatusClass(record.result),
+            resultText(record.result));
+    sendFmt("</table></section>"
+            "<section class='panel record-detail-card'><h3>任务与出水</h3><table class='kv'>"
+            "<tr><th>任务</th><td>%s</td></tr>"
+            "<tr><th>目标值</th><td>",
+            task);
     sendTargetValue(record);
     Esp32BaseWeb::sendChunk("</td></tr><tr><th>估算出水</th><td>");
     sendLiters(record.volumeMl);
-    sendFmt("</td></tr><tr><th>持续时间</th><td>%lu s</td></tr>"
-            "<tr><th>有效脉冲</th><td>%lu P</td></tr>"
-            "<tr><th>被过滤脉冲</th><td>%lu P</td></tr>"
-            "<tr><th>运行结果</th><td>%s</td></tr>"
-            "<tr><th>预设序号</th><td>%u</td></tr>",
-            static_cast<unsigned long>(record.durationSec),
+    sendFmt("</td></tr><tr><th>平均流速</th><td>%s</td></tr></table></section>", averageFlow);
+    sendWaterRecordSensorRows(record);
+    Esp32BaseWeb::sendChunk("<section class='panel record-detail-card'><h3>计量与脉冲</h3><table class='kv'>");
+    sendFmt("<tr><th>有效脉冲</th><td>%lu P</td></tr>"
+            "<tr><th>被过滤脉冲</th><td>%lu P</td></tr>",
             static_cast<unsigned long>(record.pulseCount),
-            static_cast<unsigned long>(record.rejectedPulseCount),
-            resultText(record.result),
-            static_cast<unsigned>(record.selectedPreset));
+            static_cast<unsigned long>(record.rejectedPulseCount));
     MeteringSchemeRecord meteringScheme{};
     if (ensureMeteringSchemesReady() && g_context.meteringSchemes->findById(record.meteringSchemeId, meteringScheme)) {
         char startupDuration[24]{};
@@ -3735,7 +3929,7 @@ void handleRecordInfoPage() {
     } else {
         Esp32BaseWeb::sendChunk("<tr><th>计量方案</th><td>记录格式不兼容，历史参数不可查看</td></tr>");
     }
-    Esp32BaseWeb::sendChunk("</table></section>");
+    Esp32BaseWeb::sendChunk("</table></section></div>");
     sendPageEnd();
 }
 

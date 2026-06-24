@@ -228,6 +228,34 @@ void test_run_summary_aggregates_valid_samples_only() {
                             summary.tdsCalibrationModeAtRun);
 }
 
+void test_run_summary_records_tds_when_temperature_sensor_is_disabled() {
+    FakeAdcReader adc;
+    adc.values[0] = okMv(1091);
+    adc.values[1] = {};
+    adc.values[2] = okMv(24);
+    SystemConfig config = enabledSensorConfig();
+    config.temperatureEnabled = false;
+    config.temperatureKind = TemperatureKind::None;
+    WaterSensorManager manager(adc);
+    manager.configure(config);
+    manager.begin();
+    manager.beginRun();
+    std::uint32_t nowMs = 0;
+
+    advanceSample(manager, nowMs);
+    manager.sampleRun();
+    advanceSample(manager, nowMs);
+    manager.sampleRun();
+
+    const WaterSensorRunSummary summary = manager.finishRun();
+    TEST_ASSERT_EQUAL_UINT16(2, summary.sensorSampleCount);
+    TEST_ASSERT_EQUAL_UINT16(10, summary.tdsAvgPpm);
+    TEST_ASSERT_EQUAL_UINT16(10, summary.tdsMinPpm);
+    TEST_ASSERT_EQUAL_UINT16(10, summary.tdsMaxPpm);
+    TEST_ASSERT_TRUE((summary.sensorFlags & kWaterSensorFlagTempInvalid) != 0);
+    TEST_ASSERT_TRUE(summary.tdsTempFallback25CAtRun != 0);
+}
+
 void test_calibration_uses_25c_fallback_without_failing() {
     FakeAdcReader adc;
     adc.values[0] = okMv(1091);
@@ -446,6 +474,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_tds_range_switches_up_at_85_percent);
     RUN_TEST(test_tds_range_switches_down_after_eight_low_windows);
     RUN_TEST(test_run_summary_aggregates_valid_samples_only);
+    RUN_TEST(test_run_summary_records_tds_when_temperature_sensor_is_disabled);
     RUN_TEST(test_calibration_uses_25c_fallback_without_failing);
     RUN_TEST(test_two_point_calibration_saves_low_then_high_without_flash_progress_dependency);
     RUN_TEST(test_tds_calibration_point_session_generates_after_one_point);

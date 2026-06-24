@@ -353,7 +353,7 @@ void test_st7789_driver_avoids_per_pixel_text_rendering_in_loop() {
     FILE* file = std::fopen("src/drivers/St7789Display.cpp", "r");
     TEST_ASSERT_NOT_NULL(file);
 
-    char buffer[24000]{};
+    char buffer[76000]{};
     const std::size_t read = std::fread(buffer, 1, sizeof(buffer) - 1, file);
     std::fclose(file);
     TEST_ASSERT_GREATER_THAN_size_t(0, read);
@@ -379,10 +379,27 @@ void test_st7789_driver_uses_tft_espi_verified_no_cs_init_path_and_spi_mode() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "kCmdRamCtrl = 0xB0"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "kCmdInvOn"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "tftInit"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "renderFrame(frame, true)"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "const bool runningFrame"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "renderFrame(frame, !runningFrame)"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "beginBufferedFrame(fullRedraw)"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "if (fullRedraw && !buffered)"));
     TEST_ASSERT_NULL(std::strstr(buffer, "data(buffer, sizeof(buffer));\n    data(buffer, sizeof(buffer));"));
+}
+
+void test_st7789_running_page_uses_partial_updates_and_smooth_arc() {
+    FILE* file = std::fopen("src/drivers/St7789Display.cpp", "r");
+    TEST_ASSERT_NOT_NULL(file);
+
+    char source[76000]{};
+    const std::size_t read = std::fread(source, 1, sizeof(source) - 1, file);
+    std::fclose(file);
+    TEST_ASSERT_GREATER_THAN_size_t(0, read);
+
+    TEST_ASSERT_NOT_NULL(std::strstr(source, "beginBufferedRegion"));
+    TEST_ASSERT_NOT_NULL(std::strstr(source, "drawRunningFrameDynamicRegions"));
+    TEST_ASSERT_NOT_NULL(std::strstr(source, "drawSmoothArc"));
+    TEST_ASSERT_NULL(std::strstr(source, "deg += 8"));
+    TEST_ASSERT_NULL(std::strstr(source, "fillRect(static_cast<std::int16_t>(x - 2), static_cast<std::int16_t>(y - 2), 5, 5, color)"));
 }
 
 void test_st7789_driver_has_compile_time_boot_self_test_path() {
@@ -534,7 +551,9 @@ void test_st7789_updates_use_buffered_frames_to_avoid_visible_erase() {
 
     TEST_ASSERT_NULL(std::strstr(source, "const bool runningPage"));
     TEST_ASSERT_NULL(std::strstr(source, "!runningPage"));
-    TEST_ASSERT_NOT_NULL(std::strstr(source, "renderFrame(frame, true)"));
+    TEST_ASSERT_NOT_NULL(std::strstr(source, "renderFrame(frame, !runningFrame)"));
+    TEST_ASSERT_NOT_NULL(std::strstr(source, "beginBufferedRegion"));
+    TEST_ASSERT_NOT_NULL(std::strstr(source, "drawRunningFrameDynamicRegions"));
     TEST_ASSERT_NULL(std::strstr(source, "renderPartialFrame(frame, lastFrame_)"));
     TEST_ASSERT_NULL(std::strstr(source, "renderStandbyPartialFrame"));
     TEST_ASSERT_NULL(std::strstr(source, "renderConfirmPartialFrame"));
@@ -560,6 +579,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_color_display_trends_only_use_real_running_sensor_samples);
     RUN_TEST(test_st7789_driver_avoids_per_pixel_text_rendering_in_loop);
     RUN_TEST(test_st7789_driver_uses_tft_espi_verified_no_cs_init_path_and_spi_mode);
+    RUN_TEST(test_st7789_running_page_uses_partial_updates_and_smooth_arc);
     RUN_TEST(test_st7789_driver_has_compile_time_boot_self_test_path);
     RUN_TEST(test_st7789_formal_build_uses_tft_espi_backend);
     RUN_TEST(test_st7789_main_numbers_do_not_use_scaled_16x16_bitmap_text);

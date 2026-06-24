@@ -245,6 +245,142 @@ void test_web_page_source_has_no_remote_water_control_forms() {
     TEST_ASSERT_NULL(std::strstr(buffer, "href=\"/api/faucet/stop\""));
 }
 
+void test_web_pages_display_water_sensor_values_from_records() {
+    const std::string body = readSourceFile("src/web/FaucetWeb.cpp");
+
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("formatWaterRecordTemperature("));
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("formatWaterRecordTds("));
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("sendWaterRecordSensorRows("));
+
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("sendMachineStatusSensorItem(\"temperatureStatus\", \"水温\""));
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("sendMachineStatusSensorItem(\"tdsStatus\", \"TDS\""));
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("function faucetSensorTemp(v)"));
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("faucetSet('temperatureStatus',faucetSensorTemp"));
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("faucetSet('tdsStatus',faucetSensorTds"));
+
+    TEST_ASSERT_NOT_EQUAL(std::string::npos,
+                          body.find("<th>时间</th><th>用时</th><th>实际出水</th><th>水温</th><th>TDS</th><th>预设目标</th><th>结果</th>"));
+    TEST_ASSERT_NOT_EQUAL(std::string::npos,
+                          body.find("<th>用时</th><th>流速</th><th>水温</th><th>TDS</th><th>结果</th><th>操作</th>"));
+
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("&tempAvg=%d&tempMin=%d&tempMax=%d"));
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("&tdsAvg=%u&tdsMin=%u&tdsMax=%u&tdsMv=%u"));
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("&sensorSamples=%u&sensorFlags=%u"));
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("getParam(\"tempAvg\""));
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("getParam(\"tdsAvg\""));
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("getParam(\"sensorSamples\""));
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("<section class='panel record-detail-card'><h3>水质传感器</h3><table class='kv'>"));
+}
+
+void test_product_pages_hide_debug_metering_details_from_primary_views() {
+    const std::string body = readSourceFile("src/web/FaucetWeb.cpp");
+
+    const std::size_t statusStart = body.find("void sendMachineStatusCard");
+    const std::size_t statusEnd = body.find("TodayOverview collectTodayOverview", statusStart);
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, statusStart);
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, statusEnd);
+    const std::string statusCard = body.substr(statusStart, statusEnd - statusStart);
+    TEST_ASSERT_EQUAL(std::string::npos, statusCard.find("id='meteringParams'"));
+    TEST_ASSERT_EQUAL(std::string::npos, statusCard.find("\"meteringParams\", \"计量参数\""));
+    TEST_ASSERT_EQUAL(std::string::npos, statusCard.find("faucetSet('meteringParams'"));
+
+    const std::size_t todayStart = body.find("void sendTodayOverview");
+    const std::size_t todayEnd = body.find("void sendTodayOverviewPlaceholder", todayStart);
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, todayStart);
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, todayEnd);
+    const std::string today = body.substr(todayStart, todayEnd - todayStart);
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, today.find("<th>时间</th><th>用时</th>"));
+    TEST_ASSERT_EQUAL(std::string::npos, today.find("<th>停止</th>"));
+    TEST_ASSERT_EQUAL(std::string::npos, today.find("stopTime"));
+
+    const std::size_t recordsStart = body.find("void handleRecordsPage()");
+    const std::size_t recordsEnd = body.find("void handleRecordInfoPage()", recordsStart);
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, recordsStart);
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, recordsEnd);
+    const std::string records = body.substr(recordsStart, recordsEnd - recordsStart);
+    TEST_ASSERT_NOT_EQUAL(std::string::npos,
+                          records.find("<th>用时</th><th>流速</th><th>水温</th><th>TDS</th><th>结果</th><th>操作</th>"));
+    TEST_ASSERT_EQUAL(std::string::npos, records.find("<th>全程平均</th>"));
+    TEST_ASSERT_EQUAL(std::string::npos, records.find("<th>总脉冲</th>"));
+    TEST_ASSERT_EQUAL(std::string::npos, records.find("pulse-cell"));
+    TEST_ASSERT_EQUAL(std::string::npos, records.find("pulse-total-cell"));
+
+    const std::size_t infoStart = body.find("void handleRecordInfoPage() {");
+    const std::size_t infoEnd = body.find("void handleCalibrationPage()", infoStart);
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, infoStart);
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, infoEnd);
+    const std::string info = body.substr(infoStart, infoEnd - infoStart);
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, info.find("<div class='record-detail-grid'>"));
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, info.find("<section class='panel record-detail-card'><h3>出水结果</h3>"));
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, info.find("<section class='panel record-detail-card'><h3>任务与出水</h3>"));
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, info.find("<section class='panel record-detail-card'><h3>计量与脉冲</h3>"));
+}
+
+void test_record_detail_uses_product_friendly_task_and_time_labels() {
+    const std::string body = readSourceFile("src/web/FaucetWeb.cpp");
+
+    const std::size_t labelStart = body.find("void formatRecordPresetLabel");
+    const std::size_t labelEnd = body.find("void formatDurationShort", labelStart);
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, labelStart);
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, labelEnd);
+    const std::string label = body.substr(labelStart, labelEnd - labelStart);
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, label.find("容量模式"));
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, label.find("时间模式"));
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, label.find("预设 %u · %s · %s"));
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, label.find("%s · %s"));
+
+    const std::size_t recordsStart = body.find("void handleRecordsPage()");
+    const std::size_t recordsEnd = body.find("void handleRecordInfoPage()", recordsStart);
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, recordsStart);
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, recordsEnd);
+    const std::string records = body.substr(recordsStart, recordsEnd - recordsStart);
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, records.find("&boot=%lu&"));
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, records.find("waterRecordBootId(records[i])"));
+
+    const std::size_t infoStart = body.find("void handleRecordInfoPage() {");
+    const std::size_t infoEnd = body.find("void handleCalibrationPage()", infoStart);
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, infoStart);
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, infoEnd);
+    const std::string info = body.substr(infoStart, infoEnd - infoStart);
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, info.find("getParam(\"boot\""));
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, info.find("markWaterRecordBootId(record, parsed)"));
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, info.find("<tr><th>开始时间</th><td>%s</td></tr>"));
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, info.find("<tr><th>持续时间</th><td>%s</td></tr>"));
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, info.find("<tr><th>任务</th><td>%s</td></tr>"));
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, info.find("<tr><th>目标值</th><td>"));
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("<tr><th>TDS 校准版本</th><td>%u</td></tr>"));
+    TEST_ASSERT_EQUAL(std::string::npos, info.find("<tr><th>时间</th><td>%s</td></tr>"));
+    TEST_ASSERT_EQUAL(std::string::npos, info.find("预设序号"));
+    TEST_ASSERT_EQUAL(std::string::npos, info.find("结束时间"));
+}
+
+void test_home_sensor_status_uses_latest_status_values_without_bold_units() {
+    const std::string body = readSourceFile("src/web/FaucetWeb.cpp");
+
+    const std::size_t statusStart = body.find("void sendMachineStatusCard");
+    const std::size_t statusEnd = body.find("TodayOverview collectTodayOverview", statusStart);
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, statusStart);
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, statusEnd);
+    const std::string statusCard = body.substr(statusStart, statusEnd - statusStart);
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, statusCard.find("tdsStatus"));
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("class='sensor-unit'>%s</small>"));
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, statusCard.find("\"ppm\""));
+    TEST_ASSERT_EQUAL(std::string::npos, statusCard.find("id='tdsStatus'>%s ppm</strong>"));
+    TEST_ASSERT_EQUAL(std::string::npos, statusCard.find("id='temperatureStatus'>%s C</strong>"));
+
+    const std::size_t scriptStart = body.find("void sendHomeAutoRefreshScript");
+    const std::size_t scriptEnd = body.find("void sendFilterCards", scriptStart);
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, scriptStart);
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, scriptEnd);
+    const std::string script = body.substr(scriptStart, scriptEnd - scriptStart);
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, script.find("fetch('/api/faucet/status',{cache:'no-store'}"));
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, script.find("faucetSet('tdsStatus',faucetSensorTds(s.sensor&&s.sensor.tds))"));
+    TEST_ASSERT_NOT_EQUAL(std::string::npos,
+                          script.find("faucetSet('temperatureStatus',faucetSensorTemp(s.sensor&&s.sensor.temperature))"));
+    TEST_ASSERT_EQUAL(std::string::npos, script.find("+' ppm'"));
+    TEST_ASSERT_EQUAL(std::string::npos, script.find("+' C'"));
+}
+
 void test_web_page_source_links_cacheable_app_css() {
     FILE* file = std::fopen("src/web/FaucetWeb.cpp", "rb");
     TEST_ASSERT_NOT_NULL(file);
@@ -319,8 +455,7 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "action=select_next"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "faucetSelectPreset("));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "nextPresetControl"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "sendMachineStatusNoteOnlyItem(\"meteringParams\", \"计量参数\", meteringParams)"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "启动段 %luP · %s · %s / 稳态段 %luP/L · %s"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "sendMachineStatusNoteOnlyItem(\"meteringParams\", \"计量参数\", meteringParams)"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "currentFlowValue"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "currentFlowMlPerMin"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "runAverageFlowMlPerMin"));
@@ -335,12 +470,12 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "body{max-width:1120px"));
     TEST_ASSERT_NULL(std::strstr(buffer, "body{max-width:1280px"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "<th>时间</th><th>模式</th><th>目标</th><th>出水</th>"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "<th>用时</th><th>流速</th><th>全程平均</th><th>总脉冲</th><th>结果</th><th>操作</th>"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "<th>用时</th><th>流速</th><th>水温</th><th>TDS</th><th>结果</th><th>操作</th>"));
     TEST_ASSERT_NULL(std::strstr(buffer, "<th>全程平均 P/L</th><th>计量方案</th>"));
     TEST_ASSERT_NULL(std::strstr(buffer, "<th>脉冲/升</th>"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "formatWaterRecordListTime(records[i], startTime"));
     TEST_ASSERT_NULL(std::strstr(buffer, "pulse-total\">总%luP"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "pulse-total-cell"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "pulse-total-cell"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "%luP"));
     TEST_ASSERT_NULL(std::strstr(buffer, "pulse-total-cell'><strong>%luP/L</strong>"));
     TEST_ASSERT_NULL(std::strstr(buffer, "status-pill status-ok'>已校准</span>"));
@@ -553,7 +688,7 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "inline-note"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "measured-note"));
     TEST_ASSERT_NULL(std::strstr(buffer, "record-more"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "pulse-cell"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "pulse-cell"));
     TEST_ASSERT_NULL(std::strstr(buffer, "action='/api/faucet/records/trace-calibration'"));
     TEST_ASSERT_NULL(std::strstr(buffer, "action='/api/faucet/records/trace-save'"));
     TEST_ASSERT_NULL(std::strstr(buffer, "action='/api/faucet/records/trace-delete'"));
@@ -570,9 +705,9 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NULL(std::strstr(buffer, "保存实测"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "已校准"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "实测 "));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "实测 %luP/L"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "measuredPulsePerLiter"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "滤%luP"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "实测 %luP/L"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "measuredPulsePerLiter"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "滤%luP"));
     TEST_ASSERT_NULL(std::strstr(buffer, "<th>诊断</th>"));
     TEST_ASSERT_NULL(std::strstr(buffer, "脉冲 %lu / 过滤 %lu / 系数 %.3f"));
     TEST_ASSERT_NULL(std::strstr(buffer, "量杯实际水量"));
@@ -1020,7 +1155,7 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NULL(std::strstr(buffer, "共 %s 用时 %s"));
     TEST_ASSERT_NULL(std::strstr(buffer, "总用时 %s"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "today-record-table"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "<th>开始</th><th>停止</th><th>用时</th><th>实际出水</th><th>预设目标</th><th>结果</th>"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "<th>时间</th><th>用时</th><th>实际出水</th><th>水温</th><th>TDS</th><th>预设目标</th><th>结果</th>"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "%02lu:%02lu:%02lu"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "record-duration"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "实际出水"));
@@ -1085,14 +1220,14 @@ void test_web_page_source_contains_expected_ui_improvements() {
     TEST_ASSERT_NULL(std::strstr(buffer, "formatHomeAuxiliaryDisplay"));
     TEST_ASSERT_NULL(std::strstr(buffer, "<h2>状态</h2><div class='metric-grid'>"));
     TEST_ASSERT_NULL(std::strstr(buffer, "<h2>出水详情</h2><div class='metric-grid'>"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "\"meteringParams\", \"计量参数\", meteringParams"));
+    TEST_ASSERT_NULL(std::strstr(buffer, "\"meteringParams\", \"计量参数\", meteringParams"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "'预计 '+e.fullRunPulsePerLiter+'P/L · '+e.pulseCount+'P"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "'预计 '+faucetLiters(e.targetMl)+' · '+e.pulseCount+'P · 稳态 '"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "faucetTargetMeta"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "阀门"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "设备不在待机状态，请回到待机后再保存配置。"));
     TEST_ASSERT_NOT_NULL(std::strstr(buffer, "<th>目标值</th>"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "<th>流速</th><th>全程平均</th><th>总脉冲</th><th>结果</th><th>操作</th>"));
+    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "<th>流速</th><th>水温</th><th>TDS</th><th>结果</th><th>操作</th>"));
     TEST_ASSERT_NULL(std::strstr(buffer, "<th>脉冲</th><th>轨迹</th>"));
     TEST_ASSERT_NULL(std::strstr(buffer, "<th>校准</th>"));
     TEST_ASSERT_NULL(std::strstr(buffer, "<th>诊断</th>"));
@@ -1875,6 +2010,10 @@ int main(int argc, char** argv) {
     RUN_TEST(test_presets_page_is_available_in_navigation);
     RUN_TEST(test_records_page_and_calibration_api_are_available);
     RUN_TEST(test_web_page_source_has_no_remote_water_control_forms);
+    RUN_TEST(test_web_pages_display_water_sensor_values_from_records);
+    RUN_TEST(test_product_pages_hide_debug_metering_details_from_primary_views);
+    RUN_TEST(test_record_detail_uses_product_friendly_task_and_time_labels);
+    RUN_TEST(test_home_sensor_status_uses_latest_status_values_without_bold_units);
     RUN_TEST(test_web_page_source_links_cacheable_app_css);
     RUN_TEST(test_web_page_source_contains_expected_ui_improvements);
     RUN_TEST(test_metering_generation_no_longer_uses_long_term_sample_library_for_auxiliary_calculation);

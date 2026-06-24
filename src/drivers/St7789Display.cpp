@@ -50,8 +50,29 @@ constexpr std::uint8_t kSt7789SpiMode = SPI_MODE3;
 #if FAUCET_ST7789_USE_TFT_ESPI
 TFT_eSPI g_tft;
 TFT_eSprite g_frameSprite(&g_tft);
+TFT_eSprite g_topRegionSprite(&g_tft);
+TFT_eSprite g_leftRegionSprite(&g_tft);
+TFT_eSprite g_metricRegionSprite(&g_tft);
+TFT_eSprite g_sensorRegionSprite(&g_tft);
+TFT_eSprite* g_activeSprite = &g_frameSprite;
 bool g_frameSpriteReady = false;
+bool g_topRegionSpriteReady = false;
+bool g_leftRegionSpriteReady = false;
+bool g_metricRegionSpriteReady = false;
+bool g_sensorRegionSpriteReady = false;
 bool g_drawToSprite = false;
+std::int16_t g_frameSpriteWidth = 0;
+std::int16_t g_frameSpriteHeight = 0;
+std::int16_t g_topRegionSpriteWidth = 0;
+std::int16_t g_topRegionSpriteHeight = 0;
+std::int16_t g_leftRegionSpriteWidth = 0;
+std::int16_t g_leftRegionSpriteHeight = 0;
+std::int16_t g_metricRegionSpriteWidth = 0;
+std::int16_t g_metricRegionSpriteHeight = 0;
+std::int16_t g_sensorRegionSpriteWidth = 0;
+std::int16_t g_sensorRegionSpriteHeight = 0;
+std::int16_t g_spriteOffsetX = 0;
+std::int16_t g_spriteOffsetY = 0;
 #endif
 
 constexpr std::uint8_t kCmdNop = 0x00;
@@ -80,6 +101,10 @@ constexpr std::uint8_t kCmdNegativeGamma = 0xE1;
 
 bool sameFrame(const ColorDisplayFrame& a, const ColorDisplayFrame& b) {
     return std::memcmp(&a, &b, sizeof(ColorDisplayFrame)) == 0;
+}
+
+bool isRunningPage(ColorDisplayPage page) {
+    return page == ColorDisplayPage::RunningVolume || page == ColorDisplayPage::RunningTime;
 }
 
 std::uint16_t accentForPage(ColorDisplayPage page) {
@@ -133,6 +158,123 @@ std::uint32_t decodeUtf8(const char*& text) {
 }
 
 #if FAUCET_ST7789_USE_TFT_ESPI
+std::int16_t spriteX(std::int16_t x) {
+    return static_cast<std::int16_t>(x - g_spriteOffsetX);
+}
+
+std::int16_t spriteY(std::int16_t y) {
+    return static_cast<std::int16_t>(y - g_spriteOffsetY);
+}
+
+bool ensureSprite(TFT_eSprite& sprite,
+                  bool& ready,
+                  std::int16_t& currentWidth,
+                  std::int16_t& currentHeight,
+                  std::int16_t w,
+                  std::int16_t h) {
+    if (ready && currentWidth == w && currentHeight == h) {
+        return true;
+    }
+    if (ready) {
+        sprite.deleteSprite();
+        ready = false;
+        currentWidth = 0;
+        currentHeight = 0;
+    }
+    sprite.setColorDepth(16);
+    ready = sprite.createSprite(w, h) != nullptr;
+    if (ready) {
+        currentWidth = w;
+        currentHeight = h;
+    }
+    return ready;
+}
+
+void releaseSprite(TFT_eSprite& sprite, bool& ready, std::int16_t& currentWidth, std::int16_t& currentHeight) {
+    if (!ready) {
+        return;
+    }
+    sprite.deleteSprite();
+    ready = false;
+    currentWidth = 0;
+    currentHeight = 0;
+}
+
+void releaseFullFrameSprite() {
+    releaseSprite(g_frameSprite, g_frameSpriteReady, g_frameSpriteWidth, g_frameSpriteHeight);
+    if (g_activeSprite == &g_frameSprite) {
+        g_activeSprite = nullptr;
+    }
+}
+
+void releaseRegionSprites() {
+    releaseSprite(g_topRegionSprite, g_topRegionSpriteReady, g_topRegionSpriteWidth, g_topRegionSpriteHeight);
+    releaseSprite(g_leftRegionSprite, g_leftRegionSpriteReady, g_leftRegionSpriteWidth, g_leftRegionSpriteHeight);
+    releaseSprite(g_metricRegionSprite, g_metricRegionSpriteReady, g_metricRegionSpriteWidth, g_metricRegionSpriteHeight);
+    releaseSprite(g_sensorRegionSprite, g_sensorRegionSpriteReady, g_sensorRegionSpriteWidth, g_sensorRegionSpriteHeight);
+    if (g_activeSprite == &g_topRegionSprite || g_activeSprite == &g_leftRegionSprite ||
+        g_activeSprite == &g_metricRegionSprite || g_activeSprite == &g_sensorRegionSprite) {
+        g_activeSprite = nullptr;
+    }
+}
+
+bool ensureFrameSprite(std::int16_t w, std::int16_t h) {
+    releaseRegionSprites();
+    const bool ok = ensureSprite(g_frameSprite, g_frameSpriteReady, g_frameSpriteWidth, g_frameSpriteHeight, w, h);
+    if (ok) {
+        g_activeSprite = &g_frameSprite;
+    }
+    return ok;
+}
+
+bool selectRegionSprite(std::int16_t x, std::int16_t y, std::int16_t w, std::int16_t h) {
+    releaseFullFrameSprite();
+    if (x == 0 && y == 0) {
+        const bool ok = ensureSprite(
+            g_topRegionSprite, g_topRegionSpriteReady, g_topRegionSpriteWidth, g_topRegionSpriteHeight, w, h);
+        if (ok) {
+            g_activeSprite = &g_topRegionSprite;
+        }
+        return ok;
+    }
+    if (x == 10 && y == 42) {
+        const bool ok = ensureSprite(
+            g_leftRegionSprite, g_leftRegionSpriteReady, g_leftRegionSpriteWidth, g_leftRegionSpriteHeight, w, h);
+        if (ok) {
+            g_activeSprite = &g_leftRegionSprite;
+        }
+        return ok;
+    }
+    if (x == 128 && y == 44) {
+        const bool ok = ensureSprite(
+            g_metricRegionSprite, g_metricRegionSpriteReady, g_metricRegionSpriteWidth, g_metricRegionSpriteHeight, w, h);
+        if (ok) {
+            g_activeSprite = &g_metricRegionSprite;
+        }
+        return ok;
+    }
+    if (x == 10 && y == 166) {
+        const bool ok = ensureSprite(
+            g_sensorRegionSprite, g_sensorRegionSpriteReady, g_sensorRegionSpriteWidth, g_sensorRegionSpriteHeight, w, h);
+        if (ok) {
+            g_activeSprite = &g_sensorRegionSprite;
+        }
+        return ok;
+    }
+    const bool ok = ensureFrameSprite(w, h);
+    if (ok) {
+        g_activeSprite = &g_frameSprite;
+    }
+    return ok;
+}
+
+TFT_eSprite& activeSprite() {
+    if (!g_activeSprite) {
+        g_activeSprite = &g_frameSprite;
+    }
+    return *g_activeSprite;
+}
+
 std::uint8_t asciiFontForScale(std::uint8_t scale) {
     return scale >= 2 ? 4 : 2;
 }
@@ -341,7 +483,9 @@ void St7789Display::apply(const ColorDisplayFrame& frame) {
         return;
     }
     setBacklight(true);
-    renderFrame(frame, true);
+    const bool runningFrame =
+        frame.on && lastFrameValid_ && lastFrame_.on && isRunningPage(frame.page) && frame.page == lastFrame_.page;
+    renderFrame(frame, !runningFrame);
     lastFrame_ = frame;
     lastFrameValid_ = true;
 }
@@ -514,7 +658,7 @@ void St7789Display::fillRect(std::int16_t x, std::int16_t y, std::int16_t w, std
     }
 #if FAUCET_ST7789_USE_TFT_ESPI
     if (g_drawToSprite) {
-        g_frameSprite.fillRect(x, y, w, h, color);
+        activeSprite().fillRect(spriteX(x), spriteY(y), w, h, color);
     } else {
         g_tft.fillRect(x, y, w, h, color);
     }
@@ -538,15 +682,13 @@ bool St7789Display::beginBufferedFrame(bool fullRedraw) {
         return false;
     }
 #if FAUCET_ST7789_USE_TFT_ESPI
-    if (!g_frameSpriteReady) {
-        g_frameSprite.setColorDepth(16);
-        g_frameSpriteReady = g_frameSprite.createSprite(kWidth, kHeight) != nullptr;
-    }
-    if (!g_frameSpriteReady) {
+    if (!ensureFrameSprite(kWidth, kHeight)) {
         return false;
     }
     g_drawToSprite = true;
-    g_frameSprite.fillSprite(kBg);
+    g_spriteOffsetX = 0;
+    g_spriteOffsetY = 0;
+    activeSprite().fillSprite(kBg);
     return true;
 #else
     return false;
@@ -559,7 +701,51 @@ void St7789Display::endBufferedFrame(bool buffered) {
     }
 #if FAUCET_ST7789_USE_TFT_ESPI
     g_drawToSprite = false;
-    g_frameSprite.pushSprite(0, 0);
+    activeSprite().pushSprite(0, 0);
+    g_spriteOffsetX = 0;
+    g_spriteOffsetY = 0;
+#endif
+}
+
+bool St7789Display::beginBufferedRegion(std::int16_t x,
+                                        std::int16_t y,
+                                        std::int16_t w,
+                                        std::int16_t h,
+                                        std::uint16_t background) {
+    if (w <= 0 || h <= 0) {
+        return false;
+    }
+#if FAUCET_ST7789_USE_TFT_ESPI
+    if (!selectRegionSprite(x, y, w, h)) {
+        return false;
+    }
+    g_drawToSprite = true;
+    g_spriteOffsetX = x;
+    g_spriteOffsetY = y;
+    activeSprite().fillSprite(background);
+    return true;
+#else
+    (void)x;
+    (void)y;
+    (void)w;
+    (void)h;
+    (void)background;
+    return false;
+#endif
+}
+
+void St7789Display::endBufferedRegion(bool buffered, std::int16_t x, std::int16_t y) {
+    if (!buffered) {
+        return;
+    }
+#if FAUCET_ST7789_USE_TFT_ESPI
+    g_drawToSprite = false;
+    activeSprite().pushSprite(x, y);
+    g_spriteOffsetX = 0;
+    g_spriteOffsetY = 0;
+#else
+    (void)x;
+    (void)y;
 #endif
 }
 
@@ -575,7 +761,7 @@ void St7789Display::fillRoundRect(std::int16_t x,
     }
 #if FAUCET_ST7789_USE_TFT_ESPI
     if (g_drawToSprite) {
-        g_frameSprite.fillSmoothRoundRect(x, y, w, h, radius, color, background);
+        activeSprite().fillSmoothRoundRect(spriteX(x), spriteY(y), w, h, radius, color, background);
     } else {
         g_tft.fillSmoothRoundRect(x, y, w, h, radius, color, background);
     }
@@ -611,7 +797,14 @@ void St7789Display::drawRoundRect(std::int16_t x,
     }
 #if FAUCET_ST7789_USE_TFT_ESPI
     if (g_drawToSprite) {
-        g_frameSprite.drawSmoothRoundRect(x, y, radius, static_cast<std::int16_t>(radius - 1), w, h, color, background);
+        activeSprite().drawSmoothRoundRect(spriteX(x),
+                                          spriteY(y),
+                                          radius,
+                                          static_cast<std::int16_t>(radius - 1),
+                                          w,
+                                          h,
+                                          color,
+                                          background);
     } else {
         g_tft.drawSmoothRoundRect(x, y, radius, static_cast<std::int16_t>(radius - 1), w, h, color, background);
     }
@@ -638,7 +831,7 @@ void St7789Display::drawPixel(std::int16_t x, std::int16_t y, std::uint16_t colo
     }
 #if FAUCET_ST7789_USE_TFT_ESPI
     if (g_drawToSprite) {
-        g_frameSprite.drawPixel(x, y, color);
+        activeSprite().drawPixel(spriteX(x), spriteY(y), color);
     } else {
         g_tft.drawPixel(x, y, color);
     }
@@ -688,15 +881,58 @@ void St7789Display::drawRing(std::int16_t cx,
                              std::int16_t radius,
                              std::uint16_t progressPermille,
                              std::uint16_t color) {
+#if FAUCET_ST7789_USE_TFT_ESPI
+    auto drawArcOnTarget = [&](std::uint16_t start, std::uint16_t end, std::uint16_t fg, std::uint16_t bg) {
+        if (g_drawToSprite) {
+            activeSprite().drawSmoothArc(spriteX(cx),
+                                        spriteY(cy),
+                                        radius,
+                                        static_cast<std::int16_t>(radius - 8),
+                                        start,
+                                        end,
+                                        fg,
+                                        bg,
+                                        false);
+        } else {
+            g_tft.drawSmoothArc(cx,
+                                cy,
+                                radius,
+                                static_cast<std::int16_t>(radius - 8),
+                                start,
+                                end,
+                                fg,
+                                bg,
+                                false);
+        }
+    };
+    drawArcOnTarget(0, 360, kPanel2, kBg);
+    const std::uint16_t degrees = static_cast<std::uint16_t>(progressPermille * 360U / 1000U);
+    if (degrees == 0) {
+        return;
+    }
+    if (degrees >= 360U) {
+        drawArcOnTarget(0, 360, color, kBg);
+        return;
+    }
+    constexpr std::uint16_t kStartAngle = 180U;
+    const std::uint16_t end = static_cast<std::uint16_t>(kStartAngle + degrees);
+    if (end <= 360U) {
+        drawArcOnTarget(kStartAngle, end, color, kBg);
+    } else {
+        drawArcOnTarget(kStartAngle, 360, color, kBg);
+        drawArcOnTarget(0, static_cast<std::uint16_t>(end - 360U), color, kBg);
+    }
+#else
     fillCircle(cx, cy, radius, kPanel2);
     fillCircle(cx, cy, static_cast<std::int16_t>(radius - 8), kBg);
     const std::uint16_t degrees = static_cast<std::uint16_t>(progressPermille * 360U / 1000U);
-    for (std::uint16_t deg = 0; deg < degrees; deg += 8) {
+    for (std::uint16_t deg = 0; deg < degrees; deg += 3) {
         const float rad = (static_cast<float>(deg) - 90.0f) * 0.0174532925f;
         const std::int16_t x = static_cast<std::int16_t>(cx + std::cos(rad) * (radius - 4));
         const std::int16_t y = static_cast<std::int16_t>(cy + std::sin(rad) * (radius - 4));
-        fillRect(static_cast<std::int16_t>(x - 2), static_cast<std::int16_t>(y - 2), 5, 5, color);
+        fillCircle(x, y, 3, color);
     }
+#endif
 }
 
 void St7789Display::drawGlyphBlock(std::int16_t x,
@@ -718,10 +954,12 @@ void St7789Display::drawGlyphBlock(std::int16_t x,
     }
 #if FAUCET_ST7789_USE_TFT_ESPI
     if (g_drawToSprite) {
-        g_frameSprite.setWindow(x,
-                                y,
-                                static_cast<std::int16_t>(x + w - 1),
-                                static_cast<std::int16_t>(y + h - 1));
+        const std::int16_t localX = spriteX(x);
+        const std::int16_t localY = spriteY(y);
+        activeSprite().setWindow(localX,
+                                localY,
+                                static_cast<std::int16_t>(localX + w - 1),
+                                static_cast<std::int16_t>(localY + h - 1));
         for (std::uint8_t gy = 0; gy < kSt7789GlyphHeight; ++gy) {
             const std::uint8_t b0 = glyph.bitmap[gy * 2U];
             const std::uint8_t b1 = glyph.bitmap[gy * 2U + 1U];
@@ -736,7 +974,7 @@ void St7789Display::drawGlyphBlock(std::int16_t x,
                                           : false;
                     const std::uint16_t pixel = (lit0 || lit1) ? color : background;
                     for (std::uint8_t sx = 0; sx < scale; ++sx) {
-                        g_frameSprite.pushColor(pixel);
+                        activeSprite().pushColor(pixel);
                     }
                 }
             }
@@ -864,10 +1102,10 @@ void St7789Display::drawAsciiText(std::int16_t x,
     }
 #if FAUCET_ST7789_USE_TFT_ESPI
     if (g_drawToSprite) {
-        g_frameSprite.setTextDatum(TL_DATUM);
-        g_frameSprite.setTextSize(1);
-        g_frameSprite.setTextColor(color, background);
-        g_frameSprite.drawString(text, x, y, font);
+        activeSprite().setTextDatum(TL_DATUM);
+        activeSprite().setTextSize(1);
+        activeSprite().setTextColor(color, background);
+        activeSprite().drawString(text, spriteX(x), spriteY(y), font);
     } else {
         g_tft.setTextDatum(TL_DATUM);
         g_tft.setTextSize(1);
@@ -1182,8 +1420,51 @@ void St7789Display::drawHints(const ColorDisplayFrame& frame) {
     }
 }
 
+void St7789Display::drawRunningFrameDynamicRegions(const ColorDisplayFrame& frame, std::uint16_t accent) {
+    bool buffered = beginBufferedRegion(0, 0, kWidth, 40, kBg);
+    if (!buffered) {
+        fillRect(0, 0, kWidth, 40, kBg);
+    }
+    drawTopBar(frame, accent);
+    endBufferedRegion(buffered, 0, 0);
+
+    buffered = beginBufferedRegion(10, 42, 118, 120, kBg);
+    if (!buffered) {
+        fillRect(10, 42, 118, 120, kBg);
+    }
+    drawRing(69, 92, 50, frame.progressPermille, accent);
+    drawBoxCenteredText(18, 62, 102, frame.title, kMuted, kBg, 1);
+    drawMainValue(69, 82, frame.mainValue, frame.mainUnit, 4, 2, kInk, accent, kBg);
+    endBufferedRegion(buffered, 10, 42);
+
+    buffered = beginBufferedRegion(128, 44, 102, 120, kBg);
+    if (!buffered) {
+        fillRect(128, 44, 102, 120, kBg);
+    }
+    for (std::uint8_t i = 0; i < frame.metricCount && i < 3; ++i) {
+        drawMetricCard(132, static_cast<std::int16_t>(48 + i * 38), 94, frame.metrics[i], 36);
+    }
+    endBufferedRegion(buffered, 128, 44);
+
+    buffered = beginBufferedRegion(10, 166, 220, 62, kBg);
+    if (!buffered) {
+        fillRect(10, 166, 220, 62, kBg);
+    }
+    if (frame.sensorCount > 0) {
+        drawSensorCard(14, 170, 102, frame.sensors[0]);
+    }
+    if (frame.sensorCount > 1) {
+        drawSensorCard(124, 170, 102, frame.sensors[1]);
+    }
+    endBufferedRegion(buffered, 10, 166);
+}
+
 void St7789Display::renderFrame(const ColorDisplayFrame& frame, bool fullRedraw) {
     const std::uint16_t accent = accentForPage(frame.page);
+    if (!fullRedraw && isRunningPage(frame.page)) {
+        drawRunningFrameDynamicRegions(frame, accent);
+        return;
+    }
     const bool buffered = beginBufferedFrame(fullRedraw);
     if (fullRedraw && !buffered) {
         fillScreen(kBg);

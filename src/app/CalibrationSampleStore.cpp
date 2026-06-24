@@ -378,6 +378,31 @@ bool CalibrationSessionTraceStore::savePending(std::uint8_t slot,
     return writeEntry(backend_, path_, slot, entry);
 }
 
+bool CalibrationSessionTraceStore::saveValid(std::uint8_t slot,
+                                             const CalibrationStoredTrace& trace,
+                                             const WaterPulseTraceBucketSample* buckets,
+                                             std::size_t bucketCount,
+                                             const WaterPulseTraceSample* startupEdges,
+                                             std::size_t startupEdgeCount,
+                                             std::uint32_t actualMl,
+                                             std::uint32_t savedAt) {
+    if (!ready() || slot >= kCalibrationSessionTraceSlots ||
+        !ensureFileForWrite(backend_, path_, kStoreKindSession, kCalibrationSessionTraceSlots) ||
+        !writeBuckets(backend_, path_, kCalibrationSessionTraceSlots, slot, buckets, bucketCount) ||
+        !writeStartupEdges(backend_, path_, kCalibrationSessionTraceSlots, slot, startupEdges, startupEdgeCount)) {
+        status_ = ready_ ? AppStorageStatus::BackendFailure : status_;
+        return false;
+    }
+    CalibrationStoredTrace valid = trace;
+    valid.valid = true;
+    valid.pendingActual = false;
+    valid.actualMl = actualMl;
+    valid.savedAt = savedAt;
+    valid.trace.actualMl = actualMl;
+    const SampleIndexEntry entry = makeEntry(valid, bucketCount, startupEdgeCount);
+    return writeEntry(backend_, path_, slot, entry);
+}
+
 bool CalibrationSessionTraceStore::commitValid(std::uint8_t slot, std::uint32_t actualMl, std::uint32_t savedAt) {
     if (!ready() || slot >= kCalibrationSessionTraceSlots || !backend_.exists(path_)) {
         return false;

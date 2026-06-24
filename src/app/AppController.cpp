@@ -676,14 +676,15 @@ bool AppController::submitCalibrationActualForWeb(std::uint32_t actualMl, std::u
     calibration.oldStartupCompensationMl = activeMeteringScheme_.params.startupVolumeMl;
     calibration.newStartupCompensationMl = activeMeteringScheme_.params.startupVolumeMl;
     calibration.kind = WaterRecordCalibrationKind::PulsePerMl;
-    const bool savedTrace = calibrationSessionTraces_->savePending(attempt.sessionTraceSlot,
-                                                                   stored,
-                                                                   buckets.get(),
-                                                                   trace->bucketCount,
-                                                                   startupEdges.get(),
-                                                                   trace->startupEdgeCount);
-    if (!recordCalibrations_->upsert(calibration) ||
-        !savedTrace || !calibrationSessionTraces_->commitValid(attempt.sessionTraceSlot, actualMl, nowSeconds)) {
+    const bool savedTrace = calibrationSessionTraces_->saveValid(attempt.sessionTraceSlot,
+                                                                 stored,
+                                                                 buckets.get(),
+                                                                 trace->bucketCount,
+                                                                 startupEdges.get(),
+                                                                 trace->startupEdgeCount,
+                                                                 actualMl,
+                                                                 nowSeconds);
+    if (!recordCalibrations_->upsert(calibration) || !savedTrace) {
         rejectCalibrationAttempt(calibrationSession_, attempt, CalibrationInvalidReason::StorageFailed, nowSeconds);
         saveCalibrationSession();
         return false;

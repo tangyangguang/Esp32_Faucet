@@ -34,6 +34,14 @@ public:
                      std::size_t bucketCount,
                      const WaterPulseTraceSample* startupEdges,
                      std::size_t startupEdgeCount);
+    bool saveValid(std::uint8_t slot,
+                   const CalibrationStoredTrace& trace,
+                   const WaterPulseTraceBucketSample* buckets,
+                   std::size_t bucketCount,
+                   const WaterPulseTraceSample* startupEdges,
+                   std::size_t startupEdgeCount,
+                   std::uint32_t actualMl,
+                   std::uint32_t savedAt);
     bool commitValid(std::uint8_t slot, std::uint32_t actualMl, std::uint32_t savedAt);
     bool invalidate(std::uint8_t slot);
     bool load(std::uint8_t slot, CalibrationStoredTrace& trace) const;

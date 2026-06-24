@@ -805,8 +805,6 @@ void test_calibration_page_initial_render_shows_tds_controls() {
     TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("当前水质状态"));
     TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("当前 TDS"));
     TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("本次校准"));
-    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("本次参考 ppm"));
-    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("保存为校准点"));
     TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("已保存校准点"));
     TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("使用这组参数"));
     TEST_ASSERT_EQUAL(std::string::npos, body.find("单点校准"));
@@ -815,9 +813,10 @@ void test_calibration_page_initial_render_shows_tds_controls() {
     TEST_ASSERT_EQUAL(std::string::npos, body.find("参考来源"));
     TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("采样电压"));
     TEST_ASSERT_EQUAL(std::string::npos, body.find("A0 电压"));
-    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("tds_start_session"));
-    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("tds_start_point"));
-    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("tds_save_point"));
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("TDS 模拟传感器未启用"));
+    TEST_ASSERT_EQUAL(std::string::npos, body.find("tds_start_session"));
+    TEST_ASSERT_EQUAL(std::string::npos, body.find("tds_start_point"));
+    TEST_ASSERT_EQUAL(std::string::npos, body.find("tds_save_point"));
     TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("tds_apply_session"));
     TEST_ASSERT_EQUAL(std::string::npos, body.find("只接受 ppm"));
 }
@@ -825,6 +824,7 @@ void test_calibration_page_initial_render_shows_tds_controls() {
 void test_tds_calibration_prioritizes_two_point_flow() {
     WebFixture fixture;
     enableTdsForFixture(fixture);
+    TEST_ASSERT_TRUE(fixture.app.startTdsCalibrationSessionForWeb(testNowSeconds()));
     fixture.app.tick(appInput({false, false, false, false}, 1000, 1000000));
     registerRoutes();
     Esp32BaseWeb::nativeTestBeginRequest(Esp32BaseWeb::METHOD_GET, "/faucet/calibration");
@@ -840,12 +840,60 @@ void test_tds_calibration_prioritizes_two_point_flow() {
     TEST_ASSERT_NOT_EQUAL(std::string::npos, session);
     TEST_ASSERT_NOT_EQUAL(std::string::npos, result);
     TEST_ASSERT_TRUE(session < result);
-    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("保存为校准点", session));
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("参考 TDS", session));
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("开始采集校准点", session));
+    TEST_ASSERT_EQUAL(std::string::npos, body.find("保存这个校准点", session));
     TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("使用这组参数", result));
     TEST_ASSERT_EQUAL(std::string::npos, body.find("tds-advanced"));
     TEST_ASSERT_EQUAL(std::string::npos, body.find("低值校准"));
     TEST_ASSERT_EQUAL(std::string::npos, body.find("高值校准"));
     TEST_ASSERT_EQUAL(std::string::npos, body.find("取消采样"));
+}
+
+void test_tds_calibration_sampling_page_shows_progress_and_refresh() {
+    WebFixture fixture;
+    enableTdsForFixture(fixture);
+    TEST_ASSERT_TRUE(fixture.app.startTdsCalibrationSessionForWeb(testNowSeconds()));
+    TEST_ASSERT_TRUE(fixture.app.startTdsCalibrationPointForWeb(160, testNowSeconds()));
+    fixture.waterSensors.tick(1000);
+    registerRoutes();
+    Esp32BaseWeb::nativeTestBeginRequest(Esp32BaseWeb::METHOD_GET, "/faucet/calibration");
+    Esp32BaseWeb::nativeTestSetAuthenticated(true);
+    Esp32BaseWeb::nativeTestSetSameOrigin(true);
+    Esp32BaseWeb::nativeTestSetParam("view", "tds");
+
+    TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch("/faucet/calibration", Esp32BaseWeb::METHOD_GET));
+
+    const std::string& body = Esp32BaseWeb::nativeTestResponse().body;
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("data-tds-calibration-refresh"));
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("采样中"));
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("参考 160 ppm"));
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("已采样"));
+    TEST_ASSERT_EQUAL(std::string::npos, body.find("tds_start_point"));
+    TEST_ASSERT_EQUAL(std::string::npos, body.find("tds_save_point"));
+}
+
+void test_tds_calibration_ready_page_shows_save_without_capture_choice() {
+    WebFixture fixture;
+    enableTdsForFixture(fixture);
+    TEST_ASSERT_TRUE(fixture.app.startTdsCalibrationSessionForWeb(testNowSeconds()));
+    TEST_ASSERT_TRUE(fixture.app.startTdsCalibrationPointForWeb(160, testNowSeconds()));
+    for (std::uint32_t i = 1; i <= 12; ++i) {
+        fixture.waterSensors.tick(i * 1000UL);
+    }
+    TEST_ASSERT_TRUE(fixture.app.tdsCalibrationSnapshot().readyToSave);
+    registerRoutes();
+    Esp32BaseWeb::nativeTestBeginRequest(Esp32BaseWeb::METHOD_GET, "/faucet/calibration");
+    Esp32BaseWeb::nativeTestSetAuthenticated(true);
+    Esp32BaseWeb::nativeTestSetSameOrigin(true);
+    Esp32BaseWeb::nativeTestSetParam("view", "tds");
+
+    TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch("/faucet/calibration", Esp32BaseWeb::METHOD_GET));
+
+    const std::string& body = Esp32BaseWeb::nativeTestResponse().body;
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("保存这个校准点"));
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("tds_save_point"));
+    TEST_ASSERT_EQUAL(std::string::npos, body.find("tds_start_point"));
 }
 
 void test_temperature_calibration_uses_simple_card_and_celsius_input() {
@@ -1702,6 +1750,8 @@ int main(int, char**) {
     RUN_TEST(test_flow_calibration_page_preserves_active_session_state);
     RUN_TEST(test_calibration_page_initial_render_shows_tds_controls);
     RUN_TEST(test_tds_calibration_prioritizes_two_point_flow);
+    RUN_TEST(test_tds_calibration_sampling_page_shows_progress_and_refresh);
+    RUN_TEST(test_tds_calibration_ready_page_shows_save_without_capture_choice);
     RUN_TEST(test_temperature_calibration_uses_simple_card_and_celsius_input);
     RUN_TEST(test_temperature_calibration_disables_save_when_sensor_is_disabled);
     RUN_TEST(test_temperature_calibration_post_accepts_celsius_decimal_input);

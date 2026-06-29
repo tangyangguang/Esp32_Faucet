@@ -34,6 +34,13 @@ CalibrationHeader makeHeader(std::size_t capacity, std::size_t count, std::size_
     };
 }
 
+bool sameCalibrationIdentity(const WaterRecordCalibration& a, const WaterRecordCalibration& b) {
+    return a.startTime == b.startTime && a.volumeMl == b.volumeMl && a.targetValue == b.targetValue &&
+           a.pulseCount == b.pulseCount && a.rejectedPulseCount == b.rejectedPulseCount &&
+           a.durationSec == b.durationSec && a.mode == b.mode && a.result == b.result &&
+           a.selectedPreset == b.selectedPreset;
+}
+
 }  // namespace
 
 WaterRecordCalibration makeWaterRecordCalibration(const WaterRecord& record) {
@@ -87,23 +94,9 @@ bool WaterRecordCalibrationStore::upsert(const WaterRecordCalibration& calibrati
     if (!ready()) {
         return false;
     }
-    WaterRecord record{
-        calibration.startTime,
-        calibration.volumeMl,
-        calibration.targetValue,
-        calibration.pulseCount,
-        calibration.rejectedPulseCount,
-        calibration.durationSec,
-        calibration.mode,
-        calibration.result,
-        calibration.selectedPreset,
-        0,
-        0,
-        {0, 0, 0, 0},
-    };
     for (std::size_t i = 0; i < count_; ++i) {
         const std::size_t index = physicalIndexFromNewestOffset(i);
-        if (sameWaterRecordCalibrationIdentity(entries_[index], record)) {
+        if (sameCalibrationIdentity(entries_[index], calibration)) {
             WaterRecordCalibration next = calibration;
             next.calibrationCount = entries_[index].calibrationCount == UINT16_MAX
                                         ? UINT16_MAX
@@ -224,20 +217,6 @@ bool WaterRecordCalibrationFileStore::upsert(const WaterRecordCalibration& calib
             return false;
         }
     }
-    WaterRecord record{
-        calibration.startTime,
-        calibration.volumeMl,
-        calibration.targetValue,
-        calibration.pulseCount,
-        calibration.rejectedPulseCount,
-        calibration.durationSec,
-        calibration.mode,
-        calibration.result,
-        calibration.selectedPreset,
-        0,
-        0,
-        {0, 0, 0, 0},
-    };
     for (std::size_t i = 0; i < count_; ++i) {
         const std::size_t index = physicalIndexFromNewestOffset(i);
         WaterRecordCalibration existing{};
@@ -245,7 +224,7 @@ bool WaterRecordCalibrationFileStore::upsert(const WaterRecordCalibration& calib
             ready_ = false;
             return false;
         }
-        if (!sameWaterRecordCalibrationIdentity(existing, record)) {
+        if (!sameCalibrationIdentity(existing, calibration)) {
             continue;
         }
         WaterRecordCalibration next = calibration;

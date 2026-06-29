@@ -1,71 +1,43 @@
 .pio/
-.vscode/
-.claude/
-.DS_Store
-*.log
-.env
-.env.*
-!.env.example
-build/
-*.swp
-*.swo
-*.bak
-platformio.local.ini
-
-.claude
-
-.worktrees/
-# =====================================
-# 1. 所有层级的 PlatformIO 缓存（核心！）
-# =====================================
-# 根目录的 .piohome
 .piohome/
-
-# 所有目录下的 .pio/（包括 examples 里的子项目）
 **/.pio/
 **/.pioenvs/
 **/.piolibdeps/
 **/.cache/
 
-# =====================================
-# 2. ESP-IDF / 编译相关
-# =====================================
 build/
 Debug/
 managed_components/
 sdkconfig.old
 sdkconfig.defaults
 .espressif/
+*.elf
+*.bin
+*.hex
+*.map
+*.o
+*.d
+*.a
+*.lib
+*.exe
 
-# 编译输出文件（所有层级）
-**/*.elf
-**/*.bin
-**/*.hex
-**/*.map
-**/*.o
-**/*.d
-**/*.a
-**/*.lib
-**/*.exe
+.vscode/
+.idea/
+.claude/
+.worktrees/
 
-# =====================================
-# 3. IDE / 编辑器配置（所有层级）
-# =====================================
-**/.vscode/
-**/.idea/
-**/*.swp
-**/*.swo
-
-# =====================================
-# 4. 系统垃圾文件
-# =====================================
-**/.DS_Store
+.DS_Store
 Thumbs.db
 *.log
+*.swp
+*.swo
+*.bak
 
-# =====================================
-# 5. 本地过程文件
-# =====================================
+.env
+.env.*
+!.env.example
+platformio.local.ini
+
 evaluations/
 CLAUDE.md
 .codex-worklog.md

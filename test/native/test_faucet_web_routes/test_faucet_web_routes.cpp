@@ -153,8 +153,8 @@ void test_business_write_routes_are_post_only() {
     TEST_ASSERT_FALSE(routeExists("/api/faucet/filters/reset", FaucetWebMethod::Get));
 }
 
-void test_removed_or_legacy_business_aliases_are_not_registered() {
-    const char* removedPaths[] = {
+void test_dangerous_business_aliases_are_not_registered() {
+    const char* blockedPaths[] = {
         "/api/faucet/records/calibration",
         "/faucet/records/calibration",
         "/api/faucet/records/trace-calibration",
@@ -164,7 +164,7 @@ void test_removed_or_legacy_business_aliases_are_not_registered() {
         "/api/faucet/records/latest/calibration",
     };
 
-    for (const char* path : removedPaths) {
+    for (const char* path : blockedPaths) {
         TEST_ASSERT_FALSE_MESSAGE(hasAnyRoute(path), path);
         TEST_ASSERT_FALSE_MESSAGE(faucetWebRouteAllowed(path), path);
     }
@@ -182,6 +182,6 @@ int main(int argc, char** argv) {
     RUN_TEST(test_hidden_pages_and_assets_are_registered_without_navigation_titles);
     RUN_TEST(test_business_api_routes_use_explicit_methods);
     RUN_TEST(test_business_write_routes_are_post_only);
-    RUN_TEST(test_removed_or_legacy_business_aliases_are_not_registered);
+    RUN_TEST(test_dangerous_business_aliases_are_not_registered);
     return UNITY_END();
 }

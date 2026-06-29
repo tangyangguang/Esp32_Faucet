@@ -8,7 +8,7 @@
 - 主固件已接入 Esp32Base FULL profile、四键业务核心、流量计、电磁阀 PWM、240x240 ST7789 TFT 本地屏、蜂鸣器、RTC、LittleFS 记录/日志、统计、滤芯和 Web 查看/配置页面；真实水路仍需按上板文档逐项闭环验证。
 - Web 不提供任何远程出水控制能力。
 - 裸板验证已通过：未接 RTC 时 `rtc=absent`、记录存储为 `records=file`，WiFi/Web/NTP 正常，设备端 mDNS 服务已启动；当前客户端 `.local` 解析仍需继续确认。
-- 2026-06-22 代码侧复测：`pio test -e native` 通过 430 个 native 用例；`pio run -e esp32dev` 通过，Flash 约 96.9%，已接近当前 4MB 双 OTA 分区上限。
+- 当前代码侧基线：`pio test -e native` 和 `pio run -e esp32dev` 应保持通过；Flash 仍需控制在当前 4MB 双 OTA 分区预算内。
 
 ## 环境
 

@@ -68,5 +68,5 @@
 
 - 长期运行测试做 72 小时连续运行。
 - Native 测试使用 PlatformIO native 环境，业务核心保持纯 C++ 可测，硬件访问通过桩替代。
-- Web 写操作 busy 策略已有平台无关 native 行为测试，并已用 Esp32Base native Web handler harness 直接执行 `/api/faucet/filters/reset` 和 `/api/faucet/records` 关键 handler，覆盖认证、同源、异常参数、busy 重定向、状态码、headers 和无副作用边界；源码字符串检查只作为 handler 委托顺序、路由和页面结构的补充保护。
-- 后续新增高风险 Web 写 handler 时，优先补充 harness 行为测试，再保留必要静态检查作为结构性防线。
+- Web 写操作 busy 策略已有平台无关 native 行为测试，并已用 Esp32Base native Web handler harness 直接执行关键 handler，覆盖认证、同源、异常参数、busy 重定向、状态码、headers 和无副作用边界。
+- 后续新增高风险 Web 写 handler 时，优先补充行为测试；不使用读取生产源码字符串的测试来约束实现形状。

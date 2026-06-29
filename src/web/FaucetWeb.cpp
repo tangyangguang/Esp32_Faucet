@@ -74,6 +74,7 @@ void redirectCalibrationResult(bool ok, const char* success, const char* failure
 void redirectFlowCalibrationFailure(const char* error);
 void sendCalibrationPageScript();
 void redirectFlowCalibrationResult(bool ok, const char* success, const char* failure);
+void sendDetailErrorPage(const char* title, const char* message, const char* backHref, const char* backLabel);
 void formatWaterRecordTime(const WaterRecord& record, char* out, std::size_t len);
 void formatWaterRecordListTime(const WaterRecord& record, char* out, std::size_t len);
 void formatRecordTime(std::uint32_t seconds, char* out, std::size_t len);
@@ -561,12 +562,6 @@ void applyTargetDurationEstimate(AppSnapshot& snapshot, bool includeRecentFlow =
     }
 }
 
-bool sameWaterRecordIdentity(const WaterRecord& a, const WaterRecord& b) {
-    return a.startTime == b.startTime && a.volumeMl == b.volumeMl && a.targetValue == b.targetValue &&
-           a.pulseCount == b.pulseCount && a.durationSec == b.durationSec && a.selectedPreset == b.selectedPreset &&
-           a.result == b.result;
-}
-
 bool findRecordCalibration(const WaterRecord& record, WaterRecordCalibration& calibration) {
     return g_context.recordCalibrations && g_context.recordCalibrations->ready() &&
            g_context.recordCalibrations->find(record, calibration);
@@ -705,16 +700,6 @@ bool setAndApplyActiveMeteringSchemeForWeb(std::uint32_t schemeId) {
         g_context.app->applyActiveMeteringScheme(previous);
     }
     return false;
-}
-
-void sendPlainTextResponse(int status, const char* body) {
-    Esp32BaseWeb::sendResponseHeader("Cache-Control", "no-store");
-    Esp32BaseWeb::sendResponseHeader("X-Content-Type-Options", "nosniff");
-    if (!Esp32BaseWeb::beginResponse(status, "text/plain; charset=utf-8", nullptr)) {
-        return;
-    }
-    Esp32BaseWeb::sendChunk(body ? body : "");
-    Esp32BaseWeb::endResponse();
 }
 
 void sendDurationUs(std::uint32_t us) {
@@ -2172,17 +2157,6 @@ void formatPresetTarget(const PresetConfig& preset, char* out, std::size_t len) 
     formatLiters(preset.value, out, len);
 }
 
-void formatLitersFixed3Compact(std::uint32_t volumeMl, char* out, std::size_t len) {
-    if (!out || len == 0) {
-        return;
-    }
-    std::snprintf(out,
-                  len,
-                  "%lu.%03luL",
-                  static_cast<unsigned long>(volumeMl / 1000U),
-                  static_cast<unsigned long>(volumeMl % 1000U));
-}
-
 void formatFlowLitersPerMinCompact(std::uint32_t flowMlPerMin, char* out, std::size_t len) {
     if (!out || len == 0) {
         return;
@@ -2196,22 +2170,6 @@ void formatFlowLitersPerMinCompact(std::uint32_t flowMlPerMin, char* out, std::s
                   "%lu.%03luL/min",
                   static_cast<unsigned long>(flowMlPerMin / 1000U),
                   static_cast<unsigned long>(flowMlPerMin % 1000U));
-}
-
-void formatMillisecondsSecondsCompact(std::uint32_t durationMs, char* out, std::size_t len) {
-    if (!out || len == 0) {
-        return;
-    }
-    if (durationMs % 1000U == 0) {
-        std::snprintf(out, len, "%luS", static_cast<unsigned long>(durationMs / 1000U));
-        return;
-    }
-    const std::uint32_t centiSeconds = (durationMs + 5U) / 10U;
-    std::snprintf(out,
-                  len,
-                  "%lu.%02luS",
-                  static_cast<unsigned long>(centiSeconds / 100U),
-                  static_cast<unsigned long>(centiSeconds % 100U));
 }
 
 void formatPresetEstimate(const PresetConfig& preset,
@@ -2269,17 +2227,6 @@ std::uint32_t recordFlowMlPerMin(std::uint32_t volumeMl, std::uint32_t durationS
     }
     return static_cast<std::uint32_t>((static_cast<std::uint64_t>(volumeMl) * 60ULL + durationSec / 2ULL) /
                                       durationSec);
-}
-
-std::uint32_t bucketFlowMlPerMin(std::uint32_t pulseDelta,
-                                 std::uint32_t durationSec,
-                                 const MeteringParameters& params) {
-    if (pulseDelta == 0 || durationSec == 0 || params.stablePulsePerLiter == 0) {
-        return 0;
-    }
-    return static_cast<std::uint32_t>(
-        (static_cast<std::uint64_t>(pulseDelta) * 60000ULL + (durationSec * params.stablePulsePerLiter) / 2ULL) /
-        (static_cast<std::uint64_t>(durationSec) * params.stablePulsePerLiter));
 }
 
 std::uint32_t stableFlowMlPerMin(float stablePulsePerSec, const MeteringParameters& params) {
@@ -3342,10 +3289,6 @@ void handleCalibrationPage() {
     if (!requireContext()) {
         return;
     }
-    if (Esp32BaseWeb::isMethod(Esp32BaseWeb::METHOD_POST)) {
-        handleCalibrationPost();
-        return;
-    }
     char view[24]{};
     if (getParam("view", view, sizeof(view))) {
         if (std::strcmp(view, "temperature") == 0) {
@@ -3380,10 +3323,6 @@ void handleFlowCalibrationPage() {
         return;
     }
     if (!requireContext()) {
-        return;
-    }
-    if (Esp32BaseWeb::isMethod(Esp32BaseWeb::METHOD_POST)) {
-        handleFlowCalibrationPost();
         return;
     }
     char text[32]{};
@@ -3449,6 +3388,15 @@ void handleFlowCalibrationPage() {
     sendPageEnd();
 }
 
+void sendDetailErrorPage(const char* title, const char* message, const char* backHref, const char* backLabel) {
+    Esp32BaseWeb::sendHeader(title);
+    sendFmt("<h2>%s</h2><p class='err'>%s</p>", title ? title : "详情", message ? message : "请求无效。");
+    if (backHref && backLabel) {
+        sendFmt("<p><a class='btn-link' href='%s'>%s</a></p>", backHref, backLabel);
+    }
+    sendPageEnd();
+}
+
 void handleRecordDetailPage() {
     if (!Esp32BaseWeb::checkAuth()) {
         return;
@@ -3466,15 +3414,11 @@ void handleRecordDetailPage() {
     const char* contextParam = fromCalibration ? "from=calibration&" : "";
 
     if (!contextReady()) {
-        Esp32BaseWeb::sendHeader("脉冲明细");
-        Esp32BaseWeb::sendChunk("<h2>脉冲明细</h2><p class='err'>上下文未就绪。</p>");
-        sendPageEnd();
+        sendDetailErrorPage("脉冲明细", "上下文未就绪。", nullptr, nullptr);
         return;
     }
     if (!fromCalibration) {
-        Esp32BaseWeb::sendHeader("记录详情");
-        Esp32BaseWeb::sendChunk("<h2>记录详情</h2><p class='err'>普通出水记录不提供脉冲明细。</p><p><a class='btn-link' href='/faucet/records'>返回记录</a></p>");
-        sendPageEnd();
+        sendDetailErrorPage("记录详情", "普通出水记录不提供脉冲明细。", "/faucet/records", "返回记录");
         return;
     }
     if (waterTaskActive()) {
@@ -3489,11 +3433,7 @@ void handleRecordDetailPage() {
         useSessionTrace = parseU32(text, sessionTraceSlot) && sessionTraceSlot < kCalibrationSessionTraceSlots;
     }
     if (!useSessionTrace && (!getParam("trace", text, sizeof(text)) || !parseU32(text, traceId))) {
-        Esp32BaseWeb::sendHeader("脉冲明细");
-        sendFmt("<h2>脉冲明细</h2><p class='err'>明细编号无效。</p><p><a class='btn-link' href='%s'>%s</a></p>",
-                backHref,
-                backLabel);
-        sendPageEnd();
+        sendDetailErrorPage("脉冲明细", "明细编号无效。", backHref, backLabel);
         return;
     }
 
@@ -3514,20 +3454,12 @@ void handleRecordDetailPage() {
 
     if (useSessionTrace) {
         if (!g_context.calibrationSessionTraces || !g_context.calibrationSessionTraces->ready()) {
-            Esp32BaseWeb::sendHeader("脉冲明细");
-            sendFmt("<h2>脉冲明细</h2><p class='err'>校准会话脉冲数据不可用。</p><p><a class='btn-link' href='%s'>%s</a></p>",
-                    backHref,
-                    backLabel);
-            sendPageEnd();
+            sendDetailErrorPage("脉冲明细", "校准会话脉冲数据不可用。", backHref, backLabel);
             return;
         }
         CalibrationStoredTrace stored{};
         if (!g_context.calibrationSessionTraces->load(static_cast<std::uint8_t>(sessionTraceSlot), stored)) {
-            Esp32BaseWeb::sendHeader("脉冲明细");
-            sendFmt("<h2>脉冲明细</h2><p class='err'>该校准会话脉冲明细不存在。</p><p><a class='btn-link' href='%s'>%s</a></p>",
-                    backHref,
-                    backLabel);
-            sendPageEnd();
+            sendDetailErrorPage("脉冲明细", "该校准会话脉冲明细不存在。", backHref, backLabel);
             return;
         }
         sessionTrace = stored.trace;
@@ -3549,11 +3481,7 @@ void handleRecordDetailPage() {
         }
     } else {
         if (!g_context.pulseTraces) {
-            Esp32BaseWeb::sendHeader("脉冲明细");
-            sendFmt("<h2>脉冲明细</h2><p class='err'>脉冲明细缓存不可用。</p><p><a class='btn-link' href='%s'>%s</a></p>",
-                    backHref,
-                    backLabel);
-            sendPageEnd();
+            sendDetailErrorPage("脉冲明细", "脉冲明细缓存不可用。", backHref, backLabel);
             return;
         }
         trace = g_context.pulseTraces->findById(traceId);
@@ -3580,18 +3508,12 @@ void handleRecordDetailPage() {
     }
 
     if (!trace) {
-        Esp32BaseWeb::sendHeader("脉冲明细");
-        sendFmt("<h2>脉冲明细</h2><p class='err'>该脉冲明细不存在。</p><p><a class='btn-link' href='%s'>%s</a></p>",
-                backHref,
-                backLabel);
-        sendPageEnd();
+        sendDetailErrorPage("脉冲明细", "该脉冲明细不存在。", backHref, backLabel);
         return;
     }
     if ((trace->bucketCount > 0 && (!buckets || loadedBucketCount != trace->bucketCount)) ||
         (trace->startupEdgeCount > 0 && (!startupEdges || loadedStartupEdgeCount != trace->startupEdgeCount))) {
-        Esp32BaseWeb::sendHeader("脉冲明细");
-        Esp32BaseWeb::sendChunk("<h2>脉冲明细</h2><p class='err'>内存不足，无法读取脉冲明细。</p>");
-        sendPageEnd();
+        sendDetailErrorPage("脉冲明细", "内存不足，无法读取脉冲明细。", nullptr, nullptr);
         return;
     }
 
@@ -3813,13 +3735,6 @@ void handleFilterEditPage() {
     Esp32BaseWeb::sendChunk("</div><div class='form-actions'><input type='submit' value='保存'>"
                             "<a href='/faucet/filters'>取消</a></div></form></section>");
     sendPageEnd();
-}
-
-void handleApi() {
-    if (!Esp32BaseWeb::checkAuth()) {
-        return;
-    }
-    Esp32BaseWeb::sendJson(200, "{\"ok\":true,\"waterControl\":false}");
 }
 
 void handleAppCss() {
@@ -4861,7 +4776,7 @@ Esp32BaseWeb::Handler handlerFor(const FaucetWebRoute& route) {
         case FaucetWebHandler::FiltersResetApi:
             return handleFiltersResetApi;
     }
-    return handleApi;
+    return nullptr;
 }
 
 }  // namespace
@@ -4885,10 +4800,15 @@ bool registerFaucetWeb() {
             ok = false;
             continue;
         }
+        Esp32BaseWeb::Handler handler = handlerFor(routes[i]);
+        if (!handler) {
+            ok = false;
+            continue;
+        }
         if (routes[i].title && routes[i].method == FaucetWebMethod::Get) {
-            ok = Esp32BaseWeb::addPage(routes[i].path, routes[i].title, handlerFor(routes[i])) && ok;
+            ok = Esp32BaseWeb::addPage(routes[i].path, routes[i].title, handler) && ok;
         } else {
-            ok = Esp32BaseWeb::addRoute(routes[i].path, toBaseMethod(routes[i].method), handlerFor(routes[i])) && ok;
+            ok = Esp32BaseWeb::addRoute(routes[i].path, toBaseMethod(routes[i].method), handler) && ok;
         }
     }
     return ok;

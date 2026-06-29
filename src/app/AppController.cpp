@@ -688,40 +688,31 @@ bool AppController::removeCalibrationSessionSampleForWeb(std::uint8_t attemptInd
             break;
         }
     }
-    const CalibrationAttempt* selected =
-        selectedIndex < kCalibrationMaxAttempts ? &calibrationSession_.attempts[selectedIndex] : nullptr;
-    if (!selected || (selected->status != CalibrationAttemptStatus::Valid &&
-                      selected->status != CalibrationAttemptStatus::PendingActual)) {
+    if (selectedIndex >= kCalibrationMaxAttempts) {
         return false;
     }
-    std::unique_ptr<CalibrationSessionRecord> originalSession(new (std::nothrow) CalibrationSessionRecord(calibrationSession_));
-    std::unique_ptr<CalibrationSessionRecord> nextSession(new (std::nothrow) CalibrationSessionRecord(calibrationSession_));
-    if (!originalSession || !nextSession) {
+    CalibrationSessionRecord nextSession = calibrationSession_;
+    CalibrationAttempt& nextAttempt = nextSession.attempts[selectedIndex];
+    if (nextAttempt.status != CalibrationAttemptStatus::Valid &&
+        nextAttempt.status != CalibrationAttemptStatus::PendingActual) {
         return false;
     }
-    CalibrationAttempt& nextAttempt = nextSession->attempts[selectedIndex];
     nextAttempt.status = CalibrationAttemptStatus::Removed;
     nextAttempt.skipReason = CalibrationSkipReason::None;
     nextAttempt.invalidReason = CalibrationInvalidReason::None;
-    nextSession->validSampleCount = countValidCalibrationSamples(*nextSession);
-    nextSession->updatedAt = nowSeconds;
-    const bool canQuickGenerateAfterRemove = calibrationCanQuickGenerate(*nextSession);
-    nextSession->status = canQuickGenerateAfterRemove ? CalibrationSessionStatus::ReadyToGenerate
-                                                      : (calibrationCanStartAttempt(*nextSession)
-                                                             ? CalibrationSessionStatus::WaitingLocalRun
-                                                             : CalibrationSessionStatus::Failed);
+    nextSession.validSampleCount = countValidCalibrationSamples(nextSession);
+    nextSession.updatedAt = nowSeconds;
+    const bool canQuickGenerateAfterRemove = calibrationCanQuickGenerate(nextSession);
+    nextSession.status = canQuickGenerateAfterRemove ? CalibrationSessionStatus::ReadyToGenerate
+                                                     : (calibrationCanStartAttempt(nextSession)
+                                                            ? CalibrationSessionStatus::WaitingLocalRun
+                                                            : CalibrationSessionStatus::Failed);
 
-    if (!calibrationSessions_ || !calibrationSessions_->ready() || !calibrationSessions_->save(*nextSession)) {
+    if (!calibrationSessions_ || !calibrationSessions_->ready() || !calibrationSessions_->save(nextSession)) {
         return false;
     }
 
-    if (calibrationSessionTraces_ && selected->sessionTraceSlot < kCalibrationSessionTraceSlots &&
-        !calibrationSessionTraces_->invalidate(selected->sessionTraceSlot)) {
-        calibrationSessions_->save(*originalSession);
-        return false;
-    }
-
-    calibrationSession_ = *nextSession;
+    calibrationSession_ = nextSession;
     clearCalibrationCandidate();
     if (canQuickGenerateAfterRemove) {
         return refreshCalibrationCandidate(nowSeconds);

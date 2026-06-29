@@ -1518,7 +1518,7 @@ void test_app_controller_removed_valid_sample_clears_generated_candidate() {
     TEST_ASSERT_FALSE(fixture.app->applyGeneratedCalibrationForWeb(1714502600));
 }
 
-void test_app_controller_remove_sample_session_save_failure_keeps_original_trace() {
+void test_app_controller_remove_sample_session_save_failure_keeps_original_sample() {
     CalibrationAppFixture fixture;
     saveOneValidOnePendingSession(fixture, 1714502400);
     fixture.createApp();
@@ -2265,7 +2265,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_app_controller_generated_calibration_can_continue_collecting_samples);
     RUN_TEST(test_app_controller_submit_actual_succeeds_when_auto_refresh_cannot_generate);
     RUN_TEST(test_app_controller_removed_valid_sample_clears_generated_candidate);
-    RUN_TEST(test_app_controller_remove_sample_session_save_failure_keeps_original_trace);
+    RUN_TEST(test_app_controller_remove_sample_session_save_failure_keeps_original_sample);
     RUN_TEST(test_app_controller_pending_actual_sample_can_be_removed);
     RUN_TEST(test_app_controller_remove_one_of_three_valid_samples_regenerates_candidate);
     RUN_TEST(test_app_controller_applies_generated_session_scheme_and_keeps_old_scheme);

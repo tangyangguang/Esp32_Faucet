@@ -81,10 +81,4 @@ Native 测试必须覆盖：
 - 过滤脉冲不进入窗口。
 - `reset()` 清空所有流速状态。
 
-上板验证时优先使用：
-
-```bash
-pio run -e esp32dev -t webota
-```
-
-首次烧录、分区变化、网络不可达或 OTA 失败恢复时才使用串口上传。
+上板验证入口和上传方式以 `docs/07-board-bringup.md` 与 `AGENTS.md` 为准；本文不重复维护烧录流程。

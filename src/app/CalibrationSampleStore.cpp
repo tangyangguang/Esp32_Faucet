@@ -26,7 +26,7 @@ struct SampleHeader {
 
 struct SampleIndexEntry {
     std::uint8_t valid;
-    std::uint8_t pendingActual;
+    std::uint8_t reserved1;
     std::uint8_t attemptIndex;
     std::uint8_t reserved0;
     std::uint32_t sampleId;
@@ -99,7 +99,7 @@ std::uint32_t entryChecksum(SampleIndexEntry entry) {
 }
 
 bool entryUsable(const SampleIndexEntry& entry) {
-    return (entry.valid != 0 || entry.pendingActual != 0) && entry.bucketCount <= kMaxTraceBuckets &&
+    return entry.valid != 0 && entry.bucketCount <= kMaxTraceBuckets &&
            entry.startupEdgeCount <= kMaxTraceStartupEdges && entry.checksum == entryChecksum(entry);
 }
 
@@ -192,7 +192,6 @@ SampleIndexEntry makeEntry(const CalibrationStoredTrace& trace,
                            std::size_t startupEdgeCount) {
     SampleIndexEntry entry{};
     entry.valid = trace.valid ? 1 : 0;
-    entry.pendingActual = trace.pendingActual ? 1 : 0;
     entry.attemptIndex = trace.attemptIndex;
     entry.sampleId = trace.sampleId;
     entry.sessionId = trace.sessionId;
@@ -212,7 +211,6 @@ SampleIndexEntry makeEntry(const CalibrationStoredTrace& trace,
 CalibrationStoredTrace storedFromEntry(const SampleIndexEntry& entry) {
     CalibrationStoredTrace trace{};
     trace.valid = entry.valid != 0;
-    trace.pendingActual = entry.pendingActual != 0;
     trace.sampleId = entry.sampleId;
     trace.sessionId = entry.sessionId;
     trace.attemptIndex = entry.attemptIndex;
@@ -358,26 +356,6 @@ bool CalibrationSessionTraceStore::clearForNewSession(std::uint32_t sessionId) {
     return true;
 }
 
-bool CalibrationSessionTraceStore::savePending(std::uint8_t slot,
-                                               const CalibrationStoredTrace& trace,
-                                               const WaterPulseTraceBucketSample* buckets,
-                                               std::size_t bucketCount,
-                                               const WaterPulseTraceSample* startupEdges,
-                                               std::size_t startupEdgeCount) {
-    if (!ready() || slot >= kCalibrationSessionTraceSlots ||
-        !ensureFileForWrite(backend_, path_, kStoreKindSession, kCalibrationSessionTraceSlots) ||
-        !writeBuckets(backend_, path_, kCalibrationSessionTraceSlots, slot, buckets, bucketCount) ||
-        !writeStartupEdges(backend_, path_, kCalibrationSessionTraceSlots, slot, startupEdges, startupEdgeCount)) {
-        status_ = ready_ ? AppStorageStatus::BackendFailure : status_;
-        return false;
-    }
-    CalibrationStoredTrace pending = trace;
-    pending.valid = false;
-    pending.pendingActual = true;
-    const SampleIndexEntry entry = makeEntry(pending, bucketCount, startupEdgeCount);
-    return writeEntry(backend_, path_, slot, entry);
-}
-
 bool CalibrationSessionTraceStore::saveValid(std::uint8_t slot,
                                              const CalibrationStoredTrace& trace,
                                              const WaterPulseTraceBucketSample* buckets,
@@ -395,27 +373,10 @@ bool CalibrationSessionTraceStore::saveValid(std::uint8_t slot,
     }
     CalibrationStoredTrace valid = trace;
     valid.valid = true;
-    valid.pendingActual = false;
     valid.actualMl = actualMl;
     valid.savedAt = savedAt;
     valid.trace.actualMl = actualMl;
     const SampleIndexEntry entry = makeEntry(valid, bucketCount, startupEdgeCount);
-    return writeEntry(backend_, path_, slot, entry);
-}
-
-bool CalibrationSessionTraceStore::commitValid(std::uint8_t slot, std::uint32_t actualMl, std::uint32_t savedAt) {
-    if (!ready() || slot >= kCalibrationSessionTraceSlots || !backend_.exists(path_)) {
-        return false;
-    }
-    SampleIndexEntry entry{};
-    if (!readEntry(backend_, path_, slot, entry) || !entryUsable(entry) || entry.pendingActual == 0) {
-        return false;
-    }
-    entry.valid = 1;
-    entry.pendingActual = 0;
-    entry.actualMl = actualMl;
-    entry.savedAt = savedAt;
-    entry.trace.actualMl = actualMl;
     return writeEntry(backend_, path_, slot, entry);
 }
 

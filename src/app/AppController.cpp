@@ -634,7 +634,6 @@ bool AppController::submitCalibrationActualForWeb(std::uint32_t actualMl, std::u
                                actualMl,
                                segmentedCalibrationOptionsFromConfig(config_));
     CalibrationStoredTrace stored{};
-    stored.pendingActual = true;
     stored.sessionId = calibrationSession_.sessionId;
     stored.attemptIndex = attempt.attemptIndex;
     stored.trace = *trace;

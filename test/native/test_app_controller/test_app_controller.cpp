@@ -360,7 +360,6 @@ void saveCalibrationSessionSample(CalibrationSessionTraceStore& traceStore,
     record.durationSec = 5 + stableSeconds;
 
     CalibrationStoredTrace stored{};
-    stored.pendingActual = true;
     stored.sessionId = session.sessionId;
     stored.attemptIndex = slot;
     stored.trace.traceId = slot + 1;
@@ -373,8 +372,8 @@ void saveCalibrationSessionSample(CalibrationSessionTraceStore& traceStore,
     stored.trace.pulseMinIntervalUs = kDefaultPulseMinIntervalUs;
     stored.trace.finalState = WaterPulseTraceState::Completed;
     stored.trace.finished = true;
-    TEST_ASSERT_TRUE(traceStore.savePending(slot, stored, buckets, bucketCount, samples, startupEdgeCount));
-    TEST_ASSERT_TRUE(traceStore.commitValid(slot, actualMl, startTime + 10));
+    TEST_ASSERT_TRUE(
+        traceStore.saveValid(slot, stored, buckets, bucketCount, samples, startupEdgeCount, actualMl, startTime + 10));
 
     CalibrationAttempt attempt{};
     attempt.attemptIndex = slot;
@@ -1271,7 +1270,6 @@ void test_app_controller_local_ok_starts_calibration_run_and_completion_awaits_a
     CalibrationStoredTrace valid{};
     TEST_ASSERT_TRUE(traceStore.load(0, valid));
     TEST_ASSERT_TRUE(valid.valid);
-    TEST_ASSERT_FALSE(valid.pendingActual);
     TEST_ASSERT_EQUAL_UINT32(520, valid.actualMl);
     WaterPulseTraceBucketSample copied[64]{};
     TEST_ASSERT_EQUAL_size_t(valid.trace.bucketCount, traceStore.readBuckets(0, copied, 64));
@@ -1485,7 +1483,6 @@ void test_app_controller_submit_actual_succeeds_when_auto_refresh_cannot_generat
     CalibrationStoredTrace valid{};
     TEST_ASSERT_TRUE(fixture.traceStore.load(1, valid));
     TEST_ASSERT_TRUE(valid.valid);
-    TEST_ASSERT_FALSE(valid.pendingActual);
     TEST_ASSERT_EQUAL_UINT32(7500, valid.actualMl);
 
     CalibrationSessionRecord persisted{};
@@ -1524,7 +1521,6 @@ void test_app_controller_remove_sample_session_save_failure_keeps_original_sampl
     CalibrationStoredTrace before{};
     TEST_ASSERT_TRUE(fixture.traceStore.load(0, before));
     TEST_ASSERT_TRUE(before.valid);
-    TEST_ASSERT_FALSE(before.pendingActual);
 
     fixture.backend.failWriteAtPath = "/cal-session.bin";
     fixture.backend.failWriteAtPathCount = 1;
@@ -1534,7 +1530,6 @@ void test_app_controller_remove_sample_session_save_failure_keeps_original_sampl
     CalibrationStoredTrace after{};
     TEST_ASSERT_TRUE(fixture.traceStore.load(0, after));
     TEST_ASSERT_TRUE(after.valid);
-    TEST_ASSERT_FALSE(after.pendingActual);
     TEST_ASSERT_EQUAL_UINT32(before.actualMl, after.actualMl);
     TEST_ASSERT_EQUAL_UINT32(before.trace.totalPulses, after.trace.totalPulses);
 

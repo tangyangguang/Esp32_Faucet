@@ -358,7 +358,7 @@ void saveWebSessionAttempt(CalibrationSessionTraceStore& traceStore,
         attempt.summary.usableForGeneration = stablePulses > 0 && actualMl >= kCalibrationMinActualMl;
     }
 
-    if (status == CalibrationAttemptStatus::Valid || status == CalibrationAttemptStatus::PendingActual) {
+    if (status == CalibrationAttemptStatus::Valid) {
         WaterPulseTraceSample samples[2048]{};
         WaterPulseTraceBucketSample buckets[kPulseTraceMaxBucketsPerTrace]{};
         const std::size_t sampleCount =
@@ -377,7 +377,6 @@ void saveWebSessionAttempt(CalibrationSessionTraceStore& traceStore,
         }
 
         CalibrationStoredTrace stored{};
-        stored.pendingActual = true;
         stored.sessionId = session.sessionId;
         stored.attemptIndex = slot;
         stored.trace.traceId = slot + 1;
@@ -390,10 +389,8 @@ void saveWebSessionAttempt(CalibrationSessionTraceStore& traceStore,
         stored.trace.pulseMinIntervalUs = kDefaultPulseMinIntervalUs;
         stored.trace.finalState = WaterPulseTraceState::Completed;
         stored.trace.finished = true;
-        TEST_ASSERT_TRUE(traceStore.savePending(slot, stored, buckets, bucketCount, samples, startupEdgeCount));
-        if (status == CalibrationAttemptStatus::Valid) {
-            TEST_ASSERT_TRUE(traceStore.commitValid(slot, actualMl, attempt.record.startTime + 10));
-        }
+        TEST_ASSERT_TRUE(traceStore.saveValid(
+            slot, stored, buckets, bucketCount, samples, startupEdgeCount, actualMl, attempt.record.startTime + 10));
         attempt.sessionTraceSlot = slot;
     } else {
         attempt.sessionTraceSlot = kCalibrationSessionTraceSlots;
@@ -419,7 +416,6 @@ void saveWebCompactSessionAttempt(CalibrationSessionTraceStore& traceStore,
     WaterPulseTraceBucketSample buckets[4]{{2}, {3}, {3}, {2}};
     WaterPulseTraceSample startup[3]{{0}, {120000}, {260000}};
     CalibrationStoredTrace stored{};
-    stored.pendingActual = true;
     stored.sessionId = session.sessionId;
     stored.attemptIndex = slot;
     stored.trace.traceId = slot + 100;
@@ -432,8 +428,7 @@ void saveWebCompactSessionAttempt(CalibrationSessionTraceStore& traceStore,
     stored.trace.pulseMinIntervalUs = kDefaultPulseMinIntervalUs;
     stored.trace.finalState = WaterPulseTraceState::Completed;
     stored.trace.finished = true;
-    TEST_ASSERT_TRUE(traceStore.savePending(slot, stored, buckets, 4, startup, 3));
-    TEST_ASSERT_TRUE(traceStore.commitValid(slot, actualMl, attempt.record.startTime + 10));
+    TEST_ASSERT_TRUE(traceStore.saveValid(slot, stored, buckets, 4, startup, 3, actualMl, attempt.record.startTime + 10));
     attempt.sessionTraceSlot = slot;
 
     TEST_ASSERT_TRUE(appendCalibrationAttempt(session, attempt));

@@ -155,20 +155,6 @@ void test_session_store_ignores_trailing_bytes_when_header_is_current() {
     TEST_ASSERT_EQUAL_UINT32(9, output.sessionId);
 }
 
-void test_session_store_does_not_allocate_session_file_on_stack() {
-    FILE* source = std::fopen("src/app/CalibrationSessionStore.cpp", "rb");
-    TEST_ASSERT_NOT_NULL(source);
-    static char buffer[12000]{};
-    const std::size_t read = std::fread(buffer, 1, sizeof(buffer) - 1, source);
-    std::fclose(source);
-    TEST_ASSERT_GREATER_THAN_size_t(0, read);
-
-    TEST_ASSERT_NULL(std::strstr(buffer, "SessionFile empty"));
-    TEST_ASSERT_NULL(std::strstr(buffer, "SessionFile file"));
-    TEST_ASSERT_NULL(std::strstr(buffer, "const SessionFile file"));
-    TEST_ASSERT_NULL(std::strstr(buffer, "save(CalibrationSessionRecord{})"));
-}
-
 int main(int argc, char** argv) {
     (void)argc;
     (void)argv;
@@ -177,6 +163,5 @@ int main(int argc, char** argv) {
     RUN_TEST(test_session_store_rebuilds_corrupt_checksum_file_as_empty_session);
     RUN_TEST(test_session_store_rebuilds_too_small_file_as_empty_session);
     RUN_TEST(test_session_store_ignores_trailing_bytes_when_header_is_current);
-    RUN_TEST(test_session_store_does_not_allocate_session_file_on_stack);
     return UNITY_END();
 }

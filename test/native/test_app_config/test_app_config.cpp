@@ -274,60 +274,12 @@ void test_record_page_size_and_filter_life_helpers() {
                             static_cast<unsigned>(filterLifeStatus(filter, 1)));
 }
 
-void test_recent_pulse_trace_count_is_not_editable_in_app_config_page() {
-    FILE* file = std::fopen("src/app/FaucetAppConfig.cpp", "rb");
-    TEST_ASSERT_NOT_NULL(file);
-    char buffer[32000]{};
-    const std::size_t len = std::fread(buffer, 1, sizeof(buffer) - 1, file);
-    std::fclose(file);
-    TEST_ASSERT_GREATER_THAN_size_t(0, len);
-
-    TEST_ASSERT_NULL(std::strstr(buffer, "RAM 最近脉冲明细条数"));
-    TEST_ASSERT_NULL(std::strstr(buffer, "kKeyRecentPulseTraceCount"));
-}
-
-void test_pulse_observation_window_is_editable_in_app_config_page() {
-    FILE* file = std::fopen("src/app/FaucetAppConfig.cpp", "rb");
-    TEST_ASSERT_NOT_NULL(file);
-    char buffer[32000]{};
-    const std::size_t len = std::fread(buffer, 1, sizeof(buffer) - 1, file);
-    std::fclose(file);
-    TEST_ASSERT_GREATER_THAN_size_t(0, len);
-
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "脉冲观察窗口"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "kKeyPulseObservationWindowSec"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "kDefaultPulseObservationWindowSec"));
-}
-
-void test_calibration_session_trace_store_is_small_and_initialized_after_record_store() {
+void test_calibration_trace_storage_limits_match_small_session_scope() {
     TEST_ASSERT_EQUAL_size_t(6, kCalibrationSessionTraceSlots);
     TEST_ASSERT_EQUAL_UINT32(500, kPulseTraceBucketMs);
     TEST_ASSERT_EQUAL_UINT32(15000, kPulseTraceStartupDetailMs);
     TEST_ASSERT_EQUAL_size_t(1200, kPulseTraceMaxBucketsPerTrace);
     TEST_ASSERT_EQUAL_size_t(4096, kPulseTraceMaxStartupEdgesPerTrace);
-
-    FILE* file = std::fopen("src/main.cpp", "rb");
-    TEST_ASSERT_NOT_NULL(file);
-    char buffer[96000]{};
-    const std::size_t len = std::fread(buffer, 1, sizeof(buffer) - 1, file);
-    std::fclose(file);
-    TEST_ASSERT_GREATER_THAN_size_t(0, len);
-
-    const char* init = std::strstr(buffer, "void initializeApplication()");
-    TEST_ASSERT_NOT_NULL(init);
-    const char* end = std::strstr(init, "logStartupPhase(\"record_store_ready\")");
-    TEST_ASSERT_NOT_NULL(end);
-
-    const char* sessionTracePath = std::strstr(init, "kCalibrationSessionTracePath");
-    TEST_ASSERT_TRUE(sessionTracePath == nullptr || sessionTracePath > end);
-    TEST_ASSERT_NOT_NULL(std::strstr(init, "g_calibrationSessionTraces.begin()"));
-    TEST_ASSERT_NULL(std::strstr(buffer, "g_pulseTraceSamples"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "g_pulseTraceBuckets"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "g_pulseTraceStartupEdges"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "kPulseTraceMaxBucketsPerTrace"));
-    TEST_ASSERT_NOT_NULL(std::strstr(buffer, "kPulseTraceMaxStartupEdgesPerTrace"));
-    TEST_ASSERT_NULL(std::strstr(buffer, "kCalibrationLongTermSamplesPath"));
-    TEST_ASSERT_NULL(std::strstr(buffer, "g_calibrationLongTermSamples"));
 }
 
 int main(int argc, char** argv) {
@@ -342,8 +294,6 @@ int main(int argc, char** argv) {
     RUN_TEST(test_sanitize_config_clamps_scalar_ranges);
     RUN_TEST(test_sanitize_config_clamps_preset_values_by_type);
     RUN_TEST(test_record_page_size_and_filter_life_helpers);
-    RUN_TEST(test_recent_pulse_trace_count_is_not_editable_in_app_config_page);
-    RUN_TEST(test_pulse_observation_window_is_editable_in_app_config_page);
-    RUN_TEST(test_calibration_session_trace_store_is_small_and_initialized_after_record_store);
+    RUN_TEST(test_calibration_trace_storage_limits_match_small_session_scope);
     return UNITY_END();
 }

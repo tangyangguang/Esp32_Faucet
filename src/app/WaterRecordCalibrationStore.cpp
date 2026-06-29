@@ -1,7 +1,6 @@
 #include "app/WaterRecordCalibrationStore.h"
 
 #include <algorithm>
-#include <cstring>
 #include <new>
 
 namespace faucet {

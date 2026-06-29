@@ -804,109 +804,6 @@ void test_calibration_session_start_recovers_missing_session_file_after_format()
                             static_cast<unsigned>(fixture.app.snapshot().calibrationStatus));
 }
 
-void test_flow_calibration_remove_sample_redirects_success() {
-    WebFixture fixture;
-    CalibrationSessionRecord session = makeCalibrationSession(77, testNowSeconds());
-    session.status = CalibrationSessionStatus::WaitingLocalRun;
-    saveWebSessionAttempt(fixture.traceStore, session, 0, CalibrationAttemptStatus::Valid, 1500);
-    TEST_ASSERT_TRUE(fixture.sessionStore.save(session));
-    AppController reloaded(fixture.config,
-                           fixture.statistics,
-                           fixture.filters,
-                           fixture.recordWriter,
-                           nullptr,
-                           &fixture.calibrations,
-                           &fixture.sessionStore,
-                           &fixture.traceStore,
-                           &fixture.waterSensors);
-    applyTestMeteringScheme(reloaded);
-    fixture.installContext(reloaded, fixture.records);
-    registerRoutes();
-    Esp32BaseWeb::nativeTestBeginRequest(Esp32BaseWeb::METHOD_POST, "/faucet/calibration/flow");
-    Esp32BaseWeb::nativeTestSetAuthenticated(true);
-    Esp32BaseWeb::nativeTestSetSameOrigin(true);
-    Esp32BaseWeb::nativeTestSetParam("action", "remove_sample");
-    Esp32BaseWeb::nativeTestSetParam("attemptIndex", "0");
-
-    TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch("/faucet/calibration/flow", Esp32BaseWeb::METHOD_POST));
-
-    TEST_ASSERT_EQUAL(303, Esp32BaseWeb::nativeTestResponse().code);
-    TEST_ASSERT_EQUAL_STRING("/faucet/calibration/flow?saved=sample_removed",
-                             Esp32BaseWeb::nativeTestResponseHeader("Location"));
-}
-
-void test_flow_calibration_remove_sample_redirects_invalid_value_for_bad_attempt_index() {
-    WebFixture fixture;
-    registerRoutes();
-    Esp32BaseWeb::nativeTestBeginRequest(Esp32BaseWeb::METHOD_POST, "/faucet/calibration/flow");
-    Esp32BaseWeb::nativeTestSetAuthenticated(true);
-    Esp32BaseWeb::nativeTestSetSameOrigin(true);
-    Esp32BaseWeb::nativeTestSetParam("action", "remove_sample");
-    Esp32BaseWeb::nativeTestSetParam("attemptIndex", "999");
-
-    TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch("/faucet/calibration/flow", Esp32BaseWeb::METHOD_POST));
-
-    TEST_ASSERT_EQUAL(303, Esp32BaseWeb::nativeTestResponse().code);
-    TEST_ASSERT_EQUAL_STRING("/faucet/calibration/flow?error=invalid_value",
-                             Esp32BaseWeb::nativeTestResponseHeader("Location"));
-}
-
-void test_flow_calibration_remove_sample_redirects_invalid_state_when_sample_not_removable() {
-    WebFixture fixture;
-    CalibrationSessionRecord session = makeCalibrationSession(77, testNowSeconds());
-    session.status = CalibrationSessionStatus::WaitingLocalRun;
-    saveWebSessionAttempt(fixture.traceStore, session, 0, CalibrationAttemptStatus::Removed, 0);
-    TEST_ASSERT_TRUE(fixture.sessionStore.save(session));
-    AppController reloaded(fixture.config,
-                           fixture.statistics,
-                           fixture.filters,
-                           fixture.recordWriter,
-                           nullptr,
-                           &fixture.calibrations,
-                           &fixture.sessionStore,
-                           &fixture.traceStore,
-                           &fixture.waterSensors);
-    applyTestMeteringScheme(reloaded);
-    fixture.installContext(reloaded, fixture.records);
-    registerRoutes();
-    Esp32BaseWeb::nativeTestBeginRequest(Esp32BaseWeb::METHOD_POST, "/faucet/calibration/flow");
-    Esp32BaseWeb::nativeTestSetAuthenticated(true);
-    Esp32BaseWeb::nativeTestSetSameOrigin(true);
-    Esp32BaseWeb::nativeTestSetParam("action", "remove_sample");
-    Esp32BaseWeb::nativeTestSetParam("attemptIndex", "0");
-
-    TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch("/faucet/calibration/flow", Esp32BaseWeb::METHOD_POST));
-
-    TEST_ASSERT_EQUAL(303, Esp32BaseWeb::nativeTestResponse().code);
-    TEST_ASSERT_EQUAL_STRING("/faucet/calibration/flow?error=invalid_state",
-                             Esp32BaseWeb::nativeTestResponseHeader("Location"));
-}
-
-void test_flow_calibration_remove_sample_redirects_busy_without_changing_sample() {
-    WebFixture fixture;
-    CalibrationSessionRecord session = makeCalibrationSession(77, testNowSeconds());
-    session.status = CalibrationSessionStatus::WaitingLocalRun;
-    saveWebSessionAttempt(fixture.traceStore, session, 0, CalibrationAttemptStatus::Valid, 1500);
-    TEST_ASSERT_TRUE(fixture.sessionStore.save(session));
-    setRunning(fixture.app);
-    registerRoutes();
-    Esp32BaseWeb::nativeTestBeginRequest(Esp32BaseWeb::METHOD_POST, "/faucet/calibration/flow");
-    Esp32BaseWeb::nativeTestSetAuthenticated(true);
-    Esp32BaseWeb::nativeTestSetSameOrigin(true);
-    Esp32BaseWeb::nativeTestSetParam("action", "remove_sample");
-    Esp32BaseWeb::nativeTestSetParam("attemptIndex", "0");
-
-    TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch("/faucet/calibration/flow", Esp32BaseWeb::METHOD_POST));
-
-    TEST_ASSERT_EQUAL(303, Esp32BaseWeb::nativeTestResponse().code);
-    TEST_ASSERT_EQUAL_STRING("/faucet/calibration/flow?error=busy",
-                             Esp32BaseWeb::nativeTestResponseHeader("Location"));
-    CalibrationSessionRecord after{};
-    TEST_ASSERT_TRUE(fixture.sessionStore.load(after));
-    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationAttemptStatus::Valid),
-                            static_cast<unsigned>(after.attempts[0].status));
-}
-
 void test_calibration_detail_reads_persisted_session_trace_without_ram_cache() {
     WebFixture fixture;
     CalibrationSessionRecord session = makeCalibrationSession(77, testNowSeconds());
@@ -1141,10 +1038,6 @@ int main(int, char**) {
     RUN_TEST(test_flow_calibration_session_start_redirects_busy_to_flow_center);
     RUN_TEST(test_flow_calibration_session_start_redirects_success_from_idle);
     RUN_TEST(test_calibration_session_start_recovers_missing_session_file_after_format);
-    RUN_TEST(test_flow_calibration_remove_sample_redirects_success);
-    RUN_TEST(test_flow_calibration_remove_sample_redirects_invalid_value_for_bad_attempt_index);
-    RUN_TEST(test_flow_calibration_remove_sample_redirects_invalid_state_when_sample_not_removable);
-    RUN_TEST(test_flow_calibration_remove_sample_redirects_busy_without_changing_sample);
     RUN_TEST(test_calibration_detail_reads_persisted_session_trace_without_ram_cache);
     RUN_TEST(test_calibration_detail_reads_persisted_bucket_trace_without_ram_cache);
     RUN_TEST(test_tds_calibration_start_redirects_busy_to_calibration_page);

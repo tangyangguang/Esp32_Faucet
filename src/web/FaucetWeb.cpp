@@ -70,7 +70,6 @@ const char* calibrationSessionStatusText(CalibrationSessionStatus status);
 bool calibrationSessionInactive(CalibrationSessionStatus status);
 bool calibrationSessionStorageReady();
 void redirectCalibrationFailure(const char* error);
-void redirectCalibrationResult(bool ok, const char* success, const char* failure);
 void redirectFlowCalibrationFailure(const char* error);
 void sendCalibrationPageScript();
 void redirectFlowCalibrationResult(bool ok, const char* success, const char* failure);
@@ -4301,16 +4300,6 @@ void redirectCalibrationFailure(const char* error) {
     char url[96]{};
     std::snprintf(url, sizeof(url), "/faucet/calibration?error=%s", error ? error : "save_failed");
     Esp32BaseWeb::redirectSeeOther(url);
-}
-
-void redirectCalibrationResult(bool ok, const char* success, const char* failure) {
-    if (ok) {
-        char url[96]{};
-        std::snprintf(url, sizeof(url), "/faucet/calibration?saved=%s", success ? success : "1");
-        Esp32BaseWeb::redirectSeeOther(url);
-    } else {
-        redirectCalibrationFailure(failure);
-    }
 }
 
 void redirectFlowCalibrationFailure(const char* error) {

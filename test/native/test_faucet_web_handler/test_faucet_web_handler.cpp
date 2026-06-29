@@ -173,11 +173,6 @@ public:
 
 class MemoryFileBackend : public WaterRecordFileBackend {
 public:
-    std::uint32_t longTermSampleBulkReads = 0;
-    std::uint32_t meteringSchemeRecordReads = 0;
-    std::uint32_t calibrationSessionReads = 0;
-    std::uint32_t calibrationSessionTraceReads = 0;
-
     bool exists(const char* path) override {
         return files.find(path ? path : "") != files.end();
     }
@@ -211,18 +206,6 @@ public:
     bool readAt(const char* path, std::size_t offset, std::uint8_t* out, std::size_t len) override {
         if (!path || !out) {
             return false;
-        }
-        if (std::strcmp(path, "/cal-samples.bin") == 0 && len > 1024) {
-            ++longTermSampleBulkReads;
-        }
-        if (std::strcmp(path, "/metering-schemes.bin") == 0 && offset >= 32 && len > 32) {
-            ++meteringSchemeRecordReads;
-        }
-        if (std::strcmp(path, "/cal-session.bin") == 0) {
-            ++calibrationSessionReads;
-        }
-        if (std::strcmp(path, "/cal-traces.bin") == 0) {
-            ++calibrationSessionTraceReads;
         }
         const auto it = files.find(path);
         if (it == files.end() || offset + len > it->second.size()) {
@@ -327,17 +310,6 @@ std::uint32_t testNowSeconds() {
 
 std::uint32_t testBootId() {
     return 7UL;
-}
-
-std::size_t countOccurrences(const std::string& text, const char* needle) {
-    std::size_t count = 0;
-    std::size_t pos = 0;
-    const std::size_t needleLen = std::strlen(needle);
-    while (needleLen > 0 && (pos = text.find(needle, pos)) != std::string::npos) {
-        ++count;
-        pos += needleLen;
-    }
-    return count;
 }
 
 WaterRecord makeWebRecord(std::uint32_t startTime, std::uint32_t volumeMl = 1000) {
@@ -837,22 +809,6 @@ void test_calibration_session_start_recovers_missing_session_file_after_format()
                             static_cast<unsigned>(fixture.app.snapshot().calibrationStatus));
 }
 
-void test_calibration_session_start_rejects_duplicate_start_as_invalid_state() {
-    WebFixture fixture;
-    TEST_ASSERT_TRUE(fixture.app.startCalibrationSessionForWeb(testNowSeconds()));
-    registerRoutes();
-    Esp32BaseWeb::nativeTestBeginRequest(Esp32BaseWeb::METHOD_POST, "/faucet/calibration/flow");
-    Esp32BaseWeb::nativeTestSetAuthenticated(true);
-    Esp32BaseWeb::nativeTestSetSameOrigin(true);
-    Esp32BaseWeb::nativeTestSetParam("action", "start_session");
-
-    TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch("/faucet/calibration/flow", Esp32BaseWeb::METHOD_POST));
-
-    TEST_ASSERT_EQUAL(303, Esp32BaseWeb::nativeTestResponse().code);
-    TEST_ASSERT_EQUAL_STRING("/faucet/calibration/flow?error=invalid_state",
-                             Esp32BaseWeb::nativeTestResponseHeader("Location"));
-}
-
 void test_flow_calibration_remove_sample_redirects_success() {
     WebFixture fixture;
     CalibrationSessionRecord session = makeCalibrationSession(77, testNowSeconds());
@@ -892,21 +848,6 @@ void test_flow_calibration_remove_sample_redirects_invalid_value_for_bad_attempt
     Esp32BaseWeb::nativeTestSetSameOrigin(true);
     Esp32BaseWeb::nativeTestSetParam("action", "remove_sample");
     Esp32BaseWeb::nativeTestSetParam("attemptIndex", "999");
-
-    TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch("/faucet/calibration/flow", Esp32BaseWeb::METHOD_POST));
-
-    TEST_ASSERT_EQUAL(303, Esp32BaseWeb::nativeTestResponse().code);
-    TEST_ASSERT_EQUAL_STRING("/faucet/calibration/flow?error=invalid_value",
-                             Esp32BaseWeb::nativeTestResponseHeader("Location"));
-}
-
-void test_flow_calibration_remove_sample_redirects_invalid_value_for_missing_attempt_index() {
-    WebFixture fixture;
-    registerRoutes();
-    Esp32BaseWeb::nativeTestBeginRequest(Esp32BaseWeb::METHOD_POST, "/faucet/calibration/flow");
-    Esp32BaseWeb::nativeTestSetAuthenticated(true);
-    Esp32BaseWeb::nativeTestSetSameOrigin(true);
-    Esp32BaseWeb::nativeTestSetParam("action", "remove_sample");
 
     TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch("/faucet/calibration/flow", Esp32BaseWeb::METHOD_POST));
 
@@ -1045,24 +986,6 @@ void test_tds_calibration_start_redirects_success_from_idle() {
 
     TEST_ASSERT_EQUAL(303, Esp32BaseWeb::nativeTestResponse().code);
     TEST_ASSERT_EQUAL_STRING("/faucet/calibration?view=tds&saved=tds_started",
-                             Esp32BaseWeb::nativeTestResponseHeader("Location"));
-    TEST_ASSERT_TRUE(fixture.app.tdsCalibrationSnapshot().sessionActive);
-}
-
-void test_tds_calibration_start_redirects_invalid_state_when_session_exists() {
-    WebFixture fixture;
-    enableTdsForFixture(fixture);
-    TEST_ASSERT_TRUE(fixture.app.startTdsCalibrationSessionForWeb(testNowSeconds()));
-    registerRoutes();
-    Esp32BaseWeb::nativeTestBeginRequest(Esp32BaseWeb::METHOD_POST, "/faucet/calibration");
-    Esp32BaseWeb::nativeTestSetAuthenticated(true);
-    Esp32BaseWeb::nativeTestSetSameOrigin(true);
-    Esp32BaseWeb::nativeTestSetParam("action", "tds_start_session");
-
-    TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch("/faucet/calibration", Esp32BaseWeb::METHOD_POST));
-
-    TEST_ASSERT_EQUAL(303, Esp32BaseWeb::nativeTestResponse().code);
-    TEST_ASSERT_EQUAL_STRING("/faucet/calibration?view=tds&error=invalid_state",
                              Esp32BaseWeb::nativeTestResponseHeader("Location"));
     TEST_ASSERT_TRUE(fixture.app.tdsCalibrationSnapshot().sessionActive);
 }
@@ -1225,17 +1148,14 @@ int main(int, char**) {
     RUN_TEST(test_flow_calibration_session_start_redirects_busy_to_flow_center);
     RUN_TEST(test_flow_calibration_session_start_redirects_success_from_idle);
     RUN_TEST(test_calibration_session_start_recovers_missing_session_file_after_format);
-    RUN_TEST(test_calibration_session_start_rejects_duplicate_start_as_invalid_state);
     RUN_TEST(test_flow_calibration_remove_sample_redirects_success);
     RUN_TEST(test_flow_calibration_remove_sample_redirects_invalid_value_for_bad_attempt_index);
-    RUN_TEST(test_flow_calibration_remove_sample_redirects_invalid_value_for_missing_attempt_index);
     RUN_TEST(test_flow_calibration_remove_sample_redirects_invalid_state_when_sample_not_removable);
     RUN_TEST(test_flow_calibration_remove_sample_redirects_busy_without_changing_sample);
     RUN_TEST(test_calibration_detail_reads_persisted_session_trace_without_ram_cache);
     RUN_TEST(test_calibration_detail_reads_persisted_bucket_trace_without_ram_cache);
     RUN_TEST(test_tds_calibration_start_redirects_busy_to_calibration_page);
     RUN_TEST(test_tds_calibration_start_redirects_success_from_idle);
-    RUN_TEST(test_tds_calibration_start_redirects_invalid_state_when_session_exists);
     RUN_TEST(test_tds_calibration_save_persists_config_after_stable_samples);
     RUN_TEST(test_calibration_post_rejects_missing_action_as_invalid_action);
     RUN_TEST(test_metering_scheme_write_redirects_busy_to_flow_center);

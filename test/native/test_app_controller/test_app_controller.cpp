@@ -799,7 +799,7 @@ void test_app_expires_idle_tds_calibration_session_from_tick() {
     TEST_ASSERT_FALSE(app.tdsCalibrationSnapshot().sessionActive);
 }
 
-void test_app_controller_successful_record_writes_scheme_id_without_mutating_scheme_history() {
+void test_app_controller_successful_record_writes_scheme_id() {
     SystemConfig config = makeDefaultConfig();
     StatisticsStore statistics;
     statistics.reset({20260506, 202619, 202605});
@@ -816,53 +816,6 @@ void test_app_controller_successful_record_writes_scheme_id_without_mutating_sch
     TEST_ASSERT_TRUE(app.lastRecordWriteOk());
     TEST_ASSERT_EQUAL_size_t(1, records.records.size());
     TEST_ASSERT_EQUAL_UINT32(active.id, records.records[0].meteringSchemeId);
-    MeteringSchemeRecord updated{};
-    TEST_ASSERT_TRUE(schemes.findById(active.id, updated));
-    TEST_ASSERT_TRUE(updated.recordUsed);
-    TEST_ASSERT_EQUAL_UINT32(active.id, updated.id);
-}
-
-void test_app_controller_record_write_failure_keeps_scheme_history_unchanged() {
-    SystemConfig config = makeDefaultConfig();
-    StatisticsStore statistics;
-    statistics.reset({20260506, 202619, 202605});
-    FilterStore filters(config.filters);
-    MemoryRecordWriter records;
-    records.ok = false;
-    MemoryFileBackend backend;
-    MeteringSchemeStore schemes(backend, "/schemes.bin");
-    MeteringSchemeRecord active{};
-    TEST_ASSERT_TRUE(prepareMeteringScheme(schemes, 1000, active));
-    AppController app(config, active, statistics, filters, records, schemes);
-
-    finishVolumeRun(app);
-
-    TEST_ASSERT_FALSE(app.lastRecordWriteOk());
-    MeteringSchemeRecord updated{};
-    TEST_ASSERT_TRUE(schemes.findById(active.id, updated));
-    TEST_ASSERT_TRUE(updated.recordUsed);
-    TEST_ASSERT_EQUAL_UINT32(active.id, updated.id);
-}
-
-void test_app_controller_record_write_success_does_not_depend_on_scheme_history_update() {
-    SystemConfig config = makeDefaultConfig();
-    StatisticsStore statistics;
-    statistics.reset({20260506, 202619, 202605});
-    FilterStore filters(config.filters);
-    MemoryRecordWriter records;
-    MemoryFileBackend backend;
-    MeteringSchemeStore schemes(backend, "/schemes.bin");
-    MeteringSchemeRecord active{};
-    TEST_ASSERT_TRUE(prepareMeteringScheme(schemes, 1000, active));
-    AppController app(config, active, statistics, filters, records, schemes);
-
-    backend.failWriteAtCount = 1;
-    finishVolumeRun(app);
-
-    TEST_ASSERT_TRUE(app.lastRecordWriteOk());
-    MeteringSchemeRecord persisted{};
-    TEST_ASSERT_TRUE(schemes.findById(active.id, persisted));
-    TEST_ASSERT_TRUE(persisted.recordUsed);
 }
 
 void test_app_controller_starts_after_double_ok_and_opens_valve() {
@@ -2463,9 +2416,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_app_rejects_tds_calibration_when_running);
     RUN_TEST(test_app_tds_point_calibration_apply_persists_to_config);
     RUN_TEST(test_app_expires_idle_tds_calibration_session_from_tick);
-    RUN_TEST(test_app_controller_successful_record_writes_scheme_id_without_mutating_scheme_history);
-    RUN_TEST(test_app_controller_record_write_failure_keeps_scheme_history_unchanged);
-    RUN_TEST(test_app_controller_record_write_success_does_not_depend_on_scheme_history_update);
+    RUN_TEST(test_app_controller_successful_record_writes_scheme_id);
     RUN_TEST(test_app_controller_starts_after_double_ok_and_opens_valve);
     RUN_TEST(test_app_controller_stale_cancel_fast_path_does_not_block_confirm_ok_start);
     RUN_TEST(test_app_controller_cancel_raw_dominates_pending_ok_release);

@@ -182,7 +182,6 @@ private:
                              std::uint32_t nowSeconds,
                              bool timeSynced,
                              std::uint32_t bootId);
-    void exitResultDisplay(std::uint32_t nowMs);
     void restoreCalibrationSession();
     bool invalidateAwaitingActualIfRamTraceMissing(std::uint32_t nowSeconds);
     bool saveCalibrationSession();

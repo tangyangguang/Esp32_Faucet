@@ -994,20 +994,20 @@ void AppController::handleButtonEvent(ButtonEvent event,
             return;
         }
         if (event.type == ButtonEventType::PlusShort || event.type == ButtonEventType::PlusLong) {
-            exitResultDisplay(nowMs);
+            localMode_ = LocalUiMode::Normal;
             if (water_.selectNextPreset()) {
                 pendingBeep_ = BeepPattern::Click;
             }
             return;
         }
         if (event.type == ButtonEventType::MinusShort || event.type == ButtonEventType::MinusLong) {
-            exitResultDisplay(nowMs);
+            localMode_ = LocalUiMode::Normal;
             if (water_.selectPreviousPreset()) {
                 pendingBeep_ = BeepPattern::Click;
             }
             return;
         }
-        exitResultDisplay(nowMs);
+        localMode_ = LocalUiMode::Normal;
         pendingBeep_ = BeepPattern::Click;
         return;
     }
@@ -1083,10 +1083,6 @@ void AppController::startSelectedPreset(std::uint32_t nowMs,
         resetRunFlowState();
         pendingBeep_ = BeepPattern::Click;
     }
-}
-
-void AppController::exitResultDisplay(std::uint32_t) {
-    localMode_ = LocalUiMode::Normal;
 }
 
 void AppController::restoreCalibrationSession() {

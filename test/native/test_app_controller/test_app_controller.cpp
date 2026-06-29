@@ -6,6 +6,7 @@
 #include "app/MeteringSchemeStore.h"
 #include "app/WaterSensorManager.h"
 #include "app/WaterRecordCalibrationStore.h"
+#include "../support/CalibrationTraceTestSupport.h"
 #include "../support/FakeAdcReader.h"
 #include "../support/MemoryFileBackend.h"
 #include "../support/MemoryRecordWriter.h"
@@ -15,9 +16,11 @@
 
 using namespace faucet;
 using faucet_test::FakeAdcReader;
+using faucet_test::fillCalibrationSamples;
 using faucet_test::MemoryFileBackend;
 using faucet_test::MemoryRecordWriter;
 using faucet_test::okMv;
+using faucet_test::saveCompletedCalibrationTrace;
 
 namespace {
 
@@ -188,31 +191,6 @@ WaterRecord calibrationRecord(std::uint32_t startTime, std::uint32_t totalPulses
     };
 }
 
-std::size_t fillCalibrationSamples(WaterPulseTraceSample* samples,
-                                   std::size_t capacity,
-                                   std::uint32_t startupPulses,
-                                   std::uint32_t stablePulses,
-                                   std::uint32_t stableSeconds) {
-    if (!samples || capacity < startupPulses + stablePulses || stableSeconds == 0) {
-        return 0;
-    }
-    std::size_t count = 0;
-    for (std::uint32_t sec = 0; sec < 5; ++sec) {
-        const std::uint32_t pulsesThisSec = startupPulses / 5 + (sec < startupPulses % 5 ? 1 : 0);
-        for (std::uint32_t i = 0; i < pulsesThisSec; ++i) {
-            samples[count++] = WaterPulseTraceSample{static_cast<std::uint32_t>(sec * 1000000UL + i * 5000UL)};
-        }
-    }
-    for (std::uint32_t sec = 0; sec < stableSeconds; ++sec) {
-        const std::uint32_t pulsesThisSec = stablePulses / stableSeconds + (sec < stablePulses % stableSeconds ? 1 : 0);
-        for (std::uint32_t i = 0; i < pulsesThisSec; ++i) {
-            samples[count++] =
-                WaterPulseTraceSample{static_cast<std::uint32_t>((5 + sec) * 1000000UL + i * 5000UL)};
-        }
-    }
-    return count;
-}
-
 void saveCalibrationSessionSample(CalibrationSessionTraceStore& traceStore,
                                   CalibrationSessionRecord& session,
                                   std::uint8_t slot,
@@ -221,41 +199,11 @@ void saveCalibrationSessionSample(CalibrationSessionTraceStore& traceStore,
                                   std::uint32_t startupPulses,
                                   std::uint32_t stablePulses,
                                   std::uint32_t stableSeconds) {
-    WaterPulseTraceSample samples[4096]{};
-    WaterPulseTraceBucketSample buckets[kPulseTraceMaxBucketsPerTrace]{};
-    const std::size_t sampleCount =
-        fillCalibrationSamples(samples, 4096, startupPulses, stablePulses, stableSeconds);
-    TEST_ASSERT_GREATER_THAN_size_t(0, sampleCount);
-    std::size_t bucketCount = 0;
-    std::size_t startupEdgeCount = 0;
-    for (std::size_t i = 0; i < sampleCount; ++i) {
-        const std::size_t bucketIndex = samples[i].elapsedUs / (kPulseTraceBucketMs * 1000UL);
-        TEST_ASSERT_LESS_THAN_size_t(kPulseTraceMaxBucketsPerTrace, bucketIndex);
-        ++buckets[bucketIndex].pulseCount;
-        bucketCount = std::max(bucketCount, bucketIndex + 1);
-        if (samples[i].elapsedUs < kPulseTraceStartupDetailMs * 1000UL) {
-            ++startupEdgeCount;
-        }
-    }
     const std::uint32_t totalPulses = startupPulses + stablePulses;
     WaterRecord record = calibrationRecord(startTime, totalPulses, actualMl);
     record.durationSec = 5 + stableSeconds;
-
-    CalibrationStoredTrace stored{};
-    stored.sessionId = session.sessionId;
-    stored.attemptIndex = slot;
-    stored.trace.traceId = slot + 1;
-    stored.trace.startTime = startTime;
-    stored.trace.record = record;
-    stored.trace.bucketCount = bucketCount;
-    stored.trace.startupEdgeCount = startupEdgeCount;
-    stored.trace.totalPulses = totalPulses;
-    stored.trace.actualMl = actualMl;
-    stored.trace.pulseMinIntervalUs = kDefaultPulseMinIntervalUs;
-    stored.trace.finalState = WaterPulseTraceState::Completed;
-    stored.trace.finished = true;
     TEST_ASSERT_TRUE(
-        traceStore.saveValid(slot, stored, buckets, bucketCount, samples, startupEdgeCount, actualMl, startTime + 10));
+        saveCompletedCalibrationTrace(traceStore, slot, session.sessionId, record, actualMl, startupPulses, stablePulses, stableSeconds));
 
     CalibrationAttempt attempt{};
     attempt.attemptIndex = slot;

@@ -6,6 +6,7 @@
 #include "app/ConfigStore.h"
 #include "app/WaterRecordCalibrationStore.h"
 #include "web/FaucetWeb.h"
+#include "../support/CalibrationTraceTestSupport.h"
 #include "../support/FakeAdcReader.h"
 #include "../support/FakeConfigBackend.h"
 #include "../support/MemoryFileBackend.h"
@@ -23,9 +24,10 @@
 using namespace faucet;
 using faucet_test::FakeAdcReader;
 using faucet_test::FakeConfigBackend;
+using faucet_test::okMv;
 using faucet_test::MemoryFileBackend;
 using faucet_test::MemoryRecordWriter;
-using faucet_test::okMv;
+using faucet_test::saveCompletedCalibrationTrace;
 
 namespace {
 
@@ -110,31 +112,6 @@ void applyTestMeteringScheme(AppController& app) {
     TEST_ASSERT_TRUE(app.applyActiveMeteringScheme(scheme));
 }
 
-std::size_t fillWebCalibrationSamples(WaterPulseTraceSample* samples,
-                                       std::size_t capacity,
-                                       std::uint32_t startupPulses,
-                                       std::uint32_t stablePulses,
-                                       std::uint32_t stableSeconds) {
-    if (!samples || capacity < startupPulses + stablePulses || stableSeconds == 0) {
-        return 0;
-    }
-    std::size_t count = 0;
-    for (std::uint32_t sec = 0; sec < 5; ++sec) {
-        const std::uint32_t pulsesThisSec = startupPulses / 5 + (sec < startupPulses % 5 ? 1 : 0);
-        for (std::uint32_t i = 0; i < pulsesThisSec; ++i) {
-            samples[count++] = WaterPulseTraceSample{static_cast<std::uint32_t>(sec * 1000000UL + i * 5000UL)};
-        }
-    }
-    for (std::uint32_t sec = 0; sec < stableSeconds; ++sec) {
-        const std::uint32_t pulsesThisSec = stablePulses / stableSeconds + (sec < stablePulses % stableSeconds ? 1 : 0);
-        for (std::uint32_t i = 0; i < pulsesThisSec; ++i) {
-            samples[count++] =
-                WaterPulseTraceSample{static_cast<std::uint32_t>((5 + sec) * 1000000UL + i * 5000UL)};
-        }
-    }
-    return count;
-}
-
 std::uint32_t testNowSeconds() {
     return 1714502400UL;
 }
@@ -190,38 +167,14 @@ void saveWebSessionAttempt(CalibrationSessionTraceStore& traceStore,
     }
 
     if (status == CalibrationAttemptStatus::Valid) {
-        WaterPulseTraceSample samples[2048]{};
-        WaterPulseTraceBucketSample buckets[kPulseTraceMaxBucketsPerTrace]{};
-        const std::size_t sampleCount =
-            fillWebCalibrationSamples(samples, 2048, startupPulses, attempt.record.pulseCount - startupPulses, stableSeconds);
-        TEST_ASSERT_GREATER_THAN_size_t(0, sampleCount);
-        std::size_t bucketCount = 0;
-        std::size_t startupEdgeCount = 0;
-        for (std::size_t i = 0; i < sampleCount; ++i) {
-            const std::size_t bucketIndex = samples[i].elapsedUs / (kPulseTraceBucketMs * 1000UL);
-            TEST_ASSERT_LESS_THAN_size_t(kPulseTraceMaxBucketsPerTrace, bucketIndex);
-            ++buckets[bucketIndex].pulseCount;
-            bucketCount = std::max(bucketCount, bucketIndex + 1);
-            if (samples[i].elapsedUs < kPulseTraceStartupDetailMs * 1000UL) {
-                ++startupEdgeCount;
-            }
-        }
-
-        CalibrationStoredTrace stored{};
-        stored.sessionId = session.sessionId;
-        stored.attemptIndex = slot;
-        stored.trace.traceId = slot + 1;
-        stored.trace.startTime = attempt.record.startTime;
-        stored.trace.record = attempt.record;
-        stored.trace.bucketCount = bucketCount;
-        stored.trace.startupEdgeCount = startupEdgeCount;
-        stored.trace.totalPulses = attempt.record.pulseCount;
-        stored.trace.actualMl = actualMl;
-        stored.trace.pulseMinIntervalUs = kDefaultPulseMinIntervalUs;
-        stored.trace.finalState = WaterPulseTraceState::Completed;
-        stored.trace.finished = true;
-        TEST_ASSERT_TRUE(traceStore.saveValid(
-            slot, stored, buckets, bucketCount, samples, startupEdgeCount, actualMl, attempt.record.startTime + 10));
+        TEST_ASSERT_TRUE(saveCompletedCalibrationTrace(traceStore,
+                                                       slot,
+                                                       session.sessionId,
+                                                       attempt.record,
+                                                       actualMl,
+                                                       startupPulses,
+                                                       attempt.record.pulseCount - startupPulses,
+                                                       stableSeconds));
         attempt.sessionTraceSlot = slot;
     } else {
         attempt.sessionTraceSlot = kCalibrationSessionTraceSlots;

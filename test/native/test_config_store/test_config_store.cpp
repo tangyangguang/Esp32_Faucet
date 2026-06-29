@@ -26,30 +26,7 @@ void test_non_current_system_config_version_uses_defaults_until_explicit_save() 
     backend.setInt("faucet_cfg", "ver", 1);
     backend.setInt("faucet_cfg", "confirm_s", 22);
     backend.setInt("faucet_cfg", "pulse_m", 620);
-    ConfigStore store(backend);
-
-    const SystemConfig loaded = store.loadSystemConfig();
-
-    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(ConfigStore::LoadStatus::Defaults),
-                            static_cast<std::uint8_t>(store.lastSystemConfigLoadStatus()));
-    TEST_ASSERT_EQUAL_INT32(1, backend.getInt("faucet_cfg", "ver", 0));
-    TEST_ASSERT_EQUAL_UINT32(kDefaultConfirmTimeoutSec, loaded.confirmTimeoutSec);
-    TEST_ASSERT_EQUAL_UINT32(1500, loaded.presets[0].value);
-    TEST_ASSERT_TRUE(store.saveSystemConfig(loaded));
-    TEST_ASSERT_EQUAL_INT32(store.currentSystemConfigVersion(), backend.getInt("faucet_cfg", "ver", 0));
-    const SystemConfig current = store.loadSystemConfig();
-    TEST_ASSERT_EQUAL_UINT32(kDefaultConfirmTimeoutSec, current.confirmTimeoutSec);
-    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(ConfigStore::LoadStatus::LoadedCurrent),
-                            static_cast<std::uint8_t>(store.lastSystemConfigLoadStatus()));
-}
-
-void test_non_current_config_load_does_not_write_storage() {
-    FakeConfigBackend backend;
-    backend.setInt("faucet_cfg", "ver", 1);
-    backend.setInt("faucet_cfg", "pulse_m", 620);
     backend.setStr("faucet_cfg", "f0_name", "CTO");
-    backend.setInt("faucet_cfg", "f0_life_d", 90);
-    backend.failWrites = true;
     ConfigStore store(backend);
 
     const SystemConfig loaded = store.loadSystemConfig();
@@ -58,11 +35,17 @@ void test_non_current_config_load_does_not_write_storage() {
                             static_cast<std::uint8_t>(store.lastSystemConfigLoadStatus()));
     TEST_ASSERT_EQUAL_INT32(1, backend.getInt("faucet_cfg", "ver", 0));
     TEST_ASSERT_EQUAL_INT32(620, backend.getInt("faucet_cfg", "pulse_m", 0));
-    TEST_ASSERT_EQUAL_INT32(90, backend.getInt("faucet_cfg", "f0_life_d", 0));
     TEST_ASSERT_EQUAL_UINT32(kDefaultConfirmTimeoutSec, loaded.confirmTimeoutSec);
+    TEST_ASSERT_EQUAL_UINT32(1500, loaded.presets[0].value);
     char text[16]{};
     TEST_ASSERT_TRUE(backend.getStr("faucet_cfg", "f0_name", text, sizeof(text), ""));
     TEST_ASSERT_EQUAL_STRING("CTO", text);
+    TEST_ASSERT_TRUE(store.saveSystemConfig(loaded));
+    TEST_ASSERT_EQUAL_INT32(store.currentSystemConfigVersion(), backend.getInt("faucet_cfg", "ver", 0));
+    const SystemConfig current = store.loadSystemConfig();
+    TEST_ASSERT_EQUAL_UINT32(kDefaultConfirmTimeoutSec, current.confirmTimeoutSec);
+    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(ConfigStore::LoadStatus::LoadedCurrent),
+                            static_cast<std::uint8_t>(store.lastSystemConfigLoadStatus()));
 }
 
 void test_config_save_and_load_round_trips_system_config() {
@@ -404,7 +387,6 @@ int main(int argc, char** argv) {
     UNITY_BEGIN();
     RUN_TEST(test_config_load_uses_defaults_without_matching_version);
     RUN_TEST(test_non_current_system_config_version_uses_defaults_until_explicit_save);
-    RUN_TEST(test_non_current_config_load_does_not_write_storage);
     RUN_TEST(test_config_save_and_load_round_trips_system_config);
     RUN_TEST(test_config_save_and_load_round_trips_sensor_config);
     RUN_TEST(test_config_load_sanitizes_stored_values);

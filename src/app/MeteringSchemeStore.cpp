@@ -478,8 +478,4 @@ std::size_t MeteringSchemeStore::recordOffset(std::size_t slot) const {
     return sizeof(MeteringSchemeStoreHeader) + slot * sizeof(MeteringSchemeRecord);
 }
 
-std::size_t MeteringSchemeStore::expectedFileSize() const {
-    return expectedFileSizeForHeader(header_);
-}
-
 }  // namespace faucet

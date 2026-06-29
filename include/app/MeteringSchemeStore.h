@@ -57,7 +57,6 @@ private:
     bool findOldestNonCurrentSlot(std::size_t& slot) const;
     bool writeOrAppendAt(std::size_t offset, const std::uint8_t* data, std::size_t len);
     std::size_t recordOffset(std::size_t slot) const;
-    std::size_t expectedFileSize() const;
 
     WaterRecordFileBackend& backend_;
     const char* path_;

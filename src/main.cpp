@@ -202,11 +202,7 @@ faucet::PwmValveHardware g_valveHardware(faucet::kPinValve, faucet::kLedcChannel
 faucet::BeepDriver g_beep;
 faucet::PwmBeepHardware g_beepHardware(faucet::kPinBeep, faucet::kLedcChannelBeep);
 faucet::RtcClock g_rtc(faucet::kPinI2cSda, faucet::kPinI2cScl);
-faucet::St7789Display g_st7789(faucet::kPinSt7789Sclk,
-                                faucet::kPinSt7789Mosi,
-                                faucet::kPinSt7789Dc,
-                                faucet::kPinSt7789Rst,
-                                faucet::kPinSt7789Backlight);
+faucet::St7789Display g_st7789(faucet::kPinSt7789Backlight);
 faucet::ColorDisplayPresenter* g_colorDisplay = nullptr;
 faucet::ColorDisplayFrame g_lastColorDisplayFrame{};
 bool g_persistenceFailureLogged = false;

@@ -11,27 +11,14 @@ struct St7789Glyph;
 
 class St7789Display {
 public:
-    St7789Display(std::uint8_t sclkPin,
-                  std::uint8_t mosiPin,
-                  std::uint8_t dcPin,
-                  std::uint8_t rstPin,
-                  std::uint8_t backlightPin);
+    explicit St7789Display(std::uint8_t backlightPin);
 
     bool begin();
     bool present() const;
     void apply(const ColorDisplayFrame& frame);
 
 private:
-    void reset();
-    void tftInit();
-#if FAUCET_ST7789_BOOT_TEST
-    void drawBootTestPattern();
-#endif
-    void command(std::uint8_t value);
-    void data(std::uint8_t value);
-    void data(const std::uint8_t* values, std::size_t len);
     void setBacklight(bool on);
-    void setAddressWindow(std::uint16_t x, std::uint16_t y, std::uint16_t w, std::uint16_t h);
     void fillScreen(std::uint16_t color);
     void fillRect(std::int16_t x, std::int16_t y, std::int16_t w, std::int16_t h, std::uint16_t color);
     bool beginBufferedFrame(bool fullRedraw);
@@ -152,18 +139,11 @@ private:
     void drawRunningFrameDynamicRegions(const ColorDisplayFrame& frame, std::uint16_t accent);
     void renderFrame(const ColorDisplayFrame& frame, bool fullRedraw);
 
-    std::uint8_t sclkPin_;
-    std::uint8_t mosiPin_;
-    std::uint8_t dcPin_;
-    std::uint8_t rstPin_;
     std::uint8_t backlightPin_;
     bool present_;
     bool backlight_;
     bool lastFrameValid_;
     ColorDisplayFrame lastFrame_;
-#if FAUCET_ST7789_BOOT_TEST
-    std::uint32_t bootTestUntilMs_;
-#endif
 };
 
 }  // namespace faucet

@@ -3,21 +3,13 @@
 #include "drivers/St7789Font.h"
 
 #include <Arduino.h>
-#include <SPI.h>
+#include <TFT_eSPI.h>
 
 #include <cmath>
 #include <cstring>
 
-#ifndef FAUCET_ST7789_USE_TFT_ESPI
-#define FAUCET_ST7789_USE_TFT_ESPI 0
-#endif
-
-#ifndef FAUCET_ST7789_BOOT_TEST
-#define FAUCET_ST7789_BOOT_TEST 0
-#endif
-
-#if FAUCET_ST7789_USE_TFT_ESPI
-#include <TFT_eSPI.h>
+#if !FAUCET_ST7789_USE_TFT_ESPI
+#error "St7789Display requires TFT_eSPI; use bringup/smoke.cpp for raw ST7789 wiring smoke tests."
 #endif
 
 namespace faucet {
@@ -44,10 +36,6 @@ constexpr std::uint16_t kRed = rgb565(0xFF, 0x5F, 0x7A);
 constexpr std::int16_t kTextLineHeight = 16;
 constexpr std::int16_t kTagHeight = 22;
 
-constexpr std::uint32_t kSt7789SpiHz = 27000000UL;
-constexpr std::uint8_t kSt7789SpiMode = SPI_MODE3;
-
-#if FAUCET_ST7789_USE_TFT_ESPI
 TFT_eSPI g_tft;
 TFT_eSprite g_frameSprite(&g_tft);
 TFT_eSprite g_topRegionSprite(&g_tft);
@@ -73,31 +61,6 @@ std::int16_t g_sensorRegionSpriteWidth = 0;
 std::int16_t g_sensorRegionSpriteHeight = 0;
 std::int16_t g_spriteOffsetX = 0;
 std::int16_t g_spriteOffsetY = 0;
-#endif
-
-constexpr std::uint8_t kCmdNop = 0x00;
-constexpr std::uint8_t kCmdSleepOut = 0x11;
-constexpr std::uint8_t kCmdNormalOn = 0x13;
-constexpr std::uint8_t kCmdCaseT = 0x2A;
-constexpr std::uint8_t kCmdRaseT = 0x2B;
-constexpr std::uint8_t kCmdRamWr = 0x2C;
-constexpr std::uint8_t kCmdColMod = 0x3A;
-constexpr std::uint8_t kCmdMadCtl = 0x36;
-constexpr std::uint8_t kCmdInvOn = 0x21;
-constexpr std::uint8_t kCmdDispOn = 0x29;
-constexpr std::uint8_t kCmdRamCtrl = 0xB0;
-constexpr std::uint8_t kCmdPorchCtrl = 0xB2;
-constexpr std::uint8_t kCmdDisplayFunctionCtrl = 0xB6;
-constexpr std::uint8_t kCmdGateCtrl = 0xB7;
-constexpr std::uint8_t kCmdVcomSet = 0xBB;
-constexpr std::uint8_t kCmdLcmCtrl = 0xC0;
-constexpr std::uint8_t kCmdVdvVrhEnable = 0xC2;
-constexpr std::uint8_t kCmdVrhSet = 0xC3;
-constexpr std::uint8_t kCmdVdvSet = 0xC4;
-constexpr std::uint8_t kCmdFrameRateCtrl = 0xC6;
-constexpr std::uint8_t kCmdPowerCtrl1 = 0xD0;
-constexpr std::uint8_t kCmdPositiveGamma = 0xE0;
-constexpr std::uint8_t kCmdNegativeGamma = 0xE1;
 
 bool sameFrame(const ColorDisplayFrame& a, const ColorDisplayFrame& b) {
     return std::memcmp(&a, &b, sizeof(ColorDisplayFrame)) == 0;
@@ -156,7 +119,6 @@ std::uint32_t decodeUtf8(const char*& text) {
     return '?';
 }
 
-#if FAUCET_ST7789_USE_TFT_ESPI
 std::int16_t spriteX(std::int16_t x) {
     return static_cast<std::int16_t>(x - g_spriteOffsetX);
 }
@@ -308,12 +270,10 @@ std::int16_t asciiTrackedTextWidth(const char* text, std::uint8_t font, std::int
     }
     return width;
 }
-#endif
 
 std::int16_t textWidth(const char* text, std::uint8_t scale) {
     std::uint16_t width = 0;
     const char* cursor = text ? text : "";
-#if FAUCET_ST7789_USE_TFT_ESPI
     const std::uint8_t asciiFont = asciiFontForScale(scale);
     char asciiRun[32]{};
     std::uint8_t asciiLen = 0;
@@ -339,13 +299,6 @@ std::int16_t textWidth(const char* text, std::uint8_t scale) {
     }
     flushAsciiRun();
     return static_cast<std::int16_t>(width);
-#else
-    while (*cursor) {
-        const std::uint32_t cp = decodeUtf8(cursor);
-        width = static_cast<std::uint16_t>(width + (cp < 0x80UL ? 8U : kSt7789GlyphWidth));
-    }
-    return static_cast<std::int16_t>(width * scale);
-#endif
 }
 
 const char* compactMetricLabel(const char* label) {
@@ -406,54 +359,24 @@ const char* compactHintLabel(const char* label) {
 
 }  // namespace
 
-St7789Display::St7789Display(std::uint8_t sclkPin,
-                             std::uint8_t mosiPin,
-                             std::uint8_t dcPin,
-                             std::uint8_t rstPin,
-                             std::uint8_t backlightPin)
-    : sclkPin_(sclkPin),
-      mosiPin_(mosiPin),
-      dcPin_(dcPin),
-      rstPin_(rstPin),
-      backlightPin_(backlightPin),
+St7789Display::St7789Display(std::uint8_t backlightPin)
+    : backlightPin_(backlightPin),
       present_(false),
       backlight_(false),
       lastFrameValid_(false),
       lastFrame_{}
-#if FAUCET_ST7789_BOOT_TEST
-      ,
-      bootTestUntilMs_(0)
-#endif
 {}
 
 bool St7789Display::begin() {
-#if FAUCET_ST7789_USE_TFT_ESPI
     pinMode(backlightPin_, OUTPUT);
     setBacklight(false);
     g_tft.init();
     g_tft.setRotation(0);
     g_tft.setTextWrap(false, false);
     g_tft.setTextPadding(0);
-#else
-    pinMode(dcPin_, OUTPUT);
-    pinMode(rstPin_, OUTPUT);
-    pinMode(backlightPin_, OUTPUT);
-    setBacklight(false);
-    SPI.begin(sclkPin_, -1, mosiPin_, -1);
-    command(kCmdNop);
-    reset();
-
-    tftInit();
-#endif
     present_ = true;
     lastFrameValid_ = false;
-#if FAUCET_ST7789_BOOT_TEST
-    setBacklight(true);
-    drawBootTestPattern();
-    bootTestUntilMs_ = millis() + 5000UL;
-#else
     fillScreen(kBlack);
-#endif
     return true;
 }
 
@@ -465,12 +388,6 @@ void St7789Display::apply(const ColorDisplayFrame& frame) {
     if (!present_) {
         return;
     }
-#if FAUCET_ST7789_BOOT_TEST
-    if (bootTestUntilMs_ != 0 && static_cast<std::int32_t>(millis() - bootTestUntilMs_) < 0) {
-        return;
-    }
-    bootTestUntilMs_ = 0;
-#endif
     if (lastFrameValid_ && sameFrame(frame, lastFrame_)) {
         return;
     }
@@ -489,145 +406,9 @@ void St7789Display::apply(const ColorDisplayFrame& frame) {
     lastFrameValid_ = true;
 }
 
-void St7789Display::reset() {
-    digitalWrite(rstPin_, HIGH);
-    delay(5);
-    digitalWrite(rstPin_, LOW);
-    delay(20);
-    digitalWrite(rstPin_, HIGH);
-    delay(120);
-}
-
-void St7789Display::tftInit() {
-    command(kCmdSleepOut);
-    delay(120);
-
-    command(kCmdNormalOn);
-    command(kCmdMadCtl);
-    data(0x00);
-
-    command(kCmdDisplayFunctionCtrl);
-    const std::uint8_t displayFunction[] = {0x0A, 0x82};
-    data(displayFunction, sizeof(displayFunction));
-
-    command(kCmdRamCtrl);
-    const std::uint8_t ramCtrl[] = {0x00, 0xE0};
-    data(ramCtrl, sizeof(ramCtrl));
-
-    command(kCmdColMod);
-    data(0x55);
-    delay(10);
-
-    command(kCmdPorchCtrl);
-    const std::uint8_t porch[] = {0x0C, 0x0C, 0x00, 0x33, 0x33};
-    data(porch, sizeof(porch));
-
-    command(kCmdGateCtrl);
-    data(0x35);
-
-    command(kCmdVcomSet);
-    data(0x28);
-
-    command(kCmdLcmCtrl);
-    data(0x0C);
-
-    command(kCmdVdvVrhEnable);
-    const std::uint8_t vdvVrhEnable[] = {0x01, 0xFF};
-    data(vdvVrhEnable, sizeof(vdvVrhEnable));
-
-    command(kCmdVrhSet);
-    data(0x10);
-
-    command(kCmdVdvSet);
-    data(0x20);
-
-    command(kCmdFrameRateCtrl);
-    data(0x0F);
-
-    command(kCmdPowerCtrl1);
-    const std::uint8_t powerCtrl[] = {0xA4, 0xA1};
-    data(powerCtrl, sizeof(powerCtrl));
-
-    command(kCmdPositiveGamma);
-    const std::uint8_t positiveGamma[] = {0xD0, 0x00, 0x02, 0x07, 0x0A, 0x28, 0x32,
-                                          0x44, 0x42, 0x06, 0x0E, 0x12, 0x14, 0x17};
-    data(positiveGamma, sizeof(positiveGamma));
-
-    command(kCmdNegativeGamma);
-    const std::uint8_t negativeGamma[] = {0xD0, 0x00, 0x02, 0x07, 0x0A, 0x28, 0x31,
-                                          0x54, 0x47, 0x0E, 0x1C, 0x17, 0x1B, 0x1E};
-    data(negativeGamma, sizeof(negativeGamma));
-
-    command(kCmdInvOn);
-
-    command(kCmdCaseT);
-    const std::uint8_t columnRange[] = {0x00, 0x00, 0x00, 0xEF};
-    data(columnRange, sizeof(columnRange));
-
-    command(kCmdRaseT);
-    const std::uint8_t rowRange[] = {0x00, 0x00, 0x01, 0x3F};
-    data(rowRange, sizeof(rowRange));
-
-    delay(120);
-    command(kCmdDispOn);
-    delay(120);
-}
-
-#if FAUCET_ST7789_BOOT_TEST
-void St7789Display::drawBootTestPattern() {
-    fillRect(0, 0, 80, kHeight, kRed);
-    fillRect(80, 0, 80, kHeight, kGreen);
-    fillRect(160, 0, 80, kHeight, kBlue);
-    fillRect(16, 92, 208, 56, kBlack);
-    drawCenteredText(108, "ST7789 BOOT", kInk, kBlack, 1);
-    drawCenteredText(130, "LIGHT DRIVER", kCyan, kBlack, 1);
-}
-#endif
-
-void St7789Display::command(std::uint8_t value) {
-    SPI.beginTransaction(SPISettings(kSt7789SpiHz, MSBFIRST, kSt7789SpiMode));
-    digitalWrite(dcPin_, LOW);
-    SPI.transfer(value);
-    SPI.endTransaction();
-}
-
-void St7789Display::data(std::uint8_t value) {
-    SPI.beginTransaction(SPISettings(kSt7789SpiHz, MSBFIRST, kSt7789SpiMode));
-    digitalWrite(dcPin_, HIGH);
-    SPI.transfer(value);
-    SPI.endTransaction();
-}
-
-void St7789Display::data(const std::uint8_t* values, std::size_t len) {
-    SPI.beginTransaction(SPISettings(kSt7789SpiHz, MSBFIRST, kSt7789SpiMode));
-    digitalWrite(dcPin_, HIGH);
-    SPI.writeBytes(values, len);
-    SPI.endTransaction();
-}
-
 void St7789Display::setBacklight(bool on) {
     backlight_ = on;
     digitalWrite(backlightPin_, on ? HIGH : LOW);
-}
-
-void St7789Display::setAddressWindow(std::uint16_t x, std::uint16_t y, std::uint16_t w, std::uint16_t h) {
-    const std::uint16_t x1 = static_cast<std::uint16_t>(x + w - 1U);
-    const std::uint16_t y1 = static_cast<std::uint16_t>(y + h - 1U);
-    std::uint8_t buffer[4] = {
-        static_cast<std::uint8_t>(x >> 8U),
-        static_cast<std::uint8_t>(x & 0xFFU),
-        static_cast<std::uint8_t>(x1 >> 8U),
-        static_cast<std::uint8_t>(x1 & 0xFFU),
-    };
-    command(kCmdCaseT);
-    data(buffer, sizeof(buffer));
-    buffer[0] = static_cast<std::uint8_t>(y >> 8U);
-    buffer[1] = static_cast<std::uint8_t>(y & 0xFFU);
-    buffer[2] = static_cast<std::uint8_t>(y1 >> 8U);
-    buffer[3] = static_cast<std::uint8_t>(y1 & 0xFFU);
-    command(kCmdRaseT);
-    data(buffer, sizeof(buffer));
-    command(kCmdRamWr);
 }
 
 void St7789Display::fillScreen(std::uint16_t color) {
@@ -655,32 +436,17 @@ void St7789Display::fillRect(std::int16_t x, std::int16_t y, std::int16_t w, std
     if (w <= 0 || h <= 0) {
         return;
     }
-#if FAUCET_ST7789_USE_TFT_ESPI
     if (g_drawToSprite) {
         activeSprite().fillRect(spriteX(x), spriteY(y), w, h, color);
     } else {
         g_tft.fillRect(x, y, w, h, color);
     }
-#else
-    setAddressWindow(static_cast<std::uint16_t>(x),
-                     static_cast<std::uint16_t>(y),
-                     static_cast<std::uint16_t>(w),
-                     static_cast<std::uint16_t>(h));
-    const std::uint8_t hi = static_cast<std::uint8_t>(color >> 8U);
-    const std::uint8_t lo = static_cast<std::uint8_t>(color & 0xFFU);
-    const std::uint8_t pixel[2] = {hi, lo};
-    SPI.beginTransaction(SPISettings(kSt7789SpiHz, MSBFIRST, kSt7789SpiMode));
-    digitalWrite(dcPin_, HIGH);
-    SPI.writePattern(pixel, sizeof(pixel), static_cast<std::uint32_t>(w) * static_cast<std::uint32_t>(h));
-    SPI.endTransaction();
-#endif
 }
 
 bool St7789Display::beginBufferedFrame(bool fullRedraw) {
     if (!fullRedraw) {
         return false;
     }
-#if FAUCET_ST7789_USE_TFT_ESPI
     if (!ensureFrameSprite(kWidth, kHeight)) {
         return false;
     }
@@ -689,21 +455,16 @@ bool St7789Display::beginBufferedFrame(bool fullRedraw) {
     g_spriteOffsetY = 0;
     activeSprite().fillSprite(kBg);
     return true;
-#else
-    return false;
-#endif
 }
 
 void St7789Display::endBufferedFrame(bool buffered) {
     if (!buffered) {
         return;
     }
-#if FAUCET_ST7789_USE_TFT_ESPI
     g_drawToSprite = false;
     activeSprite().pushSprite(0, 0);
     g_spriteOffsetX = 0;
     g_spriteOffsetY = 0;
-#endif
 }
 
 bool St7789Display::beginBufferedRegion(std::int16_t x,
@@ -714,7 +475,6 @@ bool St7789Display::beginBufferedRegion(std::int16_t x,
     if (w <= 0 || h <= 0) {
         return false;
     }
-#if FAUCET_ST7789_USE_TFT_ESPI
     if (!selectRegionSprite(x, y, w, h)) {
         return false;
     }
@@ -723,29 +483,16 @@ bool St7789Display::beginBufferedRegion(std::int16_t x,
     g_spriteOffsetY = y;
     activeSprite().fillSprite(background);
     return true;
-#else
-    (void)x;
-    (void)y;
-    (void)w;
-    (void)h;
-    (void)background;
-    return false;
-#endif
 }
 
 void St7789Display::endBufferedRegion(bool buffered, std::int16_t x, std::int16_t y) {
     if (!buffered) {
         return;
     }
-#if FAUCET_ST7789_USE_TFT_ESPI
     g_drawToSprite = false;
     activeSprite().pushSprite(x, y);
     g_spriteOffsetX = 0;
     g_spriteOffsetY = 0;
-#else
-    (void)x;
-    (void)y;
-#endif
 }
 
 void St7789Display::fillRoundRect(std::int16_t x,
@@ -758,30 +505,11 @@ void St7789Display::fillRoundRect(std::int16_t x,
     if (w <= 0 || h <= 0) {
         return;
     }
-#if FAUCET_ST7789_USE_TFT_ESPI
     if (g_drawToSprite) {
         activeSprite().fillSmoothRoundRect(spriteX(x), spriteY(y), w, h, radius, color, background);
     } else {
         g_tft.fillSmoothRoundRect(x, y, w, h, radius, color, background);
     }
-#else
-    fillRect(static_cast<std::int16_t>(x + radius), y, static_cast<std::int16_t>(w - radius * 2), h, color);
-    fillRect(x, static_cast<std::int16_t>(y + radius), w, static_cast<std::int16_t>(h - radius * 2), color);
-    fillCircle(static_cast<std::int16_t>(x + radius), static_cast<std::int16_t>(y + radius), radius, color);
-    fillCircle(static_cast<std::int16_t>(x + w - radius - 1),
-               static_cast<std::int16_t>(y + radius),
-               radius,
-               color);
-    fillCircle(static_cast<std::int16_t>(x + radius),
-               static_cast<std::int16_t>(y + h - radius - 1),
-               radius,
-               color);
-    fillCircle(static_cast<std::int16_t>(x + w - radius - 1),
-               static_cast<std::int16_t>(y + h - radius - 1),
-               radius,
-               color);
-    (void)background;
-#endif
 }
 
 void St7789Display::drawRoundRect(std::int16_t x,
@@ -794,7 +522,6 @@ void St7789Display::drawRoundRect(std::int16_t x,
     if (w <= 0 || h <= 0) {
         return;
     }
-#if FAUCET_ST7789_USE_TFT_ESPI
     if (g_drawToSprite) {
         activeSprite().drawSmoothRoundRect(spriteX(x),
                                           spriteY(y),
@@ -807,38 +534,17 @@ void St7789Display::drawRoundRect(std::int16_t x,
     } else {
         g_tft.drawSmoothRoundRect(x, y, radius, static_cast<std::int16_t>(radius - 1), w, h, color, background);
     }
-#else
-    drawLine(static_cast<std::int16_t>(x + radius), y, static_cast<std::int16_t>(x + w - radius - 1), y, color);
-    drawLine(static_cast<std::int16_t>(x + radius),
-             static_cast<std::int16_t>(y + h - 1),
-             static_cast<std::int16_t>(x + w - radius - 1),
-             static_cast<std::int16_t>(y + h - 1),
-             color);
-    drawLine(x, static_cast<std::int16_t>(y + radius), x, static_cast<std::int16_t>(y + h - radius - 1), color);
-    drawLine(static_cast<std::int16_t>(x + w - 1),
-             static_cast<std::int16_t>(y + radius),
-             static_cast<std::int16_t>(x + w - 1),
-             static_cast<std::int16_t>(y + h - radius - 1),
-             color);
-    (void)background;
-#endif
 }
 
 void St7789Display::drawPixel(std::int16_t x, std::int16_t y, std::uint16_t color) {
     if (x < 0 || y < 0 || x >= static_cast<std::int16_t>(kWidth) || y >= static_cast<std::int16_t>(kHeight)) {
         return;
     }
-#if FAUCET_ST7789_USE_TFT_ESPI
     if (g_drawToSprite) {
         activeSprite().drawPixel(spriteX(x), spriteY(y), color);
     } else {
         g_tft.drawPixel(x, y, color);
     }
-#else
-    setAddressWindow(static_cast<std::uint16_t>(x), static_cast<std::uint16_t>(y), 1, 1);
-    const std::uint8_t pixel[2] = {static_cast<std::uint8_t>(color >> 8U), static_cast<std::uint8_t>(color & 0xFFU)};
-    data(pixel, sizeof(pixel));
-#endif
 }
 
 void St7789Display::drawLine(std::int16_t x0,
@@ -871,7 +577,11 @@ void St7789Display::drawLine(std::int16_t x0,
 void St7789Display::fillCircle(std::int16_t x0, std::int16_t y0, std::int16_t r, std::uint16_t color) {
     for (std::int16_t y = -r; y <= r; ++y) {
         const std::int16_t span = static_cast<std::int16_t>(std::sqrt(static_cast<float>(r * r - y * y)));
-        fillRect(static_cast<std::int16_t>(x0 - span), static_cast<std::int16_t>(y0 + y), static_cast<std::int16_t>(span * 2 + 1), 1, color);
+        fillRect(static_cast<std::int16_t>(x0 - span),
+                 static_cast<std::int16_t>(y0 + y),
+                 static_cast<std::int16_t>(span * 2 + 1),
+                 1,
+                 color);
     }
 }
 
@@ -880,7 +590,6 @@ void St7789Display::drawRing(std::int16_t cx,
                              std::int16_t radius,
                              std::uint16_t progressPermille,
                              std::uint16_t color) {
-#if FAUCET_ST7789_USE_TFT_ESPI
     auto drawArcOnTarget = [&](std::uint16_t start, std::uint16_t end, std::uint16_t fg, std::uint16_t bg) {
         if (g_drawToSprite) {
             activeSprite().drawSmoothArc(spriteX(cx),
@@ -921,17 +630,6 @@ void St7789Display::drawRing(std::int16_t cx,
         drawArcOnTarget(kStartAngle, 360, color, kBg);
         drawArcOnTarget(0, static_cast<std::uint16_t>(end - 360U), color, kBg);
     }
-#else
-    fillCircle(cx, cy, radius, kPanel2);
-    fillCircle(cx, cy, static_cast<std::int16_t>(radius - 8), kBg);
-    const std::uint16_t degrees = static_cast<std::uint16_t>(progressPermille * 360U / 1000U);
-    for (std::uint16_t deg = 0; deg < degrees; deg += 3) {
-        const float rad = (static_cast<float>(deg) - 90.0f) * 0.0174532925f;
-        const std::int16_t x = static_cast<std::int16_t>(cx + std::cos(rad) * (radius - 4));
-        const std::int16_t y = static_cast<std::int16_t>(cy + std::sin(rad) * (radius - 4));
-        fillCircle(x, y, 3, color);
-    }
-#endif
 }
 
 void St7789Display::drawGlyphBlock(std::int16_t x,
@@ -951,7 +649,6 @@ void St7789Display::drawGlyphBlock(std::int16_t x,
     if (x < 0 || y < 0 || x + w > static_cast<std::int16_t>(kWidth) || y + h > static_cast<std::int16_t>(kHeight)) {
         return;
     }
-#if FAUCET_ST7789_USE_TFT_ESPI
     if (g_drawToSprite) {
         const std::int16_t localX = spriteX(x);
         const std::int16_t localY = spriteY(y);
@@ -1005,40 +702,6 @@ void St7789Display::drawGlyphBlock(std::int16_t x,
         }
     }
     g_tft.endWrite();
-#else
-    setAddressWindow(static_cast<std::uint16_t>(x),
-                     static_cast<std::uint16_t>(y),
-                     static_cast<std::uint16_t>(w),
-                     static_cast<std::uint16_t>(h));
-    std::uint8_t row[static_cast<std::size_t>(kSt7789GlyphWidth) * 3U * 2U]{};
-    SPI.beginTransaction(SPISettings(kSt7789SpiHz, MSBFIRST, kSt7789SpiMode));
-    digitalWrite(dcPin_, HIGH);
-    for (std::uint8_t gy = 0; gy < kSt7789GlyphHeight; ++gy) {
-        const std::uint8_t b0 = glyph.bitmap[gy * 2U];
-        const std::uint8_t b1 = glyph.bitmap[gy * 2U + 1U];
-        std::size_t offset = 0;
-        for (std::uint8_t gx = 0; gx < glyphWidth; ++gx) {
-            const std::uint8_t sourceX = narrow ? static_cast<std::uint8_t>(gx * 2U) : gx;
-            const bool lit0 = sourceX < 8 ? (b0 & (1U << (7U - sourceX))) : (b1 & (1U << (15U - sourceX)));
-            const std::uint8_t sourceX1 = static_cast<std::uint8_t>(sourceX + 1U);
-            const bool lit1 = narrow && sourceX1 < kSt7789GlyphWidth
-                                  ? (sourceX1 < 8 ? (b0 & (1U << (7U - sourceX1)))
-                                                 : (b1 & (1U << (15U - sourceX1))))
-                                  : false;
-            const std::uint16_t pixel = (lit0 || lit1) ? color : background;
-            const std::uint8_t hi = static_cast<std::uint8_t>(pixel >> 8U);
-            const std::uint8_t lo = static_cast<std::uint8_t>(pixel & 0xFFU);
-            for (std::uint8_t sx = 0; sx < scale; ++sx) {
-                row[offset++] = hi;
-                row[offset++] = lo;
-            }
-        }
-        for (std::uint8_t sy = 0; sy < scale; ++sy) {
-            SPI.writeBytes(row, offset);
-        }
-    }
-    SPI.endTransaction();
-#endif
 }
 
 void St7789Display::drawText(std::int16_t x,
@@ -1048,7 +711,6 @@ void St7789Display::drawText(std::int16_t x,
                              std::uint16_t background,
                              std::uint8_t scale) {
     const char* cursor = text ? text : "";
-#if FAUCET_ST7789_USE_TFT_ESPI
     const std::uint8_t asciiFont = asciiFontForScale(scale);
     char asciiRun[32]{};
     std::uint8_t asciiLen = 0;
@@ -1078,16 +740,6 @@ void St7789Display::drawText(std::int16_t x,
         x = static_cast<std::int16_t>(x + kSt7789GlyphWidth * scale);
     }
     flushAsciiRun();
-#else
-    while (*cursor) {
-        const std::uint32_t cp = decodeUtf8(cursor);
-        const St7789Glyph* glyph = findSt7789Glyph(cp);
-        if (glyph) {
-            drawGlyphBlock(x, y, cp, *glyph, color, background, scale);
-        }
-        x = static_cast<std::int16_t>(x + (cp < 0x80UL ? 8 : kSt7789GlyphWidth) * scale);
-    }
-#endif
 }
 
 void St7789Display::drawAsciiText(std::int16_t x,
@@ -1099,7 +751,6 @@ void St7789Display::drawAsciiText(std::int16_t x,
     if (!text || !*text) {
         return;
     }
-#if FAUCET_ST7789_USE_TFT_ESPI
     if (g_drawToSprite) {
         activeSprite().setTextDatum(TL_DATUM);
         activeSprite().setTextSize(1);
@@ -1111,10 +762,6 @@ void St7789Display::drawAsciiText(std::int16_t x,
         g_tft.setTextColor(color, background);
         g_tft.drawString(text, x, y, font);
     }
-#else
-    const std::uint8_t scale = font >= 4 ? 2 : 1;
-    drawText(x, y, text, color, background, scale);
-#endif
 }
 
 void St7789Display::drawAsciiTrackedText(std::int16_t x,
@@ -1127,7 +774,6 @@ void St7789Display::drawAsciiTrackedText(std::int16_t x,
     if (!text || !*text) {
         return;
     }
-#if FAUCET_ST7789_USE_TFT_ESPI
     char one[2]{};
     const char* cursor = text;
     while (*cursor) {
@@ -1135,10 +781,6 @@ void St7789Display::drawAsciiTrackedText(std::int16_t x,
         drawAsciiText(x, y, one, color, background, font);
         x = static_cast<std::int16_t>(x + asciiTextWidth(one, font) + tracking);
     }
-#else
-    (void)tracking;
-    drawAsciiText(x, y, text, color, background, font);
-#endif
 }
 
 void St7789Display::drawTextFit(std::int16_t x,
@@ -1192,7 +834,6 @@ void St7789Display::drawMetricLabel(std::int16_t x,
     if (!text || !*text) {
         return;
     }
-#if FAUCET_ST7789_USE_TFT_ESPI
     if (isAsciiText(text)) {
         constexpr std::int16_t kTracking = 2;
         if (asciiTrackedTextWidth(text, 2, kTracking) <= maxWidth) {
@@ -1200,7 +841,6 @@ void St7789Display::drawMetricLabel(std::int16_t x,
             return;
         }
     }
-#endif
     drawTextFit(x, y, maxWidth, text, color, background, 1);
 }
 
@@ -1246,7 +886,6 @@ void St7789Display::drawMainValue(std::int16_t centerX,
                                   std::uint16_t background) {
     const char* safeValue = value ? value : "";
     const char* safeUnit = unit ? unit : "";
-#if FAUCET_ST7789_USE_TFT_ESPI
     const std::int16_t valueW = asciiTextWidth(safeValue, valueFont);
     const bool hasUnit = safeUnit[0] != '\0';
     const bool asciiUnit = isAsciiText(safeUnit);
@@ -1265,14 +904,6 @@ void St7789Display::drawMainValue(std::int16_t centerX,
     } else {
         drawText(unitX, unitY, safeUnit, unitColor, background, 1);
     }
-#else
-    (void)valueFont;
-    (void)unitFont;
-    drawCenteredText(y, safeValue, valueColor, background, 3);
-    if (safeUnit[0]) {
-        drawText(static_cast<std::int16_t>(centerX + 54), static_cast<std::int16_t>(y + 19), safeUnit, unitColor, background, 1);
-    }
-#endif
 }
 
 void St7789Display::drawTagPill(std::int16_t rightX,

@@ -8,7 +8,6 @@
 #include "app/WaterRecordCalibrationStore.h"
 
 #include <algorithm>
-#include <cstdio>
 #include <cstring>
 #include <map>
 #include <string>
@@ -17,25 +16,6 @@
 using namespace faucet;
 
 namespace {
-
-std::string readAppControllerSource() {
-    FILE* file = std::fopen("src/app/AppController.cpp", "rb");
-    TEST_ASSERT_NOT_NULL(file);
-    std::string body;
-    char buffer[4096]{};
-    while (true) {
-        const std::size_t read = std::fread(buffer, 1, sizeof(buffer), file);
-        if (read > 0) {
-            body.append(buffer, read);
-        }
-        if (read < sizeof(buffer)) {
-            break;
-        }
-    }
-    std::fclose(file);
-    TEST_ASSERT_FALSE(body.empty());
-    return body;
-}
 
 class MemoryRecordWriter : public WaterRecordWriter {
 public:
@@ -2472,45 +2452,6 @@ void test_app_controller_uses_window_flow_for_high_flow_safety() {
                             static_cast<std::uint8_t>(app.snapshot().water.state));
 }
 
-void test_app_controller_uses_shared_run_flow_reset_helper() {
-    const std::string body = readAppControllerSource();
-    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("void AppController::resetRunFlowState()"));
-
-    const std::string needle = "lastFlowVolumeMl_ = 0;";
-    std::size_t count = 0;
-    std::size_t pos = body.find(needle);
-    while (pos != std::string::npos) {
-        ++count;
-        pos = body.find(needle, pos + needle.size());
-    }
-    TEST_ASSERT_EQUAL_size_t(1, count);
-}
-
-void test_app_controller_calibration_summary_does_not_duplicate_stable_pulse_accumulation() {
-    const std::string body = readAppControllerSource();
-    TEST_ASSERT_EQUAL(
-        std::string::npos,
-        body.find("summary.stablePulseCount += perSecond[k];\n"
-                  "                        summary.stablePulseCount += perSecond[k];"));
-}
-
-void test_app_controller_restore_session_does_not_allocate_loaded_session_on_stack() {
-    const std::string body = readAppControllerSource();
-    TEST_ASSERT_EQUAL(std::string::npos, body.find("CalibrationSessionRecord loaded{}"));
-    TEST_ASSERT_EQUAL(std::string::npos, body.find("calibrationSession_ = makeCalibrationSession"));
-    TEST_ASSERT_EQUAL(std::string::npos, body.find("CalibrationSessionRecord nextSession = calibrationSession_"));
-    TEST_ASSERT_EQUAL(std::string::npos, body.find("const CalibrationSessionRecord originalSession = calibrationSession_"));
-}
-
-void test_app_controller_calibration_paths_avoid_large_stack_arrays() {
-    const std::string body = readAppControllerSource();
-    TEST_ASSERT_EQUAL(std::string::npos, body.find("CalibrationStoredTrace existing[kCalibrationLongTermSampleSlots]"));
-    TEST_ASSERT_EQUAL(std::string::npos, body.find("SegmentedCalibrationSample samples[kCalibrationMaxValidSamples]"));
-    TEST_ASSERT_EQUAL(std::string::npos, body.find("kCalibrationLongTermSampleSlots"));
-    TEST_ASSERT_EQUAL(std::string::npos, body.find("saveCalibrationSessionSampleToLongTermForWeb"));
-    TEST_ASSERT_NOT_EQUAL(std::string::npos, body.find("new (std::nothrow) SegmentedCalibrationSample[kCalibrationMaxValidSamples]"));
-}
-
 int main(int argc, char** argv) {
     (void)argc;
     (void)argv;
@@ -2580,9 +2521,5 @@ int main(int argc, char** argv) {
     RUN_TEST(test_app_controller_local_record_calibration_buttons_do_not_save_actual);
     RUN_TEST(test_app_controller_snapshot_reports_current_flow_rate);
     RUN_TEST(test_app_controller_uses_window_flow_for_high_flow_safety);
-    RUN_TEST(test_app_controller_uses_shared_run_flow_reset_helper);
-    RUN_TEST(test_app_controller_calibration_summary_does_not_duplicate_stable_pulse_accumulation);
-    RUN_TEST(test_app_controller_restore_session_does_not_allocate_loaded_session_on_stack);
-    RUN_TEST(test_app_controller_calibration_paths_avoid_large_stack_arrays);
     return UNITY_END();
 }

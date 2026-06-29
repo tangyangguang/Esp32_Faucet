@@ -52,6 +52,19 @@ bool validFile(const SessionFile& file) {
            file.checksum == checksumBytes(reinterpret_cast<const std::uint8_t*>(&file.session), sizeof(file.session));
 }
 
+bool writeSessionFile(WaterRecordFileBackend& backend, const char* path, const CalibrationSessionRecord* session) {
+    const auto encoded = allocateSessionFile();
+    if (!encoded) {
+        return false;
+    }
+    fillFile(*encoded, session);
+    return backend.writeAt(path, 0, reinterpret_cast<const std::uint8_t*>(encoded.get()), sizeof(*encoded));
+}
+
+bool createEmptySessionFile(WaterRecordFileBackend& backend, const char* path) {
+    return backend.createSized(path, sizeof(SessionFile)) && writeSessionFile(backend, path, nullptr);
+}
+
 }  // namespace
 
 CalibrationSessionFileStore::CalibrationSessionFileStore(WaterRecordFileBackend& backend, const char* path)
@@ -64,38 +77,13 @@ bool CalibrationSessionFileStore::begin() {
         status_ = AppStorageStatus::InvalidPath;
         return false;
     }
-    const auto initializeEmpty = [this]() {
-        if (!backend_.createSized(path_, sizeof(SessionFile))) {
-            return false;
-        }
-        const auto encoded = allocateSessionFile();
-        if (!encoded) {
-            return false;
-        }
-        fillFile(*encoded, nullptr);
-        return backend_.writeAt(path_, 0, reinterpret_cast<const std::uint8_t*>(encoded.get()), sizeof(*encoded));
-    };
-    const auto writeEmpty = [this]() {
-        const auto encoded = allocateSessionFile();
-        if (!encoded) {
-            return false;
-        }
-        fillFile(*encoded, nullptr);
-        return backend_.writeAt(path_, 0, reinterpret_cast<const std::uint8_t*>(encoded.get()), sizeof(*encoded));
-    };
-    const auto rebuildEmpty = [this, &initializeEmpty]() {
-        if (backend_.exists(path_) && !backend_.removeFile(path_)) {
-            return false;
-        }
-        return initializeEmpty();
-    };
     if (!backend_.exists(path_)) {
-        ready_ = initializeEmpty();
+        ready_ = createEmptySessionFile(backend_, path_);
         status_ = ready_ ? AppStorageStatus::Ready : AppStorageStatus::BackendFailure;
         return ready_;
     }
     if (backend_.fileSize(path_) < static_cast<std::int64_t>(sizeof(SessionFile))) {
-        ready_ = rebuildEmpty();
+        ready_ = backend_.removeFile(path_) && createEmptySessionFile(backend_, path_);
         status_ = ready_ ? AppStorageStatus::Ready : AppStorageStatus::BackendFailure;
         return ready_;
     }
@@ -109,7 +97,7 @@ bool CalibrationSessionFileStore::begin() {
         return false;
     }
     if (!validFile(*decoded)) {
-        ready_ = writeEmpty();
+        ready_ = writeSessionFile(backend_, path_, nullptr);
         status_ = ready_ ? AppStorageStatus::Ready : AppStorageStatus::BackendFailure;
         return ready_;
     }
@@ -147,17 +135,11 @@ bool CalibrationSessionFileStore::save(const CalibrationSessionRecord& session) 
     if (!ready()) {
         return false;
     }
-    const auto encoded = allocateSessionFile();
-    if (!encoded) {
-        return false;
-    }
-    fillFile(*encoded, &session);
-    return backend_.writeAt(path_, 0, reinterpret_cast<const std::uint8_t*>(encoded.get()), sizeof(*encoded));
+    return writeSessionFile(backend_, path_, &session);
 }
 
 bool CalibrationSessionFileStore::clear() {
-    const std::unique_ptr<CalibrationSessionRecord> empty(new (std::nothrow) CalibrationSessionRecord);
-    return empty && save(*empty);
+    return ready() && writeSessionFile(backend_, path_, nullptr);
 }
 
 const char* CalibrationSessionFileStore::storageName() const {

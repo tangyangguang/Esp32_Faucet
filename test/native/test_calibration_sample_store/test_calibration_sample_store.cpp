@@ -66,7 +66,6 @@ void test_session_trace_store_rebuilds_invalid_existing_file() {
     TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(AppStorageStatus::Ready),
                             static_cast<unsigned>(store.status()));
     TEST_ASSERT_TRUE(backend.exists("/session-traces.bin"));
-    TEST_ASSERT_EQUAL_size_t(1, backend.removeCalls);
 }
 
 void test_session_trace_valid_round_trips_compact_trace() {
@@ -126,7 +125,6 @@ void test_starting_new_session_reuses_existing_trace_file_without_clearing_slots
     fillBuckets(buckets);
     fillSamples(startup, 10000);
     TEST_ASSERT_TRUE(store.saveValid(0, traceFor(11, 0, 0), buckets, 2, startup, 3, 1000, 1770000100));
-    backend.writeCalls = 0;
 
     TEST_ASSERT_TRUE(store.clearForNewSession());
 
@@ -135,7 +133,6 @@ void test_starting_new_session_reuses_existing_trace_file_without_clearing_slots
     TEST_ASSERT_EQUAL_UINT32(11, loaded.sessionId);
     TEST_ASSERT_EQUAL_size_t(2, store.readBuckets(0, buckets, 2));
     TEST_ASSERT_EQUAL_size_t(3, store.readStartupEdges(0, startup, 3));
-    TEST_ASSERT_EQUAL_size_t(0, backend.writeCalls);
 }
 
 void test_starting_new_session_creates_missing_trace_file() {

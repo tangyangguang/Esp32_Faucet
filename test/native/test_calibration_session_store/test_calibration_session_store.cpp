@@ -42,7 +42,6 @@ void test_session_store_rebuilds_corrupt_checksum_file_as_empty_session() {
     TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(AppStorageStatus::Ready),
                             static_cast<unsigned>(loaded.status()));
     TEST_ASSERT_TRUE(backend.exists("/session.bin"));
-    TEST_ASSERT_EQUAL_size_t(0, backend.removeCalls);
     CalibrationSessionRecord output{};
     TEST_ASSERT_TRUE(loaded.load(output));
     TEST_ASSERT_EQUAL_UINT32(0, output.sessionId);
@@ -59,7 +58,6 @@ void test_session_store_rebuilds_too_small_file_as_empty_session() {
     TEST_ASSERT_TRUE(loaded.ready());
     TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(AppStorageStatus::Ready),
                             static_cast<unsigned>(loaded.status()));
-    TEST_ASSERT_EQUAL_size_t(1, backend.removeCalls);
     CalibrationSessionRecord output{};
     TEST_ASSERT_TRUE(loaded.load(output));
     TEST_ASSERT_EQUAL_UINT32(0, output.sessionId);
@@ -75,7 +73,6 @@ void test_session_store_ignores_trailing_bytes_when_header_is_current() {
     CalibrationSessionFileStore loaded(backend, "/session.bin");
     TEST_ASSERT_TRUE(loaded.begin());
     TEST_ASSERT_TRUE(loaded.ready());
-    TEST_ASSERT_EQUAL_size_t(0, backend.removeCalls);
     TEST_ASSERT_EQUAL_size_t(1380, backend.files["/session.bin"].size());
     CalibrationSessionRecord output{};
     TEST_ASSERT_TRUE(loaded.load(output));

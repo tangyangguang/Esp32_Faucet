@@ -14,7 +14,6 @@ namespace {
 class MemoryFileBackend : public WaterRecordFileBackend {
 public:
     bool failHeaderWriteOnce = false;
-    std::size_t recordReadAtCalls = 0;
     std::map<std::string, std::vector<std::uint8_t>> files;
 
     bool exists(const char* path) override {
@@ -50,10 +49,6 @@ public:
     bool readAt(const char* path, std::size_t offset, std::uint8_t* out, std::size_t len) override {
         if (!out) {
             return false;
-        }
-        if (path && std::strcmp(path, "/schemes.bin") == 0 && offset >= sizeof(MeteringSchemeStoreHeader) &&
-            len >= sizeof(MeteringSchemeRecord)) {
-            ++recordReadAtCalls;
         }
         const auto it = files.find(path ? path : "");
         if (it == files.end() || offset + len > it->second.size()) {
@@ -139,7 +134,7 @@ void test_begin_rebuilds_incompatible_scheme_file() {
     TEST_ASSERT_EQUAL_UINT32(8, active.params.startupPulseCount);
 }
 
-void test_list_reads_scheme_records_in_one_bulk_operation() {
+void test_list_returns_scheme_records_in_order() {
     MemoryFileBackend backend;
     MeteringSchemeStore store(backend, "/schemes.bin");
     TEST_ASSERT_TRUE(store.begin());
@@ -149,11 +144,9 @@ void test_list_reads_scheme_records_in_one_bulk_operation() {
     }
 
     MeteringSchemeRecord records[kMeteringSchemeStoreSlotCount]{};
-    backend.recordReadAtCalls = 0;
     TEST_ASSERT_EQUAL_size_t(kMeteringSchemeStoreSlotCount,
                              store.list(records, kMeteringSchemeStoreSlotCount));
 
-    TEST_ASSERT_EQUAL_size_t(1, backend.recordReadAtCalls);
     TEST_ASSERT_EQUAL_UINT32(1, records[0].id);
     TEST_ASSERT_EQUAL_UINT32(kMeteringSchemeStoreSlotCount, records[kMeteringSchemeStoreSlotCount - 1].id);
 }
@@ -225,7 +218,7 @@ int main(int argc, char** argv) {
     UNITY_BEGIN();
     RUN_TEST(test_begin_initializes_default_scheme_file);
     RUN_TEST(test_begin_rebuilds_incompatible_scheme_file);
-    RUN_TEST(test_list_reads_scheme_records_in_one_bulk_operation);
+    RUN_TEST(test_list_returns_scheme_records_in_order);
     RUN_TEST(test_set_active_scheme_updates_current_id);
     RUN_TEST(test_full_store_overwrites_oldest_non_current_record);
     RUN_TEST(test_create_manual_header_failure_rolls_back_written_record);

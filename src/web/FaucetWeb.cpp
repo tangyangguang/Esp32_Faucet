@@ -72,7 +72,8 @@ bool calibrationSessionStorageReady();
 void redirectCalibrationFailure(const char* error);
 void redirectFlowCalibrationFailure(const char* error);
 void sendCalibrationPageScript();
-void redirectFlowCalibrationResult(bool ok, const char* success, const char* failure);
+void sendFlowCalibrationPostFailure(bool ajax, const char* failure);
+void sendFlowCalibrationPostResult(bool ajax, bool ok, const char* success, const char* failure);
 void sendDetailErrorPage(const char* title, const char* message, const char* backHref, const char* backLabel);
 void formatWaterRecordTime(const WaterRecord& record, char* out, std::size_t len);
 void formatWaterRecordListTime(const WaterRecord& record, char* out, std::size_t len);
@@ -4083,51 +4084,30 @@ void handleFlowCalibrationPost() {
         return;
     }
     char text[32]{};
+    const bool ajax = Esp32BaseWeb::hasParam("ajax");
+    const std::uint32_t now = g_context.nowSeconds ? g_context.nowSeconds() : 0;
     if (!getParam("action", text, sizeof(text))) {
-        Esp32BaseWeb::redirectSeeOther("/faucet/calibration/flow?error=invalid_value");
+        sendFlowCalibrationPostFailure(ajax, "invalid_value");
         return;
     }
-    const bool ajax = Esp32BaseWeb::hasParam("ajax");
-    auto respondFlowCalibrationFailure = [ajax](const char* failure) {
-        if (!ajax) {
-            redirectFlowCalibrationFailure(failure);
-            return;
-        }
-        char json[80]{};
-        std::snprintf(json, sizeof(json), "{\"error\":\"%s\"}", failure ? failure : "save_failed");
-        Esp32BaseWeb::sendJson(400, json);
-    };
-    auto respondFlowCalibrationResult = [ajax](bool ok, const char* success, const char* failure) {
-        if (!ajax) {
-            redirectFlowCalibrationResult(ok, success, failure);
-            return;
-        }
-        if (ok) {
-            Esp32BaseWeb::sendJson(200, "{\"ok\":true}");
-            return;
-        }
-        char json[80]{};
-        std::snprintf(json, sizeof(json), "{\"error\":\"%s\"}", failure ? failure : "save_failed");
-        Esp32BaseWeb::sendJson(400, json);
-    };
     if (std::strcmp(text, "start_session") == 0) {
         if (waterTaskActive()) {
-            redirectFlowCalibrationFailure("busy");
+            sendFlowCalibrationPostFailure(ajax, "busy");
             return;
         }
         if (!calibrationSessionStorageReady()) {
-            redirectFlowCalibrationFailure("calibration_storage_unavailable");
+            sendFlowCalibrationPostFailure(ajax, "calibration_storage_unavailable");
             return;
         }
-        redirectFlowCalibrationResult(g_context.app && g_context.app->startCalibrationSessionForWeb(
-                                                       g_context.nowSeconds ? g_context.nowSeconds() : 0),
+        sendFlowCalibrationPostResult(ajax,
+                                      g_context.app && g_context.app->startCalibrationSessionForWeb(now),
                                       "session_started",
                                       "invalid_state");
         return;
     }
     if (std::strcmp(text, "discard_session") == 0) {
-        redirectFlowCalibrationResult(g_context.app && g_context.app->discardCalibrationSessionForWeb(
-                                                       g_context.nowSeconds ? g_context.nowSeconds() : 0),
+        sendFlowCalibrationPostResult(ajax,
+                                      g_context.app && g_context.app->discardCalibrationSessionForWeb(now),
                                       "session_discarded",
                                       "invalid_state");
         return;
@@ -4136,19 +4116,19 @@ void handleFlowCalibrationPost() {
         std::uint32_t actualMl = 0;
         if (!getParam("actualMl", text, sizeof(text)) || !parseU32(text, actualMl) ||
             actualMl < kCalibrationMinActualMl || actualMl > kMaxVolumePresetMl) {
-            respondFlowCalibrationFailure("invalid_value");
+            sendFlowCalibrationPostFailure(ajax, "invalid_value");
             return;
         }
-        respondFlowCalibrationResult(g_context.app && g_context.app->submitCalibrationActualForWeb(
-                                                       actualMl, g_context.nowSeconds ? g_context.nowSeconds() : 0),
+        sendFlowCalibrationPostResult(ajax,
+                                      g_context.app && g_context.app->submitCalibrationActualForWeb(actualMl, now),
                                       "actual",
                                       "save_failed");
         return;
     }
     if (std::strcmp(text, "skip_attempt") == 0) {
-        respondFlowCalibrationResult(g_context.app && g_context.app->skipCalibrationAttemptForWeb(
-                                                       CalibrationSkipReason::Mistake,
-                                                       g_context.nowSeconds ? g_context.nowSeconds() : 0),
+        sendFlowCalibrationPostResult(ajax,
+                                      g_context.app &&
+                                          g_context.app->skipCalibrationAttemptForWeb(CalibrationSkipReason::Mistake, now),
                                       "attempt_skipped",
                                       "invalid_state");
         return;
@@ -4157,30 +4137,30 @@ void handleFlowCalibrationPost() {
         std::uint32_t attemptIndex = 0;
         if (!getParam("attemptIndex", text, sizeof(text)) || !parseU32(text, attemptIndex) ||
             attemptIndex >= kCalibrationMaxAttempts) {
-            respondFlowCalibrationFailure("invalid_value");
+            sendFlowCalibrationPostFailure(ajax, "invalid_value");
             return;
         }
         if (waterTaskActive()) {
-            respondFlowCalibrationFailure("busy");
+            sendFlowCalibrationPostFailure(ajax, "busy");
             return;
         }
-        respondFlowCalibrationResult(g_context.app && g_context.app->removeCalibrationSessionSampleForWeb(
-                                                       static_cast<std::uint8_t>(attemptIndex),
-                                                       g_context.nowSeconds ? g_context.nowSeconds() : 0),
+        sendFlowCalibrationPostResult(ajax,
+                                      g_context.app && g_context.app->removeCalibrationSessionSampleForWeb(
+                                                           static_cast<std::uint8_t>(attemptIndex), now),
                                       "sample_removed",
                                       "invalid_state");
         return;
     }
     if (std::strcmp(text, "generate_session") == 0) {
-        redirectFlowCalibrationResult(g_context.app && g_context.app->generateCalibrationForWeb(
-                                                       g_context.nowSeconds ? g_context.nowSeconds() : 0),
+        sendFlowCalibrationPostResult(ajax,
+                                      g_context.app && g_context.app->generateCalibrationForWeb(now),
                                       "generated",
                                       "sample_not_enough");
         return;
     }
     if (std::strcmp(text, "apply_session") == 0) {
-        redirectFlowCalibrationResult(g_context.app && g_context.app->applyGeneratedCalibrationForWeb(
-                                                       g_context.nowSeconds ? g_context.nowSeconds() : 0),
+        sendFlowCalibrationPostResult(ajax,
+                                      g_context.app && g_context.app->applyGeneratedCalibrationForWeb(now),
                                       "applied",
                                       "no_generated_result");
         return;
@@ -4189,7 +4169,7 @@ void handleFlowCalibrationPost() {
         handleCreateMeteringSchemeApi();
         return;
     }
-    Esp32BaseWeb::redirectSeeOther("/faucet/calibration/flow?error=invalid_value");
+    sendFlowCalibrationPostFailure(ajax, "invalid_value");
 }
 
 bool persistFilterConfig(const FilterRecord& record, std::size_t index) {
@@ -4308,14 +4288,28 @@ void redirectFlowCalibrationFailure(const char* error) {
     Esp32BaseWeb::redirectSeeOther(url);
 }
 
-void redirectFlowCalibrationResult(bool ok, const char* success, const char* failure) {
-    if (ok) {
-        char url[112]{};
-        std::snprintf(url, sizeof(url), "/faucet/calibration/flow?saved=%s", success ? success : "1");
-        Esp32BaseWeb::redirectSeeOther(url);
-    } else {
+void sendFlowCalibrationPostFailure(bool ajax, const char* failure) {
+    if (!ajax) {
         redirectFlowCalibrationFailure(failure);
+        return;
     }
+    char json[80]{};
+    std::snprintf(json, sizeof(json), "{\"error\":\"%s\"}", failure ? failure : "save_failed");
+    Esp32BaseWeb::sendJson(400, json);
+}
+
+void sendFlowCalibrationPostResult(bool ajax, bool ok, const char* success, const char* failure) {
+    if (!ok) {
+        sendFlowCalibrationPostFailure(ajax, failure);
+        return;
+    }
+    if (ajax) {
+        Esp32BaseWeb::sendJson(200, "{\"ok\":true}");
+        return;
+    }
+    char url[112]{};
+    std::snprintf(url, sizeof(url), "/faucet/calibration/flow?saved=%s", success ? success : "1");
+    Esp32BaseWeb::redirectSeeOther(url);
 }
 
 void handleStatusApi() {

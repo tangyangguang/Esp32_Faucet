@@ -12,6 +12,7 @@
 #include "../support/MemoryRecordWriter.h"
 
 #include <algorithm>
+#include <cstdio>
 #include <cstring>
 #include <string>
 #include <vector>
@@ -581,6 +582,29 @@ void test_filter_reset_handler_redirects_busy_before_runtime_write() {
     TEST_ASSERT_EQUAL_UINT32(0, fixture.backend.filterRuntimeWrites);
 }
 
+void test_filter_reset_handler_persists_runtime_start_time() {
+    WebFixture fixture;
+    registerRoutes();
+    Esp32BaseWeb::nativeTestBeginRequest(Esp32BaseWeb::METHOD_POST, "/api/faucet/filters/reset");
+    Esp32BaseWeb::nativeTestSetAuthenticated(true);
+    Esp32BaseWeb::nativeTestSetSameOrigin(true);
+    Esp32BaseWeb::nativeTestSetParam("index", "0");
+
+    TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch("/api/faucet/filters/reset", Esp32BaseWeb::METHOD_POST));
+
+    TEST_ASSERT_EQUAL(303, Esp32BaseWeb::nativeTestResponse().code);
+    TEST_ASSERT_EQUAL_STRING("/faucet/filters?reset=1", Esp32BaseWeb::nativeTestResponseHeader("Location"));
+    TEST_ASSERT_EQUAL_UINT32(testNowSeconds(), fixture.filters.record(0).startTime);
+    TEST_ASSERT_EQUAL_UINT32(0, fixture.filters.record(0).usedMl);
+    char expected[16]{};
+    std::snprintf(expected, sizeof(expected), "%lu", static_cast<unsigned long>(testNowSeconds()));
+    char text[16]{};
+    TEST_ASSERT_TRUE(fixture.backend.getStr("faucet_run", "f0_start", text, sizeof(text), ""));
+    TEST_ASSERT_EQUAL_STRING(expected, text);
+    TEST_ASSERT_TRUE(fixture.backend.getStr("faucet_run", "f0_used", text, sizeof(text), ""));
+    TEST_ASSERT_EQUAL_STRING("0", text);
+}
+
 void test_flow_calibration_session_start_redirects_busy_to_flow_center() {
     WebFixture fixture;
     setRunning(fixture.app);
@@ -865,6 +889,7 @@ int main(int, char**) {
     RUN_TEST(test_filter_reset_handler_rejects_cross_origin_post);
     RUN_TEST(test_filter_reset_handler_returns_invalid_index_without_runtime_write);
     RUN_TEST(test_filter_reset_handler_redirects_busy_before_runtime_write);
+    RUN_TEST(test_filter_reset_handler_persists_runtime_start_time);
     RUN_TEST(test_flow_calibration_session_start_redirects_busy_to_flow_center);
     RUN_TEST(test_flow_calibration_session_start_redirects_success_from_idle);
     RUN_TEST(test_calibration_session_start_recovers_missing_session_file_after_format);

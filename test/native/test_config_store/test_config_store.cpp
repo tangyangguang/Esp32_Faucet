@@ -122,7 +122,7 @@ void test_config_save_and_load_round_trips_system_config() {
     TEST_ASSERT_EQUAL_UINT32(180, loaded.filters[1].recommendDays);
     TEST_ASSERT_EQUAL_UINT32(365, loaded.filters[1].maxDays);
     TEST_ASSERT_EQUAL_UINT32(2000000, loaded.filters[1].lifeMl);
-    TEST_ASSERT_EQUAL_UINT32(1714502400, loaded.filters[1].startTime);
+    TEST_ASSERT_EQUAL_UINT32(0, loaded.filters[1].startTime);
     TEST_ASSERT_EQUAL_UINT32(0, loaded.filters[1].usedMl);
 }
 
@@ -316,7 +316,7 @@ void test_statistics_runtime_future_version_uses_defaults_without_erasing_storag
     TEST_ASSERT_EQUAL_STRING("123", text);
 }
 
-void test_filter_runtime_round_trips_used_and_boot_only() {
+void test_filter_runtime_round_trips_start_used_and_boot() {
     FakeConfigBackend backend;
     ConfigStore store(backend);
     SystemConfig config = makeDefaultConfig();
@@ -333,10 +333,10 @@ void test_filter_runtime_round_trips_used_and_boot_only() {
     loaded.filters[0].startTime = 999;
     loaded.filters[1].startTime = 888;
     store.loadFilterRuntime(loaded.filters);
-    TEST_ASSERT_EQUAL_UINT32(999, loaded.filters[0].startTime);
+    TEST_ASSERT_EQUAL_UINT32(111, loaded.filters[0].startTime);
     TEST_ASSERT_EQUAL_UINT32(4000000000UL, loaded.filters[0].usedMl);
     TEST_ASSERT_EQUAL_UINT32(9, loaded.filters[0].startBootId);
-    TEST_ASSERT_EQUAL_UINT32(888, loaded.filters[1].startTime);
+    TEST_ASSERT_EQUAL_UINT32(222, loaded.filters[1].startTime);
     TEST_ASSERT_EQUAL_UINT32(333, loaded.filters[1].usedMl);
     TEST_ASSERT_EQUAL_UINT32(10, loaded.filters[1].startBootId);
     TEST_ASSERT_EQUAL_STRING("第1级滤芯", loaded.filters[0].name);
@@ -360,23 +360,22 @@ void test_filter_runtime_ignores_values_in_system_config_namespace() {
     TEST_ASSERT_EQUAL_INT32(0, backend.getInt("faucet_run", "ver", 0));
 }
 
-void test_non_current_config_does_not_merge_filter_runtime_storage() {
+void test_system_config_load_does_not_merge_filter_runtime_storage() {
     FakeConfigBackend backend;
-    backend.setInt("faucet_cfg", "ver", 15);
+    ConfigStore store(backend);
+    backend.setInt("faucet_cfg", "ver", store.currentSystemConfigVersion());
     backend.setBool("faucet_cfg", "f0_en", true);
     backend.setStr("faucet_cfg", "f0_name", "PP");
     backend.setInt("faucet_run", "ver", 1);
     backend.setStr("faucet_run", "f0_start", "1714502400");
     backend.setStr("faucet_run", "f0_used", "123456");
-    ConfigStore store(backend);
 
     const SystemConfig loaded = store.loadSystemConfig();
 
-    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(ConfigStore::LoadStatus::Defaults),
+    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(ConfigStore::LoadStatus::LoadedCurrent),
                             static_cast<std::uint8_t>(store.lastSystemConfigLoadStatus()));
-    TEST_ASSERT_EQUAL_INT32(15, backend.getInt("faucet_cfg", "ver", 0));
     TEST_ASSERT_TRUE(loaded.filters[0].enabled);
-    TEST_ASSERT_EQUAL_STRING("第1级滤芯", loaded.filters[0].name);
+    TEST_ASSERT_EQUAL_STRING("PP", loaded.filters[0].name);
     TEST_ASSERT_EQUAL_UINT32(0, loaded.filters[0].startTime);
     TEST_ASSERT_EQUAL_INT32(0, backend.getInt("faucet_cfg", "f0_start", 0));
 }
@@ -415,9 +414,9 @@ int main(int argc, char** argv) {
     RUN_TEST(test_statistics_runtime_round_trips_uint32_values);
     RUN_TEST(test_statistics_runtime_rolls_loaded_periods);
     RUN_TEST(test_statistics_runtime_future_version_uses_defaults_without_erasing_storage);
-    RUN_TEST(test_filter_runtime_round_trips_used_and_boot_only);
+    RUN_TEST(test_filter_runtime_round_trips_start_used_and_boot);
     RUN_TEST(test_filter_runtime_ignores_values_in_system_config_namespace);
-    RUN_TEST(test_non_current_config_does_not_merge_filter_runtime_storage);
+    RUN_TEST(test_system_config_load_does_not_merge_filter_runtime_storage);
     RUN_TEST(test_filter_runtime_future_version_keeps_current_records_and_storage);
     return UNITY_END();
 }

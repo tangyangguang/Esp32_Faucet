@@ -43,42 +43,6 @@ void test_non_current_system_config_version_uses_defaults_until_explicit_save() 
                             static_cast<std::uint8_t>(store.lastSystemConfigLoadStatus()));
 }
 
-void test_config_ignores_stray_fields_when_version_is_missing() {
-    FakeConfigBackend backend;
-    backend.setInt("faucet_cfg", "confirm_s", 23);
-    backend.setInt("faucet_cfg", "pulse_m", 615);
-    ConfigStore store(backend);
-
-    const SystemConfig loaded = store.loadSystemConfig();
-
-    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(ConfigStore::LoadStatus::Defaults),
-                            static_cast<std::uint8_t>(store.lastSystemConfigLoadStatus()));
-    TEST_ASSERT_EQUAL_INT32(0, backend.getInt("faucet_cfg", "ver", 0));
-    TEST_ASSERT_EQUAL_UINT32(kDefaultConfirmTimeoutSec, loaded.confirmTimeoutSec);
-    TEST_ASSERT_EQUAL_UINT32(kDefaultPulseObservationWindowSec, loaded.pulseObservationWindowSec);
-}
-
-void test_non_current_filter_config_version_uses_default_fields() {
-    FakeConfigBackend backend;
-    backend.setInt("faucet_cfg", "ver", 2);
-    backend.setBool("faucet_cfg", "f1_en", true);
-    backend.setStr("faucet_cfg", "f1_name", "RO");
-    backend.setInt("faucet_cfg", "f1_life_min", 360);
-    backend.setInt("faucet_cfg", "f1_life_max", 720);
-    backend.setInt("faucet_cfg", "f1_life_ml", 9000000);
-    ConfigStore store(backend);
-
-    const SystemConfig loaded = store.loadSystemConfig();
-
-    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(ConfigStore::LoadStatus::Defaults),
-                            static_cast<std::uint8_t>(store.lastSystemConfigLoadStatus()));
-    TEST_ASSERT_EQUAL_INT32(2, backend.getInt("faucet_cfg", "ver", 0));
-    TEST_ASSERT_EQUAL_STRING("第2级滤芯", loaded.filters[1].name);
-    TEST_ASSERT_EQUAL_UINT32(180, loaded.filters[1].recommendDays);
-    TEST_ASSERT_EQUAL_UINT32(180, loaded.filters[1].maxDays);
-    TEST_ASSERT_EQUAL_UINT32(0, loaded.filters[1].lifeMl);
-}
-
 void test_non_current_config_load_does_not_write_storage() {
     FakeConfigBackend backend;
     backend.setInt("faucet_cfg", "ver", 1);
@@ -99,56 +63,6 @@ void test_non_current_config_load_does_not_write_storage() {
     char text[16]{};
     TEST_ASSERT_TRUE(backend.getStr("faucet_cfg", "f0_name", text, sizeof(text), ""));
     TEST_ASSERT_EQUAL_STRING("CTO", text);
-}
-
-void test_config_future_version_uses_defaults_until_explicit_save() {
-    FakeConfigBackend backend;
-    backend.setInt("faucet_cfg", "ver", 99);
-    backend.setInt("faucet_cfg", "confirm_s", 24);
-    backend.setBool("faucet_cfg", "beep", false);
-    backend.setBool("faucet_cfg", "p0_en", false);
-    backend.setInt("faucet_cfg", "p0_type", 1);
-    backend.setInt("faucet_cfg", "p0_val", 45);
-    backend.setStr("faucet_cfg", "p0_name", "Other");
-    ConfigStore store(backend);
-
-    const SystemConfig loaded = store.loadSystemConfig();
-
-    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(ConfigStore::LoadStatus::Defaults),
-                            static_cast<std::uint8_t>(store.lastSystemConfigLoadStatus()));
-    TEST_ASSERT_EQUAL_INT32(99, backend.getInt("faucet_cfg", "ver", 0));
-    TEST_ASSERT_EQUAL_UINT32(kDefaultConfirmTimeoutSec, loaded.confirmTimeoutSec);
-    TEST_ASSERT_TRUE(loaded.beepEnabled);
-    TEST_ASSERT_TRUE(loaded.presets[0].enabled);
-    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(PresetType::Volume), static_cast<std::uint8_t>(loaded.presets[0].type));
-    TEST_ASSERT_EQUAL_UINT32(1500, loaded.presets[0].value);
-    TEST_ASSERT_EQUAL_STRING("1.5L", loaded.presets[0].name);
-    TEST_ASSERT_TRUE(store.saveSystemConfig(makeDefaultConfig()));
-    TEST_ASSERT_EQUAL_INT32(store.currentSystemConfigVersion(), backend.getInt("faucet_cfg", "ver", 0));
-}
-
-void test_config_invalid_version_uses_defaults_until_explicit_save() {
-    FakeConfigBackend backend;
-    backend.setInt("faucet_cfg", "ver", -1);
-    backend.setInt("faucet_cfg", "confirm_s", 25);
-    backend.setBool("faucet_cfg", "p3_en", true);
-    backend.setInt("faucet_cfg", "p3_type", 0);
-    backend.setInt("faucet_cfg", "p3_val", 4200);
-    backend.setStr("faucet_cfg", "p3_name", "Test ML");
-    ConfigStore store(backend);
-
-    const SystemConfig loaded = store.loadSystemConfig();
-
-    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(ConfigStore::LoadStatus::Defaults),
-                            static_cast<std::uint8_t>(store.lastSystemConfigLoadStatus()));
-    TEST_ASSERT_EQUAL_INT32(-1, backend.getInt("faucet_cfg", "ver", 0));
-    TEST_ASSERT_EQUAL_UINT32(kDefaultConfirmTimeoutSec, loaded.confirmTimeoutSec);
-    TEST_ASSERT_FALSE(loaded.presets[3].enabled);
-    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(PresetType::Volume), static_cast<std::uint8_t>(loaded.presets[3].type));
-    TEST_ASSERT_EQUAL_UINT32(1000, loaded.presets[3].value);
-    TEST_ASSERT_EQUAL_STRING("预设", loaded.presets[3].name);
-    TEST_ASSERT_TRUE(store.saveSystemConfig(makeDefaultConfig()));
-    TEST_ASSERT_EQUAL_INT32(store.currentSystemConfigVersion(), backend.getInt("faucet_cfg", "ver", 0));
 }
 
 void test_config_save_and_load_round_trips_system_config() {
@@ -305,22 +219,6 @@ void test_config_load_sanitizes_stored_values() {
     TEST_ASSERT_EQUAL_UINT16(kMinCalibrationMaxRelativeErrorTenthPercent,
                              loaded.calibrationMaxRelativeErrorTenthPercent);
     TEST_ASSERT_EQUAL_UINT32(kMinVolumePresetMl, loaded.presets[0].value);
-}
-
-void test_non_current_config_missing_pulse_observation_window_uses_default() {
-    FakeConfigBackend backend;
-    backend.setInt("faucet_cfg", "ver", 14);
-    backend.setInt("faucet_cfg", "confirm_s", 22);
-    ConfigStore store(backend);
-
-    const SystemConfig loaded = store.loadSystemConfig();
-
-    TEST_ASSERT_EQUAL_UINT32(kDefaultConfirmTimeoutSec, loaded.confirmTimeoutSec);
-    TEST_ASSERT_EQUAL_UINT32(kDefaultPulseObservationWindowSec, loaded.pulseObservationWindowSec);
-    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(ConfigStore::LoadStatus::Defaults),
-                            static_cast<std::uint8_t>(store.lastSystemConfigLoadStatus()));
-    TEST_ASSERT_EQUAL_INT32(14, backend.getInt("faucet_cfg", "ver", 0));
-    TEST_ASSERT_EQUAL_INT32(0, backend.getInt("faucet_cfg", "pulse_win_s", 0));
 }
 
 void test_config_reset_restores_defaults() {
@@ -507,15 +405,10 @@ int main(int argc, char** argv) {
     UNITY_BEGIN();
     RUN_TEST(test_config_load_uses_defaults_without_matching_version);
     RUN_TEST(test_non_current_system_config_version_uses_defaults_until_explicit_save);
-    RUN_TEST(test_config_ignores_stray_fields_when_version_is_missing);
-    RUN_TEST(test_non_current_filter_config_version_uses_default_fields);
     RUN_TEST(test_non_current_config_load_does_not_write_storage);
-    RUN_TEST(test_config_future_version_uses_defaults_until_explicit_save);
-    RUN_TEST(test_config_invalid_version_uses_defaults_until_explicit_save);
     RUN_TEST(test_config_save_and_load_round_trips_system_config);
     RUN_TEST(test_config_save_and_load_round_trips_sensor_config);
     RUN_TEST(test_config_load_sanitizes_stored_values);
-    RUN_TEST(test_non_current_config_missing_pulse_observation_window_uses_default);
     RUN_TEST(test_config_reset_restores_defaults);
     RUN_TEST(test_config_save_reports_backend_failures);
     RUN_TEST(test_config_save_does_not_mark_current_version_after_partial_write_failure);

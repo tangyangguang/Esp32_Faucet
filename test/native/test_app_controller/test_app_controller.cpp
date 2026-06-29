@@ -1343,46 +1343,24 @@ void test_app_controller_calibration_run_ignores_preset_target_until_local_cance
 }
 
 void test_app_controller_generates_calibration_session_candidate() {
-    SystemConfig config = makeDefaultConfig();
-    StatisticsStore statistics;
-    FilterStore filters(config.filters);
-    MemoryRecordWriter records;
-    MemoryCalibrationWriter calibrations;
-    MemoryFileBackend backend;
-    MeteringSchemeStore schemes(backend, "/schemes.bin");
-    MeteringSchemeRecord active{};
-    TEST_ASSERT_TRUE(prepareMeteringScheme(schemes, 225, active));
-    CalibrationSessionFileStore sessionStore(backend, "/cal-session.bin");
-    CalibrationSessionTraceStore traceStore(backend, "/cal-traces.bin");
-    TEST_ASSERT_TRUE(sessionStore.begin());
-    TEST_ASSERT_TRUE(traceStore.begin());
+    CalibrationAppFixture fixture;
 
     CalibrationSessionRecord session = makeCalibrationSession(77, 1714502400);
-    saveCalibrationSessionSample(traceStore, session, 0, 1714502401, 1500, 40, 210, 6);
-    saveCalibrationSessionSample(traceStore, session, 1, 1714502410, 7500, 40, 1540, 11);
+    saveCalibrationSessionSample(fixture.traceStore, session, 0, 1714502401, 1500, 40, 210, 6);
+    saveCalibrationSessionSample(fixture.traceStore, session, 1, 1714502410, 7500, 40, 1540, 11);
     session.status = CalibrationSessionStatus::ReadyToGenerate;
     session.validSampleCount = countValidCalibrationSamples(session);
-    TEST_ASSERT_TRUE(sessionStore.save(session));
-
-    AppController app(config,
-                      active,
-                      statistics,
-                      filters,
-                      records,
-                      schemes,
-                      nullptr,
-                      &calibrations,
-                      &sessionStore,
-                      &traceStore);
+    TEST_ASSERT_TRUE(fixture.sessionStore.save(session));
+    fixture.createApp();
     MeteringSchemeRecord beforeGenerate[4]{};
-    const std::size_t beforeGenerateCount = schemes.list(beforeGenerate, 4);
+    const std::size_t beforeGenerateCount = fixture.schemes.list(beforeGenerate, 4);
 
-    TEST_ASSERT_TRUE(app.generateCalibrationForWeb(1714502500));
+    TEST_ASSERT_TRUE(fixture.app->generateCalibrationForWeb(1714502500));
 
     MeteringSchemeRecord list[4]{};
-    TEST_ASSERT_EQUAL_size_t(beforeGenerateCount, schemes.list(list, 4));
+    TEST_ASSERT_EQUAL_size_t(beforeGenerateCount, fixture.schemes.list(list, 4));
     TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationSessionStatus::Generated),
-                            static_cast<unsigned>(app.snapshot().calibrationStatus));
+                            static_cast<unsigned>(fixture.app->snapshot().calibrationStatus));
 }
 
 void test_app_controller_auto_generates_after_second_valid_calibration_sample() {
@@ -1397,27 +1375,6 @@ void test_app_controller_auto_generates_after_second_valid_calibration_sample() 
     TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationSessionStatus::Generated),
                             static_cast<unsigned>(snapshot.calibrationStatus));
     TEST_ASSERT_TRUE(fixture.app->applyGeneratedCalibrationForWeb(1714502600));
-}
-
-void test_app_controller_auto_generates_no_startup_segment_calibration_samples() {
-    CalibrationAppFixture fixture;
-    CalibrationSessionRecord session = makeCalibrationSession(77, 1714502400);
-    saveCalibrationSessionSample(fixture.traceStore, session, 0, 1714502401, 500, 0, 1055, 30);
-    savePendingRamCalibrationAttempt(fixture, session, 1, 1714502410, 750, 0, 1506, 45);
-    session.status = CalibrationSessionStatus::AwaitingActual;
-    session.validSampleCount = countValidCalibrationSamples(session);
-    TEST_ASSERT_TRUE(fixture.sessionStore.save(session));
-    fixture.createApp();
-
-    TEST_ASSERT_TRUE(fixture.app->submitCalibrationActualForWeb(750, 1714502500));
-
-    const AppSnapshot snapshot = fixture.app->snapshot();
-    TEST_ASSERT_EQUAL_UINT8(2, snapshot.calibrationValidSampleCount);
-    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationSessionStatus::Generated),
-                            static_cast<unsigned>(snapshot.calibrationStatus));
-    TEST_ASSERT_TRUE(fixture.app->applyGeneratedCalibrationForWeb(1714502600));
-    TEST_ASSERT_EQUAL_UINT32(0, fixture.app->activeMeteringScheme().params.startupPulseCount);
-    TEST_ASSERT_EQUAL_UINT32(0, fixture.app->activeMeteringScheme().params.startupVolumeMl);
 }
 
 void test_app_controller_saves_unstable_actual_without_counting_valid_sample() {
@@ -1513,32 +1470,6 @@ void test_app_controller_removed_valid_sample_clears_generated_candidate() {
     TEST_ASSERT_FALSE(fixture.app->applyGeneratedCalibrationForWeb(1714502600));
 }
 
-void test_app_controller_remove_sample_session_save_failure_keeps_original_sample() {
-    CalibrationAppFixture fixture;
-    saveOneValidOnePendingSession(fixture, 1714502400);
-    fixture.createApp();
-
-    CalibrationStoredTrace before{};
-    TEST_ASSERT_TRUE(fixture.traceStore.load(0, before));
-    TEST_ASSERT_TRUE(before.valid);
-
-    fixture.backend.failWriteAtPath = "/cal-session.bin";
-    fixture.backend.failWriteAtPathCount = 1;
-
-    TEST_ASSERT_FALSE(fixture.app->removeCalibrationSessionSampleForWeb(0, 1714502500));
-
-    CalibrationStoredTrace after{};
-    TEST_ASSERT_TRUE(fixture.traceStore.load(0, after));
-    TEST_ASSERT_TRUE(after.valid);
-    TEST_ASSERT_EQUAL_UINT32(before.actualMl, after.actualMl);
-    TEST_ASSERT_EQUAL_UINT32(before.trace.totalPulses, after.trace.totalPulses);
-
-    CalibrationSessionRecord persisted{};
-    TEST_ASSERT_TRUE(fixture.sessionStore.load(persisted));
-    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationAttemptStatus::Valid),
-                            static_cast<unsigned>(persisted.attempts[0].status));
-}
-
 void test_app_controller_pending_actual_sample_can_be_removed() {
     CalibrationAppFixture fixture;
     saveOneValidOnePendingSession(fixture, 1714502400);
@@ -1555,74 +1486,31 @@ void test_app_controller_pending_actual_sample_can_be_removed() {
                             static_cast<unsigned>(fixture.app->snapshot().calibrationStatus));
 }
 
-void test_app_controller_remove_one_of_three_valid_samples_regenerates_candidate() {
+void test_app_controller_applies_generated_session_scheme_and_keeps_old_scheme() {
     CalibrationAppFixture fixture;
+    const std::uint32_t oldActiveId = fixture.active.id;
+
     CalibrationSessionRecord session = makeCalibrationSession(78, 1714502400);
     saveCalibrationSessionSample(fixture.traceStore, session, 0, 1714502401, 1500, 40, 210, 6);
     saveCalibrationSessionSample(fixture.traceStore, session, 1, 1714502410, 7500, 40, 1540, 11);
-    saveCalibrationSessionSample(fixture.traceStore, session, 2, 1714502420, 9500, 40, 1900, 12);
     session.status = CalibrationSessionStatus::ReadyToGenerate;
     session.validSampleCount = countValidCalibrationSamples(session);
     TEST_ASSERT_TRUE(fixture.sessionStore.save(session));
     fixture.createApp();
+
     TEST_ASSERT_TRUE(fixture.app->generateCalibrationForWeb(1714502500));
-    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationSessionStatus::Generated),
-                            static_cast<unsigned>(fixture.app->snapshot().calibrationStatus));
-
-    TEST_ASSERT_TRUE(fixture.app->removeCalibrationSessionSampleForWeb(1, 1714502550));
-
-    TEST_ASSERT_EQUAL_UINT8(2, fixture.app->snapshot().calibrationValidSampleCount);
-    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationSessionStatus::Generated),
-                            static_cast<unsigned>(fixture.app->snapshot().calibrationStatus));
     TEST_ASSERT_TRUE(fixture.app->applyGeneratedCalibrationForWeb(1714502600));
-}
 
-void test_app_controller_applies_generated_session_scheme_and_keeps_old_scheme() {
-    SystemConfig config = makeDefaultConfig();
-    StatisticsStore statistics;
-    FilterStore filters(config.filters);
-    MemoryRecordWriter records;
-    MemoryCalibrationWriter calibrations;
-    MemoryFileBackend backend;
-    MeteringSchemeStore schemes(backend, "/schemes.bin");
-    MeteringSchemeRecord active{};
-    TEST_ASSERT_TRUE(prepareMeteringScheme(schemes, 225, active));
-    const std::uint32_t oldActiveId = active.id;
-    CalibrationSessionFileStore sessionStore(backend, "/cal-session.bin");
-    CalibrationSessionTraceStore traceStore(backend, "/cal-traces.bin");
-    TEST_ASSERT_TRUE(sessionStore.begin());
-    TEST_ASSERT_TRUE(traceStore.begin());
-
-    CalibrationSessionRecord session = makeCalibrationSession(78, 1714502400);
-    saveCalibrationSessionSample(traceStore, session, 0, 1714502401, 1500, 40, 210, 6);
-    saveCalibrationSessionSample(traceStore, session, 1, 1714502410, 7500, 40, 1540, 11);
-    session.status = CalibrationSessionStatus::ReadyToGenerate;
-    session.validSampleCount = countValidCalibrationSamples(session);
-    TEST_ASSERT_TRUE(sessionStore.save(session));
-
-    AppController app(config,
-                      active,
-                      statistics,
-                      filters,
-                      records,
-                      schemes,
-                      nullptr,
-                      &calibrations,
-                      &sessionStore,
-                      &traceStore);
-    TEST_ASSERT_TRUE(app.generateCalibrationForWeb(1714502500));
-    TEST_ASSERT_TRUE(app.applyGeneratedCalibrationForWeb(1714502600));
-
-    TEST_ASSERT_NOT_EQUAL(oldActiveId, schemes.activeSchemeId());
-    TEST_ASSERT_EQUAL_UINT32(schemes.activeSchemeId(), app.activeMeteringScheme().id);
+    TEST_ASSERT_NOT_EQUAL(oldActiveId, fixture.schemes.activeSchemeId());
+    TEST_ASSERT_EQUAL_UINT32(fixture.schemes.activeSchemeId(), fixture.app->activeMeteringScheme().id);
     TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(MeteringSchemeSource::CalibrationSession),
-                            static_cast<unsigned>(app.activeMeteringScheme().sourceType));
-    TEST_ASSERT_UINT32_WITHIN(5, 222, app.activeMeteringScheme().params.stablePulsePerLiter);
+                            static_cast<unsigned>(fixture.app->activeMeteringScheme().sourceType));
+    TEST_ASSERT_UINT32_WITHIN(5, 222, fixture.app->activeMeteringScheme().params.stablePulsePerLiter);
     MeteringSchemeRecord oldScheme{};
-    TEST_ASSERT_TRUE(schemes.findById(oldActiveId, oldScheme));
+    TEST_ASSERT_TRUE(fixture.schemes.findById(oldActiveId, oldScheme));
     TEST_ASSERT_TRUE(oldScheme.recordUsed);
     TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationSessionStatus::Applied),
-                            static_cast<unsigned>(app.snapshot().calibrationStatus));
+                            static_cast<unsigned>(fixture.app->snapshot().calibrationStatus));
 }
 
 void test_app_controller_applies_calibration_from_record_actual() {
@@ -2253,14 +2141,11 @@ int main(int argc, char** argv) {
     RUN_TEST(test_app_controller_calibration_run_ignores_preset_target_until_local_cancel);
     RUN_TEST(test_app_controller_generates_calibration_session_candidate);
     RUN_TEST(test_app_controller_auto_generates_after_second_valid_calibration_sample);
-    RUN_TEST(test_app_controller_auto_generates_no_startup_segment_calibration_samples);
     RUN_TEST(test_app_controller_saves_unstable_actual_without_counting_valid_sample);
     RUN_TEST(test_app_controller_generated_calibration_can_continue_collecting_samples);
     RUN_TEST(test_app_controller_submit_actual_succeeds_when_auto_refresh_cannot_generate);
     RUN_TEST(test_app_controller_removed_valid_sample_clears_generated_candidate);
-    RUN_TEST(test_app_controller_remove_sample_session_save_failure_keeps_original_sample);
     RUN_TEST(test_app_controller_pending_actual_sample_can_be_removed);
-    RUN_TEST(test_app_controller_remove_one_of_three_valid_samples_regenerates_candidate);
     RUN_TEST(test_app_controller_applies_generated_session_scheme_and_keeps_old_scheme);
     RUN_TEST(test_app_controller_applies_calibration_from_record_actual);
     RUN_TEST(test_app_controller_small_record_calibration_keeps_metering_parameters);

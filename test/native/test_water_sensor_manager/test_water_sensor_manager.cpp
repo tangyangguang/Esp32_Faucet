@@ -1,55 +1,13 @@
 #include <unity.h>
 
 #include "app/WaterSensorManager.h"
+#include "../support/FakeAdcReader.h"
 
 using namespace faucet;
+using faucet_test::FakeAdcReader;
+using faucet_test::okMv;
 
 namespace {
-
-class FakeAdcReader : public AdcReader {
-public:
-    bool beginOk = true;
-    bool failAll = false;
-    AdcReadResult values[4]{};
-    AdcRange ranges[4]{};
-    std::size_t readCount[4]{};
-    std::size_t setRangeCount[4]{};
-
-    FakeAdcReader() {
-        for (auto& range : ranges) {
-            range = AdcRange::P4096;
-        }
-    }
-
-    bool begin() override {
-        return beginOk;
-    }
-
-    bool setRange(AdcChannel channel, AdcRange range) override {
-        ranges[index(channel)] = range;
-        ++setRangeCount[index(channel)];
-        return true;
-    }
-
-    AdcReadResult readSingleEnded(AdcChannel channel) override {
-        ++readCount[index(channel)];
-        if (failAll) {
-            return {};
-        }
-        return values[index(channel)];
-    }
-
-    static std::size_t index(AdcChannel channel) {
-        return static_cast<std::size_t>(channel);
-    }
-};
-
-AdcReadResult okMv(std::int16_t mv) {
-    AdcReadResult result{};
-    result.ok = true;
-    result.millivolts = mv;
-    return result;
-}
 
 SystemConfig enabledSensorConfig() {
     SystemConfig config = makeDefaultConfig();

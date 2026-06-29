@@ -6,6 +6,7 @@
 #include "app/ConfigStore.h"
 #include "app/WaterRecordCalibrationStore.h"
 #include "web/FaucetWeb.h"
+#include "../support/FakeAdcReader.h"
 #include "../support/FakeConfigBackend.h"
 #include "../support/MemoryFileBackend.h"
 
@@ -18,8 +19,10 @@
 #include "../../../src/web/FaucetWeb.cpp"
 
 using namespace faucet;
+using faucet_test::FakeAdcReader;
 using faucet_test::FakeConfigBackend;
 using faucet_test::MemoryFileBackend;
+using faucet_test::okMv;
 
 namespace {
 
@@ -32,30 +35,6 @@ public:
 
     std::vector<WaterRecord> records;
 };
-
-class FakeAdcReader : public AdcReader {
-public:
-    AdcReadResult values[4]{};
-
-    bool begin() override {
-        return true;
-    }
-
-    bool setRange(AdcChannel, AdcRange) override {
-        return true;
-    }
-
-    AdcReadResult readSingleEnded(AdcChannel channel) override {
-        return values[static_cast<std::size_t>(channel)];
-    }
-};
-
-AdcReadResult okMv(std::int16_t mv) {
-    AdcReadResult result{};
-    result.ok = true;
-    result.millivolts = mv;
-    return result;
-}
 
 class CountingWaterRecordReader : public WaterRecordReader {
 public:

@@ -1,7 +1,6 @@
 #include "app/MeteringSchemeStore.h"
 
 #include <algorithm>
-#include <cstdio>
 #include <cstring>
 #include <memory>
 
@@ -10,7 +9,6 @@ namespace {
 
 constexpr std::uint32_t kMeteringSchemeStoreMagic = 0x314D5346UL;  // FSM1
 constexpr std::uint16_t kMeteringSchemeStoreVersion = 7;
-constexpr std::size_t kCopyChunkSize = 256;
 
 std::uint32_t headerChecksum(MeteringSchemeStoreHeader header) {
     header.checksum = 0;
@@ -60,28 +58,6 @@ bool validCurrentHeaderForFile(const MeteringSchemeStoreHeader& header, std::int
         return false;
     }
     return fileSize == static_cast<std::int64_t>(expectedFileSizeForHeader(header));
-}
-
-bool tempPathFor(const char* path, char* out, std::size_t len) {
-    if (!path || !out || len == 0) {
-        return false;
-    }
-    const int written = std::snprintf(out, len, "%s.tmp", path);
-    return written > 0 && static_cast<std::size_t>(written) < len;
-}
-
-bool copyFileBytes(WaterRecordFileBackend& backend, const char* from, const char* to, std::size_t size) {
-    if (!from || !to || !backend.createSized(to, size)) {
-        return false;
-    }
-    std::uint8_t buffer[kCopyChunkSize]{};
-    for (std::size_t offset = 0; offset < size; offset += sizeof(buffer)) {
-        const std::size_t chunk = std::min<std::size_t>(sizeof(buffer), size - offset);
-        if (!backend.readAt(from, offset, buffer, chunk) || !backend.writeAt(to, offset, buffer, chunk)) {
-            return false;
-        }
-    }
-    return true;
 }
 
 bool writeCurrentSchemeFile(WaterRecordFileBackend& backend,
@@ -373,52 +349,18 @@ bool MeteringSchemeStore::repairNextSchemeId() {
 }
 
 bool MeteringSchemeStore::loadHeader() {
-    char tempPath[96]{};
-    const bool hasTempPath = tempPathFor(path_, tempPath, sizeof(tempPath));
-    auto recoverFromTemp = [&]() -> bool {
-        if (!hasTempPath || !backend_.exists(tempPath)) {
-            return false;
-        }
-        MeteringSchemeStoreHeader tempHeader{};
-        const std::int64_t tempSize = backend_.fileSize(tempPath);
-        if (tempSize >= static_cast<std::int64_t>(sizeof(tempHeader)) &&
-            backend_.readAt(tempPath, 0, reinterpret_cast<std::uint8_t*>(&tempHeader), sizeof(tempHeader)) &&
-            validCurrentHeaderForFile(tempHeader, tempSize) &&
-            copyFileBytes(backend_, tempPath, path_, expectedFileSizeForHeader(tempHeader))) {
-            backend_.removeFile(tempPath);
-            header_ = tempHeader;
-            return true;
-        }
-        return false;
-    };
-
     const std::int64_t fileSize = backend_.fileSize(path_);
     if (fileSize < static_cast<std::int64_t>(sizeof(MeteringSchemeStoreHeader))) {
-        if (recoverFromTemp()) {
-            status_ = AppStorageStatus::Ready;
-            return true;
-        }
         status_ = AppStorageStatus::Corrupt;
         return false;
     }
     MeteringSchemeStoreHeader loaded{};
     if (!backend_.readAt(path_, 0, reinterpret_cast<std::uint8_t*>(&loaded), sizeof(loaded))) {
-        if (recoverFromTemp()) {
-            status_ = AppStorageStatus::Ready;
-            return true;
-        }
         status_ = AppStorageStatus::BackendFailure;
         return false;
     }
     if (validCurrentHeaderForFile(loaded, fileSize)) {
-        if (hasTempPath && backend_.exists(tempPath)) {
-            backend_.removeFile(tempPath);
-        }
         header_ = loaded;
-        status_ = AppStorageStatus::Ready;
-        return true;
-    }
-    if (recoverFromTemp()) {
         status_ = AppStorageStatus::Ready;
         return true;
     }

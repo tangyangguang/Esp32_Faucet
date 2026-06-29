@@ -199,7 +199,7 @@ void test_starting_new_session_reuses_existing_trace_file_without_clearing_slots
     TEST_ASSERT_TRUE(store.saveValid(0, traceFor(11, 0, 0), buckets, 2, startup, 3, 1000, 1770000100));
     backend.writeCalls = 0;
 
-    TEST_ASSERT_TRUE(store.clearForNewSession(12));
+    TEST_ASSERT_TRUE(store.clearForNewSession());
 
     CalibrationStoredTrace loaded{};
     TEST_ASSERT_TRUE(store.load(0, loaded));
@@ -215,7 +215,7 @@ void test_starting_new_session_creates_missing_trace_file() {
     TEST_ASSERT_TRUE(store.begin());
     TEST_ASSERT_TRUE(backend.exists("/session-traces.bin"));
 
-    TEST_ASSERT_TRUE(store.clearForNewSession(12));
+    TEST_ASSERT_TRUE(store.clearForNewSession());
 
     TEST_ASSERT_TRUE(backend.exists("/session-traces.bin"));
     CalibrationStoredTrace loaded{};

@@ -26,7 +26,7 @@ public:
 
     bool begin();
     bool clear();
-    bool clearForNewSession(std::uint32_t sessionId);
+    bool clearForNewSession();
     bool saveValid(std::uint8_t slot,
                    const CalibrationStoredTrace& trace,
                    const WaterPulseTraceBucketSample* buckets,

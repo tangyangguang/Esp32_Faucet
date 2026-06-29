@@ -189,7 +189,7 @@ bool prepareMeteringScheme(MeteringSchemeStore& store,
     if (!store.createManual("运行方案", MeteringParameters{0, 0, stablePulsePerLiter}, 1714502300, id)) {
         return false;
     }
-    if (!store.setActiveScheme(id, 1714502301)) {
+    if (!store.setActiveScheme(id)) {
         return false;
     }
     return store.activeScheme(active);

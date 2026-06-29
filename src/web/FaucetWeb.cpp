@@ -685,14 +685,14 @@ bool setAndApplyActiveMeteringSchemeForWeb(std::uint32_t schemeId) {
     const std::uint32_t previousId = g_context.meteringSchemes->activeSchemeId();
     const MeteringSchemeRecord previous = g_context.app->activeMeteringScheme();
     const std::uint32_t now = g_context.nowSeconds ? g_context.nowSeconds() : 0;
-    if (!g_context.meteringSchemes->setActiveScheme(schemeId, now)) {
+    if (!g_context.meteringSchemes->setActiveScheme(schemeId)) {
         return false;
     }
     if (g_context.app->applyActiveMeteringScheme(next)) {
         return true;
     }
     if (previousId != 0 && previous.recordUsed) {
-        g_context.meteringSchemes->setActiveScheme(previousId, now);
+        g_context.meteringSchemes->setActiveScheme(previousId);
         g_context.app->applyActiveMeteringScheme(previous);
     }
     return false;

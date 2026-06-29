@@ -42,7 +42,7 @@ public:
                       const MeteringParameters& params,
                       std::uint32_t nowSeconds,
                       std::uint32_t& newId);
-    bool setActiveScheme(std::uint32_t schemeId, std::uint32_t nowSeconds);
+    bool setActiveScheme(std::uint32_t schemeId);
 
 private:
     bool validPath() const;

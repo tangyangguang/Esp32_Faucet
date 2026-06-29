@@ -198,7 +198,6 @@ private:
     void syncFlow(std::uint32_t nowUs);
     void finishPulseTrace(const WaterRecord& record,
                           WaterPulseTraceState finalState,
-                          const FlowSnapshot& flow,
                           std::uint32_t nowUs);
     bool canUseTdsCalibration() const;
     void syncValve(std::uint32_t nowMs);

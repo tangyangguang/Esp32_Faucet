@@ -298,8 +298,7 @@ bool MeteringSchemeStore::createManual(const char* name,
     return true;
 }
 
-bool MeteringSchemeStore::setActiveScheme(std::uint32_t schemeId, std::uint32_t nowSeconds) {
-    (void)nowSeconds;
+bool MeteringSchemeStore::setActiveScheme(std::uint32_t schemeId) {
     if (!ready()) {
         return false;
     }

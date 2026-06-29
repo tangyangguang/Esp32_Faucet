@@ -556,7 +556,7 @@ bool AppController::startCalibrationSessionForWeb(std::uint32_t nowSeconds) {
         return false;
     }
     const std::uint32_t sessionId = nowSeconds == 0 ? 1 : nowSeconds;
-    if (!calibrationSessionTraces_->clearForNewSession(sessionId)) {
+    if (!calibrationSessionTraces_->clearForNewSession()) {
         return false;
     }
     initializeCalibrationSessionRecord(calibrationSession_, sessionId, nowSeconds);
@@ -811,7 +811,7 @@ bool AppController::applyGeneratedCalibrationForWeb(std::uint32_t nowSeconds) {
     }
     std::uint32_t newId = 0;
     if (!meteringSchemes_->saveCandidateAsNew(calibrationCandidate_, "校准生成计量方案", nowSeconds, newId) ||
-        !meteringSchemes_->setActiveScheme(newId, nowSeconds)) {
+        !meteringSchemes_->setActiveScheme(newId)) {
         return false;
     }
     calibrationCandidate_ = MeteringSchemeCandidate{};
@@ -1263,12 +1263,10 @@ void AppController::syncFlow(std::uint32_t nowUs) {
 
 void AppController::finishPulseTrace(const WaterRecord& record,
                                      WaterPulseTraceState finalState,
-                                     const FlowSnapshot& flow,
                                      std::uint32_t nowUs) {
     if (!pulseTraces_ || activeTraceId_ == 0) {
         return;
     }
-    (void)flow;
     pulseTraces_->finishTrace(activeTraceId_, record, finalState, elapsedSince(nowUs, activeTraceStartUs_));
     activeTraceId_ = 0;
     activeTraceStartUs_ = 0;
@@ -1344,7 +1342,7 @@ void AppController::processResult(std::uint32_t startTime,
                      static_cast<unsigned long>(record.pulseCount),
                      static_cast<unsigned long>(record.meteringSchemeId));
     const WaterPulseTraceState traceState = traceStateForResult(result.result);
-    finishPulseTrace(record, traceState, flow, nowUs);
+    finishPulseTrace(record, traceState, nowUs);
 
     lastResultRecord_ = WaterRecord{};
     lastResultRecordValid_ = false;

@@ -165,7 +165,7 @@ void test_set_active_scheme_updates_current_id() {
 
     std::uint32_t id = 0;
     TEST_ASSERT_TRUE(store.createManual("新方案", manualParams(), 1770000000, id));
-    TEST_ASSERT_TRUE(store.setActiveScheme(id, 1770000030));
+    TEST_ASSERT_TRUE(store.setActiveScheme(id));
 
     TEST_ASSERT_EQUAL_UINT32(id, store.activeSchemeId());
     MeteringSchemeRecord active{};
@@ -181,13 +181,13 @@ void test_full_store_overwrites_oldest_non_current_record() {
     std::uint32_t id = 0;
     for (std::size_t i = 1; i < kMeteringSchemeStoreSlotCount; ++i) {
         TEST_ASSERT_TRUE(store.createManual("填充方案", manualParams(360 + static_cast<std::uint32_t>(i)), 1770000000 + i, id));
-        TEST_ASSERT_TRUE(store.setActiveScheme(id, 1770000000 + i));
+        TEST_ASSERT_TRUE(store.setActiveScheme(id));
     }
     const std::uint32_t activeBefore = store.activeSchemeId();
 
     std::uint32_t overflowId = 0;
     TEST_ASSERT_TRUE(store.createManual("新当前参数", manualParams(480), 1770003000, overflowId));
-    TEST_ASSERT_TRUE(store.setActiveScheme(overflowId, 1770003000));
+    TEST_ASSERT_TRUE(store.setActiveScheme(overflowId));
 
     MeteringSchemeRecord oldDefault{};
     TEST_ASSERT_FALSE(store.findById(1, oldDefault));

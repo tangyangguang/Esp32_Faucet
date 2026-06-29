@@ -342,8 +342,7 @@ bool CalibrationSessionTraceStore::clear() {
     return true;
 }
 
-bool CalibrationSessionTraceStore::clearForNewSession(std::uint32_t sessionId) {
-    (void)sessionId;
+bool CalibrationSessionTraceStore::clearForNewSession() {
     if (!ready()) {
         return false;
     }

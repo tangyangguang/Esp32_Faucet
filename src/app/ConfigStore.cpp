@@ -65,8 +65,8 @@ void filterKey(char* out, std::size_t len, std::size_t index, const char* suffix
     std::snprintf(out, len, "f%u_%s", static_cast<unsigned>(index), suffix);
 }
 
-bool isReadableRuntimeVersion(std::int32_t version) {
-    return version >= 1 && version <= kRuntimeVersion;
+bool isCurrentRuntimeVersion(std::int32_t version) {
+    return version == kRuntimeVersion;
 }
 
 const char* temperatureSensorConfigValue(const SystemConfig& config) {
@@ -353,7 +353,7 @@ StatisticsRecord ConfigStore::loadStatistics(const PeriodKeys& defaultKeys) {
     record.lastWeekKey = defaultKeys.weekKey;
     record.lastMonthKey = defaultKeys.monthKey;
     const std::int32_t version = backend_.getInt(kStatNs, "ver", 0);
-    if (!isReadableRuntimeVersion(version)) {
+    if (!isCurrentRuntimeVersion(version)) {
         return record;
     }
 
@@ -368,9 +368,6 @@ StatisticsRecord ConfigStore::loadStatistics(const PeriodKeys& defaultKeys) {
     StatisticsStore store(record);
     store.rollPeriods(defaultKeys);
     record = store.record();
-    if (version != kRuntimeVersion) {
-        saveStatistics(record);
-    }
     return record;
 }
 
@@ -396,7 +393,7 @@ bool ConfigStore::resetStatistics(const PeriodKeys& keys) {
 
 void ConfigStore::loadFilterRuntime(FilterRecord (&records)[kFilterCount]) {
     const std::int32_t version = backend_.getInt(kRunNs, "ver", 0);
-    if (!isReadableRuntimeVersion(version)) {
+    if (!isCurrentRuntimeVersion(version)) {
         return;
     }
 
@@ -408,9 +405,6 @@ void ConfigStore::loadFilterRuntime(FilterRecord (&records)[kFilterCount]) {
         records[i].usedMl = getU32(backend_, kRunNs, key, records[i].usedMl);
         filterKey(key, sizeof(key), i, "boot");
         records[i].startBootId = getU32(backend_, kRunNs, key, records[i].startBootId);
-    }
-    if (version != kRuntimeVersion) {
-        saveFilterRuntime(records);
     }
 }
 

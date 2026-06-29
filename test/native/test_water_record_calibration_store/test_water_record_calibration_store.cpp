@@ -125,12 +125,6 @@ WaterRecord makeRecord(std::uint32_t startTime,
 WaterRecordCalibration makeCalibration(const WaterRecord& record, std::uint32_t actualMl) {
     WaterRecordCalibration calibration = makeWaterRecordCalibration(record);
     calibration.actualMl = actualMl;
-    calibration.kind = WaterRecordCalibrationKind::PulsePerMl;
-    calibration.oldPulsePerMl = 0.221f;
-    calibration.newPulsePerMl = 0.230f;
-    calibration.oldStartupCompensationMl = 0;
-    calibration.newStartupCompensationMl = 0;
-    calibration.calibratedAt = 832000000UL;
     calibration.calibrationCount = 1;
     return calibration;
 }
@@ -149,8 +143,6 @@ void test_record_calibration_store_finds_saved_calibration_by_record_identity() 
     TEST_ASSERT_TRUE(store.find(record, found));
     TEST_ASSERT_EQUAL_UINT32(7000, found.actualMl);
     TEST_ASSERT_EQUAL_UINT16(1, found.calibrationCount);
-    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(WaterRecordCalibrationKind::PulsePerMl),
-                            static_cast<std::uint8_t>(found.kind));
 }
 
 void test_record_calibration_store_recalibration_overwrites_actual_and_increments_count() {
@@ -160,8 +152,6 @@ void test_record_calibration_store_recalibration_overwrites_actual_and_increment
 
     TEST_ASSERT_TRUE(store.upsert(makeCalibration(record, 7000)));
     WaterRecordCalibration recalibration = makeCalibration(record, 6900);
-    recalibration.newPulsePerMl = 0.187f;
-    recalibration.calibratedAt = 832000360UL;
     TEST_ASSERT_TRUE(store.upsert(recalibration));
 
     WaterRecordCalibration found{};
@@ -169,8 +159,6 @@ void test_record_calibration_store_recalibration_overwrites_actual_and_increment
     TEST_ASSERT_EQUAL_size_t(1, store.count());
     TEST_ASSERT_EQUAL_UINT32(6900, found.actualMl);
     TEST_ASSERT_EQUAL_UINT16(2, found.calibrationCount);
-    TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.187f, found.newPulsePerMl);
-    TEST_ASSERT_EQUAL_UINT32(832000360UL, found.calibratedAt);
 }
 
 void test_record_calibration_store_identity_excludes_similar_records() {

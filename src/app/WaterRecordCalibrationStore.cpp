@@ -8,7 +8,7 @@ namespace faucet {
 namespace {
 
 constexpr std::uint32_t kCalibrationMagic = 0x4657434CUL;  // FWCL
-constexpr std::uint16_t kCalibrationVersion = 1;
+constexpr std::uint16_t kCalibrationVersion = 2;
 
 struct CalibrationHeader {
     std::uint32_t magic;
@@ -47,7 +47,6 @@ WaterRecordCalibration makeWaterRecordCalibration(const WaterRecord& record) {
     calibration.mode = record.mode;
     calibration.result = record.result;
     calibration.selectedPreset = record.selectedPreset;
-    calibration.pulsePerMlAtRun = 0.0f;
     return calibration;
 }
 

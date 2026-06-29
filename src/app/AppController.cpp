@@ -642,12 +642,6 @@ bool AppController::submitCalibrationActualForWeb(std::uint32_t actualMl, std::u
 
     WaterRecordCalibration calibration = makeWaterRecordCalibration(attempt.record);
     calibration.actualMl = actualMl;
-    calibration.calibratedAt = nowSeconds;
-    calibration.oldPulsePerMl = static_cast<float>(activeMeteringScheme_.params.stablePulsePerLiter) / 1000.0f;
-    calibration.newPulsePerMl = calibration.oldPulsePerMl;
-    calibration.oldStartupCompensationMl = activeMeteringScheme_.params.startupVolumeMl;
-    calibration.newStartupCompensationMl = activeMeteringScheme_.params.startupVolumeMl;
-    calibration.kind = WaterRecordCalibrationKind::PulsePerMl;
     const bool savedTrace = calibrationSessionTraces_->saveValid(attempt.sessionTraceSlot,
                                                                  stored,
                                                                  buckets.get(),
@@ -916,13 +910,6 @@ CalibrationApplyResult AppController::applyCalibrationFromRecord(const WaterReco
     }
     WaterRecordCalibration calibration = makeWaterRecordCalibration(record);
     calibration.actualMl = actualMl;
-    calibration.calibratedAt = 0;
-    const float stablePulsePerMl = static_cast<float>(activeMeteringScheme_.params.stablePulsePerLiter) / 1000.0f;
-    calibration.oldPulsePerMl = stablePulsePerMl;
-    calibration.newPulsePerMl = stablePulsePerMl;
-    calibration.oldStartupCompensationMl = activeMeteringScheme_.params.startupVolumeMl;
-    calibration.newStartupCompensationMl = activeMeteringScheme_.params.startupVolumeMl;
-    calibration.kind = WaterRecordCalibrationKind::PulsePerMl;
     if (!recordCalibrations_->upsert(calibration)) {
         return CalibrationApplyResult::NotAvailable;
     }

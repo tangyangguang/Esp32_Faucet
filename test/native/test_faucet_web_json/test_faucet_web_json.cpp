@@ -351,8 +351,6 @@ void test_water_records_json_is_paged_and_read_only() {
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"temperatureAvgCentiC\":2530"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"tdsAvgPpm\":8"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"sensorSampleCount\":12"));
-    TEST_ASSERT_NULL(std::strstr(json, "\"stablePulsePerLiterAtRun\""));
-    TEST_ASSERT_NULL(std::strstr(json, "\"pulsePerMlAtRun\""));
     TEST_ASSERT_NULL(std::strstr(json, "startWater"));
 }
 

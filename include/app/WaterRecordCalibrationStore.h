@@ -7,11 +7,6 @@
 
 namespace faucet {
 
-enum class WaterRecordCalibrationKind : std::uint8_t {
-    PulsePerMl = 0,
-    StartupCompensation = 1,
-};
-
 struct WaterRecordCalibration {
     std::uint32_t startTime;
     std::uint32_t volumeMl;
@@ -22,17 +17,8 @@ struct WaterRecordCalibration {
     WaterMode mode;
     WaterResult result;
     std::uint8_t selectedPreset;
-    std::uint8_t reserved0;
-    float pulsePerMlAtRun;
     std::uint32_t actualMl;
-    std::uint32_t calibratedAt;
-    float oldPulsePerMl;
-    float newPulsePerMl;
-    std::uint32_t oldStartupCompensationMl;
-    std::uint32_t newStartupCompensationMl;
     std::uint16_t calibrationCount;
-    WaterRecordCalibrationKind kind;
-    std::uint8_t reserved[5];
 };
 
 WaterRecordCalibration makeWaterRecordCalibration(const WaterRecord& record);

@@ -52,34 +52,37 @@ bool validPath(const char* path) {
     return path && path[0] == '/';
 }
 
-std::size_t fileSizeFor(std::size_t slots) {
-    return sizeof(SampleHeader) + slots * sizeof(SampleIndexEntry) +
-           slots * static_cast<std::size_t>(kMaxTraceBuckets) * sizeof(WaterPulseTraceBucketSample) +
-           slots * static_cast<std::size_t>(kMaxTraceStartupEdges) * sizeof(WaterPulseTraceSample);
+std::size_t fileSize() {
+    return sizeof(SampleHeader) + kCalibrationSessionTraceSlots * sizeof(SampleIndexEntry) +
+           kCalibrationSessionTraceSlots * static_cast<std::size_t>(kMaxTraceBuckets) *
+               sizeof(WaterPulseTraceBucketSample) +
+           kCalibrationSessionTraceSlots * static_cast<std::size_t>(kMaxTraceStartupEdges) *
+               sizeof(WaterPulseTraceSample);
 }
 
 std::size_t indexOffset(std::uint8_t slot) {
     return sizeof(SampleHeader) + static_cast<std::size_t>(slot) * sizeof(SampleIndexEntry);
 }
 
-std::size_t bucketOffset(std::size_t slots, std::uint8_t slot) {
-    return sizeof(SampleHeader) + slots * sizeof(SampleIndexEntry) +
+std::size_t bucketOffset(std::uint8_t slot) {
+    return sizeof(SampleHeader) + kCalibrationSessionTraceSlots * sizeof(SampleIndexEntry) +
            static_cast<std::size_t>(slot) * kMaxTraceBuckets * sizeof(WaterPulseTraceBucketSample);
 }
 
-std::size_t startupOffset(std::size_t slots, std::uint8_t slot) {
-    return sizeof(SampleHeader) + slots * sizeof(SampleIndexEntry) +
-           slots * static_cast<std::size_t>(kMaxTraceBuckets) * sizeof(WaterPulseTraceBucketSample) +
+std::size_t startupOffset(std::uint8_t slot) {
+    return sizeof(SampleHeader) + kCalibrationSessionTraceSlots * sizeof(SampleIndexEntry) +
+           kCalibrationSessionTraceSlots * static_cast<std::size_t>(kMaxTraceBuckets) *
+               sizeof(WaterPulseTraceBucketSample) +
            static_cast<std::size_t>(slot) * kMaxTraceStartupEdges * sizeof(WaterPulseTraceSample);
 }
 
-SampleHeader makeHeader(std::uint8_t kind, std::size_t slots, std::uint32_t nextSampleId = 1) {
+SampleHeader makeHeader(std::uint32_t nextSampleId = 1) {
     return SampleHeader{
         kSampleMagic,
         kSampleVersion,
-        kind,
+        kStoreKindSession,
         0,
-        static_cast<std::uint32_t>(slots),
+        static_cast<std::uint32_t>(kCalibrationSessionTraceSlots),
         kMaxTraceBuckets,
         kMaxTraceStartupEdges,
         nextSampleId == 0 ? 1 : nextSampleId,
@@ -87,9 +90,9 @@ SampleHeader makeHeader(std::uint8_t kind, std::size_t slots, std::uint32_t next
     };
 }
 
-bool validHeader(const SampleHeader& header, std::uint8_t kind, std::size_t slots) {
-    return header.magic == kSampleMagic && header.version == kSampleVersion && header.kind == kind &&
-           header.slotCount == slots && header.maxBuckets == kMaxTraceBuckets &&
+bool validHeader(const SampleHeader& header) {
+    return header.magic == kSampleMagic && header.version == kSampleVersion && header.kind == kStoreKindSession &&
+           header.slotCount == kCalibrationSessionTraceSlots && header.maxBuckets == kMaxTraceBuckets &&
            header.maxStartupEdges == kMaxTraceStartupEdges && header.nextSampleId != 0;
 }
 
@@ -125,66 +128,49 @@ bool writeBlankEntry(WaterRecordFileBackend& backend, const char* path, std::uin
     return backend.writeAt(path, indexOffset(slot), reinterpret_cast<const std::uint8_t*>(&entry), sizeof(entry));
 }
 
-bool initializeFile(WaterRecordFileBackend& backend, const char* path, std::uint8_t kind, std::size_t slots) {
-    if (!backend.createSized(path, fileSizeFor(slots))) {
+bool initializeFile(WaterRecordFileBackend& backend, const char* path) {
+    if (!backend.createSized(path, fileSize())) {
         return false;
     }
-    return writeHeader(backend, path, makeHeader(kind, slots));
+    return writeHeader(backend, path, makeHeader());
 }
 
-bool beginFixedStore(WaterRecordFileBackend& backend, const char* path, std::uint8_t kind, std::size_t slots) {
-    if (!validPath(path)) {
-        return false;
-    }
-    if (!backend.exists(path)) {
-        return initializeFile(backend, path, kind, slots);
-    }
-    if (backend.fileSize(path) != static_cast<std::int64_t>(fileSizeFor(slots))) {
-        return false;
-    }
-    SampleHeader header{};
-    return readHeader(backend, path, header) && validHeader(header, kind, slots);
-}
-
-AppStorageStatus statusForFixedStore(WaterRecordFileBackend& backend,
-                                     const char* path,
-                                     std::uint8_t kind,
-                                     std::size_t slots) {
+AppStorageStatus storageStatus(WaterRecordFileBackend& backend, const char* path) {
     if (!validPath(path)) {
         return AppStorageStatus::InvalidPath;
     }
     if (!backend.exists(path)) {
         return AppStorageStatus::Ready;
     }
-    if (backend.fileSize(path) != static_cast<std::int64_t>(fileSizeFor(slots))) {
+    if (backend.fileSize(path) != static_cast<std::int64_t>(fileSize())) {
         return AppStorageStatus::Corrupt;
     }
     SampleHeader header{};
     if (!readHeader(backend, path, header)) {
         return AppStorageStatus::BackendFailure;
     }
-    if (validHeader(header, kind, slots)) {
+    if (validHeader(header)) {
         return AppStorageStatus::Ready;
     }
-    return (header.magic != kSampleMagic || header.version != kSampleVersion || header.kind != kind ||
-            header.slotCount != slots || header.maxBuckets != kMaxTraceBuckets ||
+    return (header.magic != kSampleMagic || header.version != kSampleVersion || header.kind != kStoreKindSession ||
+            header.slotCount != kCalibrationSessionTraceSlots || header.maxBuckets != kMaxTraceBuckets ||
             header.maxStartupEdges != kMaxTraceStartupEdges)
                ? AppStorageStatus::IncompatibleFormat
                : AppStorageStatus::Corrupt;
 }
 
-bool ensureFileForWrite(WaterRecordFileBackend& backend, const char* path, std::uint8_t kind, std::size_t slots) {
+bool ensureFileForWrite(WaterRecordFileBackend& backend, const char* path) {
     if (!validPath(path)) {
         return false;
     }
     if (!backend.exists(path)) {
-        return initializeFile(backend, path, kind, slots);
+        return initializeFile(backend, path);
     }
-    if (backend.fileSize(path) != static_cast<std::int64_t>(fileSizeFor(slots))) {
+    if (backend.fileSize(path) != static_cast<std::int64_t>(fileSize())) {
         return false;
     }
     SampleHeader header{};
-    return readHeader(backend, path, header) && validHeader(header, kind, slots);
+    return readHeader(backend, path, header) && validHeader(header);
 }
 
 SampleIndexEntry makeEntry(const CalibrationStoredTrace& trace,
@@ -227,7 +213,6 @@ CalibrationStoredTrace storedFromEntry(const SampleIndexEntry& entry) {
 
 bool writeBuckets(WaterRecordFileBackend& backend,
                   const char* path,
-                  std::size_t slots,
                   std::uint8_t slot,
                   const WaterPulseTraceBucketSample* buckets,
                   std::size_t bucketCount) {
@@ -238,14 +223,13 @@ bool writeBuckets(WaterRecordFileBackend& backend,
         return true;
     }
     return backend.writeAt(path,
-                           bucketOffset(slots, slot),
+                           bucketOffset(slot),
                            reinterpret_cast<const std::uint8_t*>(buckets),
                            bucketCount * sizeof(WaterPulseTraceBucketSample));
 }
 
 bool writeStartupEdges(WaterRecordFileBackend& backend,
                        const char* path,
-                       std::size_t slots,
                        std::uint8_t slot,
                        const WaterPulseTraceSample* startupEdges,
                        std::size_t startupEdgeCount) {
@@ -256,14 +240,13 @@ bool writeStartupEdges(WaterRecordFileBackend& backend,
         return true;
     }
     return backend.writeAt(path,
-                           startupOffset(slots, slot),
+                           startupOffset(slot),
                            reinterpret_cast<const std::uint8_t*>(startupEdges),
                            startupEdgeCount * sizeof(WaterPulseTraceSample));
 }
 
 std::size_t readStoredBuckets(WaterRecordFileBackend& backend,
                               const char* path,
-                              std::size_t slots,
                               std::uint8_t slot,
                               WaterPulseTraceBucketSample* output,
                               std::size_t outputCapacity) {
@@ -276,7 +259,7 @@ std::size_t readStoredBuckets(WaterRecordFileBackend& backend,
         return 0;
     }
     return backend.readAt(path,
-                          bucketOffset(slots, slot),
+                          bucketOffset(slot),
                           reinterpret_cast<std::uint8_t*>(output),
                           count * sizeof(WaterPulseTraceBucketSample))
                ? count
@@ -285,7 +268,6 @@ std::size_t readStoredBuckets(WaterRecordFileBackend& backend,
 
 std::size_t readStoredStartupEdges(WaterRecordFileBackend& backend,
                                    const char* path,
-                                   std::size_t slots,
                                    std::uint8_t slot,
                                    WaterPulseTraceSample* output,
                                    std::size_t outputCapacity) {
@@ -298,7 +280,7 @@ std::size_t readStoredStartupEdges(WaterRecordFileBackend& backend,
         return 0;
     }
     return backend.readAt(path,
-                          startupOffset(slots, slot),
+                          startupOffset(slot),
                           reinterpret_cast<std::uint8_t*>(output),
                           count * sizeof(WaterPulseTraceSample))
                ? count
@@ -311,15 +293,22 @@ CalibrationSessionTraceStore::CalibrationSessionTraceStore(WaterRecordFileBacken
     : backend_(backend), path_(path), ready_(false), status_(AppStorageStatus::Unavailable) {}
 
 bool CalibrationSessionTraceStore::begin() {
-    ready_ = beginFixedStore(backend_, path_, kStoreKindSession, kCalibrationSessionTraceSlots);
-    if (!ready_ && validPath(path_)) {
-        if (backend_.exists(path_) && !backend_.removeFile(path_)) {
-            status_ = AppStorageStatus::BackendFailure;
-            return false;
-        }
-        ready_ = initializeFile(backend_, path_, kStoreKindSession, kCalibrationSessionTraceSlots);
+    ready_ = false;
+    status_ = storageStatus(backend_, path_);
+    if (status_ == AppStorageStatus::Ready) {
+        ready_ = backend_.exists(path_) || initializeFile(backend_, path_);
+        status_ = ready_ ? AppStorageStatus::Ready : AppStorageStatus::BackendFailure;
+        return ready_;
     }
-    status_ = statusForFixedStore(backend_, path_, kStoreKindSession, kCalibrationSessionTraceSlots);
+    if (status_ == AppStorageStatus::InvalidPath || status_ == AppStorageStatus::BackendFailure) {
+        return false;
+    }
+    if (backend_.exists(path_) && !backend_.removeFile(path_)) {
+        status_ = AppStorageStatus::BackendFailure;
+        return false;
+    }
+    ready_ = initializeFile(backend_, path_);
+    status_ = ready_ ? AppStorageStatus::Ready : AppStorageStatus::BackendFailure;
     return ready_;
 }
 
@@ -328,7 +317,7 @@ bool CalibrationSessionTraceStore::clear() {
         return false;
     }
     if (!backend_.exists(path_)) {
-        const bool initialized = initializeFile(backend_, path_, kStoreKindSession, kCalibrationSessionTraceSlots);
+        const bool initialized = initializeFile(backend_, path_);
         status_ = initialized ? AppStorageStatus::Ready : AppStorageStatus::BackendFailure;
         return initialized;
     }
@@ -347,7 +336,7 @@ bool CalibrationSessionTraceStore::clearForNewSession() {
         return false;
     }
     if (!backend_.exists(path_)) {
-        const bool initialized = initializeFile(backend_, path_, kStoreKindSession, kCalibrationSessionTraceSlots);
+        const bool initialized = initializeFile(backend_, path_);
         status_ = initialized ? AppStorageStatus::Ready : AppStorageStatus::BackendFailure;
         return initialized;
     }
@@ -364,9 +353,8 @@ bool CalibrationSessionTraceStore::saveValid(std::uint8_t slot,
                                              std::uint32_t actualMl,
                                              std::uint32_t savedAt) {
     if (!ready() || slot >= kCalibrationSessionTraceSlots ||
-        !ensureFileForWrite(backend_, path_, kStoreKindSession, kCalibrationSessionTraceSlots) ||
-        !writeBuckets(backend_, path_, kCalibrationSessionTraceSlots, slot, buckets, bucketCount) ||
-        !writeStartupEdges(backend_, path_, kCalibrationSessionTraceSlots, slot, startupEdges, startupEdgeCount)) {
+        !ensureFileForWrite(backend_, path_) || !writeBuckets(backend_, path_, slot, buckets, bucketCount) ||
+        !writeStartupEdges(backend_, path_, slot, startupEdges, startupEdgeCount)) {
         status_ = ready_ ? AppStorageStatus::BackendFailure : status_;
         return false;
     }
@@ -402,7 +390,7 @@ std::size_t CalibrationSessionTraceStore::readBuckets(std::uint8_t slot,
     if (!ready() || slot >= kCalibrationSessionTraceSlots || !backend_.exists(path_)) {
         return 0;
     }
-    return readStoredBuckets(backend_, path_, kCalibrationSessionTraceSlots, slot, output, outputCapacity);
+    return readStoredBuckets(backend_, path_, slot, output, outputCapacity);
 }
 
 std::size_t CalibrationSessionTraceStore::readStartupEdges(std::uint8_t slot,
@@ -411,7 +399,7 @@ std::size_t CalibrationSessionTraceStore::readStartupEdges(std::uint8_t slot,
     if (!ready() || slot >= kCalibrationSessionTraceSlots || !backend_.exists(path_)) {
         return 0;
     }
-    return readStoredStartupEdges(backend_, path_, kCalibrationSessionTraceSlots, slot, output, outputCapacity);
+    return readStoredStartupEdges(backend_, path_, slot, output, outputCapacity);
 }
 
 std::size_t CalibrationSessionTraceStore::capacity() const {

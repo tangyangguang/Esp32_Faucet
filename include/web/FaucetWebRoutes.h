@@ -25,6 +25,7 @@ enum class FaucetWebHandler : std::uint8_t {
     FlowCalibrationPost,
     FilterEditPage,
     RecordDetailPage,
+    CalibrationDetailPage,
     StatusApi,
     TodayOverviewApi,
     PresetsApi,

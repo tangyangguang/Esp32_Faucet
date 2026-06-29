@@ -918,7 +918,6 @@ void test_calibration_detail_reads_persisted_session_trace_without_ram_cache() {
     Esp32BaseWeb::nativeTestBeginRequest(Esp32BaseWeb::METHOD_GET, "/faucet/calibration/detail");
     Esp32BaseWeb::nativeTestSetAuthenticated(true);
     Esp32BaseWeb::nativeTestSetSameOrigin(true);
-    Esp32BaseWeb::nativeTestSetParam("from", "calibration");
     Esp32BaseWeb::nativeTestSetParam("slot", "0");
     Esp32BaseWeb::nativeTestSetParam("bucket", "1");
 
@@ -940,7 +939,6 @@ void test_calibration_detail_reads_persisted_bucket_trace_without_ram_cache() {
     Esp32BaseWeb::nativeTestBeginRequest(Esp32BaseWeb::METHOD_GET, "/faucet/calibration/detail");
     Esp32BaseWeb::nativeTestSetAuthenticated(true);
     Esp32BaseWeb::nativeTestSetSameOrigin(true);
-    Esp32BaseWeb::nativeTestSetParam("from", "calibration");
     Esp32BaseWeb::nativeTestSetParam("slot", "0");
     Esp32BaseWeb::nativeTestSetParam("bucket", "1");
 

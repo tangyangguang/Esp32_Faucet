@@ -59,8 +59,8 @@ bool getParam(const char* name, char* out, std::size_t len);
 bool persistConfig(const SystemConfig& config);
 bool ensureMeteringSchemesReady();
 bool activeMeteringSchemeForWeb(MeteringSchemeRecord& output);
-void handleRecordDetailPage();
 void handleRecordInfoPage();
+void handleCalibrationDetailPage();
 void handleCalibrationPage();
 void handleFlowCalibrationPage();
 void handleCalibrationPost();
@@ -1006,12 +1006,6 @@ bool readMeteringManualPrefillFromQuery(MeteringParameters& params, bool& presen
 }
 
 
-bool calibrationContextRequested() {
-    char text[24]{};
-    return (getParam("from", text, sizeof(text)) && std::strcmp(text, "calibration") == 0) ||
-           (getParam("returnTo", text, sizeof(text)) && std::strcmp(text, "calibration") == 0);
-}
-
 std::uint32_t configuredPulseObservationWindowSec() {
     const std::uint32_t seconds =
         g_context.config ? g_context.config->pulseObservationWindowSec : kDefaultPulseObservationWindowSec;
@@ -1064,7 +1058,7 @@ void sendCalibrationAttemptTraceLink(const CalibrationAttempt& attempt) {
         g_context.calibrationSessionTraces->ready()) {
         CalibrationStoredTrace stored{};
         if (g_context.calibrationSessionTraces->load(attempt.sessionTraceSlot, stored)) {
-            sendFmt("<a class='btn-link' href='/faucet/calibration/detail?from=calibration&slot=%u&bucket=1'>脉冲明细</a>",
+            sendFmt("<a class='btn-link' href='/faucet/calibration/detail?slot=%u&bucket=1'>脉冲明细</a>",
                     static_cast<unsigned>(attempt.sessionTraceSlot));
             return;
         }
@@ -1075,7 +1069,7 @@ void sendCalibrationAttemptTraceLink(const CalibrationAttempt& attempt) {
         Esp32BaseWeb::sendChunk("<span class='hint'>明细不可用</span>");
         return;
     }
-    sendFmt("<a class='btn-link' href='/faucet/calibration/detail?from=calibration&trace=%lu&bucket=1'>脉冲明细</a>",
+    sendFmt("<a class='btn-link' href='/faucet/calibration/detail?trace=%lu&bucket=1'>脉冲明细</a>",
             static_cast<unsigned long>(trace->traceId));
 }
 
@@ -3083,7 +3077,7 @@ void handleRecordsPage() {
                 resultStatusClass(records[i].result),
                 resultText(records[i].result));
         Esp32BaseWeb::sendChunk("</td><td><div class='row-actions'>");
-        sendFmt("<a class='btn-link' href='/faucet/records/detail?info=1&start=%lu&boot=%lu&volume=%lu&target=%lu&pulses=%lu&rejected=%lu&duration=%lu&mode=%u&result=%u&preset=%u&tempAvg=%d&tempMin=%d&tempMax=%d&tdsAvg=%u&tdsMin=%u&tdsMax=%u&tdsMv=%u&sensorSamples=%u&sensorFlags=%u&tdsRev=%u&tdsMode=%u&tdsCal=%u&tdsComp=%u&tdsFallback=%u&scheme=%lu'>详情</a>",
+        sendFmt("<a class='btn-link' href='/faucet/records/detail?start=%lu&boot=%lu&volume=%lu&target=%lu&pulses=%lu&rejected=%lu&duration=%lu&mode=%u&result=%u&preset=%u&tempAvg=%d&tempMin=%d&tempMax=%d&tdsAvg=%u&tdsMin=%u&tdsMax=%u&tdsMv=%u&sensorSamples=%u&sensorFlags=%u&tdsRev=%u&tdsMode=%u&tdsCal=%u&tdsComp=%u&tdsFallback=%u&scheme=%lu'>详情</a>",
                 static_cast<unsigned long>(records[i].startTime),
                 static_cast<unsigned long>(waterRecordBootId(records[i])),
                 static_cast<unsigned long>(records[i].volumeMl),
@@ -3391,28 +3385,17 @@ void sendDetailErrorPage(const char* title, const char* message, const char* bac
     sendPageEnd();
 }
 
-void handleRecordDetailPage() {
+void handleCalibrationDetailPage() {
     if (!Esp32BaseWeb::checkAuth()) {
         return;
     }
-    if (Esp32BaseWeb::hasParam("info")) {
-        handleRecordInfoPage();
-        return;
-    }
-
     char text[24]{};
-    const bool fromCalibration = calibrationContextRequested();
-    const char* backHref = fromCalibration ? "/faucet/calibration" : "/faucet/records";
-    const char* backLabel = fromCalibration ? "返回校准" : "返回记录";
-    const char* detailPath = fromCalibration ? "/faucet/calibration/detail" : "/faucet/records/detail";
-    const char* contextParam = fromCalibration ? "from=calibration&" : "";
+    constexpr const char* backHref = "/faucet/calibration";
+    constexpr const char* backLabel = "返回校准";
+    constexpr const char* detailPath = "/faucet/calibration/detail";
 
     if (!contextReady()) {
         sendDetailErrorPage("脉冲明细", "上下文未就绪。", nullptr, nullptr);
-        return;
-    }
-    if (!fromCalibration) {
-        sendDetailErrorPage("记录详情", "普通出水记录不提供脉冲明细。", "/faucet/records", "返回记录");
         return;
     }
     if (waterTaskActive()) {
@@ -3541,10 +3524,9 @@ void handleRecordDetailPage() {
     constexpr std::uint32_t bucketsToShow[] = {1, 2, 3, 4, 5};
     for (std::uint32_t bucket : bucketsToShow) {
         const char* linkClass = bucket == bucketSeconds ? "btn-link page-current" : "btn-link";
-        sendFmt("<a class='%s' href='%s?%s%s&bucket=%lu'>%lus</a>",
+        sendFmt("<a class='%s' href='%s?%s&bucket=%lu'>%lus</a>",
                 linkClass,
                 detailPath,
-                contextParam,
                 detailSourceParam,
                 static_cast<unsigned long>(bucket),
                 static_cast<unsigned long>(bucket));
@@ -4752,7 +4734,9 @@ Esp32BaseWeb::Handler handlerFor(const FaucetWebRoute& route) {
         case FaucetWebHandler::FilterEditPage:
             return handleFilterEditPage;
         case FaucetWebHandler::RecordDetailPage:
-            return handleRecordDetailPage;
+            return handleRecordInfoPage;
+        case FaucetWebHandler::CalibrationDetailPage:
+            return handleCalibrationDetailPage;
         case FaucetWebHandler::StatusApi:
             return handleStatusApi;
         case FaucetWebHandler::TodayOverviewApi:

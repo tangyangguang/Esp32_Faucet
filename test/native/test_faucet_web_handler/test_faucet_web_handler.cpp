@@ -9,6 +9,7 @@
 #include "../support/FakeAdcReader.h"
 #include "../support/FakeConfigBackend.h"
 #include "../support/MemoryFileBackend.h"
+#include "../support/MemoryRecordWriter.h"
 
 #include <algorithm>
 #include <cstring>
@@ -22,19 +23,10 @@ using namespace faucet;
 using faucet_test::FakeAdcReader;
 using faucet_test::FakeConfigBackend;
 using faucet_test::MemoryFileBackend;
+using faucet_test::MemoryRecordWriter;
 using faucet_test::okMv;
 
 namespace {
-
-class MemoryRecordWriter : public WaterRecordWriter {
-public:
-    bool append(const WaterRecord& record) override {
-        records.push_back(record);
-        return true;
-    }
-
-    std::vector<WaterRecord> records;
-};
 
 class CountingWaterRecordReader : public WaterRecordReader {
 public:

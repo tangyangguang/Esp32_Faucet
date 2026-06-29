@@ -8,6 +8,7 @@
 #include "app/WaterRecordCalibrationStore.h"
 #include "../support/FakeAdcReader.h"
 #include "../support/MemoryFileBackend.h"
+#include "../support/MemoryRecordWriter.h"
 
 #include <algorithm>
 #include <vector>
@@ -15,23 +16,10 @@
 using namespace faucet;
 using faucet_test::FakeAdcReader;
 using faucet_test::MemoryFileBackend;
+using faucet_test::MemoryRecordWriter;
 using faucet_test::okMv;
 
 namespace {
-
-class MemoryRecordWriter : public WaterRecordWriter {
-public:
-    bool ok = true;
-    std::vector<WaterRecord> records;
-
-    bool append(const WaterRecord& record) override {
-        if (!ok) {
-            return false;
-        }
-        records.push_back(record);
-        return true;
-    }
-};
 
 bool gValveSinkSawClosedBeforeRecordAppend = false;
 bool gRecordAppendObservedClosedValve = false;

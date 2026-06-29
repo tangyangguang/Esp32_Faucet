@@ -3,114 +3,12 @@
 #include "app/WaterPulseTraceStore.h"
 
 #include <cstdint>
-#include <cstring>
 #include <initializer_list>
-#include <map>
-#include <string>
 #include <vector>
 
 using namespace faucet;
 
 namespace {
-
-class MemoryFileBackend : public WaterRecordFileBackend {
-public:
-    bool exists(const char* path) override {
-        ++existsCalls;
-        return files.find(path ? path : "") != files.end();
-    }
-
-    std::int64_t fileSize(const char* path) override {
-        ++fileSizeCalls;
-        const auto it = files.find(path ? path : "");
-        return it == files.end() ? -1 : static_cast<std::int64_t>(it->second.size());
-    }
-
-    bool createSized(const char* path, std::size_t size) override {
-        ++createSizedCalls;
-        if (!path) {
-            return false;
-        }
-        files[path] = std::vector<std::uint8_t>(size, 0);
-        return true;
-    }
-
-    bool appendBytes(const char* path, const std::uint8_t* data, std::size_t len) override {
-        ++appendCalls;
-        if (!path || (!data && len > 0)) {
-            return false;
-        }
-        std::vector<std::uint8_t>& file = files[path];
-        const std::size_t oldSize = file.size();
-        file.resize(oldSize + len, 0);
-        if (len > 0) {
-            std::memcpy(file.data() + oldSize, data, len);
-        }
-        return true;
-    }
-
-    bool readAt(const char* path, std::size_t offset, std::uint8_t* out, std::size_t len) override {
-        ++readCalls;
-        if (!path || !out) {
-            return false;
-        }
-        const auto it = files.find(path);
-        if (it == files.end() || offset + len > it->second.size()) {
-            return false;
-        }
-        std::memcpy(out, it->second.data() + offset, len);
-        return true;
-    }
-
-    bool writeAt(const char* path, std::size_t offset, const std::uint8_t* data, std::size_t len) override {
-        ++writeCalls;
-        if (!path || (!data && len > 0)) {
-            return false;
-        }
-        std::vector<std::uint8_t>& file = files[path];
-        if (offset + len > file.size()) {
-            return false;
-        }
-        if (len > 0) {
-            std::memcpy(file.data() + offset, data, len);
-        }
-        return true;
-    }
-
-    bool removeFile(const char* path) override {
-        ++removeCalls;
-        files.erase(path ? path : "");
-        return true;
-    }
-
-    std::size_t fileCount() const {
-        return files.size();
-    }
-
-    bool contains(const char* path) const {
-        return files.find(path ? path : "") != files.end();
-    }
-
-    std::size_t sizeOf(const char* path) const {
-        const auto it = files.find(path ? path : "");
-        return it == files.end() ? 0 : it->second.size();
-    }
-
-    void putFile(const char* path, const std::vector<std::uint8_t>& data) {
-        files[path ? path : ""] = data;
-    }
-
-    std::size_t createSizedCalls = 0;
-    std::size_t appendCalls = 0;
-    std::size_t readCalls = 0;
-    std::size_t writeCalls = 0;
-    std::size_t removeCalls = 0;
-    std::size_t existsCalls = 0;
-    std::size_t fileSizeCalls = 0;
-
-private:
-    std::map<std::string, std::vector<std::uint8_t>> files;
-};
 
 WaterRecord makeRecord(std::uint32_t startTime, std::uint32_t pulses, std::uint32_t volumeMl) {
     return WaterRecord{

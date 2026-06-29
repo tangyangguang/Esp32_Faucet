@@ -1,85 +1,14 @@
 #include <unity.h>
 
 #include "app/CalibrationSampleStore.h"
+#include "../support/MemoryFileBackend.h"
 
-#include <cstring>
-#include <map>
-#include <string>
 #include <vector>
 
 using namespace faucet;
+using faucet_test::MemoryFileBackend;
 
 namespace {
-
-class MemoryFileBackend : public WaterRecordFileBackend {
-public:
-    std::map<std::string, std::vector<std::uint8_t>> files;
-    std::size_t removeCalls = 0;
-    std::size_t writeCalls = 0;
-
-    bool exists(const char* path) override {
-        return files.find(path ? path : "") != files.end();
-    }
-
-    std::int64_t fileSize(const char* path) override {
-        const auto it = files.find(path ? path : "");
-        return it == files.end() ? -1 : static_cast<std::int64_t>(it->second.size());
-    }
-
-    bool createSized(const char* path, std::size_t size) override {
-        if (!path) {
-            return false;
-        }
-        files[path] = std::vector<std::uint8_t>(size, 0);
-        return true;
-    }
-
-    bool appendBytes(const char* path, const std::uint8_t* data, std::size_t len) override {
-        if (!path || (!data && len > 0)) {
-            return false;
-        }
-        std::vector<std::uint8_t>& file = files[path];
-        const std::size_t oldSize = file.size();
-        file.resize(oldSize + len, 0);
-        if (len > 0) {
-            std::memcpy(file.data() + oldSize, data, len);
-        }
-        return true;
-    }
-
-    bool readAt(const char* path, std::size_t offset, std::uint8_t* out, std::size_t len) override {
-        if (!out) {
-            return false;
-        }
-        const auto it = files.find(path ? path : "");
-        if (it == files.end() || offset + len > it->second.size()) {
-            return false;
-        }
-        std::memcpy(out, it->second.data() + offset, len);
-        return true;
-    }
-
-    bool writeAt(const char* path, std::size_t offset, const std::uint8_t* data, std::size_t len) override {
-        if (!path) {
-            return false;
-        }
-        ++writeCalls;
-        std::vector<std::uint8_t>& file = files[path];
-        if (offset + len > file.size()) {
-            file.resize(offset + len, 0);
-        }
-        if (data && len > 0) {
-            std::memcpy(file.data() + offset, data, len);
-        }
-        return true;
-    }
-
-    bool removeFile(const char* path) override {
-        ++removeCalls;
-        files.erase(path ? path : "");
-        return true;
-    }
-};
 
 CalibrationStoredTrace traceFor(std::uint32_t sessionId, std::uint8_t attemptIndex, std::uint32_t actualMl) {
     CalibrationStoredTrace trace{};

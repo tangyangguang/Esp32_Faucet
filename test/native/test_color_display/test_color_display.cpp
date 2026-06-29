@@ -212,16 +212,6 @@ void test_color_display_covers_idle_confirm_running_pause_result_alert_calibrati
     assertTextEquals("实时流速", frame.metrics[2].label);
     assertTextEquals("停止", frame.hints[0]);
 
-    AppSnapshot calEntry = makeSnapshot(WaterState::Idle, WaterMode::Volume, 1500, 920);
-    calEntry.localMode = LocalUiMode::RecordCalibration;
-    calEntry.calibrationActualMl = 900;
-    calEntry.calibrationStepMl = 100;
-    frame = presenter.render(calEntry, 2500, true);
-    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(ColorDisplayPage::CalibrationEntry),
-                            static_cast<std::uint8_t>(frame.page));
-    assertTextEquals("量杯实测", frame.title);
-    assertTextEquals("0.90", frame.mainValue);
-
     ColorDisplayPresenter sleepy(1);
     sleepy.wake(1000);
     frame = sleepy.render(makeSnapshot(WaterState::Idle, WaterMode::Volume, 1500), 2100, true);

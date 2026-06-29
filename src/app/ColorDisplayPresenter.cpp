@@ -258,27 +258,6 @@ ColorDisplayFrame ColorDisplayPresenter::render(const AppSnapshot& snapshot,
     lastWaterState_ = snapshot.water.state;
     sampleTrends(snapshot, nowMs);
 
-    if (snapshot.localMode == LocalUiMode::RecordCalibration) {
-        frame.page = ColorDisplayPage::CalibrationEntry;
-        copyText(frame.state, "本地校准");
-        copyText(frame.tag, "实测");
-        copyText(frame.title, "量杯实测");
-        formatLiters(frame.mainValue, sizeof(frame.mainValue), snapshot.calibrationActualMl);
-        copyText(frame.mainUnit, "L");
-        char recorded[12]{};
-        char step[12]{};
-        formatLitersWithUnit(recorded, sizeof(recorded), snapshot.water.volumeMl);
-        formatLitersWithUnit(step, sizeof(step), snapshot.calibrationStepMl);
-        addMetric(frame, "记录出水", recorded);
-        addMetric(frame, "步进", step);
-        addMetric(frame, "脉冲有效", snapshot.water.volumeMl > 0 ? "是" : "否");
-        char sample[8]{};
-        std::snprintf(sample, sizeof(sample), "%u/3", static_cast<unsigned>(snapshot.calibrationValidSampleCount + 1));
-        addMetric(frame, "样本", sample);
-        setHints(frame, "加减", "保存", "放弃");
-        return frame;
-    }
-
     if (snapshot.localMode == LocalUiMode::Calibration) {
         frame.page = ColorDisplayPage::CalibrationReady;
         copyText(frame.state, "校准");

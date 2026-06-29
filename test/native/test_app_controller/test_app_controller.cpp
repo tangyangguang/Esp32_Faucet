@@ -1937,7 +1937,7 @@ void test_app_controller_pause_timeout_trace_is_not_marked_error_and_can_calibra
     TEST_ASSERT_EQUAL_size_t(1, records.records.size());
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(WaterResult::PauseTimeout),
                             static_cast<std::uint8_t>(records.records[0].result));
-    TEST_ASSERT_FALSE(app.snapshot().calibrationReady);
+    TEST_ASSERT_FALSE(app.snapshot().lastResultRecordAvailable);
     TEST_ASSERT_EQUAL_size_t(0, pulseTraces.count());
 }
 
@@ -2335,15 +2335,15 @@ void test_app_controller_result_display_exits_after_configured_timeout() {
         app.onFlowPulse(1000000UL + i * 2000UL);
     }
     app.tick(input({false, false, false, false}, 5000, 5000000, 1714502400));
-    TEST_ASSERT_NOT_EQUAL(static_cast<std::uint8_t>(LocalUiMode::RecordCalibration),
-                          static_cast<std::uint8_t>(app.snapshot().localMode));
+    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(LocalUiMode::Result),
+                            static_cast<std::uint8_t>(app.snapshot().localMode));
 
     app.tick(input({false, false, false, false}, 7000, 7000000, 1714502402));
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(LocalUiMode::Normal),
                             static_cast<std::uint8_t>(app.snapshot().localMode));
 }
 
-void test_app_controller_result_ok_hold_does_not_enter_local_record_calibration() {
+void test_app_controller_result_ok_hold_stays_on_result_without_saving_record_calibration() {
     SystemConfig config = makeDefaultConfig();
     StatisticsStore statistics;
     statistics.reset({20260506, 202619, 202605});
@@ -2354,16 +2354,16 @@ void test_app_controller_result_ok_hold_does_not_enter_local_record_calibration(
     applyTestMeteringScheme(app);
 
     finishVolumeRun(app);
-    TEST_ASSERT_NOT_EQUAL(static_cast<std::uint8_t>(LocalUiMode::RecordCalibration),
-                          static_cast<std::uint8_t>(app.snapshot().localMode));
-    TEST_ASSERT_TRUE(app.snapshot().calibrationReady);
+    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(LocalUiMode::Result),
+                            static_cast<std::uint8_t>(app.snapshot().localMode));
+    TEST_ASSERT_TRUE(app.snapshot().lastResultRecordAvailable);
 
     app.tick(input({false, true, false, false}, 6000, 6000000, 1714502401));
     app.tick(input({false, true, false, false}, 6000 + kButtonDebounceMs + kButtonLongPressMs,
                    (6000 + kButtonDebounceMs + kButtonLongPressMs) * 1000UL,
                    1714502402));
-    TEST_ASSERT_NOT_EQUAL(static_cast<std::uint8_t>(LocalUiMode::RecordCalibration),
-                          static_cast<std::uint8_t>(app.snapshot().localMode));
+    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(LocalUiMode::Result),
+                            static_cast<std::uint8_t>(app.snapshot().localMode));
 
     app.tick(input({false, true, false, false}, 11000, 11000000, 1714502406));
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(LocalUiMode::Result),
@@ -2371,7 +2371,7 @@ void test_app_controller_result_ok_hold_does_not_enter_local_record_calibration(
     TEST_ASSERT_EQUAL_size_t(0, calibrations.calibrations.size());
 }
 
-void test_app_controller_local_record_calibration_buttons_do_not_save_actual() {
+void test_app_controller_result_buttons_do_not_save_record_calibration() {
     SystemConfig config = makeDefaultConfig();
     StatisticsStore statistics;
     statistics.reset({20260506, 202619, 202605});
@@ -2390,8 +2390,6 @@ void test_app_controller_local_record_calibration_buttons_do_not_save_actual() {
     pressAndReleasePlus(app, 11600);
     pressAndReleaseOk(app, 11800);
 
-    TEST_ASSERT_NOT_EQUAL(static_cast<std::uint8_t>(LocalUiMode::RecordCalibration),
-                          static_cast<std::uint8_t>(app.snapshot().localMode));
     TEST_ASSERT_EQUAL_size_t(0, calibrations.calibrations.size());
 }
 
@@ -2517,8 +2515,8 @@ int main(int argc, char** argv) {
     RUN_TEST(test_app_controller_pause_timeout_trace_is_not_marked_error_and_can_calibrate);
     RUN_TEST(test_app_controller_applies_calibration_from_pause_timeout_record);
     RUN_TEST(test_app_controller_result_display_exits_after_configured_timeout);
-    RUN_TEST(test_app_controller_result_ok_hold_does_not_enter_local_record_calibration);
-    RUN_TEST(test_app_controller_local_record_calibration_buttons_do_not_save_actual);
+    RUN_TEST(test_app_controller_result_ok_hold_stays_on_result_without_saving_record_calibration);
+    RUN_TEST(test_app_controller_result_buttons_do_not_save_record_calibration);
     RUN_TEST(test_app_controller_snapshot_reports_current_flow_rate);
     RUN_TEST(test_app_controller_uses_window_flow_for_high_flow_safety);
     return UNITY_END();

@@ -120,7 +120,6 @@ std::uint16_t accentForPage(ColorDisplayPage page) {
         case ColorDisplayPage::Alert:
             return kRed;
         case ColorDisplayPage::CalibrationReady:
-        case ColorDisplayPage::CalibrationEntry:
             return kCyan;
         case ColorDisplayPage::ResultCompleted:
             return kGreen;
@@ -1545,7 +1544,6 @@ void St7789Display::renderFrame(const ColorDisplayFrame& frame, bool fullRedraw)
         case ColorDisplayPage::ResultCompleted:
         case ColorDisplayPage::ResultStopped:
         case ColorDisplayPage::CalibrationReady:
-        case ColorDisplayPage::CalibrationEntry:
             drawCenteredText(52, frame.title, kMuted, kBg, 1);
             drawMainValue(120, 73, frame.mainValue, frame.mainUnit, 7, 4, kInk, accent, kBg);
             for (std::uint8_t i = 0; i < frame.metricCount && i < 4; ++i) {

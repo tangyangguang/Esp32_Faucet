@@ -26,7 +26,6 @@ enum class ColorDisplayPage : std::uint8_t {
     ResultStopped = 9,
     Alert = 10,
     CalibrationReady = 11,
-    CalibrationEntry = 12,
     StandbyOffline = 13,
     Sleep = 14,
 };

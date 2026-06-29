@@ -448,7 +448,7 @@ struct CalibrationAppFixture {
                                 filters,
                                 records,
                                 &pulseTraces,
-                                &calibrations,
+                                nullptr,
                                 &sessionStore,
                                 &traceStore);
     }
@@ -1482,8 +1482,6 @@ void test_app_controller_submit_actual_succeeds_when_auto_refresh_cannot_generat
     TEST_ASSERT_EQUAL_UINT8(2, snapshot.calibrationValidSampleCount);
     TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationSessionStatus::WaitingLocalRun),
                             static_cast<unsigned>(snapshot.calibrationStatus));
-    TEST_ASSERT_EQUAL_size_t(1, fixture.calibrations.calibrations.size());
-
     CalibrationStoredTrace valid{};
     TEST_ASSERT_TRUE(fixture.traceStore.load(1, valid));
     TEST_ASSERT_TRUE(valid.valid);

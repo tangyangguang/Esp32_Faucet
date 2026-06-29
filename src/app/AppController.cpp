@@ -587,8 +587,7 @@ bool AppController::discardCalibrationSessionForWeb(std::uint32_t nowSeconds) {
 
 bool AppController::submitCalibrationActualForWeb(std::uint32_t actualMl, std::uint32_t nowSeconds) {
     if (calibrationSession_.status != CalibrationSessionStatus::AwaitingActual ||
-        calibrationSession_.attemptCount == 0 || actualMl < kCalibrationMinActualMl || !recordCalibrations_ ||
-        !calibrationSessionTraces_) {
+        calibrationSession_.attemptCount == 0 || actualMl < kCalibrationMinActualMl || !calibrationSessionTraces_) {
         return false;
     }
     CalibrationAttempt& attempt = calibrationSession_.attempts[calibrationSession_.attemptCount - 1];
@@ -640,8 +639,6 @@ bool AppController::submitCalibrationActualForWeb(std::uint32_t actualMl, std::u
     stored.attemptIndex = attempt.attemptIndex;
     stored.trace = *trace;
 
-    WaterRecordCalibration calibration = makeWaterRecordCalibration(attempt.record);
-    calibration.actualMl = actualMl;
     const bool savedTrace = calibrationSessionTraces_->saveValid(attempt.sessionTraceSlot,
                                                                  stored,
                                                                  buckets.get(),
@@ -650,10 +647,15 @@ bool AppController::submitCalibrationActualForWeb(std::uint32_t actualMl, std::u
                                                                  trace->startupEdgeCount,
                                                                  actualMl,
                                                                  nowSeconds);
-    if (!recordCalibrations_->upsert(calibration) || !savedTrace) {
+    if (!savedTrace) {
         rejectCalibrationAttempt(calibrationSession_, attempt, CalibrationInvalidReason::StorageFailed, nowSeconds);
         saveCalibrationSession();
         return false;
+    }
+    if (recordCalibrations_) {
+        WaterRecordCalibration calibration = makeWaterRecordCalibration(attempt.record);
+        calibration.actualMl = actualMl;
+        recordCalibrations_->upsert(calibration);
     }
 
     attempt.actualMl = actualMl;

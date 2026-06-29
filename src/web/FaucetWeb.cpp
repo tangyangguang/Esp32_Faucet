@@ -1768,7 +1768,7 @@ void sendCalibrationPageScript() {
     Esp32BaseWeb::sendChunk("<script>"
                             "function faucetShowSampleCalibration(id){var rows=document.querySelectorAll('.sample-calibration-edit-row');for(var i=0;i<rows.length;i++)rows[i].classList.remove('is-open');var r=document.getElementById(id);if(r)r.classList.add('is-open');}"
                             "function faucetHideSampleCalibration(id){var r=document.getElementById(id);if(r)r.classList.remove('is-open');}"
-                            "function faucetCalibrationErrorMessage(code){var m={busy:'设备正在出水或确认中，请回到待机后再保存。',invalid_value:'实际出水量超出允许范围，请按量杯读数填写。',invalid_action:'操作无效，请刷新页面后重试。',invalid_state:'现在不允许执行这个操作，请刷新页面后按当前步骤继续。',calibration_storage_unavailable:'校准存储未就绪，请检查设备存储空间或重启后再试。',sample_not_enough:'可用样本不足，至少需要两条有效样本。',no_calibration_record:'这条样本不可校准：没有可用脉冲明细或结束状态不适合校准。',calibration_mark_failed:'实测容量写入失败，可能是校准记录存储不可用或 Flash 写入失败。',save_failed:'样本保存失败，请检查样本容量或存储状态。','HTTP 401':'认证已失效，请刷新页面重新登录。','HTTP 403':'认证被拒绝，请检查 Web 登录状态。','HTTP 404':'保存接口路径不存在，请刷新页面后重试。','HTTP 500':'设备端保存接口异常，请查看日志。','HTTP 503':'设备尚未就绪，请稍后重试。'};return m[code]||(code?'操作失败：'+code:'操作失败，请检查页面状态后重试。');}"
+                            "function faucetCalibrationErrorMessage(code){var m={busy:'设备正在出水或确认中，请回到待机后再保存。',invalid_value:'实际出水量超出允许范围，请按量杯读数填写。',invalid_action:'操作无效，请刷新页面后重试。',invalid_state:'现在不允许执行这个操作，请刷新页面后按当前步骤继续。',calibration_storage_unavailable:'校准存储未就绪，请检查设备存储空间或重启后再试。',sample_not_enough:'可用样本不足，至少需要两条有效样本。',no_calibration_record:'这条样本不可校准：没有可用脉冲明细或结束状态不适合校准。',save_failed:'样本保存失败，请检查样本容量或存储状态。','HTTP 401':'认证已失效，请刷新页面重新登录。','HTTP 403':'认证被拒绝，请检查 Web 登录状态。','HTTP 404':'保存接口路径不存在，请刷新页面后重试。','HTTP 500':'设备端保存接口异常，请查看日志。','HTTP 503':'设备尚未就绪，请稍后重试。'};return m[code]||(code?'操作失败：'+code:'操作失败，请检查页面状态后重试。');}"
                             "function faucetReadCalibrationError(r){return r.text().then(function(t){try{return (JSON.parse(t)||{}).error||('HTTP '+r.status);}catch(e){return 'HTTP '+r.status;}});}"
                             "function faucetResetSampleCalibrationForm(f){f.dataset.busy='';var b=f.querySelector('[type=submit]');if(b)b.disabled=false;}"
                             "function faucetFlowCalibrationActiveStatus(s){return s==='waitingLocalRun'||s==='running';}"
@@ -1938,8 +1938,6 @@ void sendNoticeFromQuery() {
         message = "计量方案存储不可用；请检查存储状态，系统不会自动删除原文件。";
     } else if (std::strcmp(text, "no_calibration_record") == 0) {
         message = "最新记录没有可用的有效脉冲，不能用于校准。";
-    } else if (std::strcmp(text, "calibration_mark_failed") == 0) {
-        message = "实测记录保存失败，请重试。";
     } else if (std::strcmp(text, "calibration_unchanged") == 0) {
         message = "实际出水量未变化，未保存校准。";
     } else if (std::strcmp(text, "calibration_drift") == 0) {

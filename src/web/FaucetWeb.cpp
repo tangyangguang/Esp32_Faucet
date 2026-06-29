@@ -149,10 +149,6 @@ void sendHtmlEscapedInternal(const char* text, std::size_t maxLen) {
     }
 }
 
-void sendHtmlAttrEscaped(const char* text) {
-    sendHtmlEscapedInternal(text ? text : "", static_cast<std::size_t>(-1));
-}
-
 void sendHtmlAttrEscapedBounded(const char* text, std::size_t maxLen) {
     sendHtmlEscapedInternal(text ? text : "", maxLen);
 }
@@ -3642,7 +3638,7 @@ void handleFiltersPage() {
         Esp32BaseWeb::sendChunk("<form method='post' action='/api/faucet/filters/reset' data-filter-name='");
         sendHtmlAttrEscapedBounded(filter.name, sizeof(filter.name));
         Esp32BaseWeb::sendChunk("' data-reset-date='");
-        sendHtmlAttrEscaped(todayDate);
+        sendHtmlAttrEscapedBounded(todayDate, sizeof(todayDate));
         Esp32BaseWeb::sendChunk("' onsubmit=\"return confirmFilterReset(this)&&once(this)\">");
         sendFmt("<input type='hidden' name='index' value='%u'>", static_cast<unsigned>(i));
         Esp32BaseWeb::sendChunk("<input class='secondary' type='submit' value='重置'></form></div></td></tr>");

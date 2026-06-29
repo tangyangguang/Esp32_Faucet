@@ -1114,7 +1114,7 @@ void test_app_controller_flow_calibration_session_does_not_time_out() {
                             static_cast<unsigned>(app.snapshot().calibrationStatus));
 }
 
-void test_app_controller_calibration_ready_restores_generated_and_stays_active_without_idle_timeout() {
+void test_app_controller_generated_calibration_restores_candidate_and_stays_active_without_idle_timeout() {
     SystemConfig config = makeDefaultConfig();
     StatisticsStore statistics;
     statistics.reset({20260506, 202619, 202605});
@@ -1133,7 +1133,7 @@ void test_app_controller_calibration_ready_restores_generated_and_stays_active_w
     CalibrationSessionRecord session = makeCalibrationSession(79, 1714502400);
     saveCalibrationSessionSample(traceStore, session, 0, 1714502401, 1500, 40, 210, 6);
     saveCalibrationSessionSample(traceStore, session, 1, 1714502410, 7500, 40, 1540, 11);
-    session.status = CalibrationSessionStatus::ReadyToGenerate;
+    session.status = CalibrationSessionStatus::Generated;
     session.validSampleCount = countValidCalibrationSamples(session);
     session.updatedAt = 1714502500;
     TEST_ASSERT_TRUE(sessionStore.save(session));
@@ -1151,6 +1151,7 @@ void test_app_controller_calibration_ready_restores_generated_and_stays_active_w
     app.tick(input({false, false, false, false}, 1000, 1000000UL, 1714588800));
     TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationSessionStatus::Generated),
                             static_cast<unsigned>(app.snapshot().calibrationStatus));
+    TEST_ASSERT_TRUE(app.snapshot().calibrationCandidate.ready);
 
     session.status = CalibrationSessionStatus::ReadyToGenerate;
     session.updatedAt = 1714505000;
@@ -2252,7 +2253,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_app_controller_starting_calibration_while_running_is_rejected);
     RUN_TEST(test_app_controller_starting_calibration_twice_is_rejected);
     RUN_TEST(test_app_controller_flow_calibration_session_does_not_time_out);
-    RUN_TEST(test_app_controller_calibration_ready_restores_generated_and_stays_active_without_idle_timeout);
+    RUN_TEST(test_app_controller_generated_calibration_restores_candidate_and_stays_active_without_idle_timeout);
     RUN_TEST(test_app_controller_reboot_drops_awaiting_actual_when_ram_trace_missing);
     RUN_TEST(test_app_controller_local_ok_starts_calibration_run_and_completion_awaits_actual);
     RUN_TEST(test_app_controller_saves_long_high_pulse_calibration_without_bucket_overflow);

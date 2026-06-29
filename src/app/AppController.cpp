@@ -756,11 +756,12 @@ bool AppController::refreshCalibrationCandidate(std::uint32_t nowSeconds) {
     clearCalibrationCandidate();
     calibrationSession_.validSampleCount = countValidCalibrationSamples(calibrationSession_);
     const bool canQuickGenerate = calibrationCanQuickGenerate(calibrationSession_);
-    if (calibrationSession_.sessionId == 0 ||
-        calibrationSession_.status == CalibrationSessionStatus::Idle ||
-        calibrationSession_.status == CalibrationSessionStatus::Applied ||
-        (calibrationSession_.status == CalibrationSessionStatus::Discarded && !canQuickGenerate) ||
-        calibrationSession_.status == CalibrationSessionStatus::Failed) {
+    const bool statusAllowsGenerate =
+        calibrationSession_.status == CalibrationSessionStatus::WaitingLocalRun ||
+        calibrationSession_.status == CalibrationSessionStatus::AwaitingActual ||
+        calibrationSession_.status == CalibrationSessionStatus::ReadyToGenerate ||
+        calibrationSession_.status == CalibrationSessionStatus::Generated;
+    if (calibrationSession_.sessionId == 0 || !statusAllowsGenerate) {
         return false;
     }
     if (!meteringSchemes_ || !meteringSchemes_->ready() || !canQuickGenerate ||
@@ -1106,10 +1107,7 @@ void AppController::restoreCalibrationSession() {
         saveCalibrationSession();
     }
     invalidateAwaitingActualIfRamTraceMissing(0);
-    if ((calibrationSession_.status == CalibrationSessionStatus::Discarded ||
-         calibrationSession_.status == CalibrationSessionStatus::WaitingLocalRun ||
-         calibrationSession_.status == CalibrationSessionStatus::ReadyToGenerate ||
-         calibrationSession_.status == CalibrationSessionStatus::Generated) &&
+    if (calibrationSession_.status == CalibrationSessionStatus::Generated &&
         calibrationCanQuickGenerate(calibrationSession_)) {
         const BeepPattern restoredBeep = pendingBeep_;
         refreshCalibrationCandidate(calibrationSession_.updatedAt);

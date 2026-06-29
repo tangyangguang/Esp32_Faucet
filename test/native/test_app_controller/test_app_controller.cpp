@@ -1010,183 +1010,93 @@ void test_app_controller_local_plus_does_not_switch_preset_while_running() {
 }
 
 void test_app_controller_starting_calibration_from_idle_enters_preparing() {
-    SystemConfig config = makeDefaultConfig();
-    StatisticsStore statistics;
-    statistics.reset({20260506, 202619, 202605});
-    FilterStore filters(config.filters);
-    MemoryRecordWriter records;
-    MemoryFileBackend backend;
-    CalibrationSessionFileStore sessionStore(backend, "/cal-session.bin");
-    CalibrationSessionTraceStore traceStore(backend, "/cal-traces.bin");
-    TEST_ASSERT_TRUE(sessionStore.begin());
-    TEST_ASSERT_TRUE(traceStore.begin());
-    AppController app(config,
-                      statistics,
-                      filters,
-                      records,
-                      nullptr,
-                      nullptr,
-                      &sessionStore,
-                      &traceStore);
-    applyTestMeteringScheme(app);
+    CalibrationAppFixture fixture;
+    fixture.createApp();
 
-    TEST_ASSERT_TRUE(app.startCalibrationSessionForWeb(1714502400));
+    TEST_ASSERT_TRUE(fixture.app->startCalibrationSessionForWeb(1714502400));
 
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(LocalUiMode::Calibration),
-                            static_cast<std::uint8_t>(app.snapshot().localMode));
+                            static_cast<std::uint8_t>(fixture.app->snapshot().localMode));
     TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationSessionStatus::WaitingLocalRun),
-                            static_cast<unsigned>(app.snapshot().calibrationStatus));
-    TEST_ASSERT_EQUAL_UINT8(0, app.snapshot().calibrationAttemptCount);
-    TEST_ASSERT_EQUAL_UINT8(0, app.snapshot().calibrationValidSampleCount);
-    TEST_ASSERT_FALSE(app.snapshot().water.valveOpen);
+                            static_cast<unsigned>(fixture.app->snapshot().calibrationStatus));
+    TEST_ASSERT_EQUAL_UINT8(0, fixture.app->snapshot().calibrationAttemptCount);
+    TEST_ASSERT_EQUAL_UINT8(0, fixture.app->snapshot().calibrationValidSampleCount);
+    TEST_ASSERT_FALSE(fixture.app->snapshot().water.valveOpen);
 }
 
 void test_app_controller_starting_calibration_while_running_is_rejected() {
-    SystemConfig config = makeDefaultConfig();
-    StatisticsStore statistics;
-    statistics.reset({20260506, 202619, 202605});
-    FilterStore filters(config.filters);
-    MemoryRecordWriter records;
-    MemoryFileBackend backend;
-    CalibrationSessionFileStore sessionStore(backend, "/cal-session.bin");
-    CalibrationSessionTraceStore traceStore(backend, "/cal-traces.bin");
-    TEST_ASSERT_TRUE(sessionStore.begin());
-    TEST_ASSERT_TRUE(traceStore.begin());
-    AppController app(config, statistics, filters, records, nullptr, nullptr, &sessionStore, &traceStore);
-    applyTestMeteringScheme(app);
+    CalibrationAppFixture fixture;
+    fixture.createApp();
 
-    app.resetInputs({false, false, false, false}, 0);
-    pressAndReleaseOk(app, 100);
-    pressAndReleaseOk(app, 300);
+    fixture.app->resetInputs({false, false, false, false}, 0);
+    pressAndReleaseOk(*fixture.app, 100);
+    pressAndReleaseOk(*fixture.app, 300);
 
-    TEST_ASSERT_FALSE(app.startCalibrationSessionForWeb(1714502400));
+    TEST_ASSERT_FALSE(fixture.app->startCalibrationSessionForWeb(1714502400));
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(LocalUiMode::Normal),
-                            static_cast<std::uint8_t>(app.snapshot().localMode));
+                            static_cast<std::uint8_t>(fixture.app->snapshot().localMode));
     TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationSessionStatus::Idle),
-                            static_cast<unsigned>(app.snapshot().calibrationStatus));
+                            static_cast<unsigned>(fixture.app->snapshot().calibrationStatus));
 }
 
 void test_app_controller_starting_calibration_twice_is_rejected() {
-    SystemConfig config = makeDefaultConfig();
-    StatisticsStore statistics;
-    statistics.reset({20260506, 202619, 202605});
-    FilterStore filters(config.filters);
-    MemoryRecordWriter records;
-    MemoryFileBackend backend;
-    CalibrationSessionFileStore sessionStore(backend, "/cal-session.bin");
-    CalibrationSessionTraceStore traceStore(backend, "/cal-traces.bin");
-    TEST_ASSERT_TRUE(sessionStore.begin());
-    TEST_ASSERT_TRUE(traceStore.begin());
-    AppController app(config, statistics, filters, records, nullptr, nullptr, &sessionStore, &traceStore);
-    applyTestMeteringScheme(app);
+    CalibrationAppFixture fixture;
+    fixture.createApp();
 
-    TEST_ASSERT_TRUE(app.startCalibrationSessionForWeb(1714502400));
-    TEST_ASSERT_FALSE(app.startCalibrationSessionForWeb(1714502401));
+    TEST_ASSERT_TRUE(fixture.app->startCalibrationSessionForWeb(1714502400));
+    TEST_ASSERT_FALSE(fixture.app->startCalibrationSessionForWeb(1714502401));
 
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(LocalUiMode::Calibration),
-                            static_cast<std::uint8_t>(app.snapshot().localMode));
+                            static_cast<std::uint8_t>(fixture.app->snapshot().localMode));
     TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationSessionStatus::WaitingLocalRun),
-                            static_cast<unsigned>(app.snapshot().calibrationStatus));
+                            static_cast<unsigned>(fixture.app->snapshot().calibrationStatus));
 }
 
 void test_app_controller_flow_calibration_session_does_not_time_out() {
-    SystemConfig config = makeDefaultConfig();
-    StatisticsStore statistics;
-    statistics.reset({20260506, 202619, 202605});
-    FilterStore filters(config.filters);
-    MemoryRecordWriter records;
-    MemoryFileBackend backend;
-    CalibrationSessionFileStore sessionStore(backend, "/cal-session.bin");
-    CalibrationSessionTraceStore traceStore(backend, "/cal-traces.bin");
-    TEST_ASSERT_TRUE(sessionStore.begin());
-    TEST_ASSERT_TRUE(traceStore.begin());
-    AppController app(config, statistics, filters, records, nullptr, nullptr, &sessionStore, &traceStore);
-    applyTestMeteringScheme(app);
+    CalibrationAppFixture fixture;
+    fixture.createApp();
 
-    TEST_ASSERT_TRUE(app.startCalibrationSessionForWeb(1714502400));
+    TEST_ASSERT_TRUE(fixture.app->startCalibrationSessionForWeb(1714502400));
 
-    app.tick(input({false, false, false, false}, 86400000, 1000000UL, 1714588800));
+    fixture.app->tick(input({false, false, false, false}, 86400000, 1000000UL, 1714588800));
 
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(LocalUiMode::Calibration),
-                            static_cast<std::uint8_t>(app.snapshot().localMode));
+                            static_cast<std::uint8_t>(fixture.app->snapshot().localMode));
     TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationSessionStatus::WaitingLocalRun),
-                            static_cast<unsigned>(app.snapshot().calibrationStatus));
+                            static_cast<unsigned>(fixture.app->snapshot().calibrationStatus));
 }
 
 void test_app_controller_generated_calibration_restores_candidate_and_stays_active_without_idle_timeout() {
-    SystemConfig config = makeDefaultConfig();
-    StatisticsStore statistics;
-    statistics.reset({20260506, 202619, 202605});
-    FilterStore filters(config.filters);
-    MemoryRecordWriter records;
-    MemoryCalibrationWriter calibrations;
-    MemoryFileBackend backend;
-    MeteringSchemeStore schemes(backend, "/schemes.bin");
-    MeteringSchemeRecord active{};
-    TEST_ASSERT_TRUE(prepareMeteringScheme(schemes, 225, active));
-    CalibrationSessionFileStore sessionStore(backend, "/cal-session.bin");
-    CalibrationSessionTraceStore traceStore(backend, "/cal-traces.bin");
-    TEST_ASSERT_TRUE(sessionStore.begin());
-    TEST_ASSERT_TRUE(traceStore.begin());
+    CalibrationAppFixture fixture;
 
     CalibrationSessionRecord session = makeCalibrationSession(79, 1714502400);
-    saveCalibrationSessionSample(traceStore, session, 0, 1714502401, 1500, 40, 210, 6);
-    saveCalibrationSessionSample(traceStore, session, 1, 1714502410, 7500, 40, 1540, 11);
+    saveCalibrationSessionSample(fixture.traceStore, session, 0, 1714502401, 1500, 40, 210, 6);
+    saveCalibrationSessionSample(fixture.traceStore, session, 1, 1714502410, 7500, 40, 1540, 11);
     session.status = CalibrationSessionStatus::Generated;
     session.validSampleCount = countValidCalibrationSamples(session);
     session.updatedAt = 1714502500;
-    TEST_ASSERT_TRUE(sessionStore.save(session));
+    TEST_ASSERT_TRUE(fixture.sessionStore.save(session));
 
-    AppController app(config,
-                      active,
-                      statistics,
-                      filters,
-                      records,
-                      schemes,
-                      nullptr,
-                      &calibrations,
-                      &sessionStore,
-                      &traceStore);
-    app.tick(input({false, false, false, false}, 1000, 1000000UL, 1714588800));
+    fixture.createApp();
+    fixture.app->tick(input({false, false, false, false}, 1000, 1000000UL, 1714588800));
     TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationSessionStatus::Generated),
-                            static_cast<unsigned>(app.snapshot().calibrationStatus));
-    TEST_ASSERT_TRUE(app.snapshot().calibrationCandidate.ready);
+                            static_cast<unsigned>(fixture.app->snapshot().calibrationStatus));
+    TEST_ASSERT_TRUE(fixture.app->snapshot().calibrationCandidate.ready);
 
     session.status = CalibrationSessionStatus::ReadyToGenerate;
     session.updatedAt = 1714505000;
-    TEST_ASSERT_TRUE(sessionStore.save(session));
-    AppController generated(config,
-                            active,
-                            statistics,
-                            filters,
-                            records,
-                            schemes,
-                            nullptr,
-                            &calibrations,
-                            &sessionStore,
-                            &traceStore);
-    TEST_ASSERT_TRUE(generated.generateCalibrationForWeb(1714505100));
-    generated.tick(input({false, false, false, false}, 3000, 3000000UL, 1714588800));
+    TEST_ASSERT_TRUE(fixture.sessionStore.save(session));
+    delete fixture.app;
+    fixture.app = nullptr;
+    fixture.createApp();
+    TEST_ASSERT_TRUE(fixture.app->generateCalibrationForWeb(1714505100));
+    fixture.app->tick(input({false, false, false, false}, 3000, 3000000UL, 1714588800));
     TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationSessionStatus::Generated),
-                            static_cast<unsigned>(generated.snapshot().calibrationStatus));
+                            static_cast<unsigned>(fixture.app->snapshot().calibrationStatus));
 }
 
 void test_app_controller_reboot_drops_awaiting_actual_when_ram_trace_missing() {
-    SystemConfig config = makeDefaultConfig();
-    StatisticsStore statistics;
-    statistics.reset({20260506, 202619, 202605});
-    FilterStore filters(config.filters);
-    MemoryRecordWriter records;
-    MemoryCalibrationWriter calibrations;
-    WaterPulseTrace traces[1]{};
-    WaterPulseTraceBucketSample buckets[4096]{};
-    WaterPulseTraceSample startupEdges[4096]{};
-    WaterPulseTraceStore pulseTraces(traces, 1, buckets, 4096, startupEdges, 4096, 1);
-    MemoryFileBackend backend;
-    CalibrationSessionFileStore sessionStore(backend, "/cal-session.bin");
-    CalibrationSessionTraceStore traceStore(backend, "/cal-traces.bin");
-    TEST_ASSERT_TRUE(sessionStore.begin());
-    TEST_ASSERT_TRUE(traceStore.begin());
+    CalibrationAppFixture fixture;
 
     CalibrationSessionRecord session = makeCalibrationSession(77, 1714502400);
     session.status = CalibrationSessionStatus::AwaitingActual;
@@ -1196,83 +1106,55 @@ void test_app_controller_reboot_drops_awaiting_actual_when_ram_trace_missing() {
     session.attempts[0].record = calibrationRecord(1714502410, 500, 500);
     session.attempts[0].targetHintMl = 500;
     session.attempts[0].status = CalibrationAttemptStatus::PendingActual;
-    TEST_ASSERT_TRUE(sessionStore.save(session));
-
-    AppController rebooted(config,
-                           statistics,
-                           filters,
-                           records,
-                           &pulseTraces,
-                           &calibrations,
-                           &sessionStore,
-                           &traceStore);
+    TEST_ASSERT_TRUE(fixture.sessionStore.save(session));
+    fixture.createApp();
 
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(LocalUiMode::Calibration),
-                            static_cast<std::uint8_t>(rebooted.snapshot().localMode));
+                            static_cast<std::uint8_t>(fixture.app->snapshot().localMode));
     TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationSessionStatus::WaitingLocalRun),
-                            static_cast<unsigned>(rebooted.snapshot().calibrationStatus));
-    TEST_ASSERT_EQUAL_UINT8(1, rebooted.snapshot().calibrationAttemptCount);
-    TEST_ASSERT_EQUAL_UINT8(0, rebooted.snapshot().calibrationValidSampleCount);
+                            static_cast<unsigned>(fixture.app->snapshot().calibrationStatus));
+    TEST_ASSERT_EQUAL_UINT8(1, fixture.app->snapshot().calibrationAttemptCount);
+    TEST_ASSERT_EQUAL_UINT8(0, fixture.app->snapshot().calibrationValidSampleCount);
 }
 
 void test_app_controller_local_ok_starts_calibration_run_and_completion_awaits_actual() {
-    SystemConfig config = makeDefaultConfig();
-    StatisticsStore statistics;
-    statistics.reset({20260506, 202619, 202605});
-    FilterStore filters(config.filters);
-    MemoryRecordWriter records;
-    MemoryCalibrationWriter calibrations;
-    WaterPulseTrace traces[1]{};
-    WaterPulseTraceBucketSample buckets[4096]{};
-    WaterPulseTraceSample startupEdges[4096]{};
-    WaterPulseTraceStore pulseTraces(traces, 1, buckets, 4096, startupEdges, 4096, 1);
-    MemoryFileBackend backend;
-    CalibrationSessionFileStore sessionStore(backend, "/cal-session.bin");
-    CalibrationSessionTraceStore traceStore(backend, "/cal-traces.bin");
-    TEST_ASSERT_TRUE(sessionStore.begin());
-    TEST_ASSERT_TRUE(traceStore.begin());
-    AppController app(config,
-                      statistics,
-                      filters,
-                      records,
-                      &pulseTraces,
-                      &calibrations,
-                      &sessionStore,
-                      &traceStore);
-    applyTestMeteringScheme(app);
+    CalibrationAppFixture fixture;
+    fixture.active.params = MeteringParameters{0, 0, 1000};
+    fixture.createApp();
 
-    TEST_ASSERT_TRUE(app.startCalibrationSessionForWeb(1714502400));
-    app.resetInputs({false, false, false, false}, 0);
-    pressAndReleaseOk(app, 300);
+    TEST_ASSERT_TRUE(fixture.app->startCalibrationSessionForWeb(1714502400));
+    fixture.app->resetInputs({false, false, false, false}, 0);
+    pressAndReleaseOk(*fixture.app, 300);
     TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationSessionStatus::Running),
-                            static_cast<unsigned>(app.snapshot().calibrationStatus));
-    TEST_ASSERT_TRUE(app.snapshot().water.valveOpen);
+                            static_cast<unsigned>(fixture.app->snapshot().calibrationStatus));
+    TEST_ASSERT_TRUE(fixture.app->snapshot().water.valveOpen);
 
     for (std::uint32_t i = 0; i < 500; ++i) {
-        app.onFlowPulse(1000000UL + i * 2000UL);
+        fixture.app->onFlowPulse(1000000UL + i * 2000UL);
     }
-    app.tick(input({true, false, false, false}, 1600, 1600000, 1714502401));
-    app.tick(input({true, false, false, false}, 1600 + kButtonDebounceMs, (1600 + kButtonDebounceMs) * 1000UL, 1714502401));
+    fixture.app->tick(input({true, false, false, false}, 1600, 1600000, 1714502401));
+    fixture.app->tick(
+        input({true, false, false, false}, 1600 + kButtonDebounceMs, (1600 + kButtonDebounceMs) * 1000UL, 1714502401));
 
     TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationSessionStatus::AwaitingActual),
-                            static_cast<unsigned>(app.snapshot().calibrationStatus));
-    TEST_ASSERT_EQUAL_size_t(1, records.records.size());
-    TEST_ASSERT_EQUAL_UINT32(500, statistics.record().todayMl);
-    TEST_ASSERT_EQUAL_UINT32(500, filters.record(0).usedMl);
+                            static_cast<unsigned>(fixture.app->snapshot().calibrationStatus));
+    TEST_ASSERT_EQUAL_size_t(1, fixture.records.records.size());
+    TEST_ASSERT_EQUAL_UINT32(500, fixture.statistics.record().todayMl);
+    TEST_ASSERT_EQUAL_UINT32(500, fixture.filters.record(0).usedMl);
     CalibrationStoredTrace pending{};
-    TEST_ASSERT_FALSE(traceStore.load(0, pending));
+    TEST_ASSERT_FALSE(fixture.traceStore.load(0, pending));
 
-    TEST_ASSERT_TRUE(app.submitCalibrationActualForWeb(520, 1714502402));
-    TEST_ASSERT_EQUAL_UINT8(1, app.snapshot().calibrationValidSampleCount);
-    TEST_ASSERT_EQUAL_size_t(1, calibrations.calibrations.size());
-    TEST_ASSERT_EQUAL_UINT32(520, calibrations.calibrations[0].actualMl);
-    TEST_ASSERT_EQUAL_UINT32(records.records[0].pulseCount, calibrations.calibrations[0].pulseCount);
+    TEST_ASSERT_TRUE(fixture.app->submitCalibrationActualForWeb(520, 1714502402));
+    TEST_ASSERT_EQUAL_UINT8(1, fixture.app->snapshot().calibrationValidSampleCount);
+    TEST_ASSERT_EQUAL_size_t(1, fixture.calibrations.calibrations.size());
+    TEST_ASSERT_EQUAL_UINT32(520, fixture.calibrations.calibrations[0].actualMl);
+    TEST_ASSERT_EQUAL_UINT32(fixture.records.records[0].pulseCount, fixture.calibrations.calibrations[0].pulseCount);
     CalibrationStoredTrace valid{};
-    TEST_ASSERT_TRUE(traceStore.load(0, valid));
+    TEST_ASSERT_TRUE(fixture.traceStore.load(0, valid));
     TEST_ASSERT_TRUE(valid.valid);
     TEST_ASSERT_EQUAL_UINT32(520, valid.actualMl);
     WaterPulseTraceBucketSample copied[64]{};
-    TEST_ASSERT_EQUAL_size_t(valid.trace.bucketCount, traceStore.readBuckets(0, copied, 64));
+    TEST_ASSERT_EQUAL_size_t(valid.trace.bucketCount, fixture.traceStore.readBuckets(0, copied, 64));
 }
 
 void test_app_controller_saves_long_high_pulse_calibration_without_bucket_overflow() {

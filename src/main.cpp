@@ -511,7 +511,6 @@ void initializeApplication() {
                                  g_filters,
                                  &g_records,
                                  &g_recordCalibrations,
-                                 &g_recordCalibrations,
                                  &g_meteringSchemes,
                                  &g_calibrationSession,
                                  &g_calibrationSessionTraces,

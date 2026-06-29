@@ -97,7 +97,6 @@ void test_hidden_pages_and_assets_are_registered_without_navigation_titles() {
     const char* hiddenGetRoutes[] = {
         "/faucet/app.css",
         "/faucet/calibration/flow",
-        "/faucet/calibration/samples",
         "/faucet/filters/edit",
         "/faucet/records/detail",
         "/faucet/calibration/detail",

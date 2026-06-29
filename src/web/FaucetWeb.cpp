@@ -3761,8 +3761,7 @@ bool sendJsonBuffer(bool ok, const char* json) {
 
 bool contextReady() {
     if (!g_context.config || !g_context.configStore || !g_context.statistics || !g_context.app || !g_context.filters ||
-        !g_context.records || !g_context.recordCalibrations || !g_context.recordCalibrationWriter ||
-        !g_context.nowSeconds) {
+        !g_context.records || !g_context.recordCalibrations || !g_context.nowSeconds) {
         return false;
     }
     return true;
@@ -4747,7 +4746,6 @@ Esp32BaseWeb::Handler handlerFor(const FaucetWebRoute& route) {
         case FaucetWebHandler::FiltersPage:
             return handleFiltersPage;
         case FaucetWebHandler::CalibrationPage:
-        case FaucetWebHandler::CalibrationSamples:
             return handleCalibrationPage;
         case FaucetWebHandler::AppCss:
             return handleAppCss;

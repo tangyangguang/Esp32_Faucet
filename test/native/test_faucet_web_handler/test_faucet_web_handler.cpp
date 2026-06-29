@@ -523,7 +523,6 @@ struct WebFixture {
         context.filters = &filters;
         context.records = &recordReader;
         context.recordCalibrations = &calibrations;
-        context.recordCalibrationWriter = &calibrations;
         context.meteringSchemes = &meteringSchemes;
         context.calibrationSessions = &sessionStore;
         context.calibrationSessionTraces = &traceStore;

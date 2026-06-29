@@ -6,14 +6,13 @@
 #include "app/MeteringSchemeStore.h"
 #include "app/WaterSensorManager.h"
 #include "app/WaterRecordCalibrationStore.h"
+#include "../support/MemoryFileBackend.h"
 
 #include <algorithm>
-#include <cstring>
-#include <map>
-#include <string>
 #include <vector>
 
 using namespace faucet;
+using faucet_test::MemoryFileBackend;
 
 namespace {
 
@@ -57,90 +56,6 @@ public:
         calibrations.push_back(calibration);
         return true;
     }
-};
-
-class MemoryFileBackend : public WaterRecordFileBackend {
-public:
-    int failWriteAtCount = 0;
-    const char* failWriteAtPath = nullptr;
-    int failWriteAtPathCount = 0;
-
-    bool exists(const char* path) override {
-        return files.find(path ? path : "") != files.end();
-    }
-
-    std::int64_t fileSize(const char* path) override {
-        const auto it = files.find(path ? path : "");
-        return it == files.end() ? -1 : static_cast<std::int64_t>(it->second.size());
-    }
-
-    bool createSized(const char* path, std::size_t size) override {
-        files[path ? path : ""] = std::vector<std::uint8_t>(size, 0);
-        return path != nullptr;
-    }
-
-    bool appendBytes(const char* path, const std::uint8_t* data, std::size_t len) override {
-        if (!path || (!data && len > 0)) {
-            return false;
-        }
-        std::vector<std::uint8_t>& file = files[path];
-        const std::size_t oldSize = file.size();
-        file.resize(oldSize + len, 0);
-        if (len > 0) {
-            std::memcpy(file.data() + oldSize, data, len);
-        }
-        return true;
-    }
-
-    bool readAt(const char* path, std::size_t offset, std::uint8_t* out, std::size_t len) override {
-        if (!path || !out) {
-            return false;
-        }
-        const auto it = files.find(path);
-        if (it == files.end() || offset + len > it->second.size()) {
-            return false;
-        }
-        std::memcpy(out, it->second.data() + offset, len);
-        return true;
-    }
-
-    bool writeAt(const char* path, std::size_t offset, const std::uint8_t* data, std::size_t len) override {
-        if (!path || (!data && len > 0)) {
-            return false;
-        }
-        if (failWriteAtPath && std::strcmp(path, failWriteAtPath) == 0 && failWriteAtPathCount > 0) {
-            --failWriteAtPathCount;
-            return false;
-        }
-        if (failWriteAtCount > 0) {
-            --failWriteAtCount;
-            return false;
-        }
-        std::vector<std::uint8_t>& file = files[path];
-        if (offset + len > file.size()) {
-            file.resize(offset + len, 0);
-        }
-        if (len > 0) {
-            std::memcpy(file.data() + offset, data, len);
-        }
-        return true;
-    }
-
-    bool removeFile(const char* path) override {
-        files.erase(path ? path : "");
-        return true;
-    }
-
-    void replaceFile(const char* path, const void* data, std::size_t len) {
-        std::vector<std::uint8_t>& file = files[path ? path : ""];
-        file.resize(len, 0);
-        if (data && len > 0) {
-            std::memcpy(file.data(), data, len);
-        }
-    }
-
-private:
-    std::map<std::string, std::vector<std::uint8_t>> files;
 };
 
 class FakeAdcReader : public AdcReader {

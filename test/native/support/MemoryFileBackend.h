@@ -17,8 +17,10 @@ public:
     std::size_t readCalls = 0;
     std::size_t writeCalls = 0;
     std::size_t removeCalls = 0;
+    bool failAppend = false;
     bool failRead = false;
     bool failWrite = false;
+    bool failWriteAt = false;
     bool writeAtExtends = true;
 
     bool exists(const char* path) override {
@@ -40,7 +42,7 @@ public:
     }
 
     bool appendBytes(const char* path, const std::uint8_t* data, std::size_t len) override {
-        if (!path || (!data && len > 0) || failWrite) {
+        if (!path || (!data && len > 0) || failAppend || failWrite) {
             return false;
         }
         std::vector<std::uint8_t>& file = files[path];
@@ -67,7 +69,7 @@ public:
 
     bool writeAt(const char* path, std::size_t offset, const std::uint8_t* data, std::size_t len) override {
         ++writeCalls;
-        if (!path || (!data && len > 0) || failWrite) {
+        if (!path || (!data && len > 0) || failWrite || failWriteAt) {
             return false;
         }
         std::vector<std::uint8_t>& file = files[path];
@@ -87,6 +89,14 @@ public:
         ++removeCalls;
         files.erase(key(path));
         return true;
+    }
+
+    void overwriteByte(const char* path, std::size_t offset, std::uint8_t value) {
+        std::vector<std::uint8_t>& file = files[key(path)];
+        if (offset >= file.size()) {
+            file.resize(offset + 1, 0);
+        }
+        file[offset] = value;
     }
 
 private:

@@ -5,7 +5,7 @@
 
 namespace faucet {
 
-constexpr std::uint16_t kWaterSensorFlagAds1115Offline = 1U << 0U;
+constexpr std::uint16_t kWaterSensorFlagAdcOffline = 1U << 0U;
 constexpr std::uint16_t kWaterSensorFlagTdsAdcOverflow = 1U << 1U;
 constexpr std::uint16_t kWaterSensorFlagTempInvalid = 1U << 2U;
 constexpr std::uint16_t kWaterSensorFlagTdsInvalid = 1U << 3U;

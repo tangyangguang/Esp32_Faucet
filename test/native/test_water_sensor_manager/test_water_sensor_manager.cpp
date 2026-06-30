@@ -81,13 +81,13 @@ void test_manager_can_skip_input_voltage_when_only_water_sensors_are_wired() {
     TEST_ASSERT_FALSE(snapshot.inputVoltageMv.valid);
     TEST_ASSERT_TRUE(snapshot.temperatureCentiC.valid);
     TEST_ASSERT_TRUE(snapshot.tdsPpm.valid);
-    TEST_ASSERT_TRUE((snapshot.flags & kWaterSensorFlagAds1115Offline) == 0);
+    TEST_ASSERT_TRUE((snapshot.flags & kWaterSensorFlagAdcOffline) == 0);
     TEST_ASSERT_EQUAL_size_t(0, fixture.adc.readCount[0]);
     TEST_ASSERT_EQUAL_size_t(3, fixture.adc.readCount[1]);
     TEST_ASSERT_EQUAL_size_t(3, fixture.adc.readCount[2]);
 }
 
-void test_manager_marks_ads_offline_after_three_failures() {
+void test_manager_marks_adc_offline_after_three_failures() {
     SensorManagerFixture fixture;
     fixture.adc.failAll = true;
     std::uint32_t nowMs = 0;
@@ -96,7 +96,7 @@ void test_manager_marks_ads_offline_after_three_failures() {
     advanceSample(fixture.manager, nowMs);
     advanceSample(fixture.manager, nowMs);
 
-    TEST_ASSERT_TRUE((fixture.manager.snapshot().flags & kWaterSensorFlagAds1115Offline) != 0);
+    TEST_ASSERT_TRUE((fixture.manager.snapshot().flags & kWaterSensorFlagAdcOffline) != 0);
 }
 
 void test_manager_recovers_after_three_successes() {
@@ -106,7 +106,7 @@ void test_manager_recovers_after_three_successes() {
     advanceSample(fixture.manager, nowMs);
     advanceSample(fixture.manager, nowMs);
     advanceSample(fixture.manager, nowMs);
-    TEST_ASSERT_TRUE((fixture.manager.snapshot().flags & kWaterSensorFlagAds1115Offline) != 0);
+    TEST_ASSERT_TRUE((fixture.manager.snapshot().flags & kWaterSensorFlagAdcOffline) != 0);
 
     fixture.adc.failAll = false;
     fixture.setDefaultReadings();
@@ -114,7 +114,7 @@ void test_manager_recovers_after_three_successes() {
     advanceSample(fixture.manager, nowMs);
     advanceSample(fixture.manager, nowMs);
 
-    TEST_ASSERT_TRUE((fixture.manager.snapshot().flags & kWaterSensorFlagAds1115Offline) == 0);
+    TEST_ASSERT_TRUE((fixture.manager.snapshot().flags & kWaterSensorFlagAdcOffline) == 0);
 }
 
 void test_tds_range_switches_up_at_85_percent() {
@@ -391,7 +391,7 @@ int main(int argc, char** argv) {
     UNITY_BEGIN();
     RUN_TEST(test_manager_samples_a0_input_voltage_a1_temp_a2_tds);
     RUN_TEST(test_manager_can_skip_input_voltage_when_only_water_sensors_are_wired);
-    RUN_TEST(test_manager_marks_ads_offline_after_three_failures);
+    RUN_TEST(test_manager_marks_adc_offline_after_three_failures);
     RUN_TEST(test_manager_recovers_after_three_successes);
     RUN_TEST(test_tds_range_switches_up_at_85_percent);
     RUN_TEST(test_tds_range_switches_down_after_eight_low_windows);

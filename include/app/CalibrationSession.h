@@ -36,15 +36,6 @@ enum class CalibrationAttemptStatus : std::uint8_t {
     Removed,
 };
 
-enum class CalibrationSkipReason : std::uint8_t {
-    None,
-    OverflowOrUnclearReading,
-    ContainerMissed,
-    WaterPathClosed,
-    Mistake,
-    Other,
-};
-
 enum class CalibrationInvalidReason : std::uint8_t {
     None,
     TruncatedTrace,
@@ -82,7 +73,6 @@ struct CalibrationAttempt {
     std::uint32_t targetHintMl = 0;
     std::uint32_t actualMl = 0;
     CalibrationAttemptStatus status = CalibrationAttemptStatus::Empty;
-    CalibrationSkipReason skipReason = CalibrationSkipReason::None;
     CalibrationInvalidReason invalidReason = CalibrationInvalidReason::None;
     bool truncated = false;
     CalibrationSampleSummary summary{};

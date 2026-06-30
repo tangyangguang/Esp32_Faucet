@@ -685,7 +685,6 @@ bool AppController::removeCalibrationSessionSampleForWeb(std::uint8_t attemptInd
         return false;
     }
     nextAttempt.status = CalibrationAttemptStatus::Removed;
-    nextAttempt.skipReason = CalibrationSkipReason::None;
     nextAttempt.invalidReason = CalibrationInvalidReason::None;
     nextSession.validSampleCount = countValidCalibrationSamples(nextSession);
     nextSession.updatedAt = nowSeconds;
@@ -707,7 +706,7 @@ bool AppController::removeCalibrationSessionSampleForWeb(std::uint8_t attemptInd
     return true;
 }
 
-bool AppController::skipCalibrationAttemptForWeb(CalibrationSkipReason reason, std::uint32_t nowSeconds) {
+bool AppController::skipCalibrationAttemptForWeb(std::uint32_t nowSeconds) {
     if (calibrationSession_.status != CalibrationSessionStatus::AwaitingActual ||
         calibrationSession_.attemptCount == 0) {
         return false;
@@ -717,7 +716,6 @@ bool AppController::skipCalibrationAttemptForWeb(CalibrationSkipReason reason, s
         calibrationSessionTraces_->invalidate(attempt.sessionTraceSlot);
     }
     attempt.status = CalibrationAttemptStatus::Skipped;
-    attempt.skipReason = reason;
     calibrationSession_.status = calibrationCanStartAttempt(calibrationSession_) ? CalibrationSessionStatus::WaitingLocalRun
                                                                                 : CalibrationSessionStatus::Failed;
     calibrationSession_.updatedAt = nowSeconds;

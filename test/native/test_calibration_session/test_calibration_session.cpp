@@ -164,7 +164,6 @@ void test_max_attempts_stop_session_when_not_ready() {
         CalibrationAttempt attempt{};
         attempt.attemptIndex = i;
         attempt.status = CalibrationAttemptStatus::Skipped;
-        attempt.skipReason = CalibrationSkipReason::Mistake;
         TEST_ASSERT_TRUE(appendCalibrationAttempt(session, attempt));
     }
 
@@ -181,7 +180,6 @@ void test_skipped_attempt_does_not_count_as_valid() {
     CalibrationAttempt skipped{};
     skipped.attemptIndex = 0;
     skipped.status = CalibrationAttemptStatus::Skipped;
-    skipped.skipReason = CalibrationSkipReason::OverflowOrUnclearReading;
 
     TEST_ASSERT_TRUE(appendCalibrationAttempt(session, skipped));
 

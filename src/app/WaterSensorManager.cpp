@@ -365,7 +365,7 @@ void WaterSensorManager::sampleOnce() {
     }
 
     updateOfflineState(failures);
-    next.flags |= (snapshot_.flags & kWaterSensorFlagAds1115Offline);
+    next.flags |= (snapshot_.flags & kWaterSensorFlagAdcOffline);
     snapshot_ = next;
 }
 
@@ -374,14 +374,14 @@ void WaterSensorManager::updateOfflineState(std::uint8_t failureCount) {
         consecutiveFailureCycles_ = static_cast<std::uint8_t>(consecutiveFailureCycles_ + 1U);
         consecutiveSuccessCycles_ = 0;
         if (consecutiveFailureCycles_ >= kOfflineThreshold) {
-            snapshot_.flags |= kWaterSensorFlagAds1115Offline;
+            snapshot_.flags |= kWaterSensorFlagAdcOffline;
         }
         return;
     }
     consecutiveFailureCycles_ = 0;
     consecutiveSuccessCycles_ = static_cast<std::uint8_t>(consecutiveSuccessCycles_ + 1U);
     if (consecutiveSuccessCycles_ >= kRecoveryThreshold) {
-        snapshot_.flags &= static_cast<std::uint16_t>(~kWaterSensorFlagAds1115Offline);
+        snapshot_.flags &= static_cast<std::uint16_t>(~kWaterSensorFlagAdcOffline);
     }
 }
 

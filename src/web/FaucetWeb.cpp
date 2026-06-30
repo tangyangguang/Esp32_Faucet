@@ -4123,8 +4123,7 @@ void handleFlowCalibrationPost() {
     }
     if (std::strcmp(text, "skip_attempt") == 0) {
         sendFlowCalibrationPostResult(ajax,
-                                      g_context.app &&
-                                          g_context.app->skipCalibrationAttemptForWeb(CalibrationSkipReason::Mistake, now),
+                                      g_context.app && g_context.app->skipCalibrationAttemptForWeb(now),
                                       "attempt_skipped",
                                       "invalid_state");
         return;

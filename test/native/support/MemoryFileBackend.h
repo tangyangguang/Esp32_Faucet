@@ -21,6 +21,7 @@ public:
     bool failRead = false;
     bool failWrite = false;
     bool failWriteAt = false;
+    bool failHeaderWriteOnce = false;
     bool writeAtExtends = true;
 
     bool exists(const char* path) override {
@@ -69,6 +70,10 @@ public:
 
     bool writeAt(const char* path, std::size_t offset, const std::uint8_t* data, std::size_t len) override {
         ++writeCalls;
+        if (failHeaderWriteOnce && offset == 0) {
+            failHeaderWriteOnce = false;
+            return false;
+        }
         if (!path || (!data && len > 0) || failWrite || failWriteAt) {
             return false;
         }

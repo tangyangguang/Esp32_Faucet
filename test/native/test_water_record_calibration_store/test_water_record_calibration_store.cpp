@@ -38,49 +38,65 @@ WaterRecordCalibration makeCalibration(const WaterRecord& record, std::uint32_t 
     return calibration;
 }
 
+struct RecordCalibrationStoreFixture {
+    WaterRecordCalibration entries[4]{};
+    WaterRecordCalibrationStore store;
+
+    RecordCalibrationStoreFixture() : store(entries, 4) {}
+};
+
+struct RecordCalibrationFileFixture {
+    MemoryFileBackend backend;
+    WaterRecordCalibrationFileStore store;
+
+    explicit RecordCalibrationFileFixture(std::size_t capacity = 4)
+        : store(backend, "/cal.bin", capacity) {}
+
+    void begin() {
+        TEST_ASSERT_TRUE(store.begin());
+    }
+};
+
 }  // namespace
 
 void test_record_calibration_store_finds_saved_calibration_by_record_identity() {
-    WaterRecordCalibration entries[4]{};
-    WaterRecordCalibrationStore store(entries, 4);
+    RecordCalibrationStoreFixture fixture;
     const WaterRecord record = makeRecord(832000100UL, 5840, 7000, 1291);
     const WaterRecordCalibration calibration = makeCalibration(record, 7000);
 
-    TEST_ASSERT_TRUE(store.upsert(calibration));
+    TEST_ASSERT_TRUE(fixture.store.upsert(calibration));
 
     WaterRecordCalibration found{};
-    TEST_ASSERT_TRUE(store.find(record, found));
+    TEST_ASSERT_TRUE(fixture.store.find(record, found));
     TEST_ASSERT_EQUAL_UINT32(7000, found.actualMl);
     TEST_ASSERT_EQUAL_UINT16(1, found.calibrationCount);
 }
 
 void test_record_calibration_store_recalibration_overwrites_actual_and_increments_count() {
-    WaterRecordCalibration entries[4]{};
-    WaterRecordCalibrationStore store(entries, 4);
+    RecordCalibrationStoreFixture fixture;
     const WaterRecord record = makeRecord(832000100UL, 5840, 7000, 1291);
 
-    TEST_ASSERT_TRUE(store.upsert(makeCalibration(record, 7000)));
+    TEST_ASSERT_TRUE(fixture.store.upsert(makeCalibration(record, 7000)));
     WaterRecordCalibration recalibration = makeCalibration(record, 6900);
-    TEST_ASSERT_TRUE(store.upsert(recalibration));
+    TEST_ASSERT_TRUE(fixture.store.upsert(recalibration));
 
     WaterRecordCalibration found{};
-    TEST_ASSERT_TRUE(store.find(record, found));
-    TEST_ASSERT_EQUAL_size_t(1, store.count());
+    TEST_ASSERT_TRUE(fixture.store.find(record, found));
+    TEST_ASSERT_EQUAL_size_t(1, fixture.store.count());
     TEST_ASSERT_EQUAL_UINT32(6900, found.actualMl);
     TEST_ASSERT_EQUAL_UINT16(2, found.calibrationCount);
 }
 
 void test_record_calibration_store_identity_excludes_similar_records() {
-    WaterRecordCalibration entries[4]{};
-    WaterRecordCalibrationStore store(entries, 4);
+    RecordCalibrationStoreFixture fixture;
     const WaterRecord record = makeRecord(832000100UL, 5840, 7000, 1291);
     WaterRecord similar = record;
     similar.pulseCount = 1292;
 
-    TEST_ASSERT_TRUE(store.upsert(makeCalibration(record, 7000)));
+    TEST_ASSERT_TRUE(fixture.store.upsert(makeCalibration(record, 7000)));
 
     WaterRecordCalibration found{};
-    TEST_ASSERT_FALSE(store.find(similar, found));
+    TEST_ASSERT_FALSE(fixture.store.find(similar, found));
 }
 
 void test_record_calibration_file_store_persists_saved_calibration() {
@@ -102,68 +118,65 @@ void test_record_calibration_file_store_persists_saved_calibration() {
 }
 
 void test_record_calibration_file_store_overwrites_matching_record() {
-    MemoryFileBackend backend;
-    WaterRecordCalibrationFileStore store(backend, "/cal.bin", 4);
+    RecordCalibrationFileFixture fixture;
     const WaterRecord record = makeRecord(832000100UL, 5840, 7000, 1291);
-    TEST_ASSERT_TRUE(store.begin());
-    TEST_ASSERT_TRUE(store.upsert(makeCalibration(record, 7000)));
-    TEST_ASSERT_TRUE(store.upsert(makeCalibration(record, 6900)));
+    fixture.begin();
+    TEST_ASSERT_TRUE(fixture.store.upsert(makeCalibration(record, 7000)));
+    TEST_ASSERT_TRUE(fixture.store.upsert(makeCalibration(record, 6900)));
 
     WaterRecordCalibration found{};
-    TEST_ASSERT_TRUE(store.find(record, found));
-    TEST_ASSERT_EQUAL_size_t(1, store.count());
+    TEST_ASSERT_TRUE(fixture.store.find(record, found));
+    TEST_ASSERT_EQUAL_size_t(1, fixture.store.count());
     TEST_ASSERT_EQUAL_UINT32(6900, found.actualMl);
     TEST_ASSERT_EQUAL_UINT16(2, found.calibrationCount);
 }
 
 void test_record_calibration_file_store_appends_first_entry_without_write_at_extend() {
-    MemoryFileBackend backend;
-    backend.writeAtExtends = false;
-    WaterRecordCalibrationFileStore store(backend, "/cal.bin", 4);
+    RecordCalibrationFileFixture fixture;
+    fixture.backend.writeAtExtends = false;
     const WaterRecord record = makeRecord(832000100UL, 5840, 7000, 1291);
 
-    TEST_ASSERT_TRUE(store.begin());
-    TEST_ASSERT_TRUE(store.upsert(makeCalibration(record, 7000)));
+    fixture.begin();
+    TEST_ASSERT_TRUE(fixture.store.upsert(makeCalibration(record, 7000)));
 
     WaterRecordCalibration found{};
-    TEST_ASSERT_TRUE(store.find(record, found));
+    TEST_ASSERT_TRUE(fixture.store.find(record, found));
     TEST_ASSERT_EQUAL_UINT32(7000, found.actualMl);
     TEST_ASSERT_EQUAL_UINT16(1, found.calibrationCount);
 }
 
 void test_record_calibration_file_store_matches_page_records_with_single_scan() {
-    MemoryFileBackend backend;
-    WaterRecordCalibrationFileStore store(backend, "/cal.bin", 48);
+    RecordCalibrationFileFixture fixture(48);
     const WaterRecord newest = makeRecord(832004000UL, 5500, 7000, 1210);
     const WaterRecord middle = makeRecord(832002000UL, 5300, 7000, 1170);
     const WaterRecord oldest = makeRecord(832000100UL, 5100, 7000, 1130);
     const WaterRecord missing = makeRecord(832000900UL, 5900, 7000, 1300);
 
-    TEST_ASSERT_TRUE(store.begin());
-    TEST_ASSERT_TRUE(store.upsert(makeCalibration(oldest, 5000)));
+    fixture.begin();
+    TEST_ASSERT_TRUE(fixture.store.upsert(makeCalibration(oldest, 5000)));
     for (std::size_t i = 1; i < 20; ++i) {
-        TEST_ASSERT_TRUE(store.upsert(makeCalibration(makeRecord(832000100UL + static_cast<std::uint32_t>(i) * 100UL,
-                                                                 5100 + static_cast<std::uint32_t>(i),
-                                                                 7000,
-                                                                 1130 + static_cast<std::uint32_t>(i)),
-                                                   5000 + static_cast<std::uint32_t>(i))));
+        TEST_ASSERT_TRUE(fixture.store.upsert(makeCalibration(makeRecord(832000100UL + static_cast<std::uint32_t>(i) * 100UL,
+                                                                         5100 + static_cast<std::uint32_t>(i),
+                                                                         7000,
+                                                                         1130 + static_cast<std::uint32_t>(i)),
+                                                           5000 + static_cast<std::uint32_t>(i))));
     }
-    TEST_ASSERT_TRUE(store.upsert(makeCalibration(middle, 5350)));
+    TEST_ASSERT_TRUE(fixture.store.upsert(makeCalibration(middle, 5350)));
     for (std::size_t i = 21; i < 40; ++i) {
-        TEST_ASSERT_TRUE(store.upsert(makeCalibration(makeRecord(832000100UL + static_cast<std::uint32_t>(i) * 100UL,
-                                                                 5100 + static_cast<std::uint32_t>(i),
-                                                                 7000,
-                                                                 1130 + static_cast<std::uint32_t>(i)),
-                                                   5000 + static_cast<std::uint32_t>(i))));
+        TEST_ASSERT_TRUE(fixture.store.upsert(makeCalibration(makeRecord(832000100UL + static_cast<std::uint32_t>(i) * 100UL,
+                                                                         5100 + static_cast<std::uint32_t>(i),
+                                                                         7000,
+                                                                         1130 + static_cast<std::uint32_t>(i)),
+                                                           5000 + static_cast<std::uint32_t>(i))));
     }
-    TEST_ASSERT_TRUE(store.upsert(makeCalibration(newest, 5600)));
+    TEST_ASSERT_TRUE(fixture.store.upsert(makeCalibration(newest, 5600)));
 
     WaterRecord page[] = {newest, missing, middle, oldest};
     WaterRecordCalibration matches[4]{};
     bool found[4]{};
-    backend.readCalls = 0;
+    fixture.backend.readCalls = 0;
 
-    TEST_ASSERT_EQUAL_size_t(3, store.findAny(page, 4, matches, found));
+    TEST_ASSERT_EQUAL_size_t(3, fixture.store.findAny(page, 4, matches, found));
 
     TEST_ASSERT_TRUE(found[0]);
     TEST_ASSERT_FALSE(found[1]);
@@ -172,7 +185,7 @@ void test_record_calibration_file_store_matches_page_records_with_single_scan() 
     TEST_ASSERT_EQUAL_UINT32(5600, matches[0].actualMl);
     TEST_ASSERT_EQUAL_UINT32(5350, matches[2].actualMl);
     TEST_ASSERT_EQUAL_UINT32(5000, matches[3].actualMl);
-    TEST_ASSERT_LESS_OR_EQUAL_size_t(2, backend.readCalls);
+    TEST_ASSERT_LESS_OR_EQUAL_size_t(2, fixture.backend.readCalls);
 }
 
 void test_record_calibration_file_store_corrupt_header_preserves_existing_file() {

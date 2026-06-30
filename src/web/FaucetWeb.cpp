@@ -4353,14 +4353,14 @@ void handleRecordsApi() {
     }
     WaterRecordFilter filter{};
     char dateText[16]{};
-    if ((getParam("startDate", dateText, sizeof(dateText)) || getParam("from", dateText, sizeof(dateText)))) {
+    if (getParam("startDate", dateText, sizeof(dateText))) {
         if (!parseDate(dateText, filter.startTime)) {
             Esp32BaseWeb::sendJson(400, "{\"error\":\"invalid_date\"}");
             return;
         }
         filter.hasStart = filter.startTime > 0;
     }
-    if ((getParam("endDate", dateText, sizeof(dateText)) || getParam("to", dateText, sizeof(dateText)))) {
+    if (getParam("endDate", dateText, sizeof(dateText))) {
         if (!parseDate(dateText, filter.endTime)) {
             Esp32BaseWeb::sendJson(400, "{\"error\":\"invalid_date\"}");
             return;

@@ -16,7 +16,7 @@ CalibrationSampleSummary makeCalibrationSummary(const WaterPulseTrace& trace,
     CalibrationSampleSummary summary{};
     summary.actualMl = actualMl;
     summary.totalPulses = trace.totalPulses;
-    summary.rejectedPulses = trace.minIntervalFilteredCount;
+    summary.filteredPulses = trace.minIntervalFilteredCount;
     summary.durationSec = trace.record.durationSec;
     summary.truncated = (trace.flags & (kPulseTraceFlagBucketOverflow | kPulseTraceFlagStartupOverflow)) != 0;
     if (!buckets || bucketCount == 0 || summary.truncated || actualMl < kCalibrationMinActualMl ||
@@ -476,12 +476,11 @@ void AppController::restoreCalibrationSession() {
     if ((calibrationSession_.status == CalibrationSessionStatus::ReadyToGenerate ||
          calibrationSession_.status == CalibrationSessionStatus::Generated) &&
         calibrationCanQuickGenerate(calibrationSession_)) {
-        const BeepPattern restoredBeep = pendingBeep_;
+        const BeepPattern pendingBeepSnapshot = pendingBeep_;
         refreshCalibrationCandidate(calibrationSession_.updatedAt);
-        pendingBeep_ = restoredBeep;
+        pendingBeep_ = pendingBeepSnapshot;
     }
-    if (calibrationSession_.status == CalibrationSessionStatus::Preparing ||
-        calibrationSession_.status == CalibrationSessionStatus::WaitingLocalRun ||
+    if (calibrationSession_.status == CalibrationSessionStatus::WaitingLocalRun ||
         calibrationSession_.status == CalibrationSessionStatus::AwaitingActual ||
         calibrationSession_.status == CalibrationSessionStatus::ReadyToGenerate ||
         calibrationSession_.status == CalibrationSessionStatus::Generated) {

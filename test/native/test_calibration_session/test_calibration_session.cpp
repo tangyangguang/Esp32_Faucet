@@ -22,11 +22,11 @@ CalibrationAttempt validAttempt(std::uint8_t index, std::uint32_t actualMl) {
 
 }  // namespace
 
-void test_new_session_starts_preparing() {
+void test_new_session_waits_for_local_run() {
     const CalibrationSessionRecord session = makeCalibrationSession(42, 1770000000);
 
     TEST_ASSERT_EQUAL_UINT32(42, session.sessionId);
-    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationSessionStatus::Preparing),
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationSessionStatus::WaitingLocalRun),
                             static_cast<unsigned>(session.status));
     TEST_ASSERT_EQUAL_UINT32(1770000000, session.startedAt);
     TEST_ASSERT_EQUAL_UINT32(1770000000, session.updatedAt);
@@ -219,7 +219,7 @@ int main(int argc, char** argv) {
     (void)argc;
     (void)argv;
     UNITY_BEGIN();
-    RUN_TEST(test_new_session_starts_preparing);
+    RUN_TEST(test_new_session_waits_for_local_run);
     RUN_TEST(test_one_valid_sample_is_insufficient_for_quick_generation);
     RUN_TEST(test_valid_status_below_min_actual_ml_does_not_count_for_quick_generation);
     RUN_TEST(test_valid_status_zero_pulses_does_not_count_for_quick_generation);

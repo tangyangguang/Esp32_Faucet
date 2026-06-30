@@ -16,7 +16,6 @@ constexpr std::uint32_t kCalibrationRecommendedVolumeSpanMl = 1000;
 
 enum class CalibrationSessionStatus : std::uint8_t {
     Idle,
-    Preparing,
     WaitingLocalRun,
     Running,
     AwaitingActual,
@@ -54,7 +53,7 @@ enum class CalibrationCoverageQuality : std::uint8_t {
 struct CalibrationSampleSummary {
     std::uint32_t actualMl = 0;
     std::uint32_t totalPulses = 0;
-    std::uint32_t rejectedPulses = 0;
+    std::uint32_t filteredPulses = 0;
     std::uint32_t durationSec = 0;
     bool truncated = false;
     bool stable = false;

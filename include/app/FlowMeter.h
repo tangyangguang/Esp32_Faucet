@@ -15,7 +15,7 @@ struct FlowSnapshot {
     std::uint32_t instantFlowMlPerMin;
     std::uint32_t windowFlowMlPerMin;
     std::uint32_t displayFlowMlPerMin;
-    std::uint32_t rejectedPulses;
+    std::uint32_t filteredPulses;
 };
 
 class FlowMeter {
@@ -42,7 +42,7 @@ private:
     MeteringParameters params_;
     std::uint32_t pulseFilterUs_;
     std::uint32_t pulseCount_;
-    std::uint32_t rejectedPulses_;
+    std::uint32_t filteredPulses_;
     std::uint32_t lastPulseUs_;
     std::uint32_t previousPulseUs_;
     std::uint32_t recentPulseUs_[kRecentPulseCapacity];

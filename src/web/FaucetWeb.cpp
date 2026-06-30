@@ -752,18 +752,18 @@ void sendNoticeFromQuery() {
     char text[32]{};
     if (getParam("saved", text, sizeof(text))) {
         const bool actualOnly = std::strcmp(text, "actual") == 0;
-        const bool restored = std::strcmp(text, "restored") == 0;
         const bool tdsStarted = std::strcmp(text, "tds_started") == 0;
         const bool tdsPointStarted = std::strcmp(text, "tds_point_started") == 0;
         const bool tdsPointSaved = std::strcmp(text, "tds_point_saved") == 0;
+        const bool tdsPointRemoved = std::strcmp(text, "tds_point_removed") == 0;
         const bool tdsSaved = std::strcmp(text, "tds_saved") == 0;
         const bool tdsDiscarded = std::strcmp(text, "tds_discarded") == 0;
         Esp32BaseWeb::sendChunk("<p class='ok'>");
         Esp32BaseWeb::sendChunk(actualOnly   ? "校准已保存。"
-                                : restored           ? "已恢复上一套参数。"
                                 : tdsStarted         ? "水质校准已开始。"
                                 : tdsPointStarted    ? "校准点采集已开始，页面会自动刷新到可保存状态。"
                                 : tdsPointSaved      ? "校准点已保存。"
+                                : tdsPointRemoved    ? "校准点已删除。"
                                 : tdsSaved           ? "水质校准参数已应用。"
                                 : tdsDiscarded       ? "本次水质校准已丢弃。"
                                                      : "已保存。");
@@ -796,18 +796,8 @@ void sendNoticeFromQuery() {
         message = "保存失败，请稍后重试。";
     } else if (std::strcmp(text, "metering_storage_unavailable") == 0) {
         message = "计量方案存储不可用；请检查存储状态，系统不会自动删除原文件。";
-    } else if (std::strcmp(text, "no_calibration_record") == 0) {
-        message = "最新记录没有可用的有效脉冲，不能用于校准。";
-    } else if (std::strcmp(text, "calibration_unchanged") == 0) {
-        message = "实际出水量未变化，未保存校准。";
-    } else if (std::strcmp(text, "calibration_drift") == 0) {
-        message = "新系数和旧系数偏差过大，请重新接水测量。";
-    } else if (std::strcmp(text, "sample_not_enough") == 0) {
-        message = "可用样本不足，至少需要两条有效样本。";
     } else if (std::strcmp(text, "no_generated_result") == 0) {
         message = "还没有可使用的参数，请先完成至少两条有效校准样本。";
-    } else if (std::strcmp(text, "no_previous") == 0) {
-        message = "没有可恢复的上一套参数。";
     }
     Esp32BaseWeb::sendChunk("<p class='err'>");
     Esp32BaseWeb::sendChunk(message);

@@ -26,7 +26,7 @@ FlowMeter::FlowMeter(MeteringParameters params, std::uint32_t pulseFilterUs)
     : params_(validParams(params) ? params : defaultMeteringParameters()),
       pulseFilterUs_(pulseFilterUs),
       pulseCount_(0),
-      rejectedPulses_(0),
+      filteredPulses_(0),
       lastPulseUs_(0),
       previousPulseUs_(0),
       recentPulseUs_{},
@@ -38,7 +38,7 @@ FlowMeter::FlowMeter(MeteringParameters params, std::uint32_t pulseFilterUs)
 
 void FlowMeter::reset() {
     pulseCount_ = 0;
-    rejectedPulses_ = 0;
+    filteredPulses_ = 0;
     lastPulseUs_ = 0;
     previousPulseUs_ = 0;
     recentPulseStart_ = 0;
@@ -62,7 +62,7 @@ void FlowMeter::setPulseFilterUs(std::uint32_t pulseFilterUs) {
 
 bool FlowMeter::onPulse(std::uint32_t nowUs) {
     if (hasPulse_ && elapsedSince(nowUs, lastPulseUs_) < pulseFilterUs_) {
-        ++rejectedPulses_;
+        ++filteredPulses_;
         return false;
     }
     previousPulseUs_ = hasPulse_ ? lastPulseUs_ : 0;
@@ -92,7 +92,7 @@ FlowSnapshot FlowMeter::snapshot(std::uint32_t nowUs) const {
     }
     const std::uint32_t realtimeFlow = windowFlow(nowUs);
     const std::uint32_t smoothedFlow = displayFlow(nowUs, realtimeFlow);
-    return FlowSnapshot{pulseCount_, volumeFromPulses(), smoothedFlow, instantFlow, realtimeFlow, smoothedFlow, rejectedPulses_};
+    return FlowSnapshot{pulseCount_, volumeFromPulses(), smoothedFlow, instantFlow, realtimeFlow, smoothedFlow, filteredPulses_};
 }
 
 std::uint32_t FlowMeter::volumeFromPulses() const {

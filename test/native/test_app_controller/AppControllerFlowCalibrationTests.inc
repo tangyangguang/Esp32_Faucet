@@ -1,4 +1,4 @@
-void test_app_controller_starting_calibration_from_idle_enters_preparing() {
+void test_app_controller_starting_calibration_from_idle_waits_for_local_run() {
     CalibrationAppFixture fixture;
     fixture.createApp();
 

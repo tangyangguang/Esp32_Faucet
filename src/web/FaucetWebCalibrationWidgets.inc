@@ -374,8 +374,6 @@ const char* calibrationSessionStatusCode(CalibrationSessionStatus status) {
     switch (status) {
         case CalibrationSessionStatus::Idle:
             return "idle";
-        case CalibrationSessionStatus::Preparing:
-            return "preparing";
         case CalibrationSessionStatus::WaitingLocalRun:
             return "waitingLocalRun";
         case CalibrationSessionStatus::Running:

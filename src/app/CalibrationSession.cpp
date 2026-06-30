@@ -43,7 +43,7 @@ void initializeCalibrationSessionRecord(CalibrationSessionRecord& session,
                                         std::uint32_t nowSeconds) {
     session = CalibrationSessionRecord{};
     session.sessionId = sessionId;
-    session.status = CalibrationSessionStatus::Preparing;
+    session.status = CalibrationSessionStatus::WaitingLocalRun;
     session.startedAt = nowSeconds;
     session.updatedAt = nowSeconds;
 }

@@ -378,14 +378,6 @@ void AppController::handleButtonEvent(ButtonEvent event,
                                       bool timeSynced,
                                       std::uint32_t bootId) {
     if (localMode_ == LocalUiMode::Calibration && event.type != ButtonEventType::None) {
-        if (calibrationSession_.status == CalibrationSessionStatus::Preparing &&
-            event.type == ButtonEventType::OkShort) {
-            calibrationSession_.status = CalibrationSessionStatus::WaitingLocalRun;
-            calibrationSession_.updatedAt = nowSeconds;
-            saveCalibrationSession();
-            pendingBeep_ = BeepPattern::Click;
-            return;
-        }
         if ((calibrationSession_.status == CalibrationSessionStatus::WaitingLocalRun ||
              calibrationSession_.status == CalibrationSessionStatus::ReadyToGenerate ||
              calibrationSession_.status == CalibrationSessionStatus::Generated) &&
@@ -603,7 +595,7 @@ void AppController::processResult(std::uint32_t startTime,
     record.volumeMl = result.volumeMl;
     record.targetValue = result.targetValue;
     record.pulseCount = flow.pulseCount;
-    record.filteredPulseCount = flow.rejectedPulses;
+    record.filteredPulseCount = flow.filteredPulses;
     record.meteringSchemeId = activeMeteringScheme_.id;
     record.durationSec = result.durationSec;
     record.mode = result.mode;

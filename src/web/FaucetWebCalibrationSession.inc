@@ -2,8 +2,6 @@ const char* calibrationSessionStatusText(CalibrationSessionStatus status) {
     switch (status) {
         case CalibrationSessionStatus::Idle:
             return "未开始";
-        case CalibrationSessionStatus::Preparing:
-            return "准备中";
         case CalibrationSessionStatus::WaitingLocalRun:
             return "等待本地出水";
         case CalibrationSessionStatus::Running:
@@ -77,4 +75,3 @@ void sendFlowCalibrationPostResult(bool ajax, bool ok, const char* success, cons
     std::snprintf(url, sizeof(url), "/faucet/calibration/flow?saved=%s", success ? success : "1");
     Esp32BaseWeb::redirectSeeOther(url);
 }
-

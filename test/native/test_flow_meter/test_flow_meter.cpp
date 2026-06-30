@@ -14,7 +14,7 @@ void test_counts_valid_pulses_and_converts_to_volume() {
     FlowSnapshot snapshot = meter.snapshot(1000 + 9 * 2000);
     TEST_ASSERT_EQUAL_UINT32(10, snapshot.pulseCount);
     TEST_ASSERT_EQUAL_UINT32(20, snapshot.volumeMl);
-    TEST_ASSERT_EQUAL_UINT32(0, snapshot.rejectedPulses);
+    TEST_ASSERT_EQUAL_UINT32(0, snapshot.filteredPulses);
 }
 
 void test_default_constructor_uses_builtin_yfs201_startup_parameters() {
@@ -77,7 +77,7 @@ void test_filters_pulses_inside_filter_window() {
 
     FlowSnapshot snapshot = meter.snapshot(2000);
     TEST_ASSERT_EQUAL_UINT32(2, snapshot.pulseCount);
-    TEST_ASSERT_EQUAL_UINT32(1, snapshot.rejectedPulses);
+    TEST_ASSERT_EQUAL_UINT32(1, snapshot.filteredPulses);
 }
 
 void test_pulse_exactly_at_filter_boundary_is_accepted() {
@@ -184,7 +184,7 @@ void test_filtered_pulses_do_not_enter_flow_window() {
 
     FlowSnapshot snapshot = meter.snapshot(2000000);
     TEST_ASSERT_EQUAL_UINT32(2, snapshot.pulseCount);
-    TEST_ASSERT_EQUAL_UINT32(1, snapshot.rejectedPulses);
+    TEST_ASSERT_EQUAL_UINT32(1, snapshot.filteredPulses);
     TEST_ASSERT_EQUAL_UINT32(60, snapshot.windowFlowMlPerMin);
 }
 

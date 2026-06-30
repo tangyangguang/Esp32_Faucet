@@ -74,7 +74,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_app_controller_adjusts_volume_target_with_configured_step_without_ok_long_toggle);
     RUN_TEST(test_app_controller_adjusts_time_target_with_configured_step);
     RUN_TEST(test_app_controller_stopped_volume_does_not_clamp_next_confirm_adjustment);
-    RUN_TEST(test_app_controller_starting_calibration_from_idle_enters_preparing);
+    RUN_TEST(test_app_controller_starting_calibration_from_idle_waits_for_local_run);
     RUN_TEST(test_app_controller_starting_calibration_while_running_is_rejected);
     RUN_TEST(test_app_controller_starting_calibration_twice_is_rejected);
     RUN_TEST(test_app_controller_flow_calibration_session_does_not_time_out);

@@ -214,7 +214,7 @@ void saveCalibrationSessionSample(CalibrationSessionTraceStore& traceStore,
     attempt.actualMl = actualMl;
     attempt.summary.actualMl = actualMl;
     attempt.summary.totalPulses = totalPulses;
-    attempt.summary.rejectedPulses = record.filteredPulseCount;
+    attempt.summary.filteredPulses = record.filteredPulseCount;
     attempt.summary.durationSec = record.durationSec;
     attempt.summary.stable = true;
     attempt.summary.startupPulseCount = startupPulses;

@@ -9,6 +9,23 @@ using namespace faucet;
 
 namespace {
 
+WaterRecord makeRecord(std::uint32_t startTime, std::uint32_t volumeMl) {
+    return WaterRecord{
+        startTime,
+        volumeMl,
+        1500,
+        volumeMl,
+        0,
+        12,
+        WaterMode::Volume,
+        WaterResult::Completed,
+        0,
+        0,
+        1,
+        {0, 0, 0, 0},
+    };
+}
+
 class SpyRecordReader : public WaterRecordReader {
 public:
     std::size_t maxRequestedPageSize = 0;
@@ -33,23 +50,6 @@ public:
         return count;
     }
 
-    static WaterRecord makeRecord(std::uint32_t startTime, std::uint32_t volumeMl) {
-        return WaterRecord{
-            startTime,
-            volumeMl,
-            1500,
-            volumeMl,
-            0,
-            12,
-            WaterMode::Volume,
-            WaterResult::Completed,
-            0,
-            0,
-            1,
-            {0, 0, 0, 0},
-        };
-    }
-
     std::size_t count() const override {
         return 400;
     }
@@ -62,23 +62,6 @@ public:
         return "spy";
     }
 };
-
-WaterRecord makeRecord(std::uint32_t startTime, std::uint32_t volumeMl) {
-    return WaterRecord{
-        startTime,
-        volumeMl,
-        1500,
-        volumeMl,
-        0,
-        12,
-        WaterMode::Volume,
-        WaterResult::Completed,
-        0,
-        0,
-        1,
-        {0, 0, 0, 0},
-    };
-}
 
 WaterRecord makeRecord(std::uint32_t startTime,
                        std::uint32_t volumeMl,

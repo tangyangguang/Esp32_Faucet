@@ -2,11 +2,41 @@
 
 #include "../support/CalibrationTraceTestSupport.h"
 
+#include <cstdio>
+
 #include <unity.h>
 
 namespace faucet_test {
 
 using namespace faucet;
+
+MeteringSchemeCandidate testMeteringCandidate(std::uint32_t stablePulsePerLiter) {
+    MeteringSchemeCandidate candidate{};
+    candidate.ready = true;
+    candidate.sourceType = MeteringSchemeSource::CalibrationSession;
+    candidate.params = MeteringParameters{0, 0, stablePulsePerLiter, 0, 1950};
+    candidate.generatedAt = 1714502300;
+    candidate.sampleCount = 2;
+    candidate.minActualMl = 1000;
+    candidate.maxActualMl = 2000;
+    return candidate;
+}
+
+MeteringSchemeRecord testMeteringSchemeRecord(std::uint32_t id,
+                                              const char* name,
+                                              const MeteringParameters& params) {
+    MeteringSchemeRecord scheme{};
+    scheme.id = id;
+    scheme.recordUsed = true;
+    std::snprintf(scheme.name, sizeof(scheme.name), "%s", name ? name : "测试计量参数");
+    scheme.params = params;
+    scheme.sourceType = MeteringSchemeSource::CalibrationSession;
+    scheme.createdAt = 1714502300;
+    scheme.sampleCount = 2;
+    scheme.minActualMl = 1000;
+    scheme.maxActualMl = 2000;
+    return scheme;
+}
 
 SystemConfig enabledWaterSensorConfig() {
     SystemConfig config = makeDefaultConfig();
@@ -27,7 +57,8 @@ bool prepareMeteringScheme(MeteringSchemeStore& store,
         return false;
     }
     std::uint32_t id = 0;
-    if (!store.createManual("运行方案", MeteringParameters{0, 0, stablePulsePerLiter}, 1714502300, id)) {
+    const MeteringSchemeCandidate candidate = testMeteringCandidate(stablePulsePerLiter);
+    if (!store.saveCandidateAsNew(candidate, "运行参数", 1714502300, id)) {
         return false;
     }
     if (!store.setActiveScheme(id)) {
@@ -144,9 +175,8 @@ void finishVolumeRun(AppController& app) {
 }
 
 void applyTestMeteringScheme(AppController& app, std::uint32_t stablePulsePerLiter) {
-    MeteringSchemeRecord scheme{};
-    initializeManualMeteringScheme(
-        scheme, 99, "测试计量方案", MeteringParameters{0, 0, stablePulsePerLiter}, 1714502300);
+    const MeteringSchemeRecord scheme =
+        testMeteringSchemeRecord(99, "测试计量参数", MeteringParameters{0, 0, stablePulsePerLiter, 0, 1950});
     TEST_ASSERT_TRUE(app.applyActiveMeteringScheme(scheme));
 }
 

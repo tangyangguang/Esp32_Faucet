@@ -108,7 +108,12 @@ void setRunning(AppController& app) {
 
 void applyTestMeteringScheme(AppController& app) {
     MeteringSchemeRecord scheme{};
-    initializeManualMeteringScheme(scheme, 99, "native", MeteringParameters{0, 0, 1000}, 1714502300);
+    scheme.id = 99;
+    scheme.recordUsed = true;
+    std::snprintf(scheme.name, sizeof(scheme.name), "native");
+    scheme.params = MeteringParameters{0, 0, 1000, 0, 1950};
+    scheme.sourceType = MeteringSchemeSource::CalibrationSession;
+    scheme.sampleCount = 2;
     TEST_ASSERT_TRUE(app.applyActiveMeteringScheme(scheme));
 }
 
@@ -426,15 +431,15 @@ void test_temperature_calibration_post_accepts_celsius_decimal_input() {
     TEST_ASSERT_TRUE(fixture.config.temperatureCalibrated);
 }
 
-void test_flow_calibration_manual_save_becomes_active_parameter() {
+void test_flow_calibration_rejects_unknown_write_action() {
     WebFixture fixture;
     TEST_ASSERT_TRUE(fixture.meteringSchemes.begin());
     const std::uint32_t oldActiveId = fixture.meteringSchemes.activeSchemeId();
     TEST_ASSERT_EQUAL_UINT32(99, fixture.app.activeMeteringScheme().id);
     registerRoutes();
     beginWebPost("/faucet/calibration/flow");
-    Esp32BaseWeb::nativeTestSetParam("action", "create_metering_scheme");
-    Esp32BaseWeb::nativeTestSetParam("name", "manual current");
+    Esp32BaseWeb::nativeTestSetParam("action", "unknown_write");
+    Esp32BaseWeb::nativeTestSetParam("name", "unknown current");
     Esp32BaseWeb::nativeTestSetParam("startupPulseCount", "12");
     Esp32BaseWeb::nativeTestSetParam("startupVolumeMl", "345");
     Esp32BaseWeb::nativeTestSetParam("stablePulsePerLiter", "1234");
@@ -444,10 +449,9 @@ void test_flow_calibration_manual_save_becomes_active_parameter() {
     TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch("/faucet/calibration/flow", Esp32BaseWeb::METHOD_POST));
 
     TEST_ASSERT_EQUAL(303, Esp32BaseWeb::nativeTestResponse().code);
-    TEST_ASSERT_NOT_EQUAL_UINT32(oldActiveId, fixture.meteringSchemes.activeSchemeId());
-    TEST_ASSERT_EQUAL_UINT32(fixture.meteringSchemes.activeSchemeId(), fixture.app.activeMeteringScheme().id);
-    TEST_ASSERT_EQUAL_UINT32(1234, fixture.app.activeMeteringScheme().params.stablePulsePerLiter);
-    TEST_ASSERT_EQUAL_STRING("/faucet/calibration/flow?saved=scheme_created",
+    TEST_ASSERT_EQUAL_UINT32(oldActiveId, fixture.meteringSchemes.activeSchemeId());
+    TEST_ASSERT_EQUAL_UINT32(99, fixture.app.activeMeteringScheme().id);
+    TEST_ASSERT_EQUAL_STRING("/faucet/calibration/flow?error=invalid_value",
                              Esp32BaseWeb::nativeTestResponseHeader("Location"));
 }
 
@@ -723,17 +727,18 @@ void test_calibration_post_rejects_missing_action_as_invalid_action() {
                              Esp32BaseWeb::nativeTestResponseHeader("Location"));
 }
 
-void test_metering_scheme_write_redirects_busy_to_flow_center() {
+void test_unknown_flow_calibration_write_is_rejected_while_running() {
     WebFixture fixture;
     setRunning(fixture.app);
     registerRoutes();
     beginWebPost("/faucet/calibration/flow");
-    Esp32BaseWeb::nativeTestSetParam("action", "create_metering_scheme");
+    Esp32BaseWeb::nativeTestSetParam("action", "unknown_write");
 
     TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch("/faucet/calibration/flow", Esp32BaseWeb::METHOD_POST));
 
     TEST_ASSERT_EQUAL(303, Esp32BaseWeb::nativeTestResponse().code);
-    TEST_ASSERT_EQUAL_STRING("/faucet/calibration/flow?error=busy", Esp32BaseWeb::nativeTestResponseHeader("Location"));
+    TEST_ASSERT_EQUAL_STRING("/faucet/calibration/flow?error=invalid_value",
+                             Esp32BaseWeb::nativeTestResponseHeader("Location"));
 }
 
 void test_presets_handler_rejects_missing_auth_before_context_work() {
@@ -849,7 +854,7 @@ int main(int, char**) {
     RUN_TEST(test_calibration_home_redirects_active_flow_session_to_workflow);
     RUN_TEST(test_flow_calibration_page_preserves_active_session_state);
     RUN_TEST(test_temperature_calibration_post_accepts_celsius_decimal_input);
-    RUN_TEST(test_flow_calibration_manual_save_becomes_active_parameter);
+    RUN_TEST(test_flow_calibration_rejects_unknown_write_action);
     RUN_TEST(test_running_water_allows_read_only_business_pages);
     RUN_TEST(test_records_api_filters_by_documented_date_params);
     RUN_TEST(test_filter_reset_handler_rejects_missing_auth_before_context_work);
@@ -866,7 +871,7 @@ int main(int, char**) {
     RUN_TEST(test_tds_calibration_start_redirects_success_from_idle);
     RUN_TEST(test_tds_calibration_save_persists_config_after_stable_samples);
     RUN_TEST(test_calibration_post_rejects_missing_action_as_invalid_action);
-    RUN_TEST(test_metering_scheme_write_redirects_busy_to_flow_center);
+    RUN_TEST(test_unknown_flow_calibration_write_is_rejected_while_running);
     RUN_TEST(test_presets_handler_rejects_missing_auth_before_context_work);
     RUN_TEST(test_presets_handler_rejects_cross_origin_post);
     RUN_TEST(test_presets_handler_rejects_invalid_action);

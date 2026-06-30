@@ -56,7 +56,7 @@
 - Web 端不得存在任何出水控制入口或 API。
 - Web 首页允许切换“下次预设”；切换不得打开阀门、启动出水、改变已确认/正在运行任务的 active preset 或本次目标值。
 - 断网不影响本地出水。
-- 出水确认、运行和暂停期间，Web 记录页、校准页、记录查询、校准会话样本录入/移除和滤芯重置必须返回轻量 busy，不得执行文件扫描、样本聚合、大 JSON 输出或文件写入；Web 压测下 `maxBaseHandleUs` 和 `maxLoopIntervalUs` 必须支撑 `CANCEL <50ms`。
+- 出水确认、运行和暂停期间，Web 记录页、校准页、记录查询、校准会话样本录入/放弃和滤芯重置必须返回轻量 busy，不得执行文件扫描、样本聚合、大 JSON 输出或文件写入；Web 压测下 `maxBaseHandleUs` 和 `maxLoopIntervalUs` 必须支撑 `CANCEL <50ms`。
 - Web API 路径不得出现 `/water/`、`/start`、`/stop` 这类远程出水控制语义。
 - 重启后默认不继续未完成出水任务。
 - 出水过程中所有异常优先关阀。

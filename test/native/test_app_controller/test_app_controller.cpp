@@ -6,6 +6,7 @@
 #include "../support/MemoryFileBackend.h"
 #include "../support/MemoryRecordWriter.h"
 
+#include <cstdio>
 #include <vector>
 
 using namespace faucet;
@@ -87,8 +88,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_app_controller_saves_unstable_actual_without_counting_valid_sample);
     RUN_TEST(test_app_controller_generated_calibration_can_continue_collecting_samples);
     RUN_TEST(test_app_controller_submit_actual_succeeds_when_auto_refresh_cannot_generate);
-    RUN_TEST(test_app_controller_removed_valid_sample_clears_generated_candidate);
-    RUN_TEST(test_app_controller_pending_actual_sample_can_be_removed);
+    RUN_TEST(test_app_controller_pending_actual_sample_can_be_skipped);
     RUN_TEST(test_app_controller_applies_generated_session_scheme_and_keeps_old_scheme);
     RUN_TEST(test_app_controller_pause_timeout_trace_is_not_marked_error_and_can_calibrate);
     RUN_TEST(test_app_controller_result_display_exits_after_configured_timeout);

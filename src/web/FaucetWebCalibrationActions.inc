@@ -217,31 +217,6 @@ void handleFlowCalibrationPost() {
                                       "invalid_state");
         return;
     }
-    if (std::strcmp(text, "remove_sample") == 0) {
-        std::uint32_t attemptIndex = 0;
-        if (!getParam("attemptIndex", text, sizeof(text)) || !parseU32(text, attemptIndex) ||
-            attemptIndex >= kCalibrationMaxAttempts) {
-            sendFlowCalibrationPostFailure(ajax, "invalid_value");
-            return;
-        }
-        if (waterTaskActive()) {
-            sendFlowCalibrationPostFailure(ajax, "busy");
-            return;
-        }
-        sendFlowCalibrationPostResult(ajax,
-                                      g_context.app && g_context.app->removeCalibrationSessionSampleForWeb(
-                                                           static_cast<std::uint8_t>(attemptIndex), now),
-                                      "sample_removed",
-                                      "invalid_state");
-        return;
-    }
-    if (std::strcmp(text, "generate_session") == 0) {
-        sendFlowCalibrationPostResult(ajax,
-                                      g_context.app && g_context.app->generateCalibrationForWeb(now),
-                                      "generated",
-                                      "sample_not_enough");
-        return;
-    }
     if (std::strcmp(text, "apply_session") == 0) {
         sendFlowCalibrationPostResult(ajax,
                                       g_context.app && g_context.app->applyGeneratedCalibrationForWeb(now),
@@ -249,10 +224,5 @@ void handleFlowCalibrationPost() {
                                       "no_generated_result");
         return;
     }
-    if (std::strcmp(text, "create_metering_scheme") == 0) {
-        handleCreateMeteringSchemeApi();
-        return;
-    }
     sendFlowCalibrationPostFailure(ajax, "invalid_value");
 }
-

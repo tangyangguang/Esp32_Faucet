@@ -90,8 +90,6 @@ void sendActiveMeteringSchemeCard(const MeteringSchemeRecord& scheme, std::uint3
     sendMeteringMetricCard("样本", samples);
     sendMeteringMetricCard("容量范围", actualRange);
     sendMeteringMetricCard("最大误差", maxError);
-    Esp32BaseWeb::sendChunk("</div><div class='row-actions active-metering-actions'>");
-    sendManualParameterLink("复制参数", scheme);
     Esp32BaseWeb::sendChunk("</div></section>");
 }
 
@@ -114,19 +112,6 @@ void sendActiveMeteringSchemeSummaryPanel() {
                             "<span class='status-pill status-muted'>无可用参数</span></div></section>");
 }
 
-void sendManualParameterLink(const char* label, const MeteringSchemeRecord& scheme) {
-    const MeteringParameters& params = scheme.params;
-    sendFmt("<a class='btn-link' href='/faucet/calibration/flow?manual=1&name=");
-    sendUrlQueryValueEscapedBounded(scheme.name[0] ? scheme.name : "手工参数", sizeof(scheme.name));
-    sendFmt("&startupPulseCount=%lu&startupVolumeMl=%lu&stablePulsePerLiter=%lu&startupDurationMs=%lu&stableFlowMlPerMin=%lu'>%s</a>",
-            static_cast<unsigned long>(params.startupPulseCount),
-            static_cast<unsigned long>(params.startupVolumeMl),
-            static_cast<unsigned long>(params.stablePulsePerLiter),
-            static_cast<unsigned long>(params.startupDurationMs),
-            static_cast<unsigned long>(params.stableFlowMlPerMin),
-            label ? label : "复制参数");
-}
-
 void sendCalibrationParameterPanels() {
     MeteringSchemeRecord* schemes = new (std::nothrow) MeteringSchemeRecord[kMeteringSchemeStoreSlotCount]{};
     const bool ready = ensureMeteringSchemesReady();
@@ -139,19 +124,18 @@ void sendCalibrationParameterPanels() {
         parseU32(createdText, createdSchemeId);
     }
 
-    Esp32BaseWeb::sendChunk("<section id='metering-scheme-list' class='panel calibration-param-panel'><div class='panel-head'><h3>历史参数</h3>"
-                            "<a class='btn-link' href='/faucet/calibration/flow?manual=1'>手工输入参数</a></div>"
-                            "<table class='calibration-slot-table metering-scheme-table'><tr><th>参数</th><th>状态</th><th>启动阶段</th><th>稳态阶段</th><th>样本与误差</th><th>操作</th></tr>");
+    Esp32BaseWeb::sendChunk("<section id='metering-scheme-list' class='panel calibration-param-panel'><div class='panel-head'><h3>历史参数</h3></div>"
+                            "<table class='calibration-slot-table metering-scheme-table'><tr><th>参数</th><th>状态</th><th>启动阶段</th><th>稳态阶段</th><th>样本与误差</th></tr>");
     if (!ready) {
         const AppStorageStatus status =
             g_context.meteringSchemes ? g_context.meteringSchemes->status() : AppStorageStatus::Unavailable;
-        sendFmt("<tr><td colspan='6'>历史参数存储不可用：%s（%s）。</td></tr>",
+        sendFmt("<tr><td colspan='5'>历史参数存储不可用：%s（%s）。</td></tr>",
                 appStorageStatusMessage(status),
                 appStorageStatusCode(status));
     } else if (!schemes) {
-        Esp32BaseWeb::sendChunk("<tr><td colspan='6'>内存不足，无法加载历史参数。</td></tr>");
+        Esp32BaseWeb::sendChunk("<tr><td colspan='5'>内存不足，无法加载历史参数。</td></tr>");
     } else if (count == 0) {
-        Esp32BaseWeb::sendChunk("<tr><td colspan='6'>还没有历史参数。可以手工输入一组参数。</td></tr>");
+        Esp32BaseWeb::sendChunk("<tr><td colspan='5'>还没有历史参数。</td></tr>");
     }
     for (std::size_t i = 0; i < count; ++i) {
         const MeteringSchemeRecord& scheme = schemes[i];
@@ -206,8 +190,6 @@ void sendCalibrationParameterPanels() {
         } else {
             Esp32BaseWeb::sendChunk("<span>样本：无样本摘要</span><span>最大误差：-</span>");
         }
-        Esp32BaseWeb::sendChunk("</div></td><td><div class='row-actions scheme-row-actions'>");
-        sendManualParameterLink("复制参数", scheme);
         Esp32BaseWeb::sendChunk("</div></td></tr>");
     }
     Esp32BaseWeb::sendChunk("</table>");
@@ -217,94 +199,6 @@ void sendCalibrationParameterPanels() {
     Esp32BaseWeb::sendChunk("</section>");
     delete[] schemes;
 }
-
-void sendManualMeteringParameterPage(const MeteringSchemeRecord* scheme) {
-    const char* title = "手工输入参数";
-    Esp32BaseWeb::sendHeader(title);
-    sendFmt("<h2>%s</h2><p><a class='btn-link' href='/faucet/calibration/flow'>返回校准</a></p>", title);
-    sendNoticeFromQuery();
-    const MeteringParameters params = scheme ? scheme->params : MeteringParameters{};
-    const bool hasValues = scheme != nullptr;
-    Esp32BaseWeb::sendChunk("<section class='panel calibration-param-panel manual-param-panel'><form class='manual-param-form' method='post' action='/faucet/calibration/flow' onsubmit='return once(this)'>");
-    Esp32BaseWeb::sendChunk("<input type='hidden' name='action' value='create_metering_scheme'>");
-    Esp32BaseWeb::sendChunk("<div class='manual-param-section'><h3>参数信息</h3><div class='manual-param-grid'>");
-    sendFmt("<label class='compact-field manual-param-field scheme-span-12'><span>名称</span><input name='name' maxlength='%u' required value='",
-            static_cast<unsigned>(kMeteringSchemeNameLength - 1));
-    if (scheme && scheme->name[0]) {
-        sendHtmlAttrEscapedBounded(scheme->name, sizeof(scheme->name));
-    }
-    Esp32BaseWeb::sendChunk("'></label>");
-    Esp32BaseWeb::sendChunk("</div></div><div class='manual-param-section'><h3>容量估算计量参数</h3><div class='manual-param-grid'>");
-    sendFmt("<label class='compact-field manual-param-field scheme-span-4'><span>启动脉冲数</span><input name='startupPulseCount' type='number' min='0' max='%lu' step='1' required%s",
-            static_cast<unsigned long>(kMaxSegmentedStartupPulseCount),
-            hasValues ? " value='" : "");
-    if (hasValues) {
-        sendFmt("%lu'", static_cast<unsigned long>(params.startupPulseCount));
-    }
-    sendFmt("><small class='hint'>单位 P，范围 0-%lu</small></label>",
-            static_cast<unsigned long>(kMaxSegmentedStartupPulseCount));
-    sendFmt("<label class='compact-field manual-param-field scheme-span-4'><span>启动水量</span><input name='startupVolumeMl' type='number' min='0' max='%lu' step='1' required%s",
-            static_cast<unsigned long>(kMaxSegmentedStartupVolumeMl),
-            hasValues ? " value='" : "");
-    if (hasValues) {
-        sendFmt("%lu'", static_cast<unsigned long>(params.startupVolumeMl));
-    }
-    sendFmt("><small class='hint'>单位 ml，范围 0-%lu</small></label>",
-            static_cast<unsigned long>(kMaxSegmentedStartupVolumeMl));
-    sendFmt("<label class='compact-field manual-param-field scheme-span-4'><span>稳态 P/L</span><input name='stablePulsePerLiter' type='number' min='%lu' max='%lu' step='1' required%s",
-            static_cast<unsigned long>(kMinSegmentedPulsePerLiter),
-            static_cast<unsigned long>(kMaxSegmentedPulsePerLiter),
-            hasValues ? " value='" : "");
-    if (hasValues) {
-        sendFmt("%lu'", static_cast<unsigned long>(params.stablePulsePerLiter));
-    }
-    sendFmt("><small class='hint'>单位 P/L，范围 %lu-%lu</small></label>",
-            static_cast<unsigned long>(kMinSegmentedPulsePerLiter),
-            static_cast<unsigned long>(kMaxSegmentedPulsePerLiter));
-    Esp32BaseWeb::sendChunk("</div></div><div class='manual-param-section'><h3>时间估算计量参数</h3><p class='muted'>仅用于预计时间和预计流速展示，不参与实际容量、滤芯累计或统计累计。</p><div class='manual-param-grid'>");
-    char startupDurationSec[24]{};
-    formatStartupDurationSecondsInput(params.startupDurationMs, startupDurationSec, sizeof(startupDurationSec));
-    sendFmt("<label class='compact-field manual-param-field scheme-span-4'><span>启动时长</span><input name='startupDurationSec' type='number' min='0' max='%lu' step='0.001' required%s",
-            static_cast<unsigned long>(kMaxSegmentedStartupDurationMs / 1000U),
-            hasValues ? " value='" : "");
-    if (hasValues) {
-        sendFmt("%s'", startupDurationSec);
-    }
-    sendFmt("><small class='hint'>单位 秒，范围 0-%lu，可精确到 0.001 秒</small></label>",
-            static_cast<unsigned long>(kMaxSegmentedStartupDurationMs / 1000U));
-    sendFmt("<label class='compact-field manual-param-field scheme-span-4'><span>预计稳态流速</span><input name='stableFlowMlPerMin' type='number' min='%lu' max='%lu' step='1' required%s",
-            static_cast<unsigned long>(kMinStableFlowMlPerMin),
-            static_cast<unsigned long>(kMaxStableFlowMlPerMin),
-            hasValues ? " value='" : "");
-    if (hasValues) {
-        sendFmt("%lu'", static_cast<unsigned long>(params.stableFlowMlPerMin));
-    }
-    sendFmt("><small class='hint'>单位 ml/min，范围 %lu-%lu</small></label>",
-            static_cast<unsigned long>(kMinStableFlowMlPerMin),
-            static_cast<unsigned long>(kMaxStableFlowMlPerMin));
-    Esp32BaseWeb::sendChunk("</div></div>");
-    Esp32BaseWeb::sendChunk("<div class='form-actions manual-param-actions'><input class='primary' type='submit' value='保存参数'>");
-    Esp32BaseWeb::sendChunk("<a class='btn-link' href='/faucet/calibration/flow'>取消</a></div></form></section>");
-    sendPageEnd();
-}
-
-bool readMeteringManualPrefillFromQuery(MeteringParameters& params, bool& present) {
-    present = false;
-    char text[32]{};
-    if (!getParam("startupPulseCount", text, sizeof(text))) {
-        return true;
-    }
-    present = true;
-    if (!parseU32(text, params.startupPulseCount) ||
-        !getParam("startupVolumeMl", text, sizeof(text)) || !parseU32(text, params.startupVolumeMl) ||
-        !getParam("stablePulsePerLiter", text, sizeof(text)) || !parseU32(text, params.stablePulsePerLiter) ||
-        !getParam("startupDurationMs", text, sizeof(text)) || !parseU32(text, params.startupDurationMs) ||
-        !getParam("stableFlowMlPerMin", text, sizeof(text)) || !parseU32(text, params.stableFlowMlPerMin)) {
-        return false;
-    }
-    return validMeteringSchemeParameters(params);
-}
-
 
 std::uint32_t configuredPulseObservationWindowSec() {
     const std::uint32_t seconds =
@@ -323,8 +217,6 @@ const char* calibrationAttemptStatusText(CalibrationAttemptStatus status) {
             return "已放弃";
         case CalibrationAttemptStatus::Invalid:
             return "不可用于校准";
-        case CalibrationAttemptStatus::Removed:
-            return "已移除";
         case CalibrationAttemptStatus::Empty:
             break;
     }
@@ -442,38 +334,25 @@ void sendCalibrationSessionAttemptRow(const CalibrationSessionRecord& session,
             attempt.status == CalibrationAttemptStatus::Valid ? "status-ok" :
                 (attempt.status == CalibrationAttemptStatus::Invalid ? "status-warn" : "status-muted"),
             calibrationAttemptStatusText(attempt.status));
-    Esp32BaseWeb::sendChunk("</td><td>");
-    bool renderedAction = false;
-    if (attempt.status == CalibrationAttemptStatus::Valid || attempt.status == CalibrationAttemptStatus::PendingActual) {
-        Esp32BaseWeb::sendChunk("<form method='post' action='/faucet/calibration/flow' onsubmit='return faucetSubmitFlowCalibrationAction(this)'>"
-                                "<input type='hidden' name='action' value='remove_sample'>"
-                                "<input type='hidden' name='attemptIndex' value='");
-        sendFmt("%u", static_cast<unsigned>(attempt.attemptIndex));
-        Esp32BaseWeb::sendChunk("'><input class='danger' type='submit' value='移除'></form>");
-        renderedAction = true;
-    }
-    if (!renderedAction) {
-        Esp32BaseWeb::sendChunk("<span class='hint'>无可用操作</span>");
-    }
     Esp32BaseWeb::sendChunk("</td></tr>");
 }
 
 void sendCalibrationSamplesPanel(std::uint32_t samplePulseWindowSec) {
     Esp32BaseWeb::sendChunk("<section id='calibration-samples' class='panel'><div class='panel-head'><h3>本次校准样本</h3></div>"
-                            "<p class='hint'>这里记录当前校准会话的接水记录；有效样本会自动刷新推荐参数，异常或误操作样本可移除。</p>");
-    sendFmt("<table class='calibration-sample-table'><tr><th>时间</th><th>时长</th><th>目标容量</th><th>估算出水</th><th>量杯实测</th><th>总脉冲</th><th>前 %u 秒脉冲</th><th>脉冲明细</th><th>稳态识别</th><th>样本来源</th><th>校准用途</th><th>操作</th></tr>",
+                            "<p class='hint'>这里记录当前校准会话的接水记录；有效样本会自动刷新推荐参数，放弃的样本只作为本次会话记录保留。</p>");
+    sendFmt("<table class='calibration-sample-table'><tr><th>时间</th><th>时长</th><th>目标容量</th><th>估算出水</th><th>量杯实测</th><th>总脉冲</th><th>前 %u 秒脉冲</th><th>脉冲明细</th><th>稳态识别</th><th>样本来源</th><th>校准用途</th></tr>",
             static_cast<unsigned>(samplePulseWindowSec));
     if (!g_context.calibrationSessions || !g_context.calibrationSessions->ready()) {
-        Esp32BaseWeb::sendChunk("<tr><td colspan='12'>校准会话存储未就绪，暂时不能读取本次接水记录。</td></tr></table></section>");
+        Esp32BaseWeb::sendChunk("<tr><td colspan='11'>校准会话存储未就绪，暂时不能读取本次接水记录。</td></tr></table></section>");
         return;
     }
     std::unique_ptr<CalibrationSessionRecord> session(new (std::nothrow) CalibrationSessionRecord);
     if (!session) {
-        Esp32BaseWeb::sendChunk("<tr><td colspan='12'>内存不足，暂时不能读取本次校准样本。</td></tr></table></section>");
+        Esp32BaseWeb::sendChunk("<tr><td colspan='11'>内存不足，暂时不能读取本次校准样本。</td></tr></table></section>");
         return;
     }
     if (!g_context.calibrationSessions->load(*session) || session->attemptCount == 0) {
-        Esp32BaseWeb::sendChunk("<tr><td colspan='12'>还没有本次校准样本。进入校准模式后，每次本地出水都会记录到这里。</td></tr></table></section>");
+        Esp32BaseWeb::sendChunk("<tr><td colspan='11'>还没有本次校准样本。进入校准模式后，每次本地出水都会记录到这里。</td></tr></table></section>");
         return;
     }
     bool rendered = false;
@@ -486,7 +365,7 @@ void sendCalibrationSamplesPanel(std::uint32_t samplePulseWindowSec) {
         rendered = true;
     }
     if (!rendered) {
-        Esp32BaseWeb::sendChunk("<tr><td colspan='12'>还没有本次校准样本。进入校准模式后，每次本地出水都会记录到这里。</td></tr>");
+        Esp32BaseWeb::sendChunk("<tr><td colspan='11'>还没有本次校准样本。进入校准模式后，每次本地出水都会记录到这里。</td></tr>");
     }
     Esp32BaseWeb::sendChunk("</table></section>");
 }
@@ -1054,4 +933,3 @@ void handleTdsCalibrationPage() {
     sendCalibrationPageScript();
     sendPageEnd();
 }
-

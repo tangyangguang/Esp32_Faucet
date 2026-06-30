@@ -235,45 +235,6 @@ bool MeteringSchemeStore::saveCandidateAsNew(const MeteringSchemeCandidate& cand
     return true;
 }
 
-bool MeteringSchemeStore::createManual(const char* name,
-                                       const MeteringParameters& params,
-                                       std::uint32_t nowSeconds,
-                                       std::uint32_t& newId) {
-    newId = 0;
-    if (!ready()) {
-        return false;
-    }
-    MeteringSchemeRecord records[1]{};
-    MeteringSchemeCollection collection{records, 1, header_.activeSchemeId, header_.nextSchemeId};
-    if (!createManualMeteringScheme(collection, name, params, nowSeconds, newId)) {
-        return false;
-    }
-
-    std::size_t slot = 0;
-    if (!findFreeSlot(slot) && !findOldestNonCurrentSlot(slot)) {
-        newId = 0;
-        return false;
-    }
-    MeteringSchemeRecord previousRecord{};
-    if (!readRecord(slot, previousRecord)) {
-        newId = 0;
-        return false;
-    }
-    if (!writeRecord(slot, records[0])) {
-        newId = 0;
-        return false;
-    }
-    MeteringSchemeStoreHeader previous = header_;
-    header_.nextSchemeId = collection.nextSchemeId;
-    header_.checksum = headerChecksum(header_);
-    if (!saveHeader()) {
-        header_ = previous;
-        writeRecord(slot, previousRecord);
-        return false;
-    }
-    return true;
-}
-
 bool MeteringSchemeStore::setActiveScheme(std::uint32_t schemeId) {
     if (!ready()) {
         return false;

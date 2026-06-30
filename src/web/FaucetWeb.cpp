@@ -60,7 +60,6 @@ void handleCalibrationPage();
 void handleFlowCalibrationPage();
 void handleCalibrationPost();
 void handleFlowCalibrationPost();
-void handleCreateMeteringSchemeApi();
 const char* calibrationSessionStatusText(CalibrationSessionStatus status);
 bool calibrationSessionInactive(CalibrationSessionStatus status);
 bool calibrationSessionStorageReady();
@@ -76,7 +75,6 @@ void formatSecondsValue(std::uint32_t seconds, char* out, std::size_t len);
 void formatFlowLitersPerMin(std::uint32_t flowMlPerMin, char* out, std::size_t len);
 void sendNoticeFromQuery();
 void sendPageEnd();
-void sendManualParameterLink(const char* label, const MeteringSchemeRecord& scheme);
 
 Esp32BaseWeb::Method toBaseMethod(FaucetWebMethod method) {
     switch (method) {
@@ -348,21 +346,6 @@ void formatStartupDurationSeconds(std::uint32_t durationMs, char* out, std::size
                   static_cast<unsigned long>(durationMs % 1000U));
 }
 
-void formatStartupDurationSecondsInput(std::uint32_t durationMs, char* out, std::size_t len) {
-    if (!out || len == 0) {
-        return;
-    }
-    if (durationMs % 1000U == 0) {
-        std::snprintf(out, len, "%lu", static_cast<unsigned long>(durationMs / 1000U));
-        return;
-    }
-    std::snprintf(out,
-                  len,
-                  "%lu.%03lu",
-                  static_cast<unsigned long>(durationMs / 1000U),
-                  static_cast<unsigned long>(durationMs % 1000U));
-}
-
 void formatRecordTargetValue(const WaterRecord& record, char* out, std::size_t len) {
     if (!out || len == 0) {
         return;
@@ -562,8 +545,6 @@ const char* meteringSchemeSourceName(MeteringSchemeSource source) {
             return "默认";
         case MeteringSchemeSource::CalibrationSession:
             return "校准生成";
-        case MeteringSchemeSource::Manual:
-            return "手工创建";
     }
     return "-";
 }
@@ -659,30 +640,6 @@ bool activeMeteringSchemeForWeb(MeteringSchemeRecord& output) {
     if (g_context.app) {
         output = g_context.app->activeMeteringScheme();
         return output.recordUsed;
-    }
-    return false;
-}
-
-bool setAndApplyActiveMeteringSchemeForWeb(std::uint32_t schemeId) {
-    if (!g_context.meteringSchemes || !g_context.app) {
-        return false;
-    }
-    MeteringSchemeRecord next{};
-    if (!g_context.meteringSchemes->findById(schemeId, next) || !validMeteringSchemeParameters(next.params)) {
-        return false;
-    }
-    const std::uint32_t previousId = g_context.meteringSchemes->activeSchemeId();
-    const MeteringSchemeRecord previous = g_context.app->activeMeteringScheme();
-    const std::uint32_t now = g_context.nowSeconds ? g_context.nowSeconds() : 0;
-    if (!g_context.meteringSchemes->setActiveScheme(schemeId)) {
-        return false;
-    }
-    if (g_context.app->applyActiveMeteringScheme(next)) {
-        return true;
-    }
-    if (previousId != 0 && previous.recordUsed) {
-        g_context.meteringSchemes->setActiveScheme(previousId);
-        g_context.app->applyActiveMeteringScheme(previous);
     }
     return false;
 }
@@ -795,9 +752,7 @@ void sendNoticeFromQuery() {
     char text[32]{};
     if (getParam("saved", text, sizeof(text))) {
         const bool actualOnly = std::strcmp(text, "actual") == 0;
-        const bool generated = std::strcmp(text, "generated") == 0;
         const bool restored = std::strcmp(text, "restored") == 0;
-        const bool sampleRemoved = std::strcmp(text, "sample_removed") == 0;
         const bool tdsStarted = std::strcmp(text, "tds_started") == 0;
         const bool tdsPointStarted = std::strcmp(text, "tds_point_started") == 0;
         const bool tdsPointSaved = std::strcmp(text, "tds_point_saved") == 0;
@@ -805,9 +760,7 @@ void sendNoticeFromQuery() {
         const bool tdsDiscarded = std::strcmp(text, "tds_discarded") == 0;
         Esp32BaseWeb::sendChunk("<p class='ok'>");
         Esp32BaseWeb::sendChunk(actualOnly   ? "校准已保存。"
-                                : generated  ? "参数已生成。"
                                 : restored           ? "已恢复上一套参数。"
-                                : sampleRemoved      ? "样本已移除。"
                                 : tdsStarted         ? "水质校准已开始。"
                                 : tdsPointStarted    ? "校准点采集已开始，页面会自动刷新到可保存状态。"
                                 : tdsPointSaved      ? "校准点已保存。"
@@ -1099,66 +1052,6 @@ void handleStatusApi() {
 }
 
 #include "FaucetWebBusinessApi.inc"
-
-bool readMeteringParamsFromRequest(MeteringParameters& params) {
-    char text[32]{};
-    float startupDurationSec = 0.0f;
-    if (!(getParam("startupPulseCount", text, sizeof(text)) && parseU32(text, params.startupPulseCount) &&
-          getParam("startupVolumeMl", text, sizeof(text)) && parseU32(text, params.startupVolumeMl) &&
-          getParam("stablePulsePerLiter", text, sizeof(text)) && parseU32(text, params.stablePulsePerLiter) &&
-          getParam("startupDurationSec", text, sizeof(text)) && parseFloat(text, startupDurationSec) &&
-          getParam("stableFlowMlPerMin", text, sizeof(text)) && parseU32(text, params.stableFlowMlPerMin))) {
-        return false;
-    }
-    if (startupDurationSec < 0.0f ||
-        startupDurationSec > static_cast<float>(kMaxSegmentedStartupDurationMs) / 1000.0f) {
-        return false;
-    }
-    params.startupDurationMs = static_cast<std::uint32_t>(startupDurationSec * 1000.0f + 0.5f);
-    return validMeteringSchemeParameters(params);
-}
-
-void handleCreateMeteringSchemeApi() {
-    if (!Esp32BaseWeb::checkAuth() || !requireContext()) {
-        return;
-    }
-    if (!Esp32BaseWeb::isMethod(Esp32BaseWeb::METHOD_POST)) {
-        Esp32BaseWeb::sendJson(405, "{\"error\":\"method_not_allowed\"}");
-        return;
-    }
-    if (waterTaskActive()) {
-        Esp32BaseWeb::redirectSeeOther("/faucet/calibration/flow?error=busy");
-        return;
-    }
-    if (!g_context.app || !g_context.app->canApplyConfig()) {
-        Esp32BaseWeb::redirectSeeOther("/faucet/calibration/flow?error=busy");
-        return;
-    }
-    if (!ensureMeteringSchemesReady()) {
-        Esp32BaseWeb::redirectSeeOther("/faucet/calibration/flow?error=metering_storage_unavailable");
-        return;
-    }
-    MeteringParameters params{};
-    if (!readMeteringParamsFromRequest(params)) {
-        Esp32BaseWeb::redirectSeeOther("/faucet/calibration/flow?error=invalid_value");
-        return;
-    }
-    char name[kMeteringSchemeNameLength]{};
-    if (!getParam("name", name, sizeof(name)) || name[0] == '\0') {
-        Esp32BaseWeb::redirectSeeOther("/faucet/calibration/flow?error=invalid_value");
-        return;
-    }
-    std::uint32_t newId = 0;
-    if (!g_context.meteringSchemes->createManual(name, params, g_context.nowSeconds ? g_context.nowSeconds() : 0, newId)) {
-        Esp32BaseWeb::redirectSeeOther("/faucet/calibration/flow?error=save_failed");
-        return;
-    }
-    if (!setAndApplyActiveMeteringSchemeForWeb(newId)) {
-        Esp32BaseWeb::redirectSeeOther("/faucet/calibration/flow?error=save_failed");
-        return;
-    }
-    Esp32BaseWeb::redirectSeeOther("/faucet/calibration/flow?saved=scheme_created");
-}
 
 #include "FaucetWebFiltersApi.inc"
 

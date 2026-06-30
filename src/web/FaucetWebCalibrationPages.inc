@@ -54,37 +54,6 @@ void handleFlowCalibrationPage() {
         Esp32BaseWeb::endResponse();
         return;
     }
-    if (getParam("manual", text, sizeof(text))) {
-        MeteringParameters prefill{};
-        bool hasPrefill = false;
-        if (!readMeteringManualPrefillFromQuery(prefill, hasPrefill)) {
-            Esp32BaseWeb::redirectSeeOther("/faucet/calibration/flow?error=invalid_value");
-            return;
-        }
-        MeteringSchemeRecord draft{};
-        if (hasPrefill) {
-            char name[kMeteringSchemeNameLength]{};
-            const char* prefillName = getParam("name", name, sizeof(name)) && name[0] ? name : "手工参数";
-            initializeManualMeteringScheme(draft, 0, prefillName, prefill, g_context.nowSeconds ? g_context.nowSeconds() : 0);
-        }
-        sendManualMeteringParameterPage(hasPrefill ? &draft : nullptr);
-        return;
-    }
-    if (getParam("scheme", text, sizeof(text))) {
-        if (std::strcmp(text, "new") == 0) {
-            sendManualMeteringParameterPage(nullptr);
-            return;
-        }
-        std::uint32_t id = 0;
-        MeteringSchemeRecord scheme{};
-        if (!parseU32(text, id) || !ensureMeteringSchemesReady() || !g_context.meteringSchemes->findById(id, scheme)) {
-            Esp32BaseWeb::redirectSeeOther("/faucet/calibration/flow?error=invalid_value");
-            return;
-        }
-        sendManualMeteringParameterPage(&scheme);
-        return;
-    }
-
     const AppSnapshot snapshot = g_context.app->snapshot();
     const bool taskActive = waterTaskActive();
 
@@ -296,5 +265,4 @@ void handleCalibrationDetailPage() {
     Esp32BaseWeb::sendChunk("</table></section>");
     sendPageEnd();
 }
-
 

@@ -33,7 +33,6 @@ enum class CalibrationAttemptStatus : std::uint8_t {
     Valid,
     Skipped,
     Invalid,
-    Removed,
 };
 
 enum class CalibrationInvalidReason : std::uint8_t {

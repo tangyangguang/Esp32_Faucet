@@ -78,10 +78,10 @@ void test_app_controller_generated_calibration_restores_candidate_and_stays_acti
     delete fixture.app;
     fixture.app = nullptr;
     fixture.createApp();
-    TEST_ASSERT_TRUE(fixture.app->generateCalibrationForWeb(1714505100));
     fixture.app->tick(input({false, false, false, false}, 3000, 3000000UL, 1714588800));
     TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationSessionStatus::Generated),
                             static_cast<unsigned>(fixture.app->snapshot().calibrationStatus));
+    TEST_ASSERT_TRUE(fixture.app->snapshot().calibrationCandidate.ready);
 }
 
 void test_app_controller_reboot_drops_awaiting_actual_when_ram_trace_missing() {
@@ -223,12 +223,11 @@ void test_app_controller_generates_calibration_session_candidate() {
     MeteringSchemeRecord beforeGenerate[4]{};
     const std::size_t beforeGenerateCount = fixture.schemes.list(beforeGenerate, 4);
 
-    TEST_ASSERT_TRUE(fixture.app->generateCalibrationForWeb(1714502500));
-
     MeteringSchemeRecord list[4]{};
     TEST_ASSERT_EQUAL_size_t(beforeGenerateCount, fixture.schemes.list(list, 4));
     TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationSessionStatus::Generated),
                             static_cast<unsigned>(fixture.app->snapshot().calibrationStatus));
+    TEST_ASSERT_TRUE(fixture.app->snapshot().calibrationCandidate.ready);
 }
 
 void test_app_controller_auto_generates_after_second_valid_calibration_sample() {
@@ -318,36 +317,16 @@ void test_app_controller_submit_actual_succeeds_when_auto_refresh_cannot_generat
                             static_cast<unsigned>(persisted.attempts[1].status));
 }
 
-void test_app_controller_removed_valid_sample_clears_generated_candidate() {
-    CalibrationAppFixture fixture;
-    saveOneValidOnePendingSession(fixture, 1714502400);
-    fixture.createApp();
-    TEST_ASSERT_TRUE(fixture.app->submitCalibrationActualForWeb(7500, 1714502500));
-    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationSessionStatus::Generated),
-                            static_cast<unsigned>(fixture.app->snapshot().calibrationStatus));
-
-    TEST_ASSERT_TRUE(fixture.app->removeCalibrationSessionSampleForWeb(1, 1714502550));
-
-    CalibrationSessionRecord persisted{};
-    TEST_ASSERT_TRUE(fixture.sessionStore.load(persisted));
-    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationAttemptStatus::Removed),
-                            static_cast<unsigned>(persisted.attempts[1].status));
-    TEST_ASSERT_EQUAL_UINT8(1, fixture.app->snapshot().calibrationValidSampleCount);
-    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationSessionStatus::WaitingLocalRun),
-                            static_cast<unsigned>(fixture.app->snapshot().calibrationStatus));
-    TEST_ASSERT_FALSE(fixture.app->applyGeneratedCalibrationForWeb(1714502600));
-}
-
-void test_app_controller_pending_actual_sample_can_be_removed() {
+void test_app_controller_pending_actual_sample_can_be_skipped() {
     CalibrationAppFixture fixture;
     saveOneValidOnePendingSession(fixture, 1714502400);
     fixture.createApp();
 
-    TEST_ASSERT_TRUE(fixture.app->removeCalibrationSessionSampleForWeb(1, 1714502500));
+    TEST_ASSERT_TRUE(fixture.app->skipCalibrationAttemptForWeb(1714502500));
 
     CalibrationSessionRecord persisted{};
     TEST_ASSERT_TRUE(fixture.sessionStore.load(persisted));
-    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationAttemptStatus::Removed),
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationAttemptStatus::Skipped),
                             static_cast<unsigned>(persisted.attempts[1].status));
     TEST_ASSERT_EQUAL_UINT8(1, fixture.app->snapshot().calibrationValidSampleCount);
     TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationSessionStatus::WaitingLocalRun),
@@ -366,7 +345,7 @@ void test_app_controller_applies_generated_session_scheme_and_keeps_old_scheme()
     TEST_ASSERT_TRUE(fixture.sessionStore.save(session));
     fixture.createApp();
 
-    TEST_ASSERT_TRUE(fixture.app->generateCalibrationForWeb(1714502500));
+    TEST_ASSERT_TRUE(fixture.app->snapshot().calibrationCandidate.ready);
     TEST_ASSERT_TRUE(fixture.app->applyGeneratedCalibrationForWeb(1714502600));
 
     TEST_ASSERT_NOT_EQUAL(oldActiveId, fixture.schemes.activeSchemeId());
@@ -414,4 +393,3 @@ void test_app_controller_pause_timeout_trace_is_not_marked_error_and_can_calibra
     TEST_ASSERT_TRUE(app.snapshot().lastResultRecordAvailable);
     TEST_ASSERT_EQUAL_size_t(0, pulseTraces.count());
 }
-

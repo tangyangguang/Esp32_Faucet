@@ -38,10 +38,6 @@ public:
                             const char* name,
                             std::uint32_t nowSeconds,
                             std::uint32_t& newId);
-    bool createManual(const char* name,
-                      const MeteringParameters& params,
-                      std::uint32_t nowSeconds,
-                      std::uint32_t& newId);
     bool setActiveScheme(std::uint32_t schemeId);
 
 private:

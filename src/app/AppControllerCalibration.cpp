@@ -293,50 +293,6 @@ bool AppController::submitCalibrationActualForWeb(std::uint32_t actualMl, std::u
     return saveCalibrationSession();
 }
 
-bool AppController::removeCalibrationSessionSampleForWeb(std::uint8_t attemptIndex, std::uint32_t nowSeconds) {
-    if (water_.snapshot().state != WaterState::Idle) {
-        return false;
-    }
-
-    std::uint8_t selectedIndex = kCalibrationMaxAttempts;
-    for (std::uint8_t i = 0; i < calibrationSession_.attemptCount && i < kCalibrationMaxAttempts; ++i) {
-        const CalibrationAttempt& attempt = calibrationSession_.attempts[i];
-        if (attempt.attemptIndex == attemptIndex) {
-            selectedIndex = i;
-            break;
-        }
-    }
-    if (selectedIndex >= kCalibrationMaxAttempts) {
-        return false;
-    }
-    CalibrationSessionRecord nextSession = calibrationSession_;
-    CalibrationAttempt& nextAttempt = nextSession.attempts[selectedIndex];
-    if (nextAttempt.status != CalibrationAttemptStatus::Valid &&
-        nextAttempt.status != CalibrationAttemptStatus::PendingActual) {
-        return false;
-    }
-    nextAttempt.status = CalibrationAttemptStatus::Removed;
-    nextAttempt.invalidReason = CalibrationInvalidReason::None;
-    nextSession.validSampleCount = countValidCalibrationSamples(nextSession);
-    nextSession.updatedAt = nowSeconds;
-    const bool canQuickGenerateAfterRemove = calibrationCanQuickGenerate(nextSession);
-    nextSession.status = canQuickGenerateAfterRemove ? CalibrationSessionStatus::ReadyToGenerate
-                                                     : (calibrationCanStartAttempt(nextSession)
-                                                            ? CalibrationSessionStatus::WaitingLocalRun
-                                                            : CalibrationSessionStatus::Failed);
-
-    if (!calibrationSessions_ || !calibrationSessions_->ready() || !calibrationSessions_->save(nextSession)) {
-        return false;
-    }
-
-    calibrationSession_ = nextSession;
-    clearCalibrationCandidate();
-    if (canQuickGenerateAfterRemove) {
-        return refreshCalibrationCandidate(nowSeconds);
-    }
-    return true;
-}
-
 bool AppController::skipCalibrationAttemptForWeb(std::uint32_t nowSeconds) {
     if (calibrationSession_.status != CalibrationSessionStatus::AwaitingActual ||
         calibrationSession_.attemptCount == 0) {
@@ -351,12 +307,6 @@ bool AppController::skipCalibrationAttemptForWeb(std::uint32_t nowSeconds) {
                                                                                 : CalibrationSessionStatus::Failed;
     calibrationSession_.updatedAt = nowSeconds;
     return saveCalibrationSession();
-}
-
-bool AppController::generateCalibrationForWeb(std::uint32_t nowSeconds) {
-    return refreshCalibrationCandidate(nowSeconds) &&
-           calibrationSession_.status == CalibrationSessionStatus::Generated &&
-           calibrationCandidate_.ready;
 }
 
 bool AppController::refreshCalibrationCandidate(std::uint32_t nowSeconds) {
@@ -523,7 +473,8 @@ void AppController::restoreCalibrationSession() {
         saveCalibrationSession();
     }
     invalidateAwaitingActualIfRamTraceMissing(0);
-    if (calibrationSession_.status == CalibrationSessionStatus::Generated &&
+    if ((calibrationSession_.status == CalibrationSessionStatus::ReadyToGenerate ||
+         calibrationSession_.status == CalibrationSessionStatus::Generated) &&
         calibrationCanQuickGenerate(calibrationSession_)) {
         const BeepPattern restoredBeep = pendingBeep_;
         refreshCalibrationCandidate(calibrationSession_.updatedAt);

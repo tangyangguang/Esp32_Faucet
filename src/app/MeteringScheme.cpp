@@ -178,14 +178,6 @@ bool initializeDefaultMeteringSchemes(MeteringSchemeCollection& schemes, std::ui
     return true;
 }
 
-void initializeManualMeteringScheme(MeteringSchemeRecord& scheme,
-                                    std::uint32_t id,
-                                    const char* name,
-                                    const MeteringParameters& params,
-                                    std::uint32_t nowSeconds) {
-    initializeCommonScheme(scheme, id, name, params, MeteringSchemeSource::Manual, nowSeconds);
-}
-
 MeteringSchemeRecord* findMeteringSchemeById(MeteringSchemeCollection& schemes, std::uint32_t id) {
     if (!schemes.records || id == 0) {
         return nullptr;
@@ -235,24 +227,6 @@ bool saveCandidateAsNewMeteringScheme(MeteringSchemeCollection& schemes,
     initializeCommonScheme(*slot, newSchemeId, name, candidate.params, candidate.sourceType, nowSeconds);
     copyCandidateMetadata(*slot, candidate);
     candidate = MeteringSchemeCandidate{};
-    return true;
-}
-
-bool createManualMeteringScheme(MeteringSchemeCollection& schemes,
-                                const char* name,
-                                const MeteringParameters& params,
-                                std::uint32_t nowSeconds,
-                                std::uint32_t& newSchemeId) {
-    newSchemeId = 0;
-    if (!validMeteringSchemeParameters(params) || schemes.nextSchemeId == 0) {
-        return false;
-    }
-    MeteringSchemeRecord* slot = findFreeSchemeSlot(schemes);
-    if (!slot) {
-        return false;
-    }
-    newSchemeId = schemes.nextSchemeId++;
-    initializeManualMeteringScheme(*slot, newSchemeId, name, params, nowSeconds);
     return true;
 }
 

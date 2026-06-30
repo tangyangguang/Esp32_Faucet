@@ -188,15 +188,6 @@ void test_skipped_attempt_does_not_count_as_valid() {
     TEST_ASSERT_FALSE(calibrationCanQuickGenerate(session));
 }
 
-void test_removed_sample_does_not_count_as_valid() {
-    CalibrationSessionRecord session = makeCalibrationSession(1, 1770000000);
-    CalibrationAttempt attempt = validAttempt(0, 800);
-    attempt.status = CalibrationAttemptStatus::Removed;
-    TEST_ASSERT_TRUE(appendCalibrationAttempt(session, attempt));
-    TEST_ASSERT_EQUAL_UINT8(0, countValidCalibrationSamples(session));
-    TEST_ASSERT_FALSE(calibrationCanQuickGenerate(session));
-}
-
 void test_attempt_keeps_full_water_record_identity() {
     CalibrationSessionRecord session = makeCalibrationSession(1, 1770000000);
     CalibrationAttempt attempt = validAttempt(0, 1000);
@@ -240,7 +231,6 @@ int main(int argc, char** argv) {
     RUN_TEST(test_session_allows_six_valid_samples);
     RUN_TEST(test_max_attempts_stop_session_when_not_ready);
     RUN_TEST(test_skipped_attempt_does_not_count_as_valid);
-    RUN_TEST(test_removed_sample_does_not_count_as_valid);
     RUN_TEST(test_attempt_keeps_full_water_record_identity);
     return UNITY_END();
 }

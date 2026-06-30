@@ -93,8 +93,12 @@ void test_app_controller_confirm_and_running_start_volume_stays_zero_until_first
     MemoryRecordWriter records;
     AppController app(config, statistics, filters, records);
     MeteringSchemeRecord scheme{};
-    initializeManualMeteringScheme(
-        scheme, 99, "启动段测试", MeteringParameters{8, 130, 248}, 1714502300);
+    scheme.id = 99;
+    scheme.recordUsed = true;
+    std::snprintf(scheme.name, sizeof(scheme.name), "启动段测试");
+    scheme.params = MeteringParameters{8, 130, 248, 5000, 1950};
+    scheme.sourceType = MeteringSchemeSource::CalibrationSession;
+    scheme.sampleCount = 2;
     TEST_ASSERT_TRUE(app.applyActiveMeteringScheme(scheme));
 
     app.resetInputs({false, false, false, false}, 0);
@@ -235,4 +239,3 @@ void test_app_controller_local_plus_does_not_switch_preset_while_running() {
     TEST_ASSERT_EQUAL_size_t(0, app.snapshot().water.selectedPreset);
     TEST_ASSERT_EQUAL_size_t(0, app.snapshot().water.activePreset);
 }
-

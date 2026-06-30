@@ -8,7 +8,7 @@
 namespace faucet {
 
 constexpr std::size_t kMeteringSchemeNameLength = 32;
-constexpr std::size_t kMeteringSchemeStoreSlotCount = 20;
+constexpr std::size_t kMeteringSchemeStoreSlotCount = 6;
 constexpr const char* kDefaultMeteringSchemeName = "YF-S201 默认计量方案";
 constexpr std::uint32_t kDefaultStartupPulseCount = 8;
 constexpr std::uint32_t kDefaultStartupVolumeMl = 130;
@@ -26,7 +26,6 @@ constexpr std::uint32_t kMaxStableFlowMlPerMin = 30000;
 enum class MeteringSchemeSource : std::uint8_t {
     Default = 0,
     CalibrationSession = 1,
-    Manual = 2,
 };
 
 struct MeteringSchemeRecord {
@@ -88,11 +87,6 @@ std::uint32_t fullRunPulsePerLiter(std::uint32_t pulseCount, std::uint32_t volum
 MeteringTargetEstimate meteringEstimateForTarget(const MeteringParameters& params, std::uint32_t targetMl);
 
 bool initializeDefaultMeteringSchemes(MeteringSchemeCollection& schemes, std::uint32_t nowSeconds);
-void initializeManualMeteringScheme(MeteringSchemeRecord& scheme,
-                                    std::uint32_t id,
-                                    const char* name,
-                                    const MeteringParameters& params,
-                                    std::uint32_t nowSeconds);
 MeteringSchemeRecord* findMeteringSchemeById(MeteringSchemeCollection& schemes, std::uint32_t id);
 const MeteringSchemeRecord* findMeteringSchemeById(const MeteringSchemeCollection& schemes, std::uint32_t id);
 MeteringSchemeRecord* activeMeteringScheme(MeteringSchemeCollection& schemes);
@@ -103,10 +97,5 @@ bool saveCandidateAsNewMeteringScheme(MeteringSchemeCollection& schemes,
                                       const char* name,
                                       std::uint32_t nowSeconds,
                                       std::uint32_t& newSchemeId);
-bool createManualMeteringScheme(MeteringSchemeCollection& schemes,
-                                const char* name,
-                                const MeteringParameters& params,
-                                std::uint32_t nowSeconds,
-                                std::uint32_t& newSchemeId);
 
 }  // namespace faucet

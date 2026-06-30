@@ -27,8 +27,8 @@ MeteringSchemeCandidate sampleCandidate() {
 
 }  // namespace
 
-void test_metering_history_capacity_is_twenty() {
-    TEST_ASSERT_EQUAL_size_t(20, kMeteringSchemeStoreSlotCount);
+void test_metering_history_capacity_is_six() {
+    TEST_ASSERT_EQUAL_size_t(6, kMeteringSchemeStoreSlotCount);
 }
 
 void test_default_store_has_one_current_default_scheme() {
@@ -79,20 +79,22 @@ void test_candidate_saves_as_new_without_switching_current() {
     TEST_ASSERT_EQUAL_UINT32(7500, saved->maxActualMl);
 }
 
-void test_create_manual_uses_free_slot_and_fails_when_collection_is_full() {
+void test_candidate_uses_free_slot_and_fails_when_collection_is_full() {
     MeteringSchemeRecord records[2]{};
     MeteringSchemeCollection schemes = collectionFor(records);
     TEST_ASSERT_TRUE(initializeDefaultMeteringSchemes(schemes, 1770000000));
 
     std::uint32_t newId = 0;
-    TEST_ASSERT_TRUE(createManualMeteringScheme(
-        schemes, "手工低压", MeteringParameters{12, 180, 360, 7000, 900}, 1770000200, newId));
+    MeteringSchemeCandidate candidate = sampleCandidate();
+    candidate.params = MeteringParameters{12, 180, 360, 7000, 900};
+    TEST_ASSERT_TRUE(saveCandidateAsNewMeteringScheme(schemes, candidate, "校准低压", 1770000200, newId));
     TEST_ASSERT_EQUAL_UINT32(2, newId);
-    TEST_ASSERT_EQUAL_STRING("手工低压", records[1].name);
+    TEST_ASSERT_EQUAL_STRING("校准低压", records[1].name);
 
     std::uint32_t overflowId = 0;
-    TEST_ASSERT_FALSE(createManualMeteringScheme(
-        schemes, "没有槽位", MeteringParameters{14, 200, 380, 7000, 900}, 1770000300, overflowId));
+    MeteringSchemeCandidate overflow = sampleCandidate();
+    overflow.params = MeteringParameters{14, 200, 380, 7000, 900};
+    TEST_ASSERT_FALSE(saveCandidateAsNewMeteringScheme(schemes, overflow, "没有槽位", 1770000300, overflowId));
     TEST_ASSERT_EQUAL_UINT32(0, overflowId);
 }
 
@@ -136,10 +138,10 @@ int main(int argc, char** argv) {
     (void)argc;
     (void)argv;
     UNITY_BEGIN();
-    RUN_TEST(test_metering_history_capacity_is_twenty);
+    RUN_TEST(test_metering_history_capacity_is_six);
     RUN_TEST(test_default_store_has_one_current_default_scheme);
     RUN_TEST(test_candidate_saves_as_new_without_switching_current);
-    RUN_TEST(test_create_manual_uses_free_slot_and_fails_when_collection_is_full);
+    RUN_TEST(test_candidate_uses_free_slot_and_fails_when_collection_is_full);
     RUN_TEST(test_metering_estimate_uses_segmented_parameters_for_target_volume);
     RUN_TEST(test_metering_estimate_handles_no_startup_segment);
     RUN_TEST(test_metering_estimate_allows_startup_pulse_offset_without_startup_volume);

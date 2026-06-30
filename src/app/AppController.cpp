@@ -3,6 +3,7 @@
 #include "app/TimeUtils.h"
 
 #include <algorithm>
+#include <cstdio>
 
 #ifndef NATIVE_BUILD
 #include <Esp32Base.h>
@@ -39,7 +40,11 @@ bool isCancelButtonEvent(ButtonEventType type) {
 
 MeteringSchemeRecord defaultRuntimeMeteringScheme() {
     MeteringSchemeRecord scheme{};
-    initializeManualMeteringScheme(scheme, 1, "默认计量方案", defaultMeteringParameters(), 0);
+    scheme.id = 1;
+    scheme.recordUsed = true;
+    std::snprintf(scheme.name, sizeof(scheme.name), "默认计量方案");
+    scheme.params = defaultMeteringParameters();
+    scheme.sourceType = MeteringSchemeSource::Default;
     return scheme;
 }
 

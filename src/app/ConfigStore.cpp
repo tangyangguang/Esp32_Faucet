@@ -14,7 +14,7 @@ namespace {
 constexpr const char* kConfigNs = "faucet_cfg";
 constexpr const char* kStatNs = "faucet_stat";
 constexpr const char* kRunNs = "faucet_run";
-constexpr std::int32_t kConfigVersion = 19;
+constexpr std::int32_t kConfigVersion = 20;
 constexpr std::int32_t kRuntimeVersion = 1;
 constexpr std::uint16_t kDefaultSensorVrefMv = 3300;
 constexpr const char* kSensorNone = "none";
@@ -118,20 +118,6 @@ void loadCommonSystemConfig(ConfigBackend& backend, SystemConfig& config) {
         static_cast<std::uint32_t>(backend.getInt(kConfigNs, "time_step", toInt(config.timeAdjustStepSec)));
     config.pulseMinIntervalUs =
         static_cast<std::uint32_t>(backend.getInt(kConfigNs, "pulse_min_us", toInt(config.pulseMinIntervalUs)));
-    config.pulseObservationWindowSec =
-        static_cast<std::uint32_t>(backend.getInt(kConfigNs, "pulse_win_s", toInt(config.pulseObservationWindowSec)));
-    config.calibrationAnalysisPulseMinIntervalUs = static_cast<std::uint32_t>(
-        backend.getInt(kConfigNs, "cal_an_us", toInt(config.calibrationAnalysisPulseMinIntervalUs)));
-    config.calibrationStableWindowSec =
-        static_cast<std::uint32_t>(backend.getInt(kConfigNs, "cal_win_s", toInt(config.calibrationStableWindowSec)));
-    config.calibrationStableTolerancePercent =
-        static_cast<std::uint8_t>(backend.getInt(kConfigNs, "cal_tol", config.calibrationStableTolerancePercent));
-    config.calibrationMinVolumeSpanMl =
-        static_cast<std::uint32_t>(backend.getInt(kConfigNs, "cal_span", toInt(config.calibrationMinVolumeSpanMl)));
-    config.calibrationMaxErrorMl =
-        static_cast<std::uint32_t>(backend.getInt(kConfigNs, "cal_err", toInt(config.calibrationMaxErrorMl)));
-    config.calibrationMaxRelativeErrorTenthPercent = static_cast<std::uint16_t>(
-        backend.getInt(kConfigNs, "cal_rel", config.calibrationMaxRelativeErrorTenthPercent));
     config.valveFullPowerSec =
         static_cast<std::uint32_t>(backend.getInt(kConfigNs, "valve_s", toInt(config.valveFullPowerSec)));
     config.valveHoldDutyPercent = static_cast<std::uint8_t>(backend.getInt(kConfigNs, "hold_pct", config.valveHoldDutyPercent));
@@ -153,25 +139,12 @@ void loadCommonSystemConfig(ConfigBackend& backend, SystemConfig& config) {
     }
     config.tdsCalibrationMode = static_cast<TdsCalibrationMode>(
         backend.getInt(kConfigNs, "tds_cal_mode", static_cast<std::int32_t>(config.tdsCalibrationMode)));
-    config.tdsCalibrationRevision =
-        static_cast<std::uint16_t>(backend.getInt(kConfigNs, "tds_cal_rev", config.tdsCalibrationRevision));
     config.tdsScale =
         static_cast<float>(backend.getInt(kConfigNs,
                                           "tds_scale_milli",
                                           static_cast<std::int32_t>(std::lround(config.tdsScale * 1000.0f)))) /
         1000.0f;
     config.tdsOffsetPpm = static_cast<std::int16_t>(backend.getInt(kConfigNs, "tds_off_ppm", config.tdsOffsetPpm));
-    config.tdsLowReferencePpm =
-        static_cast<std::uint16_t>(backend.getInt(kConfigNs, "tds_low_ref", config.tdsLowReferencePpm));
-    config.tdsLowRawPpm = static_cast<std::uint16_t>(backend.getInt(kConfigNs, "tds_low_raw", config.tdsLowRawPpm));
-    config.tdsHighReferencePpm =
-        static_cast<std::uint16_t>(backend.getInt(kConfigNs, "tds_high_ref", config.tdsHighReferencePpm));
-    config.tdsHighRawPpm = static_cast<std::uint16_t>(backend.getInt(kConfigNs, "tds_high_raw", config.tdsHighRawPpm));
-    config.tdsCalibrationTime = getU32(backend, kConfigNs, "tds_cal_time", config.tdsCalibrationTime);
-    config.tdsCalibrationTemperatureCentiC =
-        static_cast<std::int16_t>(backend.getInt(kConfigNs, "tds_cal_temp", config.tdsCalibrationTemperatureCentiC));
-    config.tdsCalibrationVoltageMv =
-        static_cast<std::uint16_t>(backend.getInt(kConfigNs, "tds_cal_mv", config.tdsCalibrationVoltageMv));
     config.tdsCalibrated = backend.getBool(kConfigNs, "tds_cal", config.tdsCalibrated);
     config.tdsTemperatureCompensationEnabled =
         backend.getBool(kConfigNs, "tds_temp_comp", config.tdsTemperatureCompensationEnabled);
@@ -262,13 +235,6 @@ bool ConfigStore::saveSystemConfig(const SystemConfig& config) {
     ok = okAll(ok, backend_.setInt(kConfigNs, "vol_step", toInt(safe.volumeAdjustStepMl)));
     ok = okAll(ok, backend_.setInt(kConfigNs, "time_step", toInt(safe.timeAdjustStepSec)));
     ok = okAll(ok, backend_.setInt(kConfigNs, "pulse_min_us", toInt(safe.pulseMinIntervalUs)));
-    ok = okAll(ok, backend_.setInt(kConfigNs, "pulse_win_s", toInt(safe.pulseObservationWindowSec)));
-    ok = okAll(ok, backend_.setInt(kConfigNs, "cal_an_us", toInt(safe.calibrationAnalysisPulseMinIntervalUs)));
-    ok = okAll(ok, backend_.setInt(kConfigNs, "cal_win_s", toInt(safe.calibrationStableWindowSec)));
-    ok = okAll(ok, backend_.setInt(kConfigNs, "cal_tol", safe.calibrationStableTolerancePercent));
-    ok = okAll(ok, backend_.setInt(kConfigNs, "cal_span", toInt(safe.calibrationMinVolumeSpanMl)));
-    ok = okAll(ok, backend_.setInt(kConfigNs, "cal_err", toInt(safe.calibrationMaxErrorMl)));
-    ok = okAll(ok, backend_.setInt(kConfigNs, "cal_rel", safe.calibrationMaxRelativeErrorTenthPercent));
     ok = okAll(ok, backend_.setInt(kConfigNs, "valve_s", toInt(safe.valveFullPowerSec)));
     ok = okAll(ok, backend_.setInt(kConfigNs, "hold_pct", safe.valveHoldDutyPercent));
     ok = okAll(ok, backend_.setInt(kConfigNs, "disp_s", toInt(safe.displaySleepSec)));
@@ -279,19 +245,11 @@ bool ConfigStore::saveSystemConfig(const SystemConfig& config) {
     ok = okAll(ok, backend_.setBool(kConfigNs, "temp_cal", safe.temperatureCalibrated));
     ok = okAll(ok, backend_.setStr(kConfigNs, "tds_sensor", tdsSensorConfigValue(safe)));
     ok = okAll(ok, backend_.setInt(kConfigNs, "tds_cal_mode", static_cast<std::int32_t>(safe.tdsCalibrationMode)));
-    ok = okAll(ok, backend_.setInt(kConfigNs, "tds_cal_rev", safe.tdsCalibrationRevision));
     ok = okAll(ok,
                backend_.setInt(kConfigNs,
                                "tds_scale_milli",
                                static_cast<std::int32_t>(std::lround(safe.tdsScale * 1000.0f))));
     ok = okAll(ok, backend_.setInt(kConfigNs, "tds_off_ppm", safe.tdsOffsetPpm));
-    ok = okAll(ok, backend_.setInt(kConfigNs, "tds_low_ref", safe.tdsLowReferencePpm));
-    ok = okAll(ok, backend_.setInt(kConfigNs, "tds_low_raw", safe.tdsLowRawPpm));
-    ok = okAll(ok, backend_.setInt(kConfigNs, "tds_high_ref", safe.tdsHighReferencePpm));
-    ok = okAll(ok, backend_.setInt(kConfigNs, "tds_high_raw", safe.tdsHighRawPpm));
-    ok = okAll(ok, setU32(backend_, kConfigNs, "tds_cal_time", safe.tdsCalibrationTime));
-    ok = okAll(ok, backend_.setInt(kConfigNs, "tds_cal_temp", safe.tdsCalibrationTemperatureCentiC));
-    ok = okAll(ok, backend_.setInt(kConfigNs, "tds_cal_mv", safe.tdsCalibrationVoltageMv));
     ok = okAll(ok, backend_.setBool(kConfigNs, "tds_cal", safe.tdsCalibrated));
     ok = okAll(ok, backend_.setBool(kConfigNs, "tds_temp_comp", safe.tdsTemperatureCompensationEnabled));
 

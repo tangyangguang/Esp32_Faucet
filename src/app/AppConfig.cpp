@@ -18,10 +18,6 @@ constexpr float kMinTdsScale = 0.05f;
 constexpr float kMaxTdsScale = 20.0f;
 constexpr std::int16_t kMinTdsOffsetPpm = -2000;
 constexpr std::int16_t kMaxTdsOffsetPpm = 2000;
-constexpr std::uint16_t kMaxTdsCalibrationPpm = 2000;
-constexpr std::int16_t kMinTdsCalibrationTemperatureCentiC = 0;
-constexpr std::int16_t kMaxTdsCalibrationTemperatureCentiC = 6000;
-constexpr std::uint16_t kMaxTdsCalibrationVoltageMv = 2300;
 
 template <typename T>
 T clampValue(T value, T minValue, T maxValue) {
@@ -73,13 +69,6 @@ SystemConfig makeDefaultConfig() {
     config.volumeAdjustStepMl = kDefaultVolumeAdjustStepMl;
     config.timeAdjustStepSec = kDefaultTimeAdjustStepSec;
     config.pulseMinIntervalUs = kDefaultPulseMinIntervalUs;
-    config.pulseObservationWindowSec = kDefaultPulseObservationWindowSec;
-    config.calibrationAnalysisPulseMinIntervalUs = kDefaultCalibrationAnalysisPulseMinIntervalUs;
-    config.calibrationStableWindowSec = kDefaultCalibrationStableWindowSec;
-    config.calibrationStableTolerancePercent = kDefaultCalibrationStableTolerancePercent;
-    config.calibrationMinVolumeSpanMl = kDefaultCalibrationMinVolumeSpanMl;
-    config.calibrationMaxErrorMl = kDefaultCalibrationMaxErrorMl;
-    config.calibrationMaxRelativeErrorTenthPercent = kDefaultCalibrationMaxRelativeErrorTenthPercent;
     config.valveFullPowerSec = kDefaultValveFullPowerSec;
     config.valveHoldDutyPercent = kDefaultValveHoldDutyPercent;
     config.displaySleepSec = kDefaultDisplaySleepSec;
@@ -93,16 +82,8 @@ SystemConfig makeDefaultConfig() {
     config.tdsEnabled = false;
     config.tdsKind = TdsKind::None;
     config.tdsCalibrationMode = TdsCalibrationMode::None;
-    config.tdsCalibrationRevision = 0;
     config.tdsScale = 1.0f;
     config.tdsOffsetPpm = 0;
-    config.tdsLowReferencePpm = 0;
-    config.tdsLowRawPpm = 0;
-    config.tdsHighReferencePpm = 0;
-    config.tdsHighRawPpm = 0;
-    config.tdsCalibrationTime = 0;
-    config.tdsCalibrationTemperatureCentiC = 0;
-    config.tdsCalibrationVoltageMv = 0;
     config.tdsCalibrated = false;
     config.tdsTemperatureCompensationEnabled = true;
 
@@ -136,26 +117,6 @@ void sanitizeConfig(SystemConfig& config) {
         clampValue<std::uint32_t>(config.timeAdjustStepSec, kMinTimeAdjustStepSec, kMaxTimeAdjustStepSec);
     config.pulseMinIntervalUs =
         clampValue<std::uint32_t>(config.pulseMinIntervalUs, kMinPulseMinIntervalUs, kMaxPulseMinIntervalUs);
-    config.pulseObservationWindowSec = clampValue<std::uint32_t>(
-        config.pulseObservationWindowSec, kMinPulseObservationWindowSec, kMaxPulseObservationWindowSec);
-    if (config.calibrationAnalysisPulseMinIntervalUs != 0) {
-        config.calibrationAnalysisPulseMinIntervalUs = clampValue<std::uint32_t>(
-            config.calibrationAnalysisPulseMinIntervalUs, kMinPulseMinIntervalUs, kMaxPulseMinIntervalUs);
-    }
-    config.calibrationStableWindowSec = clampValue<std::uint32_t>(
-        config.calibrationStableWindowSec, kMinCalibrationStableWindowSec, kMaxCalibrationStableWindowSec);
-    config.calibrationStableTolerancePercent = clampValue<std::uint8_t>(
-        config.calibrationStableTolerancePercent,
-        kMinCalibrationStableTolerancePercent,
-        kMaxCalibrationStableTolerancePercent);
-    config.calibrationMinVolumeSpanMl = clampValue<std::uint32_t>(
-        config.calibrationMinVolumeSpanMl, kMinCalibrationMinVolumeSpanMl, kMaxCalibrationMinVolumeSpanMl);
-    config.calibrationMaxErrorMl = clampValue<std::uint32_t>(
-        config.calibrationMaxErrorMl, kMinCalibrationMaxErrorMl, kMaxCalibrationMaxErrorMl);
-    config.calibrationMaxRelativeErrorTenthPercent = clampValue<std::uint16_t>(
-        config.calibrationMaxRelativeErrorTenthPercent,
-        kMinCalibrationMaxRelativeErrorTenthPercent,
-        kMaxCalibrationMaxRelativeErrorTenthPercent);
 
     config.valveFullPowerSec = clampValue<std::uint32_t>(config.valveFullPowerSec, 1, 10);
     config.valveHoldDutyPercent = clampValue<std::uint8_t>(
@@ -188,16 +149,6 @@ void sanitizeConfig(SystemConfig& config) {
     }
     config.tdsScale = clampValue<float>(config.tdsScale, kMinTdsScale, kMaxTdsScale);
     config.tdsOffsetPpm = clampValue<std::int16_t>(config.tdsOffsetPpm, kMinTdsOffsetPpm, kMaxTdsOffsetPpm);
-    config.tdsLowReferencePpm = clampValue<std::uint16_t>(config.tdsLowReferencePpm, 0, kMaxTdsCalibrationPpm);
-    config.tdsLowRawPpm = clampValue<std::uint16_t>(config.tdsLowRawPpm, 0, kMaxTdsCalibrationPpm);
-    config.tdsHighReferencePpm = clampValue<std::uint16_t>(config.tdsHighReferencePpm, 0, kMaxTdsCalibrationPpm);
-    config.tdsHighRawPpm = clampValue<std::uint16_t>(config.tdsHighRawPpm, 0, kMaxTdsCalibrationPpm);
-    config.tdsCalibrationTemperatureCentiC = clampValue<std::int16_t>(
-        config.tdsCalibrationTemperatureCentiC,
-        kMinTdsCalibrationTemperatureCentiC,
-        kMaxTdsCalibrationTemperatureCentiC);
-    config.tdsCalibrationVoltageMv =
-        clampValue<std::uint16_t>(config.tdsCalibrationVoltageMv, 0, kMaxTdsCalibrationVoltageMv);
     if (config.tdsCalibrationMode == TdsCalibrationMode::None) {
         config.tdsCalibrated = false;
     }

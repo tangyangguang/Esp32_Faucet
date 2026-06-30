@@ -709,7 +709,8 @@ void test_tds_calibration_save_persists_config_after_stable_samples() {
                              Esp32BaseWeb::nativeTestResponseHeader("Location"));
     const SystemConfig persisted = fixture.configStore.loadSystemConfig();
     TEST_ASSERT_TRUE(persisted.tdsCalibrated);
-    TEST_ASSERT_EQUAL_UINT16(1, persisted.tdsCalibrationRevision);
+    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(TdsCalibrationMode::SinglePoint),
+                            static_cast<std::uint8_t>(persisted.tdsCalibrationMode));
 }
 
 void test_calibration_post_rejects_missing_action_as_invalid_action() {

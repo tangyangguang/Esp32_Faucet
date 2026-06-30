@@ -320,19 +320,6 @@ SegmentedCalibrationOptions defaultSegmentedCalibrationOptions() {
     };
 }
 
-SegmentedCalibrationOptions segmentedCalibrationOptionsFromConfig(const SystemConfig& config) {
-    SystemConfig safe = config;
-    sanitizeConfig(safe);
-    return SegmentedCalibrationOptions{
-        safe.calibrationAnalysisPulseMinIntervalUs,
-        safe.calibrationStableWindowSec,
-        safe.calibrationStableTolerancePercent,
-        safe.calibrationMinVolumeSpanMl,
-        safe.calibrationMaxErrorMl,
-        safe.calibrationMaxRelativeErrorTenthPercent,
-    };
-}
-
 namespace {
 
 WaterPulseTraceAnalysis analyzeCompactBuckets(const WaterPulseTrace& trace,

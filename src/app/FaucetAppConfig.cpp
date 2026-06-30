@@ -19,7 +19,6 @@ const char kGroupSafety[] = "safety";
 const char kGroupFlow[] = "flow";
 const char kGroupValve[] = "valve";
 const char kGroupLocal[] = "local";
-const char kGroupMetering[] = "metering";
 const char kGroupSensors[] = "sensors";
 
 const char kKeyConfirmTimeout[] = "confirm_s";
@@ -33,13 +32,6 @@ const char kKeyPauseTimeout[] = "pause_s";
 const char kKeyVolumeStep[] = "vol_step";
 const char kKeyTimeStep[] = "time_step";
 const char kKeyPulseMinIntervalUs[] = "pulse_min_us";
-const char kKeyPulseObservationWindowSec[] = "pulse_win_s";
-const char kKeyCalibrationAnalysisPulseMinIntervalUs[] = "cal_an_us";
-const char kKeyCalibrationStableWindowSec[] = "cal_win_s";
-const char kKeyCalibrationStableTolerancePercent[] = "cal_tol";
-const char kKeyCalibrationMinVolumeSpanMl[] = "cal_span";
-const char kKeyCalibrationMaxErrorMl[] = "cal_err";
-const char kKeyCalibrationMaxRelativeErrorTenthPercent[] = "cal_rel";
 const char kKeyValveFullPower[] = "valve_s";
 const char kKeyValveHoldDuty[] = "hold_pct";
 const char kKeyDisplaySleep[] = "disp_s";
@@ -140,7 +132,6 @@ bool addCoreFields() {
     ok = Esp32BaseAppConfig::addGroup({kGroupFlow, "流量保护"}) && ok;
     ok = Esp32BaseAppConfig::addGroup({kGroupValve, "电磁阀"}) && ok;
     ok = Esp32BaseAppConfig::addGroup({kGroupLocal, "本地交互"}) && ok;
-    ok = Esp32BaseAppConfig::addGroup({kGroupMetering, "计量"}) && ok;
     ok = Esp32BaseAppConfig::addGroup({kGroupSensors, "传感器"}) && ok;
 
     ok = Esp32BaseAppConfig::addInt({kGroupSafety, kConfigNs, kKeyConfirmTimeout, "确认页超时", static_cast<std::int32_t>(kDefaultConfirmTimeoutSec), 3, 60, 1, "s", "进入确认页后无操作自动取消。立即生效。", false, nullptr}) && ok;
@@ -162,14 +153,6 @@ bool addCoreFields() {
     ok = Esp32BaseAppConfig::addInt({kGroupLocal, kConfigNs, kKeyVolumeStep, "容量步进", static_cast<std::int32_t>(kDefaultVolumeAdjustStepMl), static_cast<std::int32_t>(kMinVolumeAdjustStepMl), static_cast<std::int32_t>(kMaxVolumeAdjustStepMl), 10, "ml", "按键确认页容量步进；Web 表单不受影响。", false, nullptr}) && ok;
     ok = Esp32BaseAppConfig::addInt({kGroupLocal, kConfigNs, kKeyTimeStep, "时间步进", static_cast<std::int32_t>(kDefaultTimeAdjustStepSec), static_cast<std::int32_t>(kMinTimeAdjustStepSec), static_cast<std::int32_t>(kMaxTimeAdjustStepSec), 1, "s", "按键确认页时间步进；Web 表单不受影响。", false, nullptr}) && ok;
     ok = Esp32BaseAppConfig::addBool({kGroupLocal, kConfigNs, kKeyBeep, "蜂鸣器提示音", true, "控制按键、完成和异常提示音。立即生效。", false, nullptr}) && ok;
-
-    ok = Esp32BaseAppConfig::addInt({kGroupMetering, kConfigNs, kKeyCalibrationAnalysisPulseMinIntervalUs, "生成分析脉冲间隔", static_cast<std::int32_t>(kDefaultCalibrationAnalysisPulseMinIntervalUs), 0, static_cast<std::int32_t>(kMaxPulseMinIntervalUs), 100, "us", "0 使用样本记录间隔；非 0 按该间隔重新分析样本。", false, nullptr}) && ok;
-    ok = Esp32BaseAppConfig::addInt({kGroupMetering, kConfigNs, kKeyPulseObservationWindowSec, "脉冲观察窗口", static_cast<std::int32_t>(kDefaultPulseObservationWindowSec), static_cast<std::int32_t>(kMinPulseObservationWindowSec), static_cast<std::int32_t>(kMaxPulseObservationWindowSec), 1, "s", "明细页观察启动阶段前几秒脉冲；不改变出水计量。", false, nullptr}) && ok;
-    ok = Esp32BaseAppConfig::addInt({kGroupMetering, kConfigNs, kKeyCalibrationStableWindowSec, "生成稳态窗口", static_cast<std::int32_t>(kDefaultCalibrationStableWindowSec), static_cast<std::int32_t>(kMinCalibrationStableWindowSec), static_cast<std::int32_t>(kMaxCalibrationStableWindowSec), 1, "s", "识别稳定流量时要求连续满足条件的秒数。", false, nullptr}) && ok;
-    ok = Esp32BaseAppConfig::addInt({kGroupMetering, kConfigNs, kKeyCalibrationStableTolerancePercent, "生成稳态容差", kDefaultCalibrationStableTolerancePercent, kMinCalibrationStableTolerancePercent, kMaxCalibrationStableTolerancePercent, 1, "%", "稳态窗口相对后半段稳定流量的允许偏差。", false, nullptr}) && ok;
-    ok = Esp32BaseAppConfig::addInt({kGroupMetering, kConfigNs, kKeyCalibrationMinVolumeSpanMl, "生成最小容量跨度", static_cast<std::int32_t>(kDefaultCalibrationMinVolumeSpanMl), static_cast<std::int32_t>(kMinCalibrationMinVolumeSpanMl), static_cast<std::int32_t>(kMaxCalibrationMinVolumeSpanMl), 100, "ml", "参与生成的最大和最小实测容量至少需要拉开该距离。", false, nullptr}) && ok;
-    ok = Esp32BaseAppConfig::addInt({kGroupMetering, kConfigNs, kKeyCalibrationMaxErrorMl, "生成最大拟合误差", static_cast<std::int32_t>(kDefaultCalibrationMaxErrorMl), static_cast<std::int32_t>(kMinCalibrationMaxErrorMl), static_cast<std::int32_t>(kMaxCalibrationMaxErrorMl), 10, "ml", "超过该绝对误差时作为样本质量提醒，仍允许生成结果。", false, nullptr}) && ok;
-    ok = Esp32BaseAppConfig::addInt({kGroupMetering, kConfigNs, kKeyCalibrationMaxRelativeErrorTenthPercent, "生成最大相对误差", kDefaultCalibrationMaxRelativeErrorTenthPercent, kMinCalibrationMaxRelativeErrorTenthPercent, kMaxCalibrationMaxRelativeErrorTenthPercent, 1, "0.1%", "单位 0.1%；50 表示 5.0%。超过时作为样本质量提醒。", false, nullptr}) && ok;
 
     ok = Esp32BaseAppConfig::addEnum({kGroupSensors, kConfigNs, kKeyTemperatureSensor, "水温传感器", "none", kTemperatureSensorOptions, 2, "GPIO35；50K B3950 NTC，51K 上拉。", false, nullptr}) && ok;
     ok = Esp32BaseAppConfig::addEnum({kGroupSensors, kConfigNs, kKeyTdsSensor, "TDS 传感器", "none", kTdsSensorOptions, 2, "GPIO34；TDS Board V1.0 模拟输出。", false, nullptr}) && ok;

@@ -201,10 +201,7 @@ void sendCalibrationParameterPanels() {
 }
 
 std::uint32_t configuredPulseObservationWindowSec() {
-    const std::uint32_t seconds =
-        g_context.config ? g_context.config->pulseObservationWindowSec : kDefaultPulseObservationWindowSec;
-    return std::min<std::uint32_t>(std::max<std::uint32_t>(seconds, kMinPulseObservationWindowSec),
-                                   kMaxPulseObservationWindowSec);
+    return kDefaultPulseObservationWindowSec;
 }
 
 const char* calibrationAttemptStatusText(CalibrationAttemptStatus status) {

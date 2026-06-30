@@ -59,13 +59,6 @@ void test_config_save_and_load_round_trips_system_config() {
     config.volumeAdjustStepMl = 250;
     config.timeAdjustStepSec = 15;
     config.pulseMinIntervalUs = 2500;
-    config.pulseObservationWindowSec = 24;
-    config.calibrationAnalysisPulseMinIntervalUs = 1500;
-    config.calibrationStableWindowSec = 5;
-    config.calibrationStableTolerancePercent = 30;
-    config.calibrationMinVolumeSpanMl = 1500;
-    config.calibrationMaxErrorMl = 150;
-    config.calibrationMaxRelativeErrorTenthPercent = 35;
     config.presets[2].enabled = true;
     config.presets[2].type = PresetType::Time;
     config.presets[2].value = 120;
@@ -87,13 +80,13 @@ void test_config_save_and_load_round_trips_system_config() {
     TEST_ASSERT_EQUAL_UINT32(250, loaded.volumeAdjustStepMl);
     TEST_ASSERT_EQUAL_UINT32(15, loaded.timeAdjustStepSec);
     TEST_ASSERT_EQUAL_UINT32(2500, loaded.pulseMinIntervalUs);
-    TEST_ASSERT_EQUAL_UINT32(24, loaded.pulseObservationWindowSec);
-    TEST_ASSERT_EQUAL_UINT32(1500, loaded.calibrationAnalysisPulseMinIntervalUs);
-    TEST_ASSERT_EQUAL_UINT32(5, loaded.calibrationStableWindowSec);
-    TEST_ASSERT_EQUAL_UINT8(30, loaded.calibrationStableTolerancePercent);
-    TEST_ASSERT_EQUAL_UINT32(1500, loaded.calibrationMinVolumeSpanMl);
-    TEST_ASSERT_EQUAL_UINT32(150, loaded.calibrationMaxErrorMl);
-    TEST_ASSERT_EQUAL_UINT16(35, loaded.calibrationMaxRelativeErrorTenthPercent);
+    TEST_ASSERT_EQUAL_INT32(-7, backend.getInt("faucet_cfg", "pulse_win_s", -7));
+    TEST_ASSERT_EQUAL_INT32(-7, backend.getInt("faucet_cfg", "cal_an_us", -7));
+    TEST_ASSERT_EQUAL_INT32(-7, backend.getInt("faucet_cfg", "cal_win_s", -7));
+    TEST_ASSERT_EQUAL_INT32(-7, backend.getInt("faucet_cfg", "cal_tol", -7));
+    TEST_ASSERT_EQUAL_INT32(-7, backend.getInt("faucet_cfg", "cal_span", -7));
+    TEST_ASSERT_EQUAL_INT32(-7, backend.getInt("faucet_cfg", "cal_err", -7));
+    TEST_ASSERT_EQUAL_INT32(-7, backend.getInt("faucet_cfg", "cal_rel", -7));
     TEST_ASSERT_EQUAL_INT32(-7, backend.getInt("faucet_cfg", "active_ms", -7));
     TEST_ASSERT_EQUAL_INT32(-7, backend.getInt("faucet_cfg", "ms1_sp", -7));
     TEST_ASSERT_EQUAL_INT32(-7, backend.getInt("faucet_cfg", "mc_sp", -7));
@@ -121,23 +114,22 @@ void test_config_save_and_load_round_trips_sensor_config() {
     config.tdsEnabled = true;
     config.tdsKind = TdsKind::AnalogTdsAo;
     config.tdsCalibrationMode = TdsCalibrationMode::MultiPoint;
-    config.tdsCalibrationRevision = 7;
     config.tdsScale = 1.234f;
     config.tdsOffsetPpm = -4;
-    config.tdsLowReferencePpm = 1;
-    config.tdsLowRawPpm = 3;
-    config.tdsHighReferencePpm = 160;
-    config.tdsHighRawPpm = 150;
-    config.tdsCalibrationTime = 1720000000UL;
-    config.tdsCalibrationTemperatureCentiC = 2430;
-    config.tdsCalibrationVoltageMv = 410;
     config.tdsCalibrated = true;
     config.tdsTemperatureCompensationEnabled = false;
 
     TEST_ASSERT_TRUE(store.saveSystemConfig(config));
 
-    TEST_ASSERT_EQUAL_INT32(19, backend.getInt("faucet_cfg", "ver", 0));
+    TEST_ASSERT_EQUAL_INT32(20, backend.getInt("faucet_cfg", "ver", 0));
     TEST_ASSERT_EQUAL_INT32(1234, backend.getInt("faucet_cfg", "tds_scale_milli", 0));
+    TEST_ASSERT_EQUAL_INT32(-7, backend.getInt("faucet_cfg", "tds_cal_rev", -7));
+    TEST_ASSERT_EQUAL_INT32(-7, backend.getInt("faucet_cfg", "tds_low_ref", -7));
+    TEST_ASSERT_EQUAL_INT32(-7, backend.getInt("faucet_cfg", "tds_low_raw", -7));
+    TEST_ASSERT_EQUAL_INT32(-7, backend.getInt("faucet_cfg", "tds_high_ref", -7));
+    TEST_ASSERT_EQUAL_INT32(-7, backend.getInt("faucet_cfg", "tds_high_raw", -7));
+    TEST_ASSERT_EQUAL_INT32(-7, backend.getInt("faucet_cfg", "tds_cal_temp", -7));
+    TEST_ASSERT_EQUAL_INT32(-7, backend.getInt("faucet_cfg", "tds_cal_mv", -7));
     char sensorText[32]{};
     TEST_ASSERT_TRUE(backend.getStr("faucet_cfg", "temp_sensor", sensorText, sizeof(sensorText), ""));
     TEST_ASSERT_EQUAL_STRING("ntc50k_b3950", sensorText);
@@ -155,16 +147,8 @@ void test_config_save_and_load_round_trips_sensor_config() {
                             static_cast<std::uint8_t>(loaded.tdsKind));
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(TdsCalibrationMode::MultiPoint),
                             static_cast<std::uint8_t>(loaded.tdsCalibrationMode));
-    TEST_ASSERT_EQUAL_UINT16(7, loaded.tdsCalibrationRevision);
     TEST_ASSERT_FLOAT_WITHIN(0.001f, 1.234f, loaded.tdsScale);
     TEST_ASSERT_EQUAL_INT16(-4, loaded.tdsOffsetPpm);
-    TEST_ASSERT_EQUAL_UINT16(1, loaded.tdsLowReferencePpm);
-    TEST_ASSERT_EQUAL_UINT16(3, loaded.tdsLowRawPpm);
-    TEST_ASSERT_EQUAL_UINT16(160, loaded.tdsHighReferencePpm);
-    TEST_ASSERT_EQUAL_UINT16(150, loaded.tdsHighRawPpm);
-    TEST_ASSERT_EQUAL_UINT32(1720000000UL, loaded.tdsCalibrationTime);
-    TEST_ASSERT_EQUAL_INT16(2430, loaded.tdsCalibrationTemperatureCentiC);
-    TEST_ASSERT_EQUAL_UINT16(410, loaded.tdsCalibrationVoltageMv);
     TEST_ASSERT_TRUE(loaded.tdsCalibrated);
     TEST_ASSERT_FALSE(loaded.tdsTemperatureCompensationEnabled);
 }
@@ -177,13 +161,6 @@ void test_config_load_sanitizes_stored_values() {
     config.volumeAdjustStepMl = 999999;
     config.timeAdjustStepSec = 999999;
     config.pulseMinIntervalUs = 1;
-    config.pulseObservationWindowSec = 999999;
-    config.calibrationAnalysisPulseMinIntervalUs = 999999;
-    config.calibrationStableWindowSec = 1;
-    config.calibrationStableTolerancePercent = 99;
-    config.calibrationMinVolumeSpanMl = 1;
-    config.calibrationMaxErrorMl = 1;
-    config.calibrationMaxRelativeErrorTenthPercent = 1;
     config.presets[0].value = 1;
 
     TEST_ASSERT_TRUE(store.saveSystemConfig(config));
@@ -193,14 +170,6 @@ void test_config_load_sanitizes_stored_values() {
     TEST_ASSERT_EQUAL_UINT32(kMaxVolumeAdjustStepMl, loaded.volumeAdjustStepMl);
     TEST_ASSERT_EQUAL_UINT32(kMaxTimeAdjustStepSec, loaded.timeAdjustStepSec);
     TEST_ASSERT_EQUAL_UINT32(kMinPulseMinIntervalUs, loaded.pulseMinIntervalUs);
-    TEST_ASSERT_EQUAL_UINT32(kMaxPulseObservationWindowSec, loaded.pulseObservationWindowSec);
-    TEST_ASSERT_EQUAL_UINT32(kMaxPulseMinIntervalUs, loaded.calibrationAnalysisPulseMinIntervalUs);
-    TEST_ASSERT_EQUAL_UINT32(kMinCalibrationStableWindowSec, loaded.calibrationStableWindowSec);
-    TEST_ASSERT_EQUAL_UINT8(kMaxCalibrationStableTolerancePercent, loaded.calibrationStableTolerancePercent);
-    TEST_ASSERT_EQUAL_UINT32(kMinCalibrationMinVolumeSpanMl, loaded.calibrationMinVolumeSpanMl);
-    TEST_ASSERT_EQUAL_UINT32(kMinCalibrationMaxErrorMl, loaded.calibrationMaxErrorMl);
-    TEST_ASSERT_EQUAL_UINT16(kMinCalibrationMaxRelativeErrorTenthPercent,
-                             loaded.calibrationMaxRelativeErrorTenthPercent);
     TEST_ASSERT_EQUAL_UINT32(kMinVolumePresetMl, loaded.presets[0].value);
 }
 

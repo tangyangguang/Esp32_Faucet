@@ -235,6 +235,5 @@ bool computeSegmentedCalibration(const SegmentedCalibrationSample* samples,
                                  SegmentedCalibrationResult& result);
 
 SegmentedCalibrationOptions defaultSegmentedCalibrationOptions();
-SegmentedCalibrationOptions segmentedCalibrationOptionsFromConfig(const SystemConfig& config);
 
 }  // namespace faucet

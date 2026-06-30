@@ -17,7 +17,6 @@ SystemConfig enabledSensorConfig() {
     config.tdsKind = TdsKind::AnalogTdsAo;
     config.tdsCalibrated = true;
     config.tdsCalibrationMode = TdsCalibrationMode::TwoPoint;
-    config.tdsCalibrationRevision = 4;
     return config;
 }
 
@@ -220,15 +219,14 @@ void test_calibration_uses_25c_fallback_without_failing() {
     TEST_ASSERT_TRUE(fixture.manager.saveStableTdsCalibrationPoint(1720000020UL));
     TEST_ASSERT_TRUE(fixture.manager.applyReadyTdsCalibration(config, 1720000021UL));
     TEST_ASSERT_TRUE(config.tdsCalibrated);
-    TEST_ASSERT_EQUAL_UINT16(1, config.tdsCalibrationRevision);
-    TEST_ASSERT_EQUAL_INT16(2500, config.tdsCalibrationTemperatureCentiC);
+    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(TdsCalibrationMode::SinglePoint),
+                            static_cast<std::uint8_t>(config.tdsCalibrationMode));
 }
 
 void test_two_point_calibration_saves_low_then_high_without_flash_progress_dependency() {
     SystemConfig config = enabledSensorConfig();
     config.tdsCalibrated = false;
     config.tdsCalibrationMode = TdsCalibrationMode::None;
-    config.tdsCalibrationRevision = 0;
     SensorManagerFixture fixture(config);
     fixture.adc.values[0] = okMv(1091);
     fixture.adc.values[1] = okMv(1650);
@@ -243,7 +241,6 @@ void test_two_point_calibration_saves_low_then_high_without_flash_progress_depen
     TEST_ASSERT_TRUE(fixture.manager.calibrationSnapshot().readyToSave);
     TEST_ASSERT_TRUE(fixture.manager.saveStableTdsCalibrationPoint(1720000020UL));
     TEST_ASSERT_FALSE(config.tdsCalibrated);
-    TEST_ASSERT_EQUAL_UINT16(0, config.tdsCalibrationRevision);
 
     fixture.adc.values[2] = okMv(380);
     TEST_ASSERT_TRUE(fixture.manager.startTdsCalibrationPoint(160, 1720000030UL));
@@ -258,10 +255,7 @@ void test_two_point_calibration_saves_low_then_high_without_flash_progress_depen
     TEST_ASSERT_TRUE(config.tdsCalibrated);
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(TdsCalibrationMode::TwoPoint),
                             static_cast<std::uint8_t>(config.tdsCalibrationMode));
-    TEST_ASSERT_EQUAL_UINT16(1, config.tdsCalibrationRevision);
-    TEST_ASSERT_EQUAL_UINT16(0, config.tdsLowReferencePpm);
-    TEST_ASSERT_TRUE(config.tdsLowRawPpm < config.tdsHighRawPpm);
-    TEST_ASSERT_EQUAL_UINT16(160, config.tdsHighReferencePpm);
+    TEST_ASSERT_TRUE(config.tdsScale > 0.0f);
 }
 
 void test_tds_calibration_point_session_generates_after_one_point() {
@@ -330,10 +324,10 @@ void test_tds_calibration_point_session_multi_point_fit_and_apply() {
     TEST_ASSERT_TRUE(config.tdsCalibrated);
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(TdsCalibrationMode::TwoPoint),
                             static_cast<std::uint8_t>(config.tdsCalibrationMode));
-    TEST_ASSERT_EQUAL_UINT16(5, config.tdsCalibrationRevision);
+    TEST_ASSERT_TRUE(config.tdsScale > 0.0f);
 }
 
-void test_tds_calibration_apply_saves_low_and_high_by_reference_not_entry_order() {
+void test_tds_calibration_apply_is_order_independent() {
     SystemConfig config = enabledSensorConfig();
     SensorManagerFixture fixture(config);
 
@@ -355,9 +349,10 @@ void test_tds_calibration_apply_saves_low_and_high_by_reference_not_entry_order(
     TEST_ASSERT_TRUE(fixture.manager.saveStableTdsCalibrationPoint(1720000040UL));
 
     TEST_ASSERT_TRUE(fixture.manager.applyReadyTdsCalibration(config, 1720000050UL));
-    TEST_ASSERT_EQUAL_UINT16(20, config.tdsLowReferencePpm);
-    TEST_ASSERT_EQUAL_UINT16(160, config.tdsHighReferencePpm);
-    TEST_ASSERT_TRUE(config.tdsLowRawPpm < config.tdsHighRawPpm);
+    TEST_ASSERT_TRUE(config.tdsCalibrated);
+    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(TdsCalibrationMode::TwoPoint),
+                            static_cast<std::uint8_t>(config.tdsCalibrationMode));
+    TEST_ASSERT_TRUE(config.tdsScale > 0.0f);
 }
 
 void test_tds_calibration_point_removal_recomputes_candidate() {
@@ -396,7 +391,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_tds_calibration_point_session_generates_after_one_point);
     RUN_TEST(test_tds_calibration_session_rejects_duplicate_start_without_clearing_points);
     RUN_TEST(test_tds_calibration_point_session_multi_point_fit_and_apply);
-    RUN_TEST(test_tds_calibration_apply_saves_low_and_high_by_reference_not_entry_order);
+    RUN_TEST(test_tds_calibration_apply_is_order_independent);
     RUN_TEST(test_tds_calibration_point_removal_recomputes_candidate);
     return UNITY_END();
 }

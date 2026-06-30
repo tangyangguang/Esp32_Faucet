@@ -268,6 +268,7 @@ bool WaterSensorManager::expireTdsCalibrationSession(std::uint32_t nowSeconds) {
 }
 
 bool WaterSensorManager::applyReadyTdsCalibration(SystemConfig& config, std::uint32_t nowSeconds) {
+    (void)nowSeconds;
     if (!tdsCalibrationSessionActive_ || !tdsCalibrationFit_.valid || tdsCalibrationPointCount_ == 0) {
         return false;
     }
@@ -275,26 +276,6 @@ bool WaterSensorManager::applyReadyTdsCalibration(SystemConfig& config, std::uin
     config.tdsOffsetPpm = tdsCalibrationFit_.offsetPpm;
     config.tdsCalibrated = true;
     config.tdsCalibrationMode = tdsModeForPointCount(tdsCalibrationPointCount_);
-    config.tdsCalibrationRevision = static_cast<std::uint16_t>(config.tdsCalibrationRevision + 1U);
-    config.tdsCalibrationTime = nowSeconds;
-    const TdsCalibrationPointSnapshot* low = &tdsCalibrationPoints_[0];
-    const TdsCalibrationPointSnapshot* high = &tdsCalibrationPoints_[0];
-    for (std::uint8_t i = 1; i < tdsCalibrationPointCount_; ++i) {
-        const TdsCalibrationPointSnapshot& point = tdsCalibrationPoints_[i];
-        if (point.referencePpm < low->referencePpm) {
-            low = &point;
-        }
-        if (point.referencePpm > high->referencePpm) {
-            high = &point;
-        }
-    }
-    const TdsCalibrationPointSnapshot& last = tdsCalibrationPoints_[tdsCalibrationPointCount_ - 1U];
-    config.tdsLowReferencePpm = low->referencePpm;
-    config.tdsLowRawPpm = low->rawPpm;
-    config.tdsHighReferencePpm = high->referencePpm;
-    config.tdsHighRawPpm = high->rawPpm;
-    config.tdsCalibrationTemperatureCentiC = last.temperatureCentiC;
-    config.tdsCalibrationVoltageMv = last.voltageMv;
     sanitizeConfig(config);
     configure(config);
     return discardTdsCalibrationSession();

@@ -46,7 +46,6 @@ SystemConfig enabledWaterSensorConfig() {
     config.tdsKind = TdsKind::AnalogTdsAo;
     config.tdsCalibrated = true;
     config.tdsCalibrationMode = TdsCalibrationMode::TwoPoint;
-    config.tdsCalibrationRevision = 3;
     return config;
 }
 

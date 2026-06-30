@@ -255,7 +255,7 @@ bool AppController::submitCalibrationActualForWeb(std::uint32_t actualMl, std::u
                                buckets.get(),
                                trace->bucketCount,
                                actualMl,
-                               segmentedCalibrationOptionsFromConfig(config_));
+                               defaultSegmentedCalibrationOptions());
     CalibrationStoredTrace stored{};
     stored.sessionId = calibrationSession_.sessionId;
     stored.attemptIndex = attempt.attemptIndex;
@@ -335,7 +335,7 @@ bool AppController::refreshCalibrationCandidate(std::uint32_t nowSeconds) {
         return false;
     }
     std::size_t sampleCount = 0;
-    const SegmentedCalibrationOptions options = segmentedCalibrationOptionsFromConfig(config_);
+    const SegmentedCalibrationOptions options = defaultSegmentedCalibrationOptions();
     for (std::uint8_t i = 0; i < calibrationSession_.attemptCount && i < kCalibrationMaxAttempts; ++i) {
         const CalibrationAttempt& attempt = calibrationSession_.attempts[i];
         appendSummaryCalibrationSample(attempt, samples.get(), kCalibrationMaxValidSamples, sampleCount);

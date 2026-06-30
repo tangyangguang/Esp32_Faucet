@@ -29,23 +29,15 @@ void test_default_config_matches_product_defaults() {
     TEST_ASSERT_EQUAL_UINT32(100, kMinPulseMinIntervalUs);
     TEST_ASSERT_EQUAL_UINT32(100000, kMaxPulseMinIntervalUs);
     TEST_ASSERT_EQUAL_UINT32(1, kRecentPulseTraceCount);
-    TEST_ASSERT_EQUAL_UINT32(kDefaultPulseObservationWindowSec, config.pulseObservationWindowSec);
-    TEST_ASSERT_EQUAL_UINT32(10, config.pulseObservationWindowSec);
+    TEST_ASSERT_EQUAL_UINT32(10, kDefaultPulseObservationWindowSec);
     TEST_ASSERT_EQUAL_UINT32(1, kMinPulseObservationWindowSec);
     TEST_ASSERT_EQUAL_UINT32(60, kMaxPulseObservationWindowSec);
-    TEST_ASSERT_EQUAL_UINT32(kDefaultCalibrationAnalysisPulseMinIntervalUs, config.calibrationAnalysisPulseMinIntervalUs);
-    TEST_ASSERT_EQUAL_UINT32(0, config.calibrationAnalysisPulseMinIntervalUs);
-    TEST_ASSERT_EQUAL_UINT32(kDefaultCalibrationStableWindowSec, config.calibrationStableWindowSec);
-    TEST_ASSERT_EQUAL_UINT32(4, config.calibrationStableWindowSec);
-    TEST_ASSERT_EQUAL_UINT8(kDefaultCalibrationStableTolerancePercent, config.calibrationStableTolerancePercent);
-    TEST_ASSERT_EQUAL_UINT8(25, config.calibrationStableTolerancePercent);
-    TEST_ASSERT_EQUAL_UINT32(kDefaultCalibrationMinVolumeSpanMl, config.calibrationMinVolumeSpanMl);
-    TEST_ASSERT_EQUAL_UINT32(1000, config.calibrationMinVolumeSpanMl);
-    TEST_ASSERT_EQUAL_UINT32(kDefaultCalibrationMaxErrorMl, config.calibrationMaxErrorMl);
-    TEST_ASSERT_EQUAL_UINT32(100, config.calibrationMaxErrorMl);
-    TEST_ASSERT_EQUAL_UINT16(kDefaultCalibrationMaxRelativeErrorTenthPercent,
-                             config.calibrationMaxRelativeErrorTenthPercent);
-    TEST_ASSERT_EQUAL_UINT16(50, config.calibrationMaxRelativeErrorTenthPercent);
+    TEST_ASSERT_EQUAL_UINT32(0, kDefaultCalibrationAnalysisPulseMinIntervalUs);
+    TEST_ASSERT_EQUAL_UINT32(4, kDefaultCalibrationStableWindowSec);
+    TEST_ASSERT_EQUAL_UINT8(25, kDefaultCalibrationStableTolerancePercent);
+    TEST_ASSERT_EQUAL_UINT32(1000, kDefaultCalibrationMinVolumeSpanMl);
+    TEST_ASSERT_EQUAL_UINT32(100, kDefaultCalibrationMaxErrorMl);
+    TEST_ASSERT_EQUAL_UINT16(50, kDefaultCalibrationMaxRelativeErrorTenthPercent);
     TEST_ASSERT_EQUAL_UINT32(500, kPulseTraceBucketMs);
     TEST_ASSERT_EQUAL_UINT32(15000, kPulseTraceStartupDetailMs);
     TEST_ASSERT_EQUAL_size_t(1200, kPulseTraceMaxBucketsPerTrace);
@@ -119,16 +111,8 @@ void test_sensor_config_defaults_disabled() {
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(TdsKind::None), static_cast<std::uint8_t>(config.tdsKind));
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(TdsCalibrationMode::None),
                             static_cast<std::uint8_t>(config.tdsCalibrationMode));
-    TEST_ASSERT_EQUAL_UINT16(0, config.tdsCalibrationRevision);
     TEST_ASSERT_EQUAL_FLOAT(1.0f, config.tdsScale);
     TEST_ASSERT_EQUAL_INT16(0, config.tdsOffsetPpm);
-    TEST_ASSERT_EQUAL_UINT16(0, config.tdsLowReferencePpm);
-    TEST_ASSERT_EQUAL_UINT16(0, config.tdsLowRawPpm);
-    TEST_ASSERT_EQUAL_UINT16(0, config.tdsHighReferencePpm);
-    TEST_ASSERT_EQUAL_UINT16(0, config.tdsHighRawPpm);
-    TEST_ASSERT_EQUAL_UINT32(0, config.tdsCalibrationTime);
-    TEST_ASSERT_EQUAL_INT16(0, config.tdsCalibrationTemperatureCentiC);
-    TEST_ASSERT_EQUAL_UINT16(0, config.tdsCalibrationVoltageMv);
     TEST_ASSERT_FALSE(config.tdsCalibrated);
     TEST_ASSERT_TRUE(config.tdsTemperatureCompensationEnabled);
 }
@@ -146,13 +130,6 @@ void test_sanitize_config_clamps_scalar_ranges() {
     config.volumeAdjustStepMl = 0;
     config.timeAdjustStepSec = 0;
     config.pulseMinIntervalUs = 1;
-    config.pulseObservationWindowSec = 0;
-    config.calibrationAnalysisPulseMinIntervalUs = 1;
-    config.calibrationStableWindowSec = 1;
-    config.calibrationStableTolerancePercent = 1;
-    config.calibrationMinVolumeSpanMl = 1;
-    config.calibrationMaxErrorMl = 1;
-    config.calibrationMaxRelativeErrorTenthPercent = 1;
     config.valveFullPowerSec = 0;
     config.valveHoldDutyPercent = 1;
     config.displaySleepSec = 999999;
@@ -171,14 +148,6 @@ void test_sanitize_config_clamps_scalar_ranges() {
     TEST_ASSERT_EQUAL_UINT32(10, config.volumeAdjustStepMl);
     TEST_ASSERT_EQUAL_UINT32(1, config.timeAdjustStepSec);
     TEST_ASSERT_EQUAL_UINT32(kMinPulseMinIntervalUs, config.pulseMinIntervalUs);
-    TEST_ASSERT_EQUAL_UINT32(kMinPulseObservationWindowSec, config.pulseObservationWindowSec);
-    TEST_ASSERT_EQUAL_UINT32(kMinPulseMinIntervalUs, config.calibrationAnalysisPulseMinIntervalUs);
-    TEST_ASSERT_EQUAL_UINT32(kMinCalibrationStableWindowSec, config.calibrationStableWindowSec);
-    TEST_ASSERT_EQUAL_UINT8(kMinCalibrationStableTolerancePercent, config.calibrationStableTolerancePercent);
-    TEST_ASSERT_EQUAL_UINT32(kMinCalibrationMinVolumeSpanMl, config.calibrationMinVolumeSpanMl);
-    TEST_ASSERT_EQUAL_UINT32(kMinCalibrationMaxErrorMl, config.calibrationMaxErrorMl);
-    TEST_ASSERT_EQUAL_UINT16(kMinCalibrationMaxRelativeErrorTenthPercent,
-                             config.calibrationMaxRelativeErrorTenthPercent);
     TEST_ASSERT_EQUAL_UINT32(1, config.valveFullPowerSec);
     TEST_ASSERT_EQUAL_UINT8(kMinValveHoldDutyPercent, config.valveHoldDutyPercent);
     TEST_ASSERT_EQUAL_UINT32(300, config.displaySleepSec);
@@ -194,31 +163,6 @@ void test_sanitize_config_clamps_scalar_ranges() {
     sanitizeConfig(config);
     TEST_ASSERT_EQUAL_UINT32(kMaxPulseMinIntervalUs, config.pulseMinIntervalUs);
 
-    config = makeDefaultConfig();
-    config.pulseObservationWindowSec = 999999;
-    sanitizeConfig(config);
-    TEST_ASSERT_EQUAL_UINT32(kMaxPulseObservationWindowSec, config.pulseObservationWindowSec);
-
-    config = makeDefaultConfig();
-    config.calibrationAnalysisPulseMinIntervalUs = 0;
-    sanitizeConfig(config);
-    TEST_ASSERT_EQUAL_UINT32(0, config.calibrationAnalysisPulseMinIntervalUs);
-
-    config = makeDefaultConfig();
-    config.calibrationAnalysisPulseMinIntervalUs = 999999;
-    config.calibrationStableWindowSec = 999999;
-    config.calibrationStableTolerancePercent = 99;
-    config.calibrationMinVolumeSpanMl = 999999;
-    config.calibrationMaxErrorMl = 999999;
-    config.calibrationMaxRelativeErrorTenthPercent = 9999;
-    sanitizeConfig(config);
-    TEST_ASSERT_EQUAL_UINT32(kMaxPulseMinIntervalUs, config.calibrationAnalysisPulseMinIntervalUs);
-    TEST_ASSERT_EQUAL_UINT32(kMaxCalibrationStableWindowSec, config.calibrationStableWindowSec);
-    TEST_ASSERT_EQUAL_UINT8(kMaxCalibrationStableTolerancePercent, config.calibrationStableTolerancePercent);
-    TEST_ASSERT_EQUAL_UINT32(kMaxCalibrationMinVolumeSpanMl, config.calibrationMinVolumeSpanMl);
-    TEST_ASSERT_EQUAL_UINT32(kMaxCalibrationMaxErrorMl, config.calibrationMaxErrorMl);
-    TEST_ASSERT_EQUAL_UINT16(kMaxCalibrationMaxRelativeErrorTenthPercent,
-                             config.calibrationMaxRelativeErrorTenthPercent);
 }
 
 void test_sanitize_config_clamps_preset_values_by_type() {

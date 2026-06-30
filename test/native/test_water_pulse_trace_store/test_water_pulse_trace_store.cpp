@@ -227,62 +227,6 @@ void test_trace_analysis_finds_stable_start_after_slow_ramp() {
     TEST_ASSERT_GREATER_THAN_UINT16(0, analysis.confidence);
 }
 
-void test_trace_analysis_rejects_pause_resume_trace_for_startup_calibration() {
-    TraceStoreFixture<1, 80, 80, 1> fixture;
-    WaterPulseTraceStore& store = fixture.store;
-    const std::uint32_t id = store.beginTrace(1000, kDefaultPulseMinIntervalUs);
-    const std::uint16_t values[] = {1, 2, 3, 5, 6, 7, 7, 7, 6, 7, 7, 7};
-    for (std::uint16_t value : values) {
-        appendPulseBucket(store, id, value);
-    }
-    TEST_ASSERT_TRUE(store.markResumedAfterPause(id));
-    TEST_ASSERT_TRUE(store.finishTrace(id, makeRecord(1000, 65, 7500), WaterPulseTraceState::Completed));
-    const WaterPulseTrace* trace = store.findById(id);
-    TEST_ASSERT_NOT_NULL(trace);
-
-    TEST_ASSERT_TRUE(trace->resumedAfterPause);
-    TEST_ASSERT_FALSE(waterPulseTraceAnalysisEligible(*trace));
-    TEST_ASSERT_FALSE(analyzeWaterPulseTrace(*trace, store).stable);
-}
-
-void test_trace_store_records_pause_windows() {
-    TraceStoreFixture<1, 16, 16, 1> fixture;
-    WaterPulseTraceStore& store = fixture.store;
-    const std::uint32_t id = store.beginTrace(1000, kDefaultPulseMinIntervalUs);
-    fillTrace(store, id, {2, 2});
-
-    TEST_ASSERT_TRUE(store.markPaused(id, 2500000));
-    TEST_ASSERT_TRUE(store.markResumedAfterPause(id, 4700000));
-    fillTrace(store, id, {2});
-    TEST_ASSERT_TRUE(store.finishTrace(id, makeRecord(1000, 6, 1000), WaterPulseTraceState::Completed, 7000000));
-
-    const WaterPulseTrace* trace = store.findById(id);
-    TEST_ASSERT_NOT_NULL(trace);
-    TEST_ASSERT_TRUE(trace->resumedAfterPause);
-    TEST_ASSERT_EQUAL_UINT8(1, trace->pauseWindowCount);
-    TEST_ASSERT_EQUAL_UINT32(2500000, trace->pauseWindows[0].startElapsedUs);
-    TEST_ASSERT_EQUAL_UINT32(4700000, trace->pauseWindows[0].endElapsedUs);
-    TEST_ASSERT_FALSE(waterPulseTraceAnalysisEligible(*trace));
-}
-
-void test_trace_store_closes_open_pause_window_on_finish() {
-    TraceStoreFixture<1, 16, 16, 1> fixture;
-    WaterPulseTraceStore& store = fixture.store;
-    const std::uint32_t id = store.beginTrace(1000, kDefaultPulseMinIntervalUs);
-    fillTrace(store, id, {2, 2});
-
-    TEST_ASSERT_TRUE(store.markPaused(id, 2500000));
-    TEST_ASSERT_TRUE(store.finishTrace(id, makeRecord(1000, 4, 1000), WaterPulseTraceState::PauseTimeout, 12100000));
-
-    const WaterPulseTrace* trace = store.findById(id);
-    TEST_ASSERT_NOT_NULL(trace);
-    TEST_ASSERT_FALSE(trace->resumedAfterPause);
-    TEST_ASSERT_EQUAL_UINT8(1, trace->pauseWindowCount);
-    TEST_ASSERT_EQUAL_UINT32(2500000, trace->pauseWindows[0].startElapsedUs);
-    TEST_ASSERT_EQUAL_UINT32(12100000, trace->pauseWindows[0].endElapsedUs);
-    TEST_ASSERT_TRUE(waterPulseTraceAnalysisEligible(*trace));
-}
-
 void test_trace_bucket_aggregation_sums_pulses_by_selected_seconds() {
     TraceStoreFixture<1, 16, 16, 1> fixture;
     WaterPulseTraceStore& store = fixture.store;
@@ -598,9 +542,6 @@ int main(int argc, char** argv) {
     RUN_TEST(test_trace_store_drops_oldest_when_recent_trace_count_is_exceeded);
     RUN_TEST(test_trace_store_marks_bucket_overflow_after_single_trace_bucket_limit);
     RUN_TEST(test_trace_analysis_finds_stable_start_after_slow_ramp);
-    RUN_TEST(test_trace_analysis_rejects_pause_resume_trace_for_startup_calibration);
-    RUN_TEST(test_trace_store_records_pause_windows);
-    RUN_TEST(test_trace_store_closes_open_pause_window_on_finish);
     RUN_TEST(test_trace_bucket_aggregation_sums_pulses_by_selected_seconds);
     RUN_TEST(test_trace_bucket_aggregation_accepts_four_second_bucket);
     RUN_TEST(test_segmented_calibration_uses_two_valid_samples);

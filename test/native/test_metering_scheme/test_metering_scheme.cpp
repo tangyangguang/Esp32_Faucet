@@ -39,7 +39,6 @@ void test_default_store_has_one_current_default_scheme() {
 
     TEST_ASSERT_EQUAL_UINT32(1, schemes.activeSchemeId);
     TEST_ASSERT_EQUAL_UINT32(2, schemes.nextSchemeId);
-    TEST_ASSERT_EQUAL_size_t(1, meteringSchemeCount(schemes));
     const MeteringSchemeRecord* active = activeMeteringScheme(schemes);
     TEST_ASSERT_NOT_NULL(active);
     TEST_ASSERT_EQUAL_UINT32(1, active->id);

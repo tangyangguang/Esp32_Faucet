@@ -422,8 +422,4 @@ bool ConfigStore::saveFilterRuntime(const FilterRecord (&records)[kFilterCount])
     return ok;
 }
 
-bool ConfigStore::resetFilterRuntime() {
-    return backend_.clearNamespace(kRunNs);
-}
-
 }  // namespace faucet

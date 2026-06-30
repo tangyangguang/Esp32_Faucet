@@ -44,10 +44,6 @@ BeepOutput BeepDriver::output() const {
     return {true, frequencyHz(pattern_), 50};
 }
 
-BeepPattern BeepDriver::activePattern() const {
-    return pattern_;
-}
-
 std::uint32_t BeepDriver::durationMs(BeepPattern pattern) {
     switch (pattern) {
         case BeepPattern::Click:

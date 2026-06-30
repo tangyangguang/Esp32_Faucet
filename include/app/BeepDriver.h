@@ -25,7 +25,6 @@ public:
     void play(BeepPattern pattern, std::uint32_t nowMs);
     void tick(std::uint32_t nowMs);
     BeepOutput output() const;
-    BeepPattern activePattern() const;
 
 private:
     bool configuredEnabled_;

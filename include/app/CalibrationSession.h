@@ -47,7 +47,6 @@ enum class CalibrationSkipReason : std::uint8_t {
 
 enum class CalibrationInvalidReason : std::uint8_t {
     None,
-    ResumedAfterPause,
     TruncatedTrace,
     MissingActualMl,
     NoEffectivePulse,
@@ -68,7 +67,6 @@ struct CalibrationSampleSummary {
     std::uint32_t rejectedPulses = 0;
     std::uint32_t durationSec = 0;
     bool truncated = false;
-    bool resumedAfterPause = false;
     bool stable = false;
     std::uint32_t startupPulseCount = 0;
     std::uint32_t stablePulseCount = 0;
@@ -86,7 +84,6 @@ struct CalibrationAttempt {
     CalibrationAttemptStatus status = CalibrationAttemptStatus::Empty;
     CalibrationSkipReason skipReason = CalibrationSkipReason::None;
     CalibrationInvalidReason invalidReason = CalibrationInvalidReason::None;
-    bool resumedAfterPause = false;
     bool truncated = false;
     CalibrationSampleSummary summary{};
 };

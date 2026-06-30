@@ -573,7 +573,6 @@ void test_app_controller_successful_record_writes_scheme_id() {
 
     finishVolumeRun(app);
 
-    TEST_ASSERT_TRUE(app.lastRecordWriteOk());
     TEST_ASSERT_EQUAL_size_t(1, records.records.size());
     TEST_ASSERT_EQUAL_UINT32(active.id, records.records[0].meteringSchemeId);
 }
@@ -1184,68 +1183,6 @@ void test_app_controller_applies_generated_session_scheme_and_keeps_old_scheme()
                             static_cast<unsigned>(fixture.app->snapshot().calibrationStatus));
 }
 
-void test_app_controller_applies_calibration_from_record_actual() {
-    SystemConfig config = makeDefaultConfig();
-    StatisticsStore statistics;
-    FilterStore filters(config.filters);
-    MemoryRecordWriter records;
-    MemoryCalibrationWriter calibrations;
-    AppController app(config, statistics, filters, records, nullptr, &calibrations);
-    applyTestMeteringScheme(app);
-    WaterRecord record{
-        1714502400,
-        7500,
-        7500,
-        9000,
-        0,
-        10,
-        WaterMode::Volume,
-        WaterResult::StoppedByUser,
-        0,
-        0,
-        1,
-        {0, 0, 0, 0},
-    };
-
-    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(CalibrationApplyResult::Saved),
-                            static_cast<std::uint8_t>(app.applyCalibrationFromRecord(record, 7500)));
-    TEST_ASSERT_FLOAT_WITHIN(0.001f, 1.0f, static_cast<float>(app.activeMeteringScheme().params.stablePulsePerLiter) / 1000.0f);
-    TEST_ASSERT_FALSE(app.consumeConfigDirty());
-    TEST_ASSERT_EQUAL_size_t(1, calibrations.calibrations.size());
-    TEST_ASSERT_EQUAL_UINT32(7500, calibrations.calibrations[0].actualMl);
-}
-
-void test_app_controller_small_record_calibration_keeps_metering_parameters() {
-    SystemConfig config = makeDefaultConfig();
-    StatisticsStore statistics;
-    FilterStore filters(config.filters);
-    MemoryRecordWriter records;
-    MemoryCalibrationWriter calibrations;
-    AppController app(config, statistics, filters, records, nullptr, &calibrations);
-    applyTestMeteringScheme(app);
-    WaterRecord record{
-        1714502400,
-        1000,
-        1000,
-        900,
-        0,
-        10,
-        WaterMode::Volume,
-        WaterResult::Completed,
-        0,
-        0,
-        1,
-        {0, 0, 0, 0},
-    };
-
-    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(CalibrationApplyResult::Saved),
-                            static_cast<std::uint8_t>(app.applyCalibrationFromRecord(record, 1000)));
-    TEST_ASSERT_FLOAT_WITHIN(0.001f, 1.0f, static_cast<float>(app.activeMeteringScheme().params.stablePulsePerLiter) / 1000.0f);
-    TEST_ASSERT_FALSE(app.consumeConfigDirty());
-    TEST_ASSERT_EQUAL_size_t(1, calibrations.calibrations.size());
-    TEST_ASSERT_EQUAL_UINT32(1000, calibrations.calibrations[0].actualMl);
-}
-
 void test_app_controller_pause_timeout_trace_is_not_marked_error_and_can_calibrate() {
     SystemConfig config = makeDefaultConfig();
     config.pauseTimeoutSec = 10;
@@ -1278,36 +1215,6 @@ void test_app_controller_pause_timeout_trace_is_not_marked_error_and_can_calibra
                             static_cast<std::uint8_t>(records.records[0].result));
     TEST_ASSERT_FALSE(app.snapshot().lastResultRecordAvailable);
     TEST_ASSERT_EQUAL_size_t(0, pulseTraces.count());
-}
-
-void test_app_controller_applies_calibration_from_pause_timeout_record() {
-    SystemConfig config = makeDefaultConfig();
-    StatisticsStore statistics;
-    FilterStore filters(config.filters);
-    MemoryRecordWriter records;
-    MemoryCalibrationWriter calibrations;
-    AppController app(config, statistics, filters, records, nullptr, &calibrations);
-    applyTestMeteringScheme(app);
-    WaterRecord record{
-        1714502400,
-        1470,
-        7500,
-        326,
-        0,
-        51,
-        WaterMode::Volume,
-        WaterResult::PauseTimeout,
-        0,
-        0,
-        1,
-        {0, 0, 0, 0},
-    };
-
-    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(CalibrationApplyResult::Saved),
-                            static_cast<std::uint8_t>(app.applyCalibrationFromRecord(record, 1470)));
-    TEST_ASSERT_FALSE(app.consumeConfigDirty());
-    TEST_ASSERT_EQUAL_size_t(1, calibrations.calibrations.size());
-    TEST_ASSERT_EQUAL_UINT32(1470, calibrations.calibrations[0].actualMl);
 }
 
 void test_app_controller_offline_completion_marks_unknown_time_with_boot_id() {
@@ -1563,7 +1470,7 @@ void test_app_controller_reports_record_write_failure_without_losing_statistics(
     }
     app.tick(input({false, false, false, false}, 5000, 5000000, 1714502400));
 
-    TEST_ASSERT_FALSE(app.lastRecordWriteOk());
+    TEST_ASSERT_TRUE(records.records.empty());
     TEST_ASSERT_EQUAL_UINT32(1500, statistics.record().todayMl);
     TEST_ASSERT_EQUAL_UINT32(1500, filters.record(0).usedMl);
 }
@@ -1818,10 +1725,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_app_controller_removed_valid_sample_clears_generated_candidate);
     RUN_TEST(test_app_controller_pending_actual_sample_can_be_removed);
     RUN_TEST(test_app_controller_applies_generated_session_scheme_and_keeps_old_scheme);
-    RUN_TEST(test_app_controller_applies_calibration_from_record_actual);
-    RUN_TEST(test_app_controller_small_record_calibration_keeps_metering_parameters);
     RUN_TEST(test_app_controller_pause_timeout_trace_is_not_marked_error_and_can_calibrate);
-    RUN_TEST(test_app_controller_applies_calibration_from_pause_timeout_record);
     RUN_TEST(test_app_controller_result_display_exits_after_configured_timeout);
     RUN_TEST(test_app_controller_result_ok_hold_stays_on_result_without_saving_record_calibration);
     RUN_TEST(test_app_controller_snapshot_reports_current_flow_rate);

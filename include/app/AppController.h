@@ -88,15 +88,6 @@ struct AppSnapshot {
 
 using ValveOutputSink = void (*)(ValveOutput output);
 
-enum class CalibrationApplyResult : std::uint8_t {
-    Saved = 0,
-    NotAvailable = 1,
-    InvalidActual = 2,
-    InvalidRecord = 3,
-    InvalidFactor = 4,
-    TooMuchDrift = 5,
-};
-
 class AppController {
 public:
     AppController(const SystemConfig& config,
@@ -125,7 +116,6 @@ public:
     void tick(const AppTickInput& input);
 
     AppSnapshot snapshot() const;
-    bool lastRecordWriteOk() const;
     bool consumePersistenceDirty();
     void markPersistenceDirtyForRetry();
     bool consumeConfigDirty();
@@ -139,7 +129,6 @@ public:
     bool canApplyConfig() const;
     bool applyConfig(const SystemConfig& config);
     bool applyActiveMeteringScheme(const MeteringSchemeRecord& activeScheme);
-    CalibrationApplyResult applyCalibrationFromRecord(const WaterRecord& record, std::uint32_t actualMl);
     bool startCalibrationSessionForWeb(std::uint32_t nowSeconds);
     bool discardCalibrationSessionForWeb(std::uint32_t nowSeconds);
     bool submitCalibrationActualForWeb(std::uint32_t actualMl, std::uint32_t nowSeconds);
@@ -240,7 +229,6 @@ private:
     bool activeStartTimeSynced_;
     std::uint32_t activeStartBootId_;
     bool lastValveDesiredOpen_;
-    bool lastRecordWriteOk_;
     ValveOutputSink valveOutputSink_;
     bool persistenceDirty_;
     bool configDirty_;

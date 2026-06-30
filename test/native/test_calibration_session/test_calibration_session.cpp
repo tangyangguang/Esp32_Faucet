@@ -208,22 +208,6 @@ void test_removed_sample_does_not_count_as_valid() {
     TEST_ASSERT_FALSE(calibrationCanQuickGenerate(session));
 }
 
-void test_paused_resume_attempt_is_invalid_for_generation() {
-    CalibrationSessionRecord session = makeCalibrationSession(1, 1770000000);
-    CalibrationAttempt attempt{};
-    attempt.attemptIndex = 0;
-    attempt.status = CalibrationAttemptStatus::Invalid;
-    attempt.invalidReason = CalibrationInvalidReason::ResumedAfterPause;
-    attempt.resumedAfterPause = true;
-    attempt.actualMl = 1000;
-
-    TEST_ASSERT_TRUE(appendCalibrationAttempt(session, attempt));
-
-    TEST_ASSERT_EQUAL_UINT8(1, countCalibrationAttempts(session));
-    TEST_ASSERT_EQUAL_UINT8(0, countValidCalibrationSamples(session));
-    TEST_ASSERT_FALSE(calibrationCanQuickGenerate(session));
-}
-
 void test_attempt_keeps_full_water_record_identity() {
     CalibrationSessionRecord session = makeCalibrationSession(1, 1770000000);
     CalibrationAttempt attempt = validAttempt(0, 1000);
@@ -269,7 +253,6 @@ int main(int argc, char** argv) {
     RUN_TEST(test_max_attempts_stop_session_when_not_ready);
     RUN_TEST(test_skipped_attempt_does_not_count_as_valid);
     RUN_TEST(test_removed_sample_does_not_count_as_valid);
-    RUN_TEST(test_paused_resume_attempt_is_invalid_for_generation);
     RUN_TEST(test_attempt_keeps_full_water_record_identity);
     return UNITY_END();
 }

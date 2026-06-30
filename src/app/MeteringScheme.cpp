@@ -186,20 +186,6 @@ void initializeManualMeteringScheme(MeteringSchemeRecord& scheme,
     initializeCommonScheme(scheme, id, name, params, MeteringSchemeSource::Manual, nowSeconds);
 }
 
-std::size_t meteringSchemeCount(const MeteringSchemeCollection& schemes) {
-    if (!schemes.records) {
-        return 0;
-    }
-    std::size_t count = 0;
-    for (std::size_t i = 0; i < schemes.capacity; ++i) {
-        const MeteringSchemeRecord& scheme = schemes.records[i];
-        if (scheme.recordUsed) {
-            ++count;
-        }
-    }
-    return count;
-}
-
 MeteringSchemeRecord* findMeteringSchemeById(MeteringSchemeCollection& schemes, std::uint32_t id) {
     if (!schemes.records || id == 0) {
         return nullptr;

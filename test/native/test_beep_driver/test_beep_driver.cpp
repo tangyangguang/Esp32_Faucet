@@ -15,7 +15,6 @@ void test_beep_click_turns_off_after_duration() {
     TEST_ASSERT_TRUE(beep.output().enabled);
     beep.tick(1040);
     TEST_ASSERT_FALSE(beep.output().enabled);
-    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(BeepPattern::None), static_cast<std::uint8_t>(beep.activePattern()));
 }
 
 void test_beep_duration_survives_millis_wrap() {

@@ -43,7 +43,6 @@ public:
 
     void loadFilterRuntime(FilterRecord (&records)[kFilterCount]);
     bool saveFilterRuntime(const FilterRecord (&records)[kFilterCount]);
-    bool resetFilterRuntime();
 
 private:
     ConfigBackend& backend_;

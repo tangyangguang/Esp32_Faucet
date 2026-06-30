@@ -139,15 +139,10 @@ bool WaterPulseTraceStore::finishTrace(std::uint32_t traceId,
                                        const WaterRecord& record,
                                        WaterPulseTraceState finalState,
                                        std::uint32_t endElapsedUs) {
+    (void)endElapsedUs;
     WaterPulseTrace* trace = findById(traceId);
     if (!trace) {
         return false;
-    }
-    if (endElapsedUs != kPulseTraceNoEndElapsedUs && trace->pauseWindowCount > 0) {
-        WaterPulseTracePauseWindow& last = trace->pauseWindows[trace->pauseWindowCount - 1];
-        if (last.endElapsedUs == 0) {
-            last.endElapsedUs = std::max(last.startElapsedUs, endElapsedUs);
-        }
     }
     trace->record = record;
     if (record.pulseCount > 0) {
@@ -157,49 +152,6 @@ bool WaterPulseTraceStore::finishTrace(std::uint32_t traceId,
     trace->finished = true;
     enforceBudget();
     return findById(traceId) != nullptr;
-}
-
-bool WaterPulseTraceStore::markPaused(std::uint32_t traceId, std::uint32_t elapsedUs) {
-    WaterPulseTrace* trace = findById(traceId);
-    if (!trace || trace->finished) {
-        return false;
-    }
-    if (trace->pauseWindowCount > 0) {
-        WaterPulseTracePauseWindow& last = trace->pauseWindows[trace->pauseWindowCount - 1];
-        if (last.endElapsedUs == 0) {
-            return true;
-        }
-    }
-    if (trace->pauseWindowCount >= kPulseTraceMaxPauseWindows) {
-        trace->pauseWindowOverflow = true;
-        return true;
-    }
-    trace->pauseWindows[trace->pauseWindowCount++] = WaterPulseTracePauseWindow{elapsedUs, 0};
-    return true;
-}
-
-bool WaterPulseTraceStore::markResumedAfterPause(std::uint32_t traceId, std::uint32_t elapsedUs) {
-    WaterPulseTrace* trace = findById(traceId);
-    if (!trace || trace->finished) {
-        return false;
-    }
-    trace->resumedAfterPause = true;
-    if (elapsedUs != kPulseTraceNoEndElapsedUs && trace->pauseWindowCount > 0) {
-        WaterPulseTracePauseWindow& last = trace->pauseWindows[trace->pauseWindowCount - 1];
-        if (last.endElapsedUs == 0) {
-            last.endElapsedUs = std::max(last.startElapsedUs, elapsedUs);
-        }
-    }
-    return true;
-}
-
-bool WaterPulseTraceStore::setActualMl(std::uint32_t traceId, std::uint32_t actualMl) {
-    WaterPulseTrace* trace = findById(traceId);
-    if (!trace || actualMl == 0) {
-        return false;
-    }
-    trace->actualMl = actualMl;
-    return true;
 }
 
 bool WaterPulseTraceStore::setActualMlByRecord(const WaterRecord& record, std::uint32_t actualMl) {
@@ -232,10 +184,6 @@ const WaterPulseTrace* WaterPulseTraceStore::findByRecord(const WaterRecord& rec
         }
     }
     return nullptr;
-}
-
-const WaterPulseTrace* WaterPulseTraceStore::traceAt(std::size_t index) const {
-    return index < traceCount_ ? &traces_[index] : nullptr;
 }
 
 const WaterPulseTraceBucketSample* WaterPulseTraceStore::bucketAt(const WaterPulseTrace& trace,
@@ -346,16 +294,6 @@ std::size_t aggregateWaterPulseTrace(const WaterPulseTrace& trace,
         bucket.durationSec = bucketSeconds;
         bucket.state = trace.finalState == WaterPulseTraceState::Running ? WaterPulseTraceState::Running
                                                                          : trace.finalState;
-        const std::uint32_t bucketStartUs = bucket.startSec * 1000000UL;
-        const std::uint32_t bucketEndUs = (bucket.startSec + bucket.durationSec) * 1000000UL;
-        for (std::uint8_t p = 0; p < trace.pauseWindowCount; ++p) {
-            const WaterPulseTracePauseWindow& pause = trace.pauseWindows[p];
-            const std::uint32_t pauseEndUs = pause.endElapsedUs == 0 ? bucketEndUs : pause.endElapsedUs;
-            if (pause.startElapsedUs < bucketEndUs && pauseEndUs > bucketStartUs) {
-                bucket.state = WaterPulseTraceState::Paused;
-                break;
-            }
-        }
         const std::size_t end = std::min(compactBucketCount, i + compactPerOutput);
         for (std::size_t j = i; j < end; ++j) {
             bucket.pulseDelta += compactBuckets[j].pulseCount;
@@ -368,7 +306,7 @@ std::size_t aggregateWaterPulseTrace(const WaterPulseTrace& trace,
 }
 
 bool waterPulseTraceAnalysisEligible(const WaterPulseTrace& trace) {
-    return !trace.resumedAfterPause && (trace.flags & kPulseTraceFlagBucketOverflow) == 0 && trace.bucketCount > 0;
+    return (trace.flags & kPulseTraceFlagBucketOverflow) == 0 && trace.bucketCount > 0;
 }
 
 SegmentedCalibrationOptions defaultSegmentedCalibrationOptions() {

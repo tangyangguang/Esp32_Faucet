@@ -57,9 +57,8 @@ CalibrationSampleSummary makeCalibrationSummary(const WaterPulseTrace& trace,
     summary.rejectedPulses = trace.minIntervalFilteredCount;
     summary.durationSec = trace.record.durationSec;
     summary.truncated = (trace.flags & (kPulseTraceFlagBucketOverflow | kPulseTraceFlagStartupOverflow)) != 0;
-    summary.resumedAfterPause = trace.resumedAfterPause;
-    if (!buckets || bucketCount == 0 || summary.truncated || trace.resumedAfterPause ||
-        actualMl < kCalibrationMinActualMl || trace.totalPulses == 0) {
+    if (!buckets || bucketCount == 0 || summary.truncated || actualMl < kCalibrationMinActualMl ||
+        trace.totalPulses == 0) {
         return summary;
     }
     const std::uint32_t durationSec =
@@ -156,8 +155,7 @@ bool appendSummaryCalibrationSample(const CalibrationAttempt& attempt,
     if (!samples || sampleCount >= sampleCapacity ||
         attempt.status != CalibrationAttemptStatus::Valid || !attempt.summary.usableForGeneration ||
         attempt.summary.actualMl == 0 || attempt.summary.totalPulses == 0 ||
-        attempt.summary.truncated || attempt.summary.resumedAfterPause ||
-        !attempt.summary.stable || attempt.summary.stablePulseCount == 0) {
+        attempt.summary.truncated || !attempt.summary.stable || attempt.summary.stablePulseCount == 0) {
         return false;
     }
     samples[sampleCount] = SegmentedCalibrationSample{
@@ -292,7 +290,6 @@ AppController::AppController(const SystemConfig& config,
       activeStartTimeSynced_(false),
       activeStartBootId_(0),
       lastValveDesiredOpen_(false),
-      lastRecordWriteOk_(true),
       valveOutputSink_(nullptr),
       persistenceDirty_(false),
       configDirty_(false),
@@ -440,10 +437,6 @@ AppSnapshot AppController::snapshot() const {
     return snapshot;
 }
 
-bool AppController::lastRecordWriteOk() const {
-    return lastRecordWriteOk_;
-}
-
 bool AppController::consumePersistenceDirty() {
     const bool dirty = persistenceDirty_;
     persistenceDirty_ = false;
@@ -585,8 +578,8 @@ bool AppController::submitCalibrationActualForWeb(std::uint32_t actualMl, std::u
     }
     CalibrationAttempt& attempt = calibrationSession_.attempts[calibrationSession_.attemptCount - 1];
     const WaterPulseTrace* trace = pulseTraces_ ? pulseTraces_->findByRecord(attempt.record) : nullptr;
-    if (attempt.status != CalibrationAttemptStatus::PendingActual || !trace || trace->resumedAfterPause ||
-        trace->totalPulses == 0 || trace->bucketCount == 0 ||
+    if (attempt.status != CalibrationAttemptStatus::PendingActual || !trace || trace->totalPulses == 0 ||
+        trace->bucketCount == 0 ||
         (trace->flags & (kPulseTraceFlagBucketOverflow | kPulseTraceFlagStartupOverflow)) != 0) {
         rejectCalibrationAttempt(calibrationSession_, attempt, CalibrationInvalidReason::AnalysisFailed, nowSeconds);
         saveCalibrationSession();
@@ -879,32 +872,6 @@ bool AppController::saveTemperatureCalibrationForWeb(std::int16_t referenceCenti
 
 TdsCalibrationSessionSnapshot AppController::tdsCalibrationSnapshot() const {
     return waterSensors_ ? waterSensors_->calibrationSnapshot() : TdsCalibrationSessionSnapshot{};
-}
-
-CalibrationApplyResult AppController::applyCalibrationFromRecord(const WaterRecord& record, std::uint32_t actualMl) {
-    if (water_.snapshot().state != WaterState::Idle || localMode_ == LocalUiMode::Calibration) {
-        return CalibrationApplyResult::NotAvailable;
-    }
-    if (actualMl < kCalibrationMinActualMl || actualMl > kMaxVolumePresetMl) {
-        return CalibrationApplyResult::InvalidActual;
-    }
-    if (record.pulseCount == 0 || !waterResultAllowsCalibration(record.result)) {
-        return CalibrationApplyResult::InvalidRecord;
-    }
-    if (!recordCalibrations_) {
-        return CalibrationApplyResult::NotAvailable;
-    }
-    WaterRecordCalibration calibration = makeWaterRecordCalibration(record);
-    calibration.actualMl = actualMl;
-    if (!recordCalibrations_->upsert(calibration)) {
-        return CalibrationApplyResult::NotAvailable;
-    }
-    if (pulseTraces_) {
-        pulseTraces_->setActualMlByRecord(record, actualMl);
-    }
-    pendingBeep_ = BeepPattern::Done;
-    localMode_ = LocalUiMode::Result;
-    return CalibrationApplyResult::Saved;
 }
 
 void AppController::handleButtonEvent(ButtonEvent event,
@@ -1340,10 +1307,9 @@ void AppController::processResult(std::uint32_t startTime,
     lastResultRecord_ = WaterRecord{};
     lastResultRecordValid_ = false;
     APP_RESULT_LOG_I("app", "water_record_append_begin");
-    lastRecordWriteOk_ = records_.append(record);
-    APP_RESULT_LOG_I("app", "water_record_append_done ok=%s", lastRecordWriteOk_ ? "yes" : "no");
-    if (lastRecordWriteOk_ && recordCalibrations_ && record.pulseCount > 0 &&
-        waterResultAllowsCalibration(record.result)) {
+    const bool recordWriteOk = records_.append(record);
+    APP_RESULT_LOG_I("app", "water_record_append_done ok=%s", recordWriteOk ? "yes" : "no");
+    if (recordWriteOk && recordCalibrations_ && record.pulseCount > 0 && waterResultAllowsCalibration(record.result)) {
         lastResultRecord_ = record;
         lastResultRecordValid_ = true;
     }

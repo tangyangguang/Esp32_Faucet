@@ -27,19 +27,6 @@ bool FlowPulseReader::pop(std::uint32_t& nowUs) {
     return true;
 }
 
-std::size_t FlowPulseReader::drainTo(FlowMeter& meter) {
-    std::size_t drained = 0;
-    while (true) {
-        std::uint32_t nowUs = 0;
-        if (!pop(nowUs)) {
-            break;
-        }
-        meter.onPulse(nowUs);
-        ++drained;
-    }
-    return drained;
-}
-
 std::uint32_t FlowPulseReader::droppedPulses() const {
     noInterrupts();
     const std::uint32_t dropped = dropped_;

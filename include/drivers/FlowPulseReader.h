@@ -2,7 +2,6 @@
 
 #include "app/FlowMeter.h"
 
-#include <cstddef>
 #include <cstdint>
 
 namespace faucet {
@@ -13,7 +12,6 @@ public:
 
     void begin();
     bool pop(std::uint32_t& nowUs);
-    std::size_t drainTo(FlowMeter& meter);
     std::uint32_t droppedPulses() const;
 
 private:

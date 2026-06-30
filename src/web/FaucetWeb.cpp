@@ -1033,8 +1033,6 @@ const char* calibrationAttemptStatusText(CalibrationAttemptStatus status) {
 
 const char* calibrationInvalidReasonText(CalibrationInvalidReason reason) {
     switch (reason) {
-        case CalibrationInvalidReason::ResumedAfterPause:
-            return "暂停后恢复";
         case CalibrationInvalidReason::TruncatedTrace:
             return "明细已截断";
         case CalibrationInvalidReason::MissingActualMl:
@@ -1121,7 +1119,6 @@ void sendCalibrationSessionAttemptRow(const CalibrationSessionRecord& session,
         attempt.summary.usableForGeneration &&
         attempt.summary.stable &&
         attempt.summary.stablePulseCount > 0 &&
-        !attempt.summary.resumedAfterPause &&
         !attempt.summary.truncated;
     sendFmt("<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%luP</td><td>",
             timeText,

@@ -19,16 +19,10 @@ enum class WaterPulseTraceState : std::uint8_t {
     SafetyStopped = 6,
 };
 
-constexpr std::size_t kPulseTraceMaxPauseWindows = 8;
 constexpr std::uint32_t kPulseTraceNoEndElapsedUs = UINT32_MAX;
 
 struct WaterPulseTraceSample {
     std::uint32_t elapsedUs;
-};
-
-struct WaterPulseTracePauseWindow {
-    std::uint32_t startElapsedUs;
-    std::uint32_t endElapsedUs;
 };
 
 enum PulseTraceFlags : std::uint8_t {
@@ -58,11 +52,7 @@ struct WaterPulseTrace {
     WaterPulseTraceState finalState;
     std::uint8_t flags;
     bool finished;
-    bool resumedAfterPause;
-    bool pauseWindowOverflow;
     bool hasEffectivePulse;
-    std::uint8_t pauseWindowCount;
-    WaterPulseTracePauseWindow pauseWindows[kPulseTraceMaxPauseWindows];
 };
 
 struct WaterPulseTraceStats {
@@ -181,15 +171,11 @@ public:
                      const WaterRecord& record,
                      WaterPulseTraceState finalState,
                      std::uint32_t endElapsedUs = kPulseTraceNoEndElapsedUs);
-    bool markPaused(std::uint32_t traceId, std::uint32_t elapsedUs);
-    bool markResumedAfterPause(std::uint32_t traceId, std::uint32_t elapsedUs = kPulseTraceNoEndElapsedUs);
-    bool setActualMl(std::uint32_t traceId, std::uint32_t actualMl);
     bool setActualMlByRecord(const WaterRecord& record, std::uint32_t actualMl);
 
     const WaterPulseTrace* findById(std::uint32_t traceId) const;
     WaterPulseTrace* findById(std::uint32_t traceId);
     const WaterPulseTrace* findByRecord(const WaterRecord& record) const;
-    const WaterPulseTrace* traceAt(std::size_t index) const;
     const WaterPulseTraceBucketSample* bucketAt(const WaterPulseTrace& trace, std::size_t index) const;
     const WaterPulseTraceSample* startupEdgeAt(const WaterPulseTrace& trace, std::size_t index) const;
     WaterPulseTraceStats stats() const;

@@ -195,10 +195,10 @@ std::size_t MeteringSchemeStore::list(MeteringSchemeRecord* output, std::size_t 
     return copied;
 }
 
-bool MeteringSchemeStore::saveCandidateAsNew(const MeteringSchemeCandidate& candidate,
-                                             const char* name,
-                                             std::uint32_t nowSeconds,
-                                             std::uint32_t& newId) {
+bool MeteringSchemeStore::saveCandidateAsCurrent(const MeteringSchemeCandidate& candidate,
+                                                 const char* name,
+                                                 std::uint32_t nowSeconds,
+                                                 std::uint32_t& newId) {
     newId = 0;
     if (!ready()) {
         return false;
@@ -225,30 +225,13 @@ bool MeteringSchemeStore::saveCandidateAsNew(const MeteringSchemeCandidate& cand
         return false;
     }
     MeteringSchemeStoreHeader previous = header_;
+    header_.activeSchemeId = newId;
     header_.nextSchemeId = collection.nextSchemeId;
     header_.checksum = headerChecksum(header_);
     if (!saveHeader()) {
         header_ = previous;
         writeRecord(slot, previousRecord);
-        return false;
-    }
-    return true;
-}
-
-bool MeteringSchemeStore::setActiveScheme(std::uint32_t schemeId) {
-    if (!ready()) {
-        return false;
-    }
-    MeteringSchemeRecord record{};
-    std::size_t slot = 0;
-    if (!findSlotById(schemeId, record, slot) || !validMeteringSchemeParameters(record.params)) {
-        return false;
-    }
-    MeteringSchemeStoreHeader previous = header_;
-    header_.activeSchemeId = schemeId;
-    header_.checksum = headerChecksum(header_);
-    if (!saveHeader()) {
-        header_ = previous;
+        newId = 0;
         return false;
     }
     return true;

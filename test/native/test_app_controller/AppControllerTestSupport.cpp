@@ -54,10 +54,7 @@ bool prepareMeteringScheme(MeteringSchemeStore& store,
     }
     std::uint32_t id = 0;
     const MeteringSchemeCandidate candidate = testMeteringCandidate(stablePulsePerLiter);
-    if (!store.saveCandidateAsNew(candidate, "运行参数", 1714502300, id)) {
-        return false;
-    }
-    if (!store.setActiveScheme(id)) {
+    if (!store.saveCandidateAsCurrent(candidate, "运行参数", 1714502300, id)) {
         return false;
     }
     return store.activeScheme(active);

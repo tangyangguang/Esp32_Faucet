@@ -34,11 +34,10 @@ public:
     bool findById(std::uint32_t id, MeteringSchemeRecord& output) const;
     std::size_t list(MeteringSchemeRecord* output, std::size_t outputCapacity) const;
 
-    bool saveCandidateAsNew(const MeteringSchemeCandidate& candidate,
-                            const char* name,
-                            std::uint32_t nowSeconds,
-                            std::uint32_t& newId);
-    bool setActiveScheme(std::uint32_t schemeId);
+    bool saveCandidateAsCurrent(const MeteringSchemeCandidate& candidate,
+                                const char* name,
+                                std::uint32_t nowSeconds,
+                                std::uint32_t& newId);
 
 private:
     bool validPath() const;

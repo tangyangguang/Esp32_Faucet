@@ -375,8 +375,7 @@ bool AppController::applyGeneratedCalibrationForWeb(std::uint32_t nowSeconds) {
         return false;
     }
     std::uint32_t newId = 0;
-    if (!meteringSchemes_->saveCandidateAsNew(calibrationCandidate_, "校准生成计量方案", nowSeconds, newId) ||
-        !meteringSchemes_->setActiveScheme(newId)) {
+    if (!meteringSchemes_->saveCandidateAsCurrent(calibrationCandidate_, "校准生成计量方案", nowSeconds, newId)) {
         return false;
     }
     calibrationCandidate_ = MeteringSchemeCandidate{};

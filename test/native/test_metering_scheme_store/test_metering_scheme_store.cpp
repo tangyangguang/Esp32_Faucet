@@ -76,7 +76,7 @@ void test_list_returns_scheme_records_in_order() {
     TEST_ASSERT_TRUE(store.begin());
     for (std::size_t i = 1; i < kMeteringSchemeStoreSlotCount; ++i) {
         std::uint32_t id = 0;
-        TEST_ASSERT_TRUE(store.saveCandidateAsNew(
+        TEST_ASSERT_TRUE(store.saveCandidateAsCurrent(
             schemeCandidate(360 + static_cast<std::uint32_t>(i)), "参数", 1770000000 + i, id));
     }
 
@@ -88,14 +88,13 @@ void test_list_returns_scheme_records_in_order() {
     TEST_ASSERT_EQUAL_UINT32(kMeteringSchemeStoreSlotCount, records[kMeteringSchemeStoreSlotCount - 1].id);
 }
 
-void test_set_active_scheme_updates_current_id() {
+void test_save_candidate_as_current_updates_current_id() {
     MemoryFileBackend backend;
     MeteringSchemeStore store(backend, "/schemes.bin");
     TEST_ASSERT_TRUE(store.begin());
 
     std::uint32_t id = 0;
-    TEST_ASSERT_TRUE(store.saveCandidateAsNew(schemeCandidate(), "新参数", 1770000000, id));
-    TEST_ASSERT_TRUE(store.setActiveScheme(id));
+    TEST_ASSERT_TRUE(store.saveCandidateAsCurrent(schemeCandidate(), "新参数", 1770000000, id));
 
     TEST_ASSERT_EQUAL_UINT32(id, store.activeSchemeId());
     MeteringSchemeRecord active{};
@@ -110,15 +109,13 @@ void test_full_store_overwrites_oldest_non_current_record() {
 
     std::uint32_t id = 0;
     for (std::size_t i = 1; i < kMeteringSchemeStoreSlotCount; ++i) {
-        TEST_ASSERT_TRUE(store.saveCandidateAsNew(
+        TEST_ASSERT_TRUE(store.saveCandidateAsCurrent(
             schemeCandidate(360 + static_cast<std::uint32_t>(i)), "填充参数", 1770000000 + i, id));
-        TEST_ASSERT_TRUE(store.setActiveScheme(id));
     }
     const std::uint32_t activeBefore = store.activeSchemeId();
 
     std::uint32_t overflowId = 0;
-    TEST_ASSERT_TRUE(store.saveCandidateAsNew(schemeCandidate(480), "新当前参数", 1770003000, overflowId));
-    TEST_ASSERT_TRUE(store.setActiveScheme(overflowId));
+    TEST_ASSERT_TRUE(store.saveCandidateAsCurrent(schemeCandidate(480), "新当前参数", 1770003000, overflowId));
 
     MeteringSchemeRecord oldDefault{};
     TEST_ASSERT_FALSE(store.findById(1, oldDefault));
@@ -136,8 +133,8 @@ void test_save_candidate_header_failure_rolls_back_written_record() {
         TEST_ASSERT_TRUE(store.begin());
         std::uint32_t failedId = 0;
         backend.failHeaderWriteOnce = true;
-        TEST_ASSERT_FALSE(store.saveCandidateAsNew(schemeCandidate(), "header fail", 1770000000, failedId));
-        TEST_ASSERT_EQUAL_UINT32(2, failedId);
+        TEST_ASSERT_FALSE(store.saveCandidateAsCurrent(schemeCandidate(), "header fail", 1770000000, failedId));
+        TEST_ASSERT_EQUAL_UINT32(0, failedId);
     }
 
     MeteringSchemeStore loaded(backend, "/schemes.bin");
@@ -146,7 +143,7 @@ void test_save_candidate_header_failure_rolls_back_written_record() {
     TEST_ASSERT_FALSE(loaded.findById(2, rolledBack));
 
     std::uint32_t nextId = 0;
-    TEST_ASSERT_TRUE(loaded.saveCandidateAsNew(schemeCandidate(380), "after restart", 1770000001, nextId));
+    TEST_ASSERT_TRUE(loaded.saveCandidateAsCurrent(schemeCandidate(380), "after restart", 1770000001, nextId));
     TEST_ASSERT_EQUAL_UINT32(2, nextId);
 }
 
@@ -157,7 +154,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_begin_initializes_default_scheme_file);
     RUN_TEST(test_begin_rebuilds_incompatible_scheme_file);
     RUN_TEST(test_list_returns_scheme_records_in_order);
-    RUN_TEST(test_set_active_scheme_updates_current_id);
+    RUN_TEST(test_save_candidate_as_current_updates_current_id);
     RUN_TEST(test_full_store_overwrites_oldest_non_current_record);
     RUN_TEST(test_save_candidate_header_failure_rolls_back_written_record);
     return UNITY_END();

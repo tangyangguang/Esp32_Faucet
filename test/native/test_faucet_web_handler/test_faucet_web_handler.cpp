@@ -780,6 +780,30 @@ void test_presets_handler_selects_requested_enabled_preset() {
     TEST_ASSERT_EQUAL_size_t(1, fixture.app.snapshot().water.selectedPreset);
 }
 
+void test_presets_handler_saves_requested_preset() {
+    WebFixture fixture;
+    registerRoutes();
+    beginPresetPost(nullptr);
+    Esp32BaseWeb::nativeTestSetParam("index", "2");
+    Esp32BaseWeb::nativeTestSetParam("enabled", "on");
+    Esp32BaseWeb::nativeTestSetParam("type", "time");
+    Esp32BaseWeb::nativeTestSetParam("value", "90");
+    Esp32BaseWeb::nativeTestSetParam("name", "Tea");
+
+    dispatchPresetPost();
+
+    TEST_ASSERT_EQUAL(200, Esp32BaseWeb::nativeTestResponse().code);
+    TEST_ASSERT_EQUAL_STRING("{\"ok\":true,\"restartRecommended\":true}",
+                             Esp32BaseWeb::nativeTestResponse().body.c_str());
+    const SystemConfig persisted = fixture.configStore.loadSystemConfig();
+    TEST_ASSERT_TRUE(persisted.presets[2].enabled);
+    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(PresetType::Time),
+                            static_cast<std::uint8_t>(persisted.presets[2].type));
+    TEST_ASSERT_EQUAL_UINT32(90, persisted.presets[2].value);
+    TEST_ASSERT_EQUAL_STRING("Tea", persisted.presets[2].name);
+    TEST_ASSERT_EQUAL_UINT32(90, fixture.app.config().presets[2].value);
+}
+
 void test_presets_handler_running_select_next_only_changes_next_preset() {
     WebFixture fixture;
     setRunning(fixture.app);
@@ -827,6 +851,7 @@ int main(int, char**) {
     RUN_TEST(test_presets_handler_rejects_invalid_action);
     RUN_TEST(test_presets_handler_select_next_and_previous_return_status_json);
     RUN_TEST(test_presets_handler_selects_requested_enabled_preset);
+    RUN_TEST(test_presets_handler_saves_requested_preset);
     RUN_TEST(test_presets_handler_running_select_next_only_changes_next_preset);
     return UNITY_END();
 }

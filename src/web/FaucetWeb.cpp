@@ -55,7 +55,7 @@ struct TodayOverview {
 bool requireContext();
 bool contextReady();
 bool getParam(const char* name, char* out, std::size_t len);
-bool persistConfig(const SystemConfig& config);
+bool persistPresetConfig(std::size_t index, const PresetConfig& preset);
 bool ensureMeteringSchemesReady();
 bool activeMeteringSchemeForWeb(MeteringSchemeRecord& output);
 void handleRecordInfoPage();
@@ -3789,101 +3789,13 @@ bool checkboxParam(const char* name) {
     return Esp32BaseWeb::hasParam(name);
 }
 
-void mergeChangedConfigFields(const SystemConfig& before, const SystemConfig& submitted, SystemConfig& target) {
-    if (submitted.confirmTimeoutSec != before.confirmTimeoutSec) {
-        target.confirmTimeoutSec = submitted.confirmTimeoutSec;
-    }
-    if (submitted.maxOutTimeSec != before.maxOutTimeSec) {
-        target.maxOutTimeSec = submitted.maxOutTimeSec;
-    }
-    if (submitted.maxOutVolumeMl != before.maxOutVolumeMl) {
-        target.maxOutVolumeMl = submitted.maxOutVolumeMl;
-    }
-    if (submitted.overflowPercent != before.overflowPercent) {
-        target.overflowPercent = submitted.overflowPercent;
-    }
-    if (submitted.noFlowTimeoutSec != before.noFlowTimeoutSec) {
-        target.noFlowTimeoutSec = submitted.noFlowTimeoutSec;
-    }
-    if (submitted.highFlowMlPerMin != before.highFlowMlPerMin) {
-        target.highFlowMlPerMin = submitted.highFlowMlPerMin;
-    }
-    if (submitted.highFlowDurationSec != before.highFlowDurationSec) {
-        target.highFlowDurationSec = submitted.highFlowDurationSec;
-    }
-    if (submitted.pauseTimeoutSec != before.pauseTimeoutSec) {
-        target.pauseTimeoutSec = submitted.pauseTimeoutSec;
-    }
-    if (submitted.volumeAdjustStepMl != before.volumeAdjustStepMl) {
-        target.volumeAdjustStepMl = submitted.volumeAdjustStepMl;
-    }
-    if (submitted.timeAdjustStepSec != before.timeAdjustStepSec) {
-        target.timeAdjustStepSec = submitted.timeAdjustStepSec;
-    }
-    if (submitted.pulseMinIntervalUs != before.pulseMinIntervalUs) {
-        target.pulseMinIntervalUs = submitted.pulseMinIntervalUs;
-    }
-    if (submitted.calibrationAnalysisPulseMinIntervalUs != before.calibrationAnalysisPulseMinIntervalUs) {
-        target.calibrationAnalysisPulseMinIntervalUs = submitted.calibrationAnalysisPulseMinIntervalUs;
-    }
-    if (submitted.calibrationStableWindowSec != before.calibrationStableWindowSec) {
-        target.calibrationStableWindowSec = submitted.calibrationStableWindowSec;
-    }
-    if (submitted.calibrationStableTolerancePercent != before.calibrationStableTolerancePercent) {
-        target.calibrationStableTolerancePercent = submitted.calibrationStableTolerancePercent;
-    }
-    if (submitted.calibrationMinVolumeSpanMl != before.calibrationMinVolumeSpanMl) {
-        target.calibrationMinVolumeSpanMl = submitted.calibrationMinVolumeSpanMl;
-    }
-    if (submitted.calibrationMaxErrorMl != before.calibrationMaxErrorMl) {
-        target.calibrationMaxErrorMl = submitted.calibrationMaxErrorMl;
-    }
-    if (submitted.calibrationMaxRelativeErrorTenthPercent != before.calibrationMaxRelativeErrorTenthPercent) {
-        target.calibrationMaxRelativeErrorTenthPercent = submitted.calibrationMaxRelativeErrorTenthPercent;
-    }
-    if (submitted.valveFullPowerSec != before.valveFullPowerSec) {
-        target.valveFullPowerSec = submitted.valveFullPowerSec;
-    }
-    if (submitted.valveHoldDutyPercent != before.valveHoldDutyPercent) {
-        target.valveHoldDutyPercent = submitted.valveHoldDutyPercent;
-    }
-    if (submitted.displaySleepSec != before.displaySleepSec) {
-        target.displaySleepSec = submitted.displaySleepSec;
-    }
-    if (submitted.resultDisplaySec != before.resultDisplaySec) {
-        target.resultDisplaySec = submitted.resultDisplaySec;
-    }
-    if (submitted.beepEnabled != before.beepEnabled) {
-        target.beepEnabled = submitted.beepEnabled;
-    }
-    if (std::memcmp(submitted.presets, before.presets, sizeof(before.presets)) != 0) {
-        std::memcpy(target.presets, submitted.presets, sizeof(target.presets));
-    }
-    for (std::size_t i = 0; i < kFilterCount; ++i) {
-        FilterRecord submittedBase = submitted.filters[i];
-        FilterRecord beforeBase = before.filters[i];
-        submittedBase.startTime = beforeBase.startTime;
-        submittedBase.usedMl = beforeBase.usedMl;
-        submittedBase.startBootId = beforeBase.startBootId;
-        if (std::memcmp(&submittedBase, &beforeBase, sizeof(FilterRecord)) != 0) {
-            const std::uint32_t startTime = target.filters[i].startTime;
-            const std::uint32_t usedMl = target.filters[i].usedMl;
-            const std::uint32_t startBootId = target.filters[i].startBootId;
-            target.filters[i] = submitted.filters[i];
-            target.filters[i].startTime = startTime;
-            target.filters[i].usedMl = usedMl;
-            target.filters[i].startBootId = startBootId;
-        }
-    }
-}
-
-bool persistConfig(const SystemConfig& config) {
-    if (!g_context.app->canApplyConfig()) {
+bool persistPresetConfig(std::size_t index, const PresetConfig& preset) {
+    if (!g_context.app->canApplyConfig() || index >= kPresetCount) {
         return false;
     }
 
     SystemConfig safe = g_context.configStore->loadSystemConfig();
-    mergeChangedConfigFields(*g_context.config, config, safe);
+    safe.presets[index] = preset;
     sanitizeConfig(safe);
     if (!g_context.configStore->saveSystemConfig(safe)) {
         return false;
@@ -3898,12 +3810,12 @@ bool persistConfig(const SystemConfig& config) {
     return true;
 }
 
-bool saveConfigAndReply(const SystemConfig& config) {
+bool savePresetConfigAndReply(std::size_t index, const PresetConfig& preset) {
     if (!g_context.app->canApplyConfig()) {
         Esp32BaseWeb::sendJson(409, "{\"error\":\"busy\",\"restartRecommended\":true}");
         return false;
     }
-    const bool ok = persistConfig(config);
+    const bool ok = persistPresetConfig(index, preset);
     Esp32BaseWeb::sendJson(ok ? 200 : 500,
                            ok ? "{\"ok\":true,\"restartRecommended\":true}" : "{\"error\":\"save_failed\"}");
     return ok;
@@ -4374,16 +4286,7 @@ void handlePresetsApi() {
             Esp32BaseWeb::sendJson(400, "{\"error\":\"invalid_index\"}");
             return;
         }
-        std::unique_ptr<SystemConfig> candidate(new (std::nothrow) SystemConfig(*g_context.config));
-        if (!candidate) {
-            if (browserForm) {
-                Esp32BaseWeb::redirectSeeOther("/faucet/presets?error=save_failed");
-                return;
-            }
-            Esp32BaseWeb::sendJson(500, "{\"error\":\"oom\"}");
-            return;
-        }
-        PresetConfig& preset = candidate->presets[index];
+        PresetConfig preset = g_context.config->presets[index];
         preset.enabled = checkboxParam("enabled");
         if (getParam("type", text, sizeof(text))) {
             preset.type = std::strcmp(text, "time") == 0 ? PresetType::Time : PresetType::Volume;
@@ -4410,10 +4313,10 @@ void handlePresetsApi() {
         preset.value = value;
         Esp32BaseWeb::getParam("name", preset.name, sizeof(preset.name));
         if (browserForm) {
-            const bool ok = persistConfig(*candidate);
+            const bool ok = persistPresetConfig(index, preset);
             Esp32BaseWeb::redirectSeeOther(ok ? "/faucet/presets?saved=1" : "/faucet/presets?error=save_failed");
         } else {
-            saveConfigAndReply(*candidate);
+            savePresetConfigAndReply(index, preset);
         }
         return;
     }

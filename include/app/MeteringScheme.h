@@ -92,10 +92,10 @@ const MeteringSchemeRecord* findMeteringSchemeById(const MeteringSchemeCollectio
 MeteringSchemeRecord* activeMeteringScheme(MeteringSchemeCollection& schemes);
 const MeteringSchemeRecord* activeMeteringScheme(const MeteringSchemeCollection& schemes);
 
-bool saveCandidateAsNewMeteringScheme(MeteringSchemeCollection& schemes,
-                                      MeteringSchemeCandidate& candidate,
-                                      const char* name,
-                                      std::uint32_t nowSeconds,
-                                      std::uint32_t& newSchemeId);
+bool appendCandidateMeteringScheme(MeteringSchemeCollection& schemes,
+                                   MeteringSchemeCandidate& candidate,
+                                   const char* name,
+                                   std::uint32_t nowSeconds,
+                                   std::uint32_t& newSchemeId);
 
 }  // namespace faucet

@@ -203,7 +203,7 @@ bool MeteringSchemeStore::saveCandidateAsCurrent(const MeteringSchemeCandidate& 
     MeteringSchemeCandidate working = candidate;
     MeteringSchemeRecord records[1]{};
     MeteringSchemeCollection collection{records, 1, header_.activeSchemeId, header_.nextSchemeId};
-    if (!saveCandidateAsNewMeteringScheme(collection, working, name, nowSeconds, newId)) {
+    if (!appendCandidateMeteringScheme(collection, working, name, nowSeconds, newId)) {
         return false;
     }
 

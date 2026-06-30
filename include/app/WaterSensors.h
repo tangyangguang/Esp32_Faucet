@@ -73,8 +73,6 @@ std::uint32_t inputVoltageMvFromDivider(std::uint16_t adcMv, std::uint32_t highO
 
 TdsComputationResult computeTdsPpm(const TdsComputationInput& input);
 
-bool computeSinglePointTdsCalibration(std::uint16_t referencePpm, std::uint16_t rawPpm, float& scaleOut);
-
 bool computeTdsCalibrationFit(const TdsCalibrationPointInput* points,
                               std::size_t count,
                               TdsCalibrationFitResult& result);

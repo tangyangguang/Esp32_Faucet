@@ -50,6 +50,14 @@ bool tdsFitOutputAllowed(float scale, std::int16_t offset) {
            offset <= kTdsCalibrationMaxOffsetPpm;
 }
 
+bool computeOnePointScale(std::uint16_t referencePpm, std::uint16_t rawPpm, float& scaleOut) {
+    if (referencePpm == 0 || rawPpm == 0) {
+        return false;
+    }
+    scaleOut = static_cast<float>(referencePpm) / static_cast<float>(rawPpm);
+    return isfinite(scaleOut) && scaleOut > 0.0f;
+}
+
 }  // namespace
 
 std::int16_t ntcCentiCFromDividerMv(std::uint16_t adcMv, std::uint16_t vrefMv, std::uint32_t pullupOhm) {
@@ -103,14 +111,6 @@ TdsComputationResult computeTdsPpm(const TdsComputationInput& input) {
     return result;
 }
 
-bool computeSinglePointTdsCalibration(std::uint16_t referencePpm, std::uint16_t rawPpm, float& scaleOut) {
-    if (referencePpm == 0 || rawPpm == 0) {
-        return false;
-    }
-    scaleOut = static_cast<float>(referencePpm) / static_cast<float>(rawPpm);
-    return isfinite(scaleOut) && scaleOut > 0.0f;
-}
-
 bool computeTdsCalibrationFit(const TdsCalibrationPointInput* points,
                               std::size_t count,
                               TdsCalibrationFitResult& result) {
@@ -154,7 +154,7 @@ bool computeTdsCalibrationFit(const TdsCalibrationPointInput* points,
     result.rawSpanPpm = maxRaw - minRaw;
 
     if (count == 1) {
-        if (!computeSinglePointTdsCalibration(points[0].referencePpm, points[0].rawPpm, result.scale)) {
+        if (!computeOnePointScale(points[0].referencePpm, points[0].rawPpm, result.scale)) {
             result = TdsCalibrationFitResult{};
             return false;
         }

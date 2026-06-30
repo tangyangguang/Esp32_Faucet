@@ -92,7 +92,7 @@ private:
 
     enum class CalibrationKind : std::uint8_t {
         None = 0,
-        Single = 1,
+        TdsPoint = 1,
     };
 
     AdcReader& adc_;

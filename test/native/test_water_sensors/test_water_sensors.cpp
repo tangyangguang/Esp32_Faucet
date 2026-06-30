@@ -43,15 +43,20 @@ void test_tds_temperature_compensation_sets_fallback_flag() {
     TEST_ASSERT_TRUE((warm.flags & kWaterSensorFlagTdsTempFallback25C) == 0);
 }
 
-void test_tds_single_point_calibration() {
-    float scale = 0.0f;
+void test_tds_fit_one_point_uses_scale_with_zero_offset() {
+    TdsCalibrationPointInput points[1]{};
+    points[0] = TdsCalibrationPointInput{160, 150};
 
-    TEST_ASSERT_TRUE(computeSinglePointTdsCalibration(160, 150, scale));
+    TdsCalibrationFitResult fit{};
+    TEST_ASSERT_TRUE(computeTdsCalibrationFit(points, 1, fit));
 
-    TEST_ASSERT_FLOAT_WITHIN(0.001f, 1.0667f, scale);
+    TEST_ASSERT_TRUE(fit.valid);
+    TEST_ASSERT_EQUAL_UINT8(1, fit.pointCount);
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 1.0667f, fit.scale);
+    TEST_ASSERT_EQUAL_INT16(0, fit.offsetPpm);
 }
 
-void test_tds_multi_point_linear_fit_matches_two_point_line() {
+void test_tds_fit_linear_regression_matches_reference_line() {
     TdsCalibrationPointInput points[3]{};
     points[0] = TdsCalibrationPointInput{20, 30};
     points[1] = TdsCalibrationPointInput{120, 130};
@@ -67,7 +72,7 @@ void test_tds_multi_point_linear_fit_matches_two_point_line() {
     TEST_ASSERT_EQUAL_INT16(-10, fit.offsetPpm);
 }
 
-void test_tds_fit_uses_single_point_scale_with_zero_offset() {
+void test_tds_fit_one_reference_point_with_different_scale() {
     TdsCalibrationPointInput points[1]{};
     points[0] = TdsCalibrationPointInput{160, 200};
 
@@ -103,7 +108,7 @@ void test_tds_fit_rejects_duplicate_conflicts() {
     TEST_ASSERT_FALSE(computeTdsCalibrationFit(points, 2, fit));
 }
 
-void test_tds_two_point_fit_is_order_independent() {
+void test_tds_fit_two_saved_points_is_order_independent() {
     TdsCalibrationPointInput points[2]{};
     points[0] = TdsCalibrationPointInput{160, 150};
     points[1] = TdsCalibrationPointInput{0, 5};
@@ -135,12 +140,12 @@ int main(int argc, char** argv) {
     RUN_TEST(test_input_voltage_11_to_1_divider);
     RUN_TEST(test_tds_formula_uses_25c_when_temperature_invalid);
     RUN_TEST(test_tds_temperature_compensation_sets_fallback_flag);
-    RUN_TEST(test_tds_single_point_calibration);
-    RUN_TEST(test_tds_multi_point_linear_fit_matches_two_point_line);
-    RUN_TEST(test_tds_fit_uses_single_point_scale_with_zero_offset);
+    RUN_TEST(test_tds_fit_one_point_uses_scale_with_zero_offset);
+    RUN_TEST(test_tds_fit_linear_regression_matches_reference_line);
+    RUN_TEST(test_tds_fit_one_reference_point_with_different_scale);
     RUN_TEST(test_tds_fit_rejects_low_span_for_multiple_points);
     RUN_TEST(test_tds_fit_rejects_duplicate_conflicts);
-    RUN_TEST(test_tds_two_point_fit_is_order_independent);
+    RUN_TEST(test_tds_fit_two_saved_points_is_order_independent);
     RUN_TEST(test_tds_stability_windows);
     return UNITY_END();
 }

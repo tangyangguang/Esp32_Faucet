@@ -53,14 +53,14 @@ void test_default_store_has_one_current_default_scheme() {
                             static_cast<unsigned>(active->sourceType));
 }
 
-void test_candidate_saves_as_new_without_switching_current() {
+void test_candidate_appends_history_record() {
     MeteringSchemeRecord records[4]{};
     MeteringSchemeCollection schemes = collectionFor(records);
     TEST_ASSERT_TRUE(initializeDefaultMeteringSchemes(schemes, 1770000000));
     MeteringSchemeCandidate candidate = sampleCandidate();
 
     std::uint32_t newId = 0;
-    TEST_ASSERT_TRUE(saveCandidateAsNewMeteringScheme(schemes, candidate, "低压实验", 1770000100, newId));
+    TEST_ASSERT_TRUE(appendCandidateMeteringScheme(schemes, candidate, "低压实验", 1770000100, newId));
 
     TEST_ASSERT_EQUAL_UINT32(1, schemes.activeSchemeId);
     TEST_ASSERT_EQUAL_UINT32(2, newId);
@@ -87,14 +87,14 @@ void test_candidate_uses_free_slot_and_fails_when_collection_is_full() {
     std::uint32_t newId = 0;
     MeteringSchemeCandidate candidate = sampleCandidate();
     candidate.params = MeteringParameters{12, 180, 360, 7000, 900};
-    TEST_ASSERT_TRUE(saveCandidateAsNewMeteringScheme(schemes, candidate, "校准低压", 1770000200, newId));
+    TEST_ASSERT_TRUE(appendCandidateMeteringScheme(schemes, candidate, "校准低压", 1770000200, newId));
     TEST_ASSERT_EQUAL_UINT32(2, newId);
     TEST_ASSERT_EQUAL_STRING("校准低压", records[1].name);
 
     std::uint32_t overflowId = 0;
     MeteringSchemeCandidate overflow = sampleCandidate();
     overflow.params = MeteringParameters{14, 200, 380, 7000, 900};
-    TEST_ASSERT_FALSE(saveCandidateAsNewMeteringScheme(schemes, overflow, "没有槽位", 1770000300, overflowId));
+    TEST_ASSERT_FALSE(appendCandidateMeteringScheme(schemes, overflow, "没有槽位", 1770000300, overflowId));
     TEST_ASSERT_EQUAL_UINT32(0, overflowId);
 }
 
@@ -140,7 +140,7 @@ int main(int argc, char** argv) {
     UNITY_BEGIN();
     RUN_TEST(test_metering_history_capacity_is_six);
     RUN_TEST(test_default_store_has_one_current_default_scheme);
-    RUN_TEST(test_candidate_saves_as_new_without_switching_current);
+    RUN_TEST(test_candidate_appends_history_record);
     RUN_TEST(test_candidate_uses_free_slot_and_fails_when_collection_is_full);
     RUN_TEST(test_metering_estimate_uses_segmented_parameters_for_target_volume);
     RUN_TEST(test_metering_estimate_handles_no_startup_segment);

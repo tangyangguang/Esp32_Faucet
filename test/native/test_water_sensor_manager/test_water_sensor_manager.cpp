@@ -216,7 +216,7 @@ void test_calibration_uses_25c_fallback_without_failing() {
     TEST_ASSERT_TRUE(config.tdsScale > 0.0f);
 }
 
-void test_two_point_calibration_saves_low_then_high_without_flash_progress_dependency() {
+void test_tds_calibration_saves_two_points_without_flash_progress_dependency() {
     SystemConfig config = enabledSensorConfig();
     config.tdsCalibrated = false;
     SensorManagerFixture fixture(config);
@@ -288,7 +288,7 @@ void test_tds_calibration_session_rejects_duplicate_start_without_clearing_point
     TEST_ASSERT_EQUAL_UINT16(160, session.points[0].referencePpm);
 }
 
-void test_tds_calibration_point_session_multi_point_fit_and_apply() {
+void test_tds_calibration_point_session_combines_saved_points_and_apply() {
     SystemConfig config = enabledSensorConfig();
     SensorManagerFixture fixture(config);
 
@@ -372,10 +372,10 @@ int main(int argc, char** argv) {
     RUN_TEST(test_run_summary_aggregates_valid_samples_only);
     RUN_TEST(test_run_summary_records_tds_when_temperature_sensor_is_disabled);
     RUN_TEST(test_calibration_uses_25c_fallback_without_failing);
-    RUN_TEST(test_two_point_calibration_saves_low_then_high_without_flash_progress_dependency);
+    RUN_TEST(test_tds_calibration_saves_two_points_without_flash_progress_dependency);
     RUN_TEST(test_tds_calibration_point_session_generates_after_one_point);
     RUN_TEST(test_tds_calibration_session_rejects_duplicate_start_without_clearing_points);
-    RUN_TEST(test_tds_calibration_point_session_multi_point_fit_and_apply);
+    RUN_TEST(test_tds_calibration_point_session_combines_saved_points_and_apply);
     RUN_TEST(test_tds_calibration_apply_is_order_independent);
     RUN_TEST(test_tds_calibration_point_removal_recomputes_candidate);
     return UNITY_END();

@@ -210,11 +210,11 @@ const MeteringSchemeRecord* activeMeteringScheme(const MeteringSchemeCollection&
     return findMeteringSchemeById(schemes, schemes.activeSchemeId);
 }
 
-bool saveCandidateAsNewMeteringScheme(MeteringSchemeCollection& schemes,
-                                      MeteringSchemeCandidate& candidate,
-                                      const char* name,
-                                      std::uint32_t nowSeconds,
-                                      std::uint32_t& newSchemeId) {
+bool appendCandidateMeteringScheme(MeteringSchemeCollection& schemes,
+                                   MeteringSchemeCandidate& candidate,
+                                   const char* name,
+                                   std::uint32_t nowSeconds,
+                                   std::uint32_t& newSchemeId) {
     newSchemeId = 0;
     if (!candidate.ready || !validMeteringSchemeParameters(candidate.params) || schemes.nextSchemeId == 0) {
         return false;

@@ -184,7 +184,7 @@ bool WaterSensorManager::startTdsCalibrationPoint(std::uint16_t referencePpm, st
         tdsCalibrationPointCount_ >= kTdsCalibrationMaxPoints || referencePpm > 2000) {
         return false;
     }
-    calibrationKind_ = CalibrationKind::Single;
+    calibrationKind_ = CalibrationKind::TdsPoint;
     calibrationReferencePpm_ = referencePpm;
     calibrationSampleCount_ = 0;
     calibrationTempFallback_ = false;

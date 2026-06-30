@@ -4177,7 +4177,7 @@ bool persistFilterConfig(const FilterRecord& record, std::size_t index) {
         return false;
     }
 
-    SystemConfig* safe = new (std::nothrow) SystemConfig(g_context.configStore->loadSystemConfig());
+    std::unique_ptr<SystemConfig> safe(new (std::nothrow) SystemConfig(g_context.configStore->loadSystemConfig()));
     if (!safe) {
         return false;
     }
@@ -4194,7 +4194,6 @@ bool persistFilterConfig(const FilterRecord& record, std::size_t index) {
     runtime[index].startBootId = record.startBootId;
 
     if (!g_context.configStore->saveSystemConfig(*safe) || !g_context.configStore->saveFilterRuntime(runtime)) {
-        delete safe;
         return false;
     }
     FilterRecord liveRecord = safe->filters[index];
@@ -4202,11 +4201,9 @@ bool persistFilterConfig(const FilterRecord& record, std::size_t index) {
     liveRecord.usedMl = runtime[index].usedMl;
     liveRecord.startBootId = runtime[index].startBootId;
     if (!g_context.app->applyConfig(*safe) || !g_context.filters->updateFilter(index, liveRecord)) {
-        delete safe;
         return false;
     }
     *g_context.config = *safe;
-    delete safe;
     if (g_context.applySettings) {
         g_context.applySettings(*g_context.config);
     }
@@ -4382,7 +4379,7 @@ void handlePresetsApi() {
             Esp32BaseWeb::sendJson(400, "{\"error\":\"invalid_index\"}");
             return;
         }
-        SystemConfig* candidate = new (std::nothrow) SystemConfig(*g_context.config);
+        std::unique_ptr<SystemConfig> candidate(new (std::nothrow) SystemConfig(*g_context.config));
         if (!candidate) {
             if (browserForm) {
                 Esp32BaseWeb::redirectSeeOther("/faucet/presets?error=save_failed");
@@ -4403,7 +4400,6 @@ void handlePresetsApi() {
                                  (preset.type == PresetType::Volume && value >= kMinVolumePresetMl &&
                                   value <= kMaxVolumePresetMl));
         if (!validValue) {
-            delete candidate;
             if (browserForm) {
                 char location[80]{};
                 std::snprintf(location,
@@ -4420,11 +4416,9 @@ void handlePresetsApi() {
         Esp32BaseWeb::getParam("name", preset.name, sizeof(preset.name));
         if (browserForm) {
             const bool ok = persistConfig(*candidate);
-            delete candidate;
             Esp32BaseWeb::redirectSeeOther(ok ? "/faucet/presets?saved=1" : "/faucet/presets?error=save_failed");
         } else {
             saveConfigAndReply(*candidate);
-            delete candidate;
         }
         return;
     }

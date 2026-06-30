@@ -36,16 +36,6 @@ bool FilterStore::updateFilter(std::size_t index, const FilterRecord& record) {
     return true;
 }
 
-bool FilterStore::resetFilter(std::size_t index, std::uint32_t nowSeconds) {
-    if (index >= kFilterCount) {
-        return false;
-    }
-    records_[index].startTime = nowSeconds;
-    records_[index].usedMl = 0;
-    records_[index].startBootId = 0;
-    return true;
-}
-
 void FilterStore::addWater(std::uint32_t volumeMl) {
     for (auto& record : records_) {
         if (record.enabled) {

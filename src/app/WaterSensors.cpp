@@ -111,28 +111,6 @@ bool computeSinglePointTdsCalibration(std::uint16_t referencePpm, std::uint16_t 
     return isfinite(scaleOut) && scaleOut > 0.0f;
 }
 
-bool computeTwoPointTdsCalibration(std::uint16_t lowReferencePpm,
-                                   std::uint16_t lowRawPpm,
-                                   std::uint16_t highReferencePpm,
-                                   std::uint16_t highRawPpm,
-                                   float& scaleOut,
-                                   std::int16_t& offsetOut) {
-    if (highReferencePpm <= lowReferencePpm || highRawPpm <= lowRawPpm) {
-        return false;
-    }
-    const std::uint16_t referenceSpan = highReferencePpm - lowReferencePpm;
-    const std::uint16_t rawSpan = highRawPpm - lowRawPpm;
-    if (referenceSpan < 50 || rawSpan < 30) {
-        return false;
-    }
-    scaleOut = static_cast<float>(referenceSpan) / static_cast<float>(rawSpan);
-    if (!isfinite(scaleOut) || scaleOut <= 0.0f) {
-        return false;
-    }
-    offsetOut = roundToI16(static_cast<double>(lowReferencePpm) - static_cast<double>(scaleOut) * lowRawPpm);
-    return true;
-}
-
 bool computeTdsCalibrationFit(const TdsCalibrationPointInput* points,
                               std::size_t count,
                               TdsCalibrationFitResult& result) {

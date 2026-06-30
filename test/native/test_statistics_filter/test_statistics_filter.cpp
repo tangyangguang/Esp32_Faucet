@@ -102,8 +102,12 @@ void test_filter_reset_sets_start_time_and_clears_flow() {
     SystemConfig config = makeDefaultConfig();
     FilterStore store(config.filters);
     store.addWater(2000);
+    FilterRecord record = store.record(0);
+    record.startTime = 1714502400;
+    record.usedMl = 0;
+    record.startBootId = 0;
 
-    TEST_ASSERT_TRUE(store.resetFilter(0, 1714502400));
+    TEST_ASSERT_TRUE(store.updateFilter(0, record));
 
     TEST_ASSERT_EQUAL_UINT32(1714502400, store.record(0).startTime);
     TEST_ASSERT_EQUAL_UINT32(0, store.record(0).usedMl);
@@ -112,7 +116,9 @@ void test_filter_reset_sets_start_time_and_clears_flow() {
 void test_filter_used_days_are_whole_days() {
     SystemConfig config = makeDefaultConfig();
     FilterStore store(config.filters);
-    TEST_ASSERT_TRUE(store.resetFilter(0, 1000));
+    FilterRecord record = store.record(0);
+    record.startTime = 1000;
+    TEST_ASSERT_TRUE(store.updateFilter(0, record));
 
     TEST_ASSERT_EQUAL_UINT32(0, store.usedDays(0, 1000 + 86399));
     TEST_ASSERT_EQUAL_UINT32(1, store.usedDays(0, 1000 + 86400));
@@ -123,7 +129,7 @@ void test_filter_rejects_invalid_index() {
     SystemConfig config = makeDefaultConfig();
     FilterStore store(config.filters);
 
-    TEST_ASSERT_FALSE(store.resetFilter(kFilterCount, 1234));
+    TEST_ASSERT_FALSE(store.updateFilter(kFilterCount, store.record(0)));
     TEST_ASSERT_EQUAL_UINT32(0, store.usedDays(kFilterCount, 9999));
 }
 

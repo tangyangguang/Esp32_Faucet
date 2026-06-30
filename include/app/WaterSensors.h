@@ -75,13 +75,6 @@ TdsComputationResult computeTdsPpm(const TdsComputationInput& input);
 
 bool computeSinglePointTdsCalibration(std::uint16_t referencePpm, std::uint16_t rawPpm, float& scaleOut);
 
-bool computeTwoPointTdsCalibration(std::uint16_t lowReferencePpm,
-                                   std::uint16_t lowRawPpm,
-                                   std::uint16_t highReferencePpm,
-                                   std::uint16_t highRawPpm,
-                                   float& scaleOut,
-                                   std::int16_t& offsetOut);
-
 bool computeTdsCalibrationFit(const TdsCalibrationPointInput* points,
                               std::size_t count,
                               TdsCalibrationFitResult& result);

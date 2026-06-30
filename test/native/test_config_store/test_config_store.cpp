@@ -204,20 +204,6 @@ void test_config_load_sanitizes_stored_values() {
     TEST_ASSERT_EQUAL_UINT32(kMinVolumePresetMl, loaded.presets[0].value);
 }
 
-void test_config_reset_restores_defaults() {
-    FakeConfigBackend backend;
-    ConfigStore store(backend);
-    SystemConfig config = makeDefaultConfig();
-    config.confirmTimeoutSec = 42;
-    TEST_ASSERT_TRUE(store.saveSystemConfig(config));
-
-    TEST_ASSERT_TRUE(store.resetSystemConfig());
-
-    const SystemConfig loaded = store.loadSystemConfig();
-    TEST_ASSERT_EQUAL_UINT32(kDefaultConfirmTimeoutSec, loaded.confirmTimeoutSec);
-    TEST_ASSERT_EQUAL_UINT32(1500, loaded.presets[0].value);
-}
-
 void test_config_save_reports_backend_failures() {
     FakeConfigBackend backend;
     backend.failWrites = true;
@@ -390,7 +376,6 @@ int main(int argc, char** argv) {
     RUN_TEST(test_config_save_and_load_round_trips_system_config);
     RUN_TEST(test_config_save_and_load_round_trips_sensor_config);
     RUN_TEST(test_config_load_sanitizes_stored_values);
-    RUN_TEST(test_config_reset_restores_defaults);
     RUN_TEST(test_config_save_reports_backend_failures);
     RUN_TEST(test_config_save_does_not_mark_current_version_after_partial_write_failure);
     RUN_TEST(test_statistics_runtime_round_trips_uint32_values);

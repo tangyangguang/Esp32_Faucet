@@ -32,7 +32,6 @@ public:
 
     SystemConfig loadSystemConfig();
     bool saveSystemConfig(const SystemConfig& config);
-    bool resetSystemConfig();
     LoadStatus lastSystemConfigLoadStatus() const;
     std::int32_t lastSystemConfigRawVersion() const;
     std::int32_t currentSystemConfigVersion() const;

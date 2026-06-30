@@ -327,14 +327,6 @@ bool ConfigStore::saveSystemConfig(const SystemConfig& config) {
     return ok;
 }
 
-bool ConfigStore::resetSystemConfig() {
-    const bool ok = backend_.clearNamespace(kConfigNs) && saveSystemConfig(makeDefaultConfig());
-    if (ok) {
-        lastSystemStatus_ = LoadStatus::LoadedCurrent;
-    }
-    return ok;
-}
-
 ConfigStore::LoadStatus ConfigStore::lastSystemConfigLoadStatus() const {
     return lastSystemStatus_;
 }

@@ -51,24 +51,6 @@ void test_tds_single_point_calibration() {
     TEST_ASSERT_FLOAT_WITHIN(0.001f, 1.0667f, scale);
 }
 
-void test_tds_two_point_calibration() {
-    float scale = 0.0f;
-    std::int16_t offset = 0;
-
-    TEST_ASSERT_TRUE(computeTwoPointTdsCalibration(0, 5, 160, 150, scale, offset));
-
-    TEST_ASSERT_FLOAT_WITHIN(0.002f, 1.1034f, scale);
-    TEST_ASSERT_EQUAL_INT16(-6, offset);
-}
-
-void test_tds_two_point_rejects_low_reference_span() {
-    float scale = 0.0f;
-    std::int16_t offset = 0;
-
-    TEST_ASSERT_FALSE(computeTwoPointTdsCalibration(8, 6, 20, 18, scale, offset));
-    TEST_ASSERT_FALSE(computeTwoPointTdsCalibration(0, 5, 160, 20, scale, offset));
-}
-
 void test_tds_multi_point_linear_fit_matches_two_point_line() {
     TdsCalibrationPointInput points[3]{};
     points[0] = TdsCalibrationPointInput{20, 30};
@@ -154,8 +136,6 @@ int main(int argc, char** argv) {
     RUN_TEST(test_tds_formula_uses_25c_when_temperature_invalid);
     RUN_TEST(test_tds_temperature_compensation_sets_fallback_flag);
     RUN_TEST(test_tds_single_point_calibration);
-    RUN_TEST(test_tds_two_point_calibration);
-    RUN_TEST(test_tds_two_point_rejects_low_reference_span);
     RUN_TEST(test_tds_multi_point_linear_fit_matches_two_point_line);
     RUN_TEST(test_tds_fit_uses_single_point_scale_with_zero_offset);
     RUN_TEST(test_tds_fit_rejects_low_span_for_multiple_points);

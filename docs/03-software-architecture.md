@@ -147,7 +147,6 @@
 | GET | `/api/faucet/presets` | 查询预设 |
 | POST | `/api/faucet/presets` | 保存预设配置；`select_previous`、`select_next`、`select` 只切换“下次预设”并返回最新状态，不启动或改变当前出水任务 |
 | GET | `/api/faucet/records` | 按时间范围筛选并分页查询出水记录；出水确认、运行和暂停期间返回 busy |
-| POST | `/api/faucet/records` | 通过 `action` 执行记录校准；危险 POST 必须通过同源校验；出水确认、运行和暂停期间返回 busy |
 | POST | `/faucet/calibration` | 温度校准、TDS 校准点采样、删除、应用和放弃；不提供远程出水/停水 |
 | GET | `/faucet/calibration/flow` | 流量计校准中心页面；隐藏路由，不进入顶层导航 |
 | POST | `/faucet/calibration/flow` | 流量校准会话动作、录入实测容量、移除样本、保存推荐参数、手工创建当前参数；不提供远程出水/停水 |

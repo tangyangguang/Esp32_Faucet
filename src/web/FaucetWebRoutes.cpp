@@ -22,7 +22,6 @@ constexpr FaucetWebRoute kRoutes[] = {
     {"/api/faucet/presets", FaucetWebMethod::Get, nullptr, FaucetWebHandler::PresetsApi},
     {"/api/faucet/presets", FaucetWebMethod::Post, nullptr, FaucetWebHandler::PresetsApi},
     {"/api/faucet/records", FaucetWebMethod::Get, nullptr, FaucetWebHandler::RecordsApi},
-    {"/api/faucet/records", FaucetWebMethod::Post, nullptr, FaucetWebHandler::RecordsApi},
     {"/api/faucet/stats", FaucetWebMethod::Get, nullptr, FaucetWebHandler::StatsApi},
     {"/api/faucet/filters", FaucetWebMethod::Get, nullptr, FaucetWebHandler::FiltersApi},
     {"/api/faucet/filters", FaucetWebMethod::Post, nullptr, FaucetWebHandler::FiltersApi},

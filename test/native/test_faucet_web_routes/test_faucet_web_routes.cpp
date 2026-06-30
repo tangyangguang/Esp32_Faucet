@@ -87,7 +87,6 @@ void test_business_write_routes_are_post_only_where_required() {
         "/faucet/calibration",
         "/faucet/calibration/flow",
         "/api/faucet/presets",
-        "/api/faucet/records",
         "/api/faucet/filters",
         "/api/faucet/filters/reset",
     };
@@ -101,6 +100,7 @@ void test_business_write_routes_are_post_only_where_required() {
     TEST_ASSERT_FALSE(routeExists("/api/faucet/filters/reset", FaucetWebMethod::Get));
     TEST_ASSERT_FALSE(routeExists("/api/faucet/status", FaucetWebMethod::Post));
     TEST_ASSERT_FALSE(routeExists("/api/faucet/today", FaucetWebMethod::Post));
+    TEST_ASSERT_FALSE(routeExists("/api/faucet/records", FaucetWebMethod::Post));
     TEST_ASSERT_FALSE(routeExists("/api/faucet/stats", FaucetWebMethod::Post));
 }
 

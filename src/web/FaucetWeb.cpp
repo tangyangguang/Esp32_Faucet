@@ -4428,17 +4428,6 @@ void handlePresetsApi() {
 
 void handleRecordsApi() {
     char text[32]{};
-    if (Esp32BaseWeb::isMethod(Esp32BaseWeb::METHOD_POST)) {
-        if (!Esp32BaseWeb::checkPostAllowed("faucet_records") || !requireContext()) {
-            return;
-        }
-        if (!getParam("action", text, sizeof(text))) {
-            Esp32BaseWeb::sendJson(400, "{\"error\":\"missing_action\"}");
-            return;
-        }
-        Esp32BaseWeb::sendJson(400, "{\"error\":\"invalid_action\"}");
-        return;
-    }
     if (!Esp32BaseWeb::checkAuth() || !requireContext()) {
         return;
     }
@@ -4482,10 +4471,6 @@ void handleRecordsApi() {
     }
     if (filter.hasStart && filter.hasEnd && filter.endTime < filter.startTime) {
         Esp32BaseWeb::sendJson(400, "{\"error\":\"invalid_date\"}");
-        return;
-    }
-    if ((filter.hasStart || filter.hasEnd) && waterTaskActive()) {
-        Esp32BaseWeb::sendJson(409, "{\"error\":\"busy\"}");
         return;
     }
 

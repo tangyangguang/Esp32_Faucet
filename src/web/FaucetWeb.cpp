@@ -2905,15 +2905,6 @@ void handleStatsPage() {
     if (!requireContext()) {
         return;
     }
-    char text[24]{};
-    if (getParam("partial", text, sizeof(text)) && std::strcmp(text, "report") == 0) {
-        if (!Esp32BaseWeb::beginResponse(200, "text/html; charset=utf-8", nullptr)) {
-            return;
-        }
-        sendStatsReportPanel();
-        Esp32BaseWeb::endResponse();
-        return;
-    }
     Esp32BaseWeb::sendHeader("用水统计");
     Esp32BaseWeb::sendChunk("<h2>统计</h2>");
     sendStatsReportPanel();
@@ -3314,9 +3305,7 @@ void handleFlowCalibrationPage() {
         if (!Esp32BaseWeb::beginResponse(200, "text/html; charset=utf-8", nullptr)) {
             return;
         }
-        if (std::strcmp(text, "schemes") == 0) {
-            sendCalibrationParameterPanels();
-        } else if (std::strcmp(text, "session") == 0) {
+        if (std::strcmp(text, "session") == 0) {
             sendFlowCalibrationSessionPanel(g_context.app->snapshot(), waterTaskActive());
         } else if (std::strcmp(text, "samples") == 0) {
             sendCalibrationSamplesPanel(configuredPulseObservationWindowSec());

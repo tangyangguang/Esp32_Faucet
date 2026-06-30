@@ -4,6 +4,14 @@
 
 using namespace faucet;
 
+SystemConfig timePresetConfig(std::uint32_t seconds) {
+    SystemConfig config = makeDefaultConfig();
+    config.presets[2].enabled = true;
+    config.presets[2].type = PresetType::Time;
+    config.presets[2].value = seconds;
+    return config;
+}
+
 void startSelected(WaterController& controller, std::uint32_t nowMs = 1000) {
     TEST_ASSERT_TRUE(controller.requestStart(nowMs));
     TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(WaterState::Confirm), static_cast<unsigned>(controller.snapshot().state));
@@ -13,8 +21,7 @@ void startSelected(WaterController& controller, std::uint32_t nowMs = 1000) {
 }
 
 void test_volume_preset_completes_and_closes_valve() {
-    SystemConfig config = makeDefaultConfig();
-    WaterController controller(config);
+    WaterController controller(makeDefaultConfig());
 
     startSelected(controller);
     controller.addVolume(1500);
@@ -29,11 +36,7 @@ void test_volume_preset_completes_and_closes_valve() {
 }
 
 void test_time_preset_completes_by_elapsed_time() {
-    SystemConfig config = makeDefaultConfig();
-    config.presets[2].enabled = true;
-    config.presets[2].type = PresetType::Time;
-    config.presets[2].value = 10;
-    WaterController controller(config);
+    WaterController controller(timePresetConfig(10));
 
     TEST_ASSERT_TRUE(controller.selectPreset(2));
     startSelected(controller, 2000);
@@ -47,11 +50,7 @@ void test_time_preset_completes_by_elapsed_time() {
 }
 
 void test_time_preset_completes_across_millis_wrap() {
-    SystemConfig config = makeDefaultConfig();
-    config.presets[2].enabled = true;
-    config.presets[2].type = PresetType::Time;
-    config.presets[2].value = 10;
-    WaterController controller(config);
+    WaterController controller(timePresetConfig(10));
     const std::uint32_t startMs = 0xFFFFF000UL;
     const std::uint32_t tickMs = startMs + static_cast<std::uint32_t>(11000);
 
@@ -65,8 +64,7 @@ void test_time_preset_completes_across_millis_wrap() {
 }
 
 void test_confirm_timeout_cancels_without_result() {
-    SystemConfig config = makeDefaultConfig();
-    WaterController controller(config);
+    WaterController controller(makeDefaultConfig());
 
     TEST_ASSERT_TRUE(controller.requestStart(1000));
     controller.tick(1000 + (kDefaultConfirmTimeoutSec * 1000UL));
@@ -77,8 +75,7 @@ void test_confirm_timeout_cancels_without_result() {
 }
 
 void test_stop_finishes_running_task_as_user_stop() {
-    SystemConfig config = makeDefaultConfig();
-    WaterController controller(config);
+    WaterController controller(makeDefaultConfig());
 
     startSelected(controller, 1000);
     controller.addVolume(300);
@@ -93,11 +90,7 @@ void test_stop_finishes_running_task_as_user_stop() {
 }
 
 void test_pause_and_resume_excludes_paused_time() {
-    SystemConfig config = makeDefaultConfig();
-    config.presets[2].enabled = true;
-    config.presets[2].type = PresetType::Time;
-    config.presets[2].value = 10;
-    WaterController controller(config);
+    WaterController controller(timePresetConfig(10));
 
     TEST_ASSERT_TRUE(controller.selectPreset(2));
     startSelected(controller, 1000);
@@ -196,11 +189,8 @@ void test_max_volume_safety_has_priority_over_normal_completion() {
 }
 
 void test_max_out_time_forces_safety_stop() {
-    SystemConfig config = makeDefaultConfig();
+    SystemConfig config = timePresetConfig(60);
     config.maxOutTimeSec = 30;
-    config.presets[2].enabled = true;
-    config.presets[2].type = PresetType::Time;
-    config.presets[2].value = 60;
     WaterController controller(config);
 
     TEST_ASSERT_TRUE(controller.selectPreset(2));
@@ -233,8 +223,7 @@ void test_high_flow_must_persist_before_error() {
 }
 
 void test_next_preset_skips_disabled_presets() {
-    SystemConfig config = makeDefaultConfig();
-    WaterController controller(config);
+    WaterController controller(makeDefaultConfig());
 
     TEST_ASSERT_EQUAL_UINT(0, controller.snapshot().selectedPreset);
     TEST_ASSERT_TRUE(controller.selectNextPreset());
@@ -244,8 +233,7 @@ void test_next_preset_skips_disabled_presets() {
 }
 
 void test_next_preset_can_change_while_running_without_changing_active_task() {
-    SystemConfig config = makeDefaultConfig();
-    WaterController controller(config);
+    WaterController controller(makeDefaultConfig());
 
     startSelected(controller, 1000);
 
@@ -265,8 +253,7 @@ void test_next_preset_can_change_while_running_without_changing_active_task() {
 }
 
 void test_preset_switch_after_confirm_does_not_change_pending_task() {
-    SystemConfig config = makeDefaultConfig();
-    WaterController controller(config);
+    WaterController controller(makeDefaultConfig());
 
     TEST_ASSERT_TRUE(controller.requestStart(1000));
     TEST_ASSERT_EQUAL_UINT(0, controller.snapshot().activePreset);

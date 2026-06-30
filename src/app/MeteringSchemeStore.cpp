@@ -8,7 +8,7 @@ namespace faucet {
 namespace {
 
 constexpr std::uint32_t kMeteringSchemeStoreMagic = 0x314D5346UL;  // FSM1
-constexpr std::uint16_t kMeteringSchemeStoreVersion = 7;
+constexpr std::uint16_t kMeteringSchemeStoreVersion = 8;
 
 std::uint32_t headerChecksum(MeteringSchemeStoreHeader header) {
     header.checksum = 0;
@@ -29,11 +29,9 @@ MeteringSchemeStoreHeader makeHeader(std::uint32_t activeSchemeId,
         kMeteringSchemeStoreVersion,
         static_cast<std::uint16_t>(sizeof(MeteringSchemeStoreHeader)),
         static_cast<std::uint16_t>(sizeof(MeteringSchemeRecord)),
-        0,
         activeSchemeId,
         nextSchemeId,
         slotCount,
-        0,
         0,
     };
     header.checksum = headerChecksum(header);
@@ -50,7 +48,6 @@ bool validCurrentHeaderForFile(const MeteringSchemeStoreHeader& header, std::int
         header.version != kMeteringSchemeStoreVersion ||
         header.headerSize != sizeof(MeteringSchemeStoreHeader) ||
         header.recordSize != sizeof(MeteringSchemeRecord) ||
-        header.candidateSize != 0 ||
         header.nextSchemeId == 0 ||
         header.activeSchemeId == 0 ||
         header.slotCount != kMeteringSchemeStoreSlotCount ||
@@ -311,8 +308,7 @@ bool MeteringSchemeStore::loadHeader() {
     status_ = (loaded.magic != kMeteringSchemeStoreMagic ||
                loaded.headerSize != sizeof(MeteringSchemeStoreHeader) ||
                loaded.version != kMeteringSchemeStoreVersion ||
-               loaded.recordSize != sizeof(MeteringSchemeRecord) ||
-               loaded.candidateSize != 0)
+               loaded.recordSize != sizeof(MeteringSchemeRecord))
                   ? AppStorageStatus::IncompatibleFormat
                   : AppStorageStatus::Corrupt;
     return false;

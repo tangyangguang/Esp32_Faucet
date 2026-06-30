@@ -7,7 +7,7 @@ namespace faucet {
 namespace {
 
 constexpr std::uint32_t kRecordMagic = 0x46575244UL;  // FWRD
-constexpr std::uint16_t kRecordVersion = 3;
+constexpr std::uint16_t kRecordVersion = 4;
 struct RecordHeader {
     std::uint32_t magic;
     std::uint16_t version;
@@ -17,10 +17,9 @@ struct RecordHeader {
     std::uint32_t oldestIndex;
     std::uint32_t commitSeq;
     std::uint32_t checksum;
-    std::uint32_t reserved;
 };
 
-static_assert(sizeof(RecordHeader) == 32, "RecordHeader must stay fixed-size");
+static_assert(sizeof(RecordHeader) == 28, "RecordHeader must stay fixed-size");
 
 bool validPath(const char* path) {
     return path && path[0] == '/';
@@ -28,7 +27,6 @@ bool validPath(const char* path) {
 
 std::uint32_t headerChecksum(RecordHeader header) {
     header.checksum = 0;
-    header.reserved = 0;
     const std::uint8_t* bytes = reinterpret_cast<const std::uint8_t*>(&header);
     std::uint32_t hash = 2166136261UL;
     for (std::size_t i = 0; i < sizeof(RecordHeader); ++i) {
@@ -47,7 +45,6 @@ RecordHeader makeHeader(std::size_t capacity, std::size_t count, std::size_t old
         static_cast<std::uint32_t>(count),
         static_cast<std::uint32_t>(oldestIndex),
         commitSeq == 0 ? 1U : commitSeq,
-        0,
         0,
     };
     header.checksum = headerChecksum(header);

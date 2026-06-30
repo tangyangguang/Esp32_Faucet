@@ -10,7 +10,7 @@ using faucet_test::MemoryFileBackend;
 
 namespace {
 
-constexpr std::size_t kWaterRecordHeaderBytes = 64;
+constexpr std::size_t kWaterRecordHeaderBytes = 56;
 
 WaterRecord makeRecord(std::uint32_t startTime, std::uint32_t volumeMl) {
     WaterRecord record{};

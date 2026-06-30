@@ -14,11 +14,9 @@ struct MeteringSchemeStoreHeader {
     std::uint16_t version;
     std::uint16_t headerSize;
     std::uint16_t recordSize;
-    std::uint16_t candidateSize;
     std::uint32_t activeSchemeId;
     std::uint32_t nextSchemeId;
     std::uint32_t slotCount;
-    std::uint32_t reserved;
     std::uint32_t checksum;
 };
 

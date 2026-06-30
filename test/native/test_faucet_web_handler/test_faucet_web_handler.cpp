@@ -293,10 +293,25 @@ void registerRoutes() {
     TEST_ASSERT_TRUE(registerFaucetWeb());
 }
 
+void beginWebRequest(Esp32BaseWeb::Method method,
+                     const char* path,
+                     bool authenticated = true,
+                     bool sameOrigin = true) {
+    Esp32BaseWeb::nativeTestBeginRequest(method, path);
+    Esp32BaseWeb::nativeTestSetAuthenticated(authenticated);
+    Esp32BaseWeb::nativeTestSetSameOrigin(sameOrigin);
+}
+
+void beginWebGet(const char* path) {
+    beginWebRequest(Esp32BaseWeb::METHOD_GET, path);
+}
+
+void beginWebPost(const char* path, bool authenticated = true, bool sameOrigin = true) {
+    beginWebRequest(Esp32BaseWeb::METHOD_POST, path, authenticated, sameOrigin);
+}
+
 void beginPresetPost(const char* action) {
-    Esp32BaseWeb::nativeTestBeginRequest(Esp32BaseWeb::METHOD_POST, "/api/faucet/presets");
-    Esp32BaseWeb::nativeTestSetAuthenticated(true);
-    Esp32BaseWeb::nativeTestSetSameOrigin(true);
+    beginWebPost("/api/faucet/presets");
     if (action) {
         Esp32BaseWeb::nativeTestSetParam("action", action);
     }
@@ -322,9 +337,7 @@ void test_home_page_initial_render_does_not_read_record_pages() {
     fillCountingRecords(reader);
     fixture.installContext(reader);
     registerRoutes();
-    Esp32BaseWeb::nativeTestBeginRequest(Esp32BaseWeb::METHOD_GET, "/index");
-    Esp32BaseWeb::nativeTestSetAuthenticated(true);
-    Esp32BaseWeb::nativeTestSetSameOrigin(true);
+    beginWebGet("/index");
 
     TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch("/index", Esp32BaseWeb::METHOD_GET));
 
@@ -374,9 +387,7 @@ void test_calibration_home_redirects_active_flow_session_to_workflow() {
     TEST_ASSERT_TRUE(fixture.app.startCalibrationSessionForWeb(testNowSeconds()));
     registerRoutes();
 
-    Esp32BaseWeb::nativeTestBeginRequest(Esp32BaseWeb::METHOD_GET, "/faucet/calibration");
-    Esp32BaseWeb::nativeTestSetAuthenticated(true);
-    Esp32BaseWeb::nativeTestSetSameOrigin(true);
+    beginWebGet("/faucet/calibration");
     TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch("/faucet/calibration", Esp32BaseWeb::METHOD_GET));
 
     TEST_ASSERT_EQUAL(303, Esp32BaseWeb::nativeTestResponse().code);
@@ -390,9 +401,7 @@ void test_flow_calibration_page_preserves_active_session_state() {
     TEST_ASSERT_TRUE(fixture.sessionStore.load(before));
     registerRoutes();
 
-    Esp32BaseWeb::nativeTestBeginRequest(Esp32BaseWeb::METHOD_GET, "/faucet/calibration/flow");
-    Esp32BaseWeb::nativeTestSetAuthenticated(true);
-    Esp32BaseWeb::nativeTestSetSameOrigin(true);
+    beginWebGet("/faucet/calibration/flow");
     TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch("/faucet/calibration/flow", Esp32BaseWeb::METHOD_GET));
 
     TEST_ASSERT_EQUAL(200, Esp32BaseWeb::nativeTestResponse().code);
@@ -408,9 +417,7 @@ void test_temperature_calibration_post_accepts_celsius_decimal_input() {
     enableTdsForFixture(fixture);
     fixture.app.tick(appInput({false, false, false, false}, 1000, 1000000));
     registerRoutes();
-    Esp32BaseWeb::nativeTestBeginRequest(Esp32BaseWeb::METHOD_POST, "/faucet/calibration");
-    Esp32BaseWeb::nativeTestSetAuthenticated(true);
-    Esp32BaseWeb::nativeTestSetSameOrigin(true);
+    beginWebPost("/faucet/calibration");
     Esp32BaseWeb::nativeTestSetParam("action", "temperature_save");
     Esp32BaseWeb::nativeTestSetParam("referenceC", "25.5");
 
@@ -429,9 +436,7 @@ void test_flow_calibration_manual_save_becomes_active_parameter() {
     const std::uint32_t oldActiveId = fixture.meteringSchemes.activeSchemeId();
     TEST_ASSERT_EQUAL_UINT32(99, fixture.app.activeMeteringScheme().id);
     registerRoutes();
-    Esp32BaseWeb::nativeTestBeginRequest(Esp32BaseWeb::METHOD_POST, "/faucet/calibration/flow");
-    Esp32BaseWeb::nativeTestSetAuthenticated(true);
-    Esp32BaseWeb::nativeTestSetSameOrigin(true);
+    beginWebPost("/faucet/calibration/flow");
     Esp32BaseWeb::nativeTestSetParam("action", "create_metering_scheme");
     Esp32BaseWeb::nativeTestSetParam("name", "manual current");
     Esp32BaseWeb::nativeTestSetParam("startupPulseCount", "12");
@@ -468,9 +473,7 @@ void test_running_water_allows_read_only_business_pages() {
     };
     for (const PageCase& page : pages) {
         registerRoutes();
-        Esp32BaseWeb::nativeTestBeginRequest(Esp32BaseWeb::METHOD_GET, page.path);
-        Esp32BaseWeb::nativeTestSetAuthenticated(true);
-        Esp32BaseWeb::nativeTestSetSameOrigin(true);
+        beginWebGet(page.path);
 
         TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch(page.path, Esp32BaseWeb::METHOD_GET));
 
@@ -481,9 +484,7 @@ void test_running_water_allows_read_only_business_pages() {
 
 void test_filter_reset_handler_rejects_missing_auth_before_context_work() {
     registerRoutes();
-    Esp32BaseWeb::nativeTestBeginRequest(Esp32BaseWeb::METHOD_POST, "/api/faucet/filters/reset");
-    Esp32BaseWeb::nativeTestSetAuthenticated(false);
-    Esp32BaseWeb::nativeTestSetSameOrigin(true);
+    beginWebPost("/api/faucet/filters/reset", false);
 
     TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch("/api/faucet/filters/reset", Esp32BaseWeb::METHOD_POST));
 
@@ -492,9 +493,7 @@ void test_filter_reset_handler_rejects_missing_auth_before_context_work() {
 
 void test_filter_reset_handler_rejects_cross_origin_post() {
     registerRoutes();
-    Esp32BaseWeb::nativeTestBeginRequest(Esp32BaseWeb::METHOD_POST, "/api/faucet/filters/reset");
-    Esp32BaseWeb::nativeTestSetAuthenticated(true);
-    Esp32BaseWeb::nativeTestSetSameOrigin(false);
+    beginWebPost("/api/faucet/filters/reset", true, false);
 
     TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch("/api/faucet/filters/reset", Esp32BaseWeb::METHOD_POST));
 
@@ -505,9 +504,7 @@ void test_filter_reset_handler_rejects_cross_origin_post() {
 void test_filter_reset_handler_returns_invalid_index_without_runtime_write() {
     WebFixture fixture;
     registerRoutes();
-    Esp32BaseWeb::nativeTestBeginRequest(Esp32BaseWeb::METHOD_POST, "/api/faucet/filters/reset");
-    Esp32BaseWeb::nativeTestSetAuthenticated(true);
-    Esp32BaseWeb::nativeTestSetSameOrigin(true);
+    beginWebPost("/api/faucet/filters/reset");
     Esp32BaseWeb::nativeTestSetParam("index", "999");
 
     TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch("/api/faucet/filters/reset", Esp32BaseWeb::METHOD_POST));
@@ -522,9 +519,7 @@ void test_filter_reset_handler_redirects_busy_before_runtime_write() {
     const std::uint32_t originalStartTime = fixture.filters.record(0).startTime;
     setRunning(fixture.app);
     registerRoutes();
-    Esp32BaseWeb::nativeTestBeginRequest(Esp32BaseWeb::METHOD_POST, "/api/faucet/filters/reset");
-    Esp32BaseWeb::nativeTestSetAuthenticated(true);
-    Esp32BaseWeb::nativeTestSetSameOrigin(true);
+    beginWebPost("/api/faucet/filters/reset");
     Esp32BaseWeb::nativeTestSetParam("index", "0");
 
     TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch("/api/faucet/filters/reset", Esp32BaseWeb::METHOD_POST));
@@ -538,9 +533,7 @@ void test_filter_reset_handler_redirects_busy_before_runtime_write() {
 void test_filter_reset_handler_persists_runtime_start_time() {
     WebFixture fixture;
     registerRoutes();
-    Esp32BaseWeb::nativeTestBeginRequest(Esp32BaseWeb::METHOD_POST, "/api/faucet/filters/reset");
-    Esp32BaseWeb::nativeTestSetAuthenticated(true);
-    Esp32BaseWeb::nativeTestSetSameOrigin(true);
+    beginWebPost("/api/faucet/filters/reset");
     Esp32BaseWeb::nativeTestSetParam("index", "0");
 
     TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch("/api/faucet/filters/reset", Esp32BaseWeb::METHOD_POST));
@@ -562,9 +555,7 @@ void test_flow_calibration_session_start_redirects_busy_to_flow_center() {
     WebFixture fixture;
     setRunning(fixture.app);
     registerRoutes();
-    Esp32BaseWeb::nativeTestBeginRequest(Esp32BaseWeb::METHOD_POST, "/faucet/calibration/flow");
-    Esp32BaseWeb::nativeTestSetAuthenticated(true);
-    Esp32BaseWeb::nativeTestSetSameOrigin(true);
+    beginWebPost("/faucet/calibration/flow");
     Esp32BaseWeb::nativeTestSetParam("action", "start_session");
 
     TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch("/faucet/calibration/flow", Esp32BaseWeb::METHOD_POST));
@@ -576,9 +567,7 @@ void test_flow_calibration_session_start_redirects_busy_to_flow_center() {
 void test_flow_calibration_session_start_redirects_success_from_idle() {
     WebFixture fixture;
     registerRoutes();
-    Esp32BaseWeb::nativeTestBeginRequest(Esp32BaseWeb::METHOD_POST, "/faucet/calibration/flow");
-    Esp32BaseWeb::nativeTestSetAuthenticated(true);
-    Esp32BaseWeb::nativeTestSetSameOrigin(true);
+    beginWebPost("/faucet/calibration/flow");
     Esp32BaseWeb::nativeTestSetParam("action", "start_session");
 
     TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch("/faucet/calibration/flow", Esp32BaseWeb::METHOD_POST));
@@ -596,9 +585,7 @@ void test_calibration_session_start_recovers_missing_session_file_after_format()
     WebFixture fixture;
     TEST_ASSERT_TRUE(fixture.calibrationFiles.removeFile("/cal-session.bin"));
     registerRoutes();
-    Esp32BaseWeb::nativeTestBeginRequest(Esp32BaseWeb::METHOD_POST, "/faucet/calibration/flow");
-    Esp32BaseWeb::nativeTestSetAuthenticated(true);
-    Esp32BaseWeb::nativeTestSetSameOrigin(true);
+    beginWebPost("/faucet/calibration/flow");
     Esp32BaseWeb::nativeTestSetParam("action", "start_session");
 
     TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch("/faucet/calibration/flow", Esp32BaseWeb::METHOD_POST));
@@ -619,9 +606,7 @@ void test_calibration_detail_reads_persisted_session_trace_without_ram_cache() {
     TEST_ASSERT_TRUE(fixture.sessionStore.save(session));
     registerRoutes();
 
-    Esp32BaseWeb::nativeTestBeginRequest(Esp32BaseWeb::METHOD_GET, "/faucet/calibration/detail");
-    Esp32BaseWeb::nativeTestSetAuthenticated(true);
-    Esp32BaseWeb::nativeTestSetSameOrigin(true);
+    beginWebGet("/faucet/calibration/detail");
     Esp32BaseWeb::nativeTestSetParam("slot", "0");
     Esp32BaseWeb::nativeTestSetParam("bucket", "1");
 
@@ -640,9 +625,7 @@ void test_calibration_detail_reads_persisted_bucket_trace_without_ram_cache() {
     TEST_ASSERT_TRUE(fixture.sessionStore.save(session));
     registerRoutes();
 
-    Esp32BaseWeb::nativeTestBeginRequest(Esp32BaseWeb::METHOD_GET, "/faucet/calibration/detail");
-    Esp32BaseWeb::nativeTestSetAuthenticated(true);
-    Esp32BaseWeb::nativeTestSetSameOrigin(true);
+    beginWebGet("/faucet/calibration/detail");
     Esp32BaseWeb::nativeTestSetParam("slot", "0");
     Esp32BaseWeb::nativeTestSetParam("bucket", "1");
 
@@ -658,9 +641,7 @@ void test_tds_calibration_start_redirects_busy_to_calibration_page() {
     enableTdsForFixture(fixture);
     setRunning(fixture.app);
     registerRoutes();
-    Esp32BaseWeb::nativeTestBeginRequest(Esp32BaseWeb::METHOD_POST, "/faucet/calibration");
-    Esp32BaseWeb::nativeTestSetAuthenticated(true);
-    Esp32BaseWeb::nativeTestSetSameOrigin(true);
+    beginWebPost("/faucet/calibration");
     Esp32BaseWeb::nativeTestSetParam("action", "tds_start_session");
     Esp32BaseWeb::nativeTestSetParam("referencePpm", "10");
 
@@ -674,9 +655,7 @@ void test_tds_calibration_start_redirects_success_from_idle() {
     WebFixture fixture;
     enableTdsForFixture(fixture);
     registerRoutes();
-    Esp32BaseWeb::nativeTestBeginRequest(Esp32BaseWeb::METHOD_POST, "/faucet/calibration");
-    Esp32BaseWeb::nativeTestSetAuthenticated(true);
-    Esp32BaseWeb::nativeTestSetSameOrigin(true);
+    beginWebPost("/faucet/calibration");
     Esp32BaseWeb::nativeTestSetParam("action", "tds_start_session");
 
     TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch("/faucet/calibration", Esp32BaseWeb::METHOD_POST));
@@ -699,9 +678,7 @@ void test_tds_calibration_save_persists_config_after_stable_samples() {
     TEST_ASSERT_TRUE(fixture.app.saveTdsCalibrationPointForWeb(testNowSeconds()));
     TEST_ASSERT_TRUE(fixture.app.tdsCalibrationSnapshot().candidateReady);
     registerRoutes();
-    Esp32BaseWeb::nativeTestBeginRequest(Esp32BaseWeb::METHOD_POST, "/faucet/calibration");
-    Esp32BaseWeb::nativeTestSetAuthenticated(true);
-    Esp32BaseWeb::nativeTestSetSameOrigin(true);
+    beginWebPost("/faucet/calibration");
     Esp32BaseWeb::nativeTestSetParam("action", "tds_apply_session");
 
     TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch("/faucet/calibration", Esp32BaseWeb::METHOD_POST));
@@ -717,9 +694,7 @@ void test_tds_calibration_save_persists_config_after_stable_samples() {
 void test_calibration_post_rejects_missing_action_as_invalid_action() {
     WebFixture fixture;
     registerRoutes();
-    Esp32BaseWeb::nativeTestBeginRequest(Esp32BaseWeb::METHOD_POST, "/faucet/calibration");
-    Esp32BaseWeb::nativeTestSetAuthenticated(true);
-    Esp32BaseWeb::nativeTestSetSameOrigin(true);
+    beginWebPost("/faucet/calibration");
 
     TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch("/faucet/calibration", Esp32BaseWeb::METHOD_POST));
 
@@ -732,9 +707,7 @@ void test_metering_scheme_write_redirects_busy_to_flow_center() {
     WebFixture fixture;
     setRunning(fixture.app);
     registerRoutes();
-    Esp32BaseWeb::nativeTestBeginRequest(Esp32BaseWeb::METHOD_POST, "/faucet/calibration/flow");
-    Esp32BaseWeb::nativeTestSetAuthenticated(true);
-    Esp32BaseWeb::nativeTestSetSameOrigin(true);
+    beginWebPost("/faucet/calibration/flow");
     Esp32BaseWeb::nativeTestSetParam("action", "create_metering_scheme");
 
     TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch("/faucet/calibration/flow", Esp32BaseWeb::METHOD_POST));
@@ -745,9 +718,7 @@ void test_metering_scheme_write_redirects_busy_to_flow_center() {
 
 void test_presets_handler_rejects_missing_auth_before_context_work() {
     registerRoutes();
-    Esp32BaseWeb::nativeTestBeginRequest(Esp32BaseWeb::METHOD_POST, "/api/faucet/presets");
-    Esp32BaseWeb::nativeTestSetAuthenticated(false);
-    Esp32BaseWeb::nativeTestSetSameOrigin(true);
+    beginWebPost("/api/faucet/presets", false);
     Esp32BaseWeb::nativeTestSetParam("action", "select_next");
 
     dispatchPresetPost();
@@ -757,9 +728,7 @@ void test_presets_handler_rejects_missing_auth_before_context_work() {
 
 void test_presets_handler_rejects_cross_origin_post() {
     registerRoutes();
-    Esp32BaseWeb::nativeTestBeginRequest(Esp32BaseWeb::METHOD_POST, "/api/faucet/presets");
-    Esp32BaseWeb::nativeTestSetAuthenticated(true);
-    Esp32BaseWeb::nativeTestSetSameOrigin(false);
+    beginWebPost("/api/faucet/presets", true, false);
     Esp32BaseWeb::nativeTestSetParam("action", "select_next");
 
     dispatchPresetPost();

@@ -17,22 +17,15 @@ struct WaterSensorRunSummary {
 };
 
 struct TdsCalibrationPointSnapshot {
-    bool valid = false;
-    bool tempFallback25C = false;
     std::uint16_t referencePpm = 0;
     std::uint16_t rawPpm = 0;
     std::uint16_t voltageMv = 0;
-    std::int16_t temperatureCentiC = 0;
-    std::uint32_t sampledAt = 0;
 };
 
 struct TdsCalibrationSessionSnapshot {
-    bool active = false;
     bool readyToSave = false;
     bool failed = false;
     bool tempFallback25C = false;
-    bool highReferenceLowWarning = false;
-    bool hasPendingLowPoint = false;
     std::uint8_t sampleCount = 0;
     std::uint16_t referencePpm = 0;
     std::uint16_t rawAvgPpm = 0;
@@ -42,7 +35,6 @@ struct TdsCalibrationSessionSnapshot {
     bool candidateReady = false;
     bool full = false;
     std::uint8_t pointCount = 0;
-    std::uint16_t rawAveragePpm = 0;
     std::uint16_t referenceSpanPpm = 0;
     std::uint16_t rawSpanPpm = 0;
     float candidateScale = 1.0f;

@@ -137,18 +137,14 @@ WaterSensorRunSummary WaterSensorManager::finishRun() const {
 
 TdsCalibrationSessionSnapshot WaterSensorManager::calibrationSnapshot() const {
     TdsCalibrationSessionSnapshot session{};
-    session.active = calibrationKind_ != CalibrationKind::None;
-    session.samplingActive = session.active;
+    session.samplingActive = calibrationKind_ != CalibrationKind::None;
     session.failed = calibrationFailed_;
     session.tempFallback25C = calibrationTempFallback_;
     session.sampleCount = calibrationSampleCount_;
     session.referencePpm = calibrationReferencePpm_;
     session.rawAvgPpm = calibrationRawAverage();
-    session.rawAveragePpm = session.rawAvgPpm;
     session.flags = snapshot_.flags;
     session.readyToSave = calibrationReady();
-    session.hasPendingLowPoint = false;
-    session.highReferenceLowWarning = false;
     session.sessionActive = tdsCalibrationSessionActive_;
     session.pointCount = tdsCalibrationPointCount_;
     session.full = tdsCalibrationPointCount_ >= kTdsCalibrationMaxPoints;
@@ -199,13 +195,9 @@ bool WaterSensorManager::saveStableTdsCalibrationPoint(std::uint32_t nowSeconds)
     }
 
     TdsCalibrationPointSnapshot point{};
-    point.valid = true;
-    point.tempFallback25C = calibrationTempFallback_;
     point.referencePpm = calibrationReferencePpm_;
     point.rawPpm = calibrationRawAverage();
     point.voltageMv = snapshot_.tdsVoltageMv.valid ? toU16(snapshot_.tdsVoltageMv.value) : 0;
-    point.temperatureCentiC = snapshot_.temperatureCentiC.valid ? toI16(snapshot_.temperatureCentiC.value) : 2500;
-    point.sampledAt = nowSeconds;
     tdsCalibrationPoints_[tdsCalibrationPointCount_++] = point;
 
     calibrationKind_ = CalibrationKind::None;

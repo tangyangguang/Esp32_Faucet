@@ -11,7 +11,6 @@ class ConfigStore;
 class FilterStore;
 class MeteringSchemeStore;
 class StatisticsStore;
-class WaterRecordCalibrationReader;
 class WaterRecordReader;
 class WaterPulseTraceStore;
 struct SystemConfig;
@@ -42,7 +41,6 @@ struct FaucetWebContext {
     AppController* app;
     FilterStore* filters;
     const WaterRecordReader* records;
-    const WaterRecordCalibrationReader* recordCalibrations;
     MeteringSchemeStore* meteringSchemes;
     CalibrationSessionFileStore* calibrationSessions;
     CalibrationSessionTraceStore* calibrationSessionTraces;

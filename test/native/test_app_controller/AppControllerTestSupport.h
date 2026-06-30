@@ -4,7 +4,6 @@
 #include "app/CalibrationSessionStore.h"
 #include "app/CalibrationSessionTraceStore.h"
 #include "app/MeteringSchemeStore.h"
-#include "app/WaterRecordCalibrationStore.h"
 #include "app/WaterSensorManager.h"
 #include "../support/FakeAdcReader.h"
 #include "../support/MemoryFileBackend.h"
@@ -14,14 +13,6 @@
 #include <vector>
 
 namespace faucet_test {
-
-class MemoryCalibrationWriter : public faucet::WaterRecordCalibrationWriter {
-public:
-    bool ok = true;
-    std::vector<faucet::WaterRecordCalibration> calibrations;
-
-    bool upsert(const faucet::WaterRecordCalibration& calibration) override;
-};
 
 faucet::SystemConfig enabledWaterSensorConfig();
 
@@ -79,7 +70,6 @@ struct CalibrationAppFixture {
     faucet::StatisticsStore statistics;
     faucet::FilterStore filters;
     MemoryRecordWriter records;
-    MemoryCalibrationWriter calibrations;
     MemoryFileBackend backend;
     faucet::MeteringSchemeStore schemes;
     faucet::MeteringSchemeRecord active{};
@@ -103,7 +93,6 @@ struct CompactTraceCalibrationAppFixture {
     faucet::StatisticsStore statistics;
     faucet::FilterStore filters;
     MemoryRecordWriter records;
-    MemoryCalibrationWriter calibrations;
     MemoryFileBackend backend;
     faucet::MeteringSchemeStore schemes;
     faucet::MeteringSchemeRecord active{};

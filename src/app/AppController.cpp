@@ -51,7 +51,6 @@ AppController::AppController(const SystemConfig& config,
                              FilterStore& filters,
                              WaterRecordWriter& records,
                              WaterPulseTraceStore* pulseTraces,
-                             WaterRecordCalibrationWriter* recordCalibrations,
                              CalibrationSessionFileStore* calibrationSessions,
                              CalibrationSessionTraceStore* calibrationSessionTraces,
                              WaterSensorManager* waterSensors)
@@ -62,7 +61,6 @@ AppController::AppController(const SystemConfig& config,
                     records,
                     nullptr,
                     pulseTraces,
-                    recordCalibrations,
                     calibrationSessions,
                     calibrationSessionTraces,
                     waterSensors) {}
@@ -74,7 +72,6 @@ AppController::AppController(const SystemConfig& config,
                              WaterRecordWriter& records,
                              MeteringSchemeStore& meteringSchemes,
                              WaterPulseTraceStore* pulseTraces,
-                             WaterRecordCalibrationWriter* recordCalibrations,
                              CalibrationSessionFileStore* calibrationSessions,
                              CalibrationSessionTraceStore* calibrationSessionTraces,
                              WaterSensorManager* waterSensors)
@@ -85,7 +82,6 @@ AppController::AppController(const SystemConfig& config,
                     records,
                     &meteringSchemes,
                     pulseTraces,
-                    recordCalibrations,
                     calibrationSessions,
                     calibrationSessionTraces,
                     waterSensors) {}
@@ -97,7 +93,6 @@ AppController::AppController(const SystemConfig& config,
                              WaterRecordWriter& records,
                              MeteringSchemeStore* meteringSchemes,
                              WaterPulseTraceStore* pulseTraces,
-                             WaterRecordCalibrationWriter* recordCalibrations,
                              CalibrationSessionFileStore* calibrationSessions,
                              CalibrationSessionTraceStore* calibrationSessionTraces,
                              WaterSensorManager* waterSensors)
@@ -111,7 +106,6 @@ AppController::AppController(const SystemConfig& config,
       statistics_(statistics),
       filters_(filters),
       records_(records),
-      recordCalibrations_(recordCalibrations),
       meteringSchemes_(meteringSchemes),
       pulseTraces_(pulseTraces),
       waterSensors_(waterSensors),
@@ -649,7 +643,7 @@ void AppController::processResult(std::uint32_t startTime,
     APP_RESULT_LOG_I("app", "water_record_append_begin");
     const bool recordWriteOk = records_.append(record);
     APP_RESULT_LOG_I("app", "water_record_append_done ok=%s", recordWriteOk ? "yes" : "no");
-    if (recordWriteOk && recordCalibrations_ && record.pulseCount > 0 && waterResultAllowsCalibration(record.result)) {
+    if (recordWriteOk && record.pulseCount > 0 && waterResultAllowsCalibration(record.result)) {
         lastResultRecord_ = record;
         lastResultRecordValid_ = true;
     }

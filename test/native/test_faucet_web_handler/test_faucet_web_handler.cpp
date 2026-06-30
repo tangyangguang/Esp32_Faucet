@@ -4,7 +4,6 @@
 
 #include "app/AppController.h"
 #include "app/ConfigStore.h"
-#include "app/WaterRecordCalibrationStore.h"
 #include "web/FaucetWeb.h"
 #include "../support/CalibrationTraceTestSupport.h"
 #include "../support/FakeAdcReader.h"
@@ -235,8 +234,6 @@ struct WebFixture {
     FilterStore filters{config.filters};
     WaterRecord recordsStorage[4]{};
     WaterRecordStore records{recordsStorage, 4};
-    WaterRecordCalibration calibrationsStorage[4]{};
-    WaterRecordCalibrationStore calibrations{calibrationsStorage, 4};
     MemoryRecordWriter recordWriter;
     MemoryFileBackend calibrationFiles;
     MeteringSchemeStore meteringSchemes{calibrationFiles, "/metering-schemes.bin"};
@@ -249,7 +246,6 @@ struct WebFixture {
                       filters,
                       recordWriter,
                       nullptr,
-                      &calibrations,
                       &sessionStore,
                       &traceStore,
                       &waterSensors};
@@ -274,7 +270,6 @@ struct WebFixture {
         context.app = &contextApp;
         context.filters = &filters;
         context.records = &recordReader;
-        context.recordCalibrations = &calibrations;
         context.meteringSchemes = &meteringSchemes;
         context.calibrationSessions = &sessionStore;
         context.calibrationSessionTraces = &traceStore;

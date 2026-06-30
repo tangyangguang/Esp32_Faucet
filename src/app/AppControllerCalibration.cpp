@@ -274,12 +274,6 @@ bool AppController::submitCalibrationActualForWeb(std::uint32_t actualMl, std::u
         saveCalibrationSession();
         return false;
     }
-    if (recordCalibrations_) {
-        WaterRecordCalibration calibration = makeWaterRecordCalibration(attempt.record);
-        calibration.actualMl = actualMl;
-        recordCalibrations_->upsert(calibration);
-    }
-
     attempt.actualMl = actualMl;
     attempt.summary = summary;
     attempt.status = CalibrationAttemptStatus::Valid;

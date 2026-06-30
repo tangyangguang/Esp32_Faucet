@@ -87,40 +87,13 @@ void handleRecordsPage() {
     } else if (total == 0) {
         Esp32BaseWeb::sendChunk("<p class='ok'>暂无出水记录。</p>");
     }
-    WaterRecordCalibration* pageCalibrations = nullptr;
-    bool* pageCalibrated = nullptr;
-    bool pageCalibrationIndexReady = false;
-    if (count > 0 && g_context.recordCalibrations && g_context.recordCalibrations->ready()) {
-        pageCalibrations = new (std::nothrow) WaterRecordCalibration[count]{};
-        pageCalibrated = new (std::nothrow) bool[count]{};
-        if (pageCalibrations && pageCalibrated) {
-            g_context.recordCalibrations->findAny(records, count, pageCalibrations, pageCalibrated);
-            pageCalibrationIndexReady = true;
-        } else {
-            delete[] pageCalibrations;
-            delete[] pageCalibrated;
-            pageCalibrations = nullptr;
-            pageCalibrated = nullptr;
-        }
-    }
     Esp32BaseWeb::sendChunk("<table><tr><th>时间</th><th>模式</th><th>目标</th><th>出水</th>"
                             "<th>用时</th><th>流速</th><th>水温</th><th>TDS</th><th>结果</th><th>操作</th></tr>");
     for (std::size_t i = 0; i < count; ++i) {
         char startTime[40]{};
         formatWaterRecordListTime(records[i], startTime, sizeof(startTime));
-        WaterRecordCalibration calibration{};
-        bool calibrated = false;
-        if (pageCalibrationIndexReady) {
-            calibrated = pageCalibrated[i];
-            if (calibrated) {
-                calibration = pageCalibrations[i];
-            }
-        } else {
-            calibrated = findRecordCalibration(records[i], calibration);
-        }
-        const std::uint32_t displayVolumeMl = calibrated ? calibration.actualMl : records[i].volumeMl;
         char recordFlow[24]{};
-        const std::uint32_t averageFlow = recordFlowMlPerMin(displayVolumeMl, records[i].durationSec);
+        const std::uint32_t averageFlow = recordFlowMlPerMin(records[i].volumeMl, records[i].durationSec);
         formatFlowLitersPerMin(averageFlow, recordFlow, sizeof(recordFlow));
         char temperature[24]{};
         char tds[24]{};
@@ -134,11 +107,6 @@ void handleRecordsPage() {
         sendTargetValue(records[i]);
         Esp32BaseWeb::sendChunk("</td><td>");
         sendLiters(records[i].volumeMl);
-        if (calibrated) {
-            Esp32BaseWeb::sendChunk("<span class='inline-note measured-note'>实测 ");
-            sendLitersMl(calibration.actualMl);
-            Esp32BaseWeb::sendChunk("</span>");
-        }
         sendFmt("</td><td>%u s</td><td class='record-flow-cell'>",
                 static_cast<unsigned>(records[i].durationSec));
         if (averageFlow > 0) {
@@ -180,8 +148,6 @@ void handleRecordsPage() {
         Esp32BaseWeb::sendChunk("</div></td></tr>");
     }
     Esp32BaseWeb::sendChunk("</table>");
-    delete[] pageCalibrations;
-    delete[] pageCalibrated;
     delete[] records;
     sendPageEnd();
 }

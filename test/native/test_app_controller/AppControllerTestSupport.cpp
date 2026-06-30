@@ -8,14 +8,6 @@ namespace faucet_test {
 
 using namespace faucet;
 
-bool MemoryCalibrationWriter::upsert(const WaterRecordCalibration& calibration) {
-    if (!ok) {
-        return false;
-    }
-    calibrations.push_back(calibration);
-    return true;
-}
-
 SystemConfig enabledWaterSensorConfig() {
     SystemConfig config = makeDefaultConfig();
     config.temperatureEnabled = true;
@@ -48,7 +40,7 @@ SensorAppFixture::SensorAppFixture(const SystemConfig& initialConfig)
     : config(initialConfig),
       filters(config.filters),
       sensors(adc),
-      app(config, statistics, filters, records, nullptr, nullptr, nullptr, nullptr, &sensors) {
+      app(config, statistics, filters, records, nullptr, nullptr, nullptr, &sensors) {
     statistics.reset({20260506, 202619, 202605});
     sensors.configure(config);
     TEST_ASSERT_TRUE(sensors.begin());
@@ -233,7 +225,6 @@ void CalibrationAppFixture::createApp() {
                             records,
                             schemes,
                             &pulseTraces,
-                            &calibrations,
                             &sessionStore,
                             &traceStore);
 }
@@ -244,7 +235,6 @@ void CalibrationAppFixture::createAppWithoutMeteringStore() {
                             filters,
                             records,
                             &pulseTraces,
-                            nullptr,
                             &sessionStore,
                             &traceStore);
 }
@@ -279,7 +269,6 @@ void CompactTraceCalibrationAppFixture::createApp() {
                             records,
                             schemes,
                             &pulseTraces,
-                            &calibrations,
                             &sessionStore,
                             &traceStore);
 }

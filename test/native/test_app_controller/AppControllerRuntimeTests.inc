@@ -370,14 +370,13 @@ void test_app_controller_result_display_exits_after_configured_timeout() {
                             static_cast<std::uint8_t>(app.snapshot().localMode));
 }
 
-void test_app_controller_result_ok_hold_stays_on_result_without_saving_record_calibration() {
+void test_app_controller_result_ok_hold_stays_on_result() {
     SystemConfig config = makeDefaultConfig();
     StatisticsStore statistics;
     statistics.reset({20260506, 202619, 202605});
     FilterStore filters(config.filters);
     MemoryRecordWriter records;
-    MemoryCalibrationWriter calibrations;
-    AppController app(config, statistics, filters, records, nullptr, &calibrations);
+    AppController app(config, statistics, filters, records);
     applyTestMeteringScheme(app);
 
     finishVolumeRun(app);
@@ -395,7 +394,6 @@ void test_app_controller_result_ok_hold_stays_on_result_without_saving_record_ca
     app.tick(input({false, true, false, false}, 11000, 11000000, 1714502406));
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(LocalUiMode::Result),
                             static_cast<std::uint8_t>(app.snapshot().localMode));
-    TEST_ASSERT_EQUAL_size_t(0, calibrations.calibrations.size());
 }
 
 void test_app_controller_snapshot_reports_current_flow_rate() {

@@ -12,7 +12,6 @@
 #include "app/DateTimeUtils.h"
 #include "app/FilterStore.h"
 #include "app/MeteringSchemeStore.h"
-#include "app/WaterRecordCalibrationStore.h"
 #include "app/WaterRecordStore.h"
 #include "app/WaterPulseTraceStore.h"
 #include "web/FaucetWebAssets.h"
@@ -553,11 +552,6 @@ void applyTargetDurationEstimate(AppSnapshot& snapshot, bool includeRecentFlow =
     }
 }
 
-bool findRecordCalibration(const WaterRecord& record, WaterRecordCalibration& calibration) {
-    return g_context.recordCalibrations && g_context.recordCalibrations->ready() &&
-           g_context.recordCalibrations->find(record, calibration);
-}
-
 bool ensureMeteringSchemesReady() {
     return g_context.meteringSchemes && (g_context.meteringSchemes->ready() || g_context.meteringSchemes->begin());
 }
@@ -984,7 +978,7 @@ bool sendJsonBuffer(bool ok, const char* json) {
 
 bool contextReady() {
     if (!g_context.config || !g_context.configStore || !g_context.statistics || !g_context.app || !g_context.filters ||
-        !g_context.records || !g_context.recordCalibrations || !g_context.nowSeconds) {
+        !g_context.records || !g_context.nowSeconds) {
         return false;
     }
     return true;

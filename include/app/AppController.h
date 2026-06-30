@@ -10,7 +10,6 @@
 #include "app/StatisticsStore.h"
 #include "app/ValveDriver.h"
 #include "app/WaterController.h"
-#include "app/WaterRecordCalibrationStore.h"
 #include "app/WaterPulseTraceStore.h"
 #include "app/WaterSensorManager.h"
 
@@ -95,7 +94,6 @@ public:
                   FilterStore& filters,
                   WaterRecordWriter& records,
                   WaterPulseTraceStore* pulseTraces = nullptr,
-                  WaterRecordCalibrationWriter* recordCalibrations = nullptr,
                   CalibrationSessionFileStore* calibrationSessions = nullptr,
                   CalibrationSessionTraceStore* calibrationSessionTraces = nullptr,
                   WaterSensorManager* waterSensors = nullptr);
@@ -106,7 +104,6 @@ public:
                   WaterRecordWriter& records,
                   MeteringSchemeStore& meteringSchemes,
                   WaterPulseTraceStore* pulseTraces = nullptr,
-                  WaterRecordCalibrationWriter* recordCalibrations = nullptr,
                   CalibrationSessionFileStore* calibrationSessions = nullptr,
                   CalibrationSessionTraceStore* calibrationSessionTraces = nullptr,
                   WaterSensorManager* waterSensors = nullptr);
@@ -155,7 +152,6 @@ private:
                   WaterRecordWriter& records,
                   MeteringSchemeStore* meteringSchemes,
                   WaterPulseTraceStore* pulseTraces,
-                  WaterRecordCalibrationWriter* recordCalibrations,
                   CalibrationSessionFileStore* calibrationSessions,
                   CalibrationSessionTraceStore* calibrationSessionTraces,
                   WaterSensorManager* waterSensors);
@@ -209,7 +205,6 @@ private:
     StatisticsStore& statistics_;
     FilterStore& filters_;
     WaterRecordWriter& records_;
-    WaterRecordCalibrationWriter* recordCalibrations_;
     MeteringSchemeStore* meteringSchemes_;
     WaterPulseTraceStore* pulseTraces_;
     WaterSensorManager* waterSensors_;

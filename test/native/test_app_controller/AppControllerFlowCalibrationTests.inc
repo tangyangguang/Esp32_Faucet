@@ -135,9 +135,6 @@ void test_app_controller_local_ok_starts_calibration_run_and_completion_awaits_a
 
     TEST_ASSERT_TRUE(fixture.app->submitCalibrationActualForWeb(520, 1714502402));
     TEST_ASSERT_EQUAL_UINT8(1, fixture.app->snapshot().calibrationValidSampleCount);
-    TEST_ASSERT_EQUAL_size_t(1, fixture.calibrations.calibrations.size());
-    TEST_ASSERT_EQUAL_UINT32(520, fixture.calibrations.calibrations[0].actualMl);
-    TEST_ASSERT_EQUAL_UINT32(fixture.records.records[0].pulseCount, fixture.calibrations.calibrations[0].pulseCount);
     CalibrationStoredTrace valid{};
     TEST_ASSERT_TRUE(fixture.traceStore.load(0, valid));
     TEST_ASSERT_TRUE(valid.valid);
@@ -414,7 +411,7 @@ void test_app_controller_pause_timeout_trace_is_not_marked_error_and_can_calibra
     TEST_ASSERT_EQUAL_size_t(1, records.records.size());
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(WaterResult::PauseTimeout),
                             static_cast<std::uint8_t>(records.records[0].result));
-    TEST_ASSERT_FALSE(app.snapshot().lastResultRecordAvailable);
+    TEST_ASSERT_TRUE(app.snapshot().lastResultRecordAvailable);
     TEST_ASSERT_EQUAL_size_t(0, pulseTraces.count());
 }
 

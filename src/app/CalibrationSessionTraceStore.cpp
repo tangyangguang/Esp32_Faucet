@@ -1,4 +1,4 @@
-#include "app/CalibrationSampleStore.h"
+#include "app/CalibrationSessionTraceStore.h"
 
 #include <algorithm>
 #include <cstring>

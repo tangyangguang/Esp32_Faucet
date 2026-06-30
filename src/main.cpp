@@ -5,7 +5,7 @@
 
 #include "app/AppController.h"
 #include "app/BeepDriver.h"
-#include "app/CalibrationSampleStore.h"
+#include "app/CalibrationSessionTraceStore.h"
 #include "app/ColorDisplayPresenter.h"
 #include "app/CalibrationSessionStore.h"
 #include "app/ConfigStore.h"

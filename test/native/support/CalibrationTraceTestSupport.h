@@ -1,6 +1,6 @@
 #pragma once
 
-#include "app/CalibrationSampleStore.h"
+#include "app/CalibrationSessionTraceStore.h"
 #include "app/CalibrationSession.h"
 
 #include <algorithm>

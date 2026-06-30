@@ -1,7 +1,7 @@
 #include <unity.h>
 
 #include "app/AppController.h"
-#include "app/CalibrationSampleStore.h"
+#include "app/CalibrationSessionTraceStore.h"
 #include "app/CalibrationSessionStore.h"
 #include "app/MeteringSchemeStore.h"
 #include "app/WaterSensorManager.h"

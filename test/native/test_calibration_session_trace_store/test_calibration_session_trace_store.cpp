@@ -1,6 +1,6 @@
 #include <unity.h>
 
-#include "app/CalibrationSampleStore.h"
+#include "app/CalibrationSessionTraceStore.h"
 #include "../support/MemoryFileBackend.h"
 
 #include <vector>

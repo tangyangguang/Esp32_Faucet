@@ -1,7 +1,7 @@
 #include <unity.h>
 
 #include "app/AppConfig.h"
-#include "app/CalibrationSampleStore.h"
+#include "app/CalibrationSessionTraceStore.h"
 
 #include <cmath>
 #include <cstdio>

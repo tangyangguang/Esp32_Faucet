@@ -2,7 +2,7 @@
 
 #include "app/ButtonInput.h"
 #include "app/BeepDriver.h"
-#include "app/CalibrationSampleStore.h"
+#include "app/CalibrationSessionTraceStore.h"
 #include "app/CalibrationSessionStore.h"
 #include "app/FilterStore.h"
 #include "app/FlowMeter.h"

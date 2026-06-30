@@ -157,10 +157,6 @@ std::size_t WaterRecordCalibrationStore::count() const {
     return ready() ? count_ : 0;
 }
 
-std::size_t WaterRecordCalibrationStore::capacity() const {
-    return capacity_;
-}
-
 bool WaterRecordCalibrationStore::ready() const {
     return entries_ && capacity_ > 0;
 }
@@ -322,10 +318,6 @@ std::size_t WaterRecordCalibrationFileStore::findAny(const WaterRecord* records,
 
 std::size_t WaterRecordCalibrationFileStore::count() const {
     return ready() ? count_ : 0;
-}
-
-std::size_t WaterRecordCalibrationFileStore::capacity() const {
-    return capacity_;
 }
 
 bool WaterRecordCalibrationFileStore::ready() const {

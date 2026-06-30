@@ -162,10 +162,6 @@ std::size_t WaterRecordStore::count() const {
     return count_;
 }
 
-std::size_t WaterRecordStore::capacity() const {
-    return capacity_;
-}
-
 bool WaterRecordStore::ready() const {
     return records_ && capacity_ > 0;
 }

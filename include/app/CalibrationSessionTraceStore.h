@@ -43,7 +43,6 @@ public:
     std::size_t readStartupEdges(std::uint8_t slot,
                                  WaterPulseTraceSample* output,
                                  std::size_t outputCapacity) const;
-    std::size_t capacity() const;
     bool ready() const;
     AppStorageStatus status() const;
     const char* storageName() const;

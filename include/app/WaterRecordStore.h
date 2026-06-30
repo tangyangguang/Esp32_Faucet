@@ -99,7 +99,6 @@ public:
 
     void clear();
     std::size_t count() const override;
-    std::size_t capacity() const;
     bool ready() const override;
     const char* storageName() const override;
     WaterRecordFileStatus status() const override;

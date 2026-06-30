@@ -194,7 +194,6 @@ void test_record_rejects_missing_storage() {
 
     TEST_ASSERT_FALSE(store.append(makeRecord(1, 1)));
     TEST_ASSERT_EQUAL_size_t(0, store.readPage(0, 1, page, 1));
-    TEST_ASSERT_EQUAL_size_t(0, store.capacity());
 }
 
 void test_record_clear_resets_count_and_order() {

@@ -56,7 +56,6 @@ public:
                         WaterRecordCalibration* output,
                         bool* found) const override;
     std::size_t count() const override;
-    std::size_t capacity() const;
     bool ready() const override;
     const char* storageName() const override;
 
@@ -82,7 +81,6 @@ public:
                         WaterRecordCalibration* output,
                         bool* found) const override;
     std::size_t count() const override;
-    std::size_t capacity() const;
     bool ready() const override;
     const char* storageName() const override;
     bool clear();

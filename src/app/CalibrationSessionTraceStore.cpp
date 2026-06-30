@@ -402,10 +402,6 @@ std::size_t CalibrationSessionTraceStore::readStartupEdges(std::uint8_t slot,
     return readStoredStartupEdges(backend_, path_, slot, output, outputCapacity);
 }
 
-std::size_t CalibrationSessionTraceStore::capacity() const {
-    return kCalibrationSessionTraceSlots;
-}
-
 bool CalibrationSessionTraceStore::ready() const {
     return ready_;
 }

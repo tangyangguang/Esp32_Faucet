@@ -58,7 +58,6 @@ void test_session_trace_store_has_six_slots_and_creates_file_on_begin() {
     fixture.begin();
     TEST_ASSERT_TRUE(fixture.backend.exists("/session-traces.bin"));
     TEST_ASSERT_EQUAL_size_t(6, kCalibrationSessionTraceSlots);
-    TEST_ASSERT_EQUAL_size_t(6, fixture.store.capacity());
     const std::size_t expectedMin =
         24 + kCalibrationSessionTraceSlots * sizeof(CalibrationStoredTrace) +
         kCalibrationSessionTraceSlots * kPulseTraceMaxBucketsPerTrace * sizeof(WaterPulseTraceBucketSample) +

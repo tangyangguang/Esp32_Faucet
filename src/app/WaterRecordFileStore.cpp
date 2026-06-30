@@ -217,10 +217,6 @@ std::size_t WaterRecordFileStore::count() const {
     return ready() ? count_ : 0;
 }
 
-std::size_t WaterRecordFileStore::capacity() const {
-    return capacity_;
-}
-
 bool WaterRecordFileStore::ready() const {
     return ready_ && status_ == WaterRecordFileStatus::Ready && backend_.exists(path_);
 }

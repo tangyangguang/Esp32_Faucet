@@ -51,7 +51,6 @@ void test_file_record_initializes_empty_file() {
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(WaterRecordFileStatus::Ready),
                             static_cast<std::uint8_t>(fixture.store.status()));
     TEST_ASSERT_EQUAL_size_t(0, fixture.store.count());
-    TEST_ASSERT_EQUAL_size_t(10, fixture.store.capacity());
     TEST_ASSERT_TRUE(fixture.backend.exists("/water.bin"));
     TEST_ASSERT_EQUAL_INT64(static_cast<std::int64_t>(kWaterRecordHeaderBytes), fixture.backend.fileSize("/water.bin"));
     TEST_ASSERT_EQUAL_size_t(0, fixture.backend.createSizedCalls);
@@ -159,7 +158,6 @@ void test_file_record_capacity_mismatch_preserves_existing_file() {
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(WaterRecordFileStatus::IncompatibleFormat),
                             static_cast<std::uint8_t>(loaded.status()));
     TEST_ASSERT_EQUAL_size_t(0, loaded.count());
-    TEST_ASSERT_EQUAL_size_t(4, loaded.capacity());
     TEST_ASSERT_EQUAL_size_t(createCalls, backend.createSizedCalls);
     TEST_ASSERT_EQUAL_size_t(0, backend.removeCalls);
     TEST_ASSERT_EQUAL_INT64(originalSize, backend.fileSize("/water.bin"));
@@ -180,7 +178,6 @@ void test_file_record_corrupt_header_preserves_existing_file() {
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(WaterRecordFileStatus::Corrupt),
                             static_cast<std::uint8_t>(fixture.store.status()));
     TEST_ASSERT_EQUAL_size_t(0, fixture.store.count());
-    TEST_ASSERT_EQUAL_size_t(3, fixture.store.capacity());
     TEST_ASSERT_EQUAL_size_t(createCalls, fixture.backend.createSizedCalls);
     TEST_ASSERT_EQUAL_size_t(0, fixture.backend.removeCalls);
     TEST_ASSERT_EQUAL_INT64(4, fixture.backend.fileSize("/water.bin"));

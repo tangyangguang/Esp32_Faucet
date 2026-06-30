@@ -167,14 +167,10 @@ void test_run_summary_aggregates_valid_samples_only() {
     fixture.manager.sampleRun();
 
     const WaterSensorRunSummary summary = fixture.manager.finishRun();
-    TEST_ASSERT_EQUAL_UINT16(2, summary.sensorSampleCount);
-    TEST_ASSERT_TRUE(summary.temperatureMinCentiC <= summary.temperatureAvgCentiC);
-    TEST_ASSERT_TRUE(summary.temperatureAvgCentiC <= summary.temperatureMaxCentiC);
-    TEST_ASSERT_TRUE(summary.tdsMinPpm <= summary.tdsAvgPpm);
-    TEST_ASSERT_TRUE(summary.tdsAvgPpm <= summary.tdsMaxPpm);
-    TEST_ASSERT_EQUAL_UINT16(4, summary.tdsCalibrationRevisionAtRun);
-    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(TdsCalibrationMode::TwoPoint),
-                            summary.tdsCalibrationModeAtRun);
+    TEST_ASSERT_EQUAL_UINT8(3, summary.sensorSampleCount);
+    TEST_ASSERT_TRUE(summary.temperatureCentiC != 0);
+    TEST_ASSERT_TRUE(summary.tdsPpm != 0);
+    TEST_ASSERT_TRUE((summary.sensorFlags & kWaterSensorFlagTdsInvalid) != 0);
 }
 
 void test_run_summary_records_tds_when_temperature_sensor_is_disabled() {
@@ -194,12 +190,10 @@ void test_run_summary_records_tds_when_temperature_sensor_is_disabled() {
     fixture.manager.sampleRun();
 
     const WaterSensorRunSummary summary = fixture.manager.finishRun();
-    TEST_ASSERT_EQUAL_UINT16(2, summary.sensorSampleCount);
-    TEST_ASSERT_EQUAL_UINT16(10, summary.tdsAvgPpm);
-    TEST_ASSERT_EQUAL_UINT16(10, summary.tdsMinPpm);
-    TEST_ASSERT_EQUAL_UINT16(10, summary.tdsMaxPpm);
-    TEST_ASSERT_TRUE((summary.sensorFlags & kWaterSensorFlagTempInvalid) != 0);
-    TEST_ASSERT_TRUE(summary.tdsTempFallback25CAtRun != 0);
+    TEST_ASSERT_EQUAL_UINT8(2, summary.sensorSampleCount);
+    TEST_ASSERT_EQUAL_UINT16(10, summary.tdsPpm);
+    TEST_ASSERT_FALSE((summary.sensorFlags & kWaterSensorFlagTempInvalid) != 0);
+    TEST_ASSERT_TRUE((summary.sensorFlags & kWaterSensorFlagTdsTempFallback25C) != 0);
 }
 
 void test_calibration_uses_25c_fallback_without_failing() {

@@ -598,39 +598,26 @@ void AppController::processResult(std::uint32_t startTime,
         return;
     }
 
-    WaterRecord record{
-        startTime,
-        result.volumeMl,
-        result.targetValue,
-        flow.pulseCount,
-        flow.rejectedPulses,
-        result.durationSec,
-        result.mode,
-        result.result,
-        result.selectedPreset,
-        0,
-        activeMeteringScheme_.id,
-        {0, 0, 0, 0},
-    };
+    WaterRecord record{};
+    record.startTime = startTime;
+    record.volumeMl = result.volumeMl;
+    record.targetValue = result.targetValue;
+    record.pulseCount = flow.pulseCount;
+    record.filteredPulseCount = flow.rejectedPulses;
+    record.meteringSchemeId = activeMeteringScheme_.id;
+    record.durationSec = result.durationSec;
+    record.mode = result.mode;
+    record.result = result.result;
+    record.selectedPreset = result.selectedPreset;
     if (!startTimeSynced) {
         markWaterRecordBootId(record, bootId);
     }
     if (waterSensors_) {
         const WaterSensorRunSummary sensors = waterSensors_->finishRun();
-        record.temperatureAvgCentiC = sensors.temperatureAvgCentiC;
-        record.temperatureMinCentiC = sensors.temperatureMinCentiC;
-        record.temperatureMaxCentiC = sensors.temperatureMaxCentiC;
-        record.tdsAvgPpm = sensors.tdsAvgPpm;
-        record.tdsMinPpm = sensors.tdsMinPpm;
-        record.tdsMaxPpm = sensors.tdsMaxPpm;
-        record.tdsVoltageAvgMv = sensors.tdsVoltageAvgMv;
+        record.temperatureCentiC = sensors.temperatureCentiC;
+        record.tdsPpm = sensors.tdsPpm;
         record.sensorSampleCount = sensors.sensorSampleCount;
         record.sensorFlags = sensors.sensorFlags;
-        record.tdsCalibrationRevisionAtRun = sensors.tdsCalibrationRevisionAtRun;
-        record.tdsCalibrationModeAtRun = sensors.tdsCalibrationModeAtRun;
-        record.tdsCalibratedAtRun = sensors.tdsCalibratedAtRun;
-        record.tdsTemperatureCompensatedAtRun = sensors.tdsTemperatureCompensatedAtRun;
-        record.tdsTempFallback25CAtRun = sensors.tdsTempFallback25CAtRun;
     }
 
     APP_RESULT_LOG_I("app",

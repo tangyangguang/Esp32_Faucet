@@ -10,20 +10,10 @@
 namespace faucet {
 
 struct WaterSensorRunSummary {
-    std::int16_t temperatureAvgCentiC = 0;
-    std::int16_t temperatureMinCentiC = 0;
-    std::int16_t temperatureMaxCentiC = 0;
-    std::uint16_t tdsAvgPpm = 0;
-    std::uint16_t tdsMinPpm = 0;
-    std::uint16_t tdsMaxPpm = 0;
-    std::uint16_t tdsVoltageAvgMv = 0;
-    std::uint16_t sensorSampleCount = 0;
+    std::int16_t temperatureCentiC = 0;
+    std::uint16_t tdsPpm = 0;
+    std::uint8_t sensorSampleCount = 0;
     std::uint16_t sensorFlags = 0;
-    std::uint16_t tdsCalibrationRevisionAtRun = 0;
-    std::uint8_t tdsCalibrationModeAtRun = 0;
-    std::uint8_t tdsCalibratedAtRun = 0;
-    std::uint8_t tdsTemperatureCompensatedAtRun = 0;
-    std::uint8_t tdsTempFallback25CAtRun = 0;
 };
 
 struct TdsCalibrationPointSnapshot {
@@ -85,20 +75,20 @@ public:
 
 private:
     static constexpr std::size_t kCalibrationMaxSamples = 32;
+    static constexpr std::size_t kRunWindowSamples = 5;
 
-    struct Accumulator {
-        std::int32_t tempSum = 0;
-        std::int16_t tempMin = 0;
-        std::int16_t tempMax = 0;
-        std::uint32_t tdsSum = 0;
-        std::uint16_t tdsMin = 0;
-        std::uint16_t tdsMax = 0;
-        std::uint32_t voltageSum = 0;
-        std::uint16_t count = 0;
-        std::uint16_t tempCount = 0;
-        std::uint16_t tdsCount = 0;
+    struct RunWindowSample {
+        bool temperatureValid = false;
+        bool tdsValid = false;
+        std::int16_t temperatureCentiC = 0;
+        std::uint16_t tdsPpm = 0;
+    };
+
+    struct RunWindow {
+        RunWindowSample samples[kRunWindowSamples]{};
+        std::uint8_t next = 0;
+        std::uint8_t count = 0;
         std::uint16_t flags = 0;
-        bool fallback = false;
     };
 
     enum class CalibrationKind : std::uint8_t {
@@ -117,7 +107,7 @@ private:
     AdcRange tdsRange_;
     std::uint8_t tdsLowRangeWindows_;
     bool discardNextTdsSample_;
-    Accumulator run_;
+    RunWindow run_;
 
     CalibrationKind calibrationKind_;
     std::uint16_t calibrationReferencePpm_;

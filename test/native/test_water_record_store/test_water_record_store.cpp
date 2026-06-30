@@ -10,20 +10,16 @@ using namespace faucet;
 namespace {
 
 WaterRecord makeRecord(std::uint32_t startTime, std::uint32_t volumeMl) {
-    return WaterRecord{
-        startTime,
-        volumeMl,
-        1500,
-        volumeMl,
-        0,
-        12,
-        WaterMode::Volume,
-        WaterResult::Completed,
-        0,
-        0,
-        1,
-        {0, 0, 0, 0},
-    };
+    WaterRecord record{};
+    record.startTime = startTime;
+    record.volumeMl = volumeMl;
+    record.targetValue = 1500;
+    record.pulseCount = volumeMl;
+    record.durationSec = 12;
+    record.mode = WaterMode::Volume;
+    record.result = WaterResult::Completed;
+    record.meteringSchemeId = 1;
+    return record;
 }
 
 class SpyRecordReader : public WaterRecordReader {
@@ -79,24 +75,14 @@ WaterRecord makeSensorRecord(std::uint32_t startTime,
                              std::uint32_t volumeMl,
                              std::int16_t tempAvg,
                              std::uint16_t tdsAvg,
-                             std::uint16_t sampleCount,
+                             std::uint8_t sampleCount,
                              bool calibrated,
                              std::uint16_t flags = 0) {
     WaterRecord record = makeRecord(startTime, volumeMl);
-    record.temperatureAvgCentiC = tempAvg;
-    record.temperatureMinCentiC = static_cast<std::int16_t>(tempAvg - 10);
-    record.temperatureMaxCentiC = static_cast<std::int16_t>(tempAvg + 10);
-    record.tdsAvgPpm = tdsAvg;
-    record.tdsMinPpm = tdsAvg > 1 ? static_cast<std::uint16_t>(tdsAvg - 1) : tdsAvg;
-    record.tdsMaxPpm = static_cast<std::uint16_t>(tdsAvg + 1);
-    record.tdsVoltageAvgMv = 24;
+    record.temperatureCentiC = tempAvg;
+    record.tdsPpm = tdsAvg;
     record.sensorSampleCount = sampleCount;
-    record.sensorFlags = flags;
-    record.tdsCalibrationRevisionAtRun = calibrated ? 2 : 0;
-    record.tdsCalibrationModeAtRun = static_cast<std::uint8_t>(calibrated ? TdsCalibrationMode::TwoPoint
-                                                                          : TdsCalibrationMode::None);
-    record.tdsCalibratedAtRun = calibrated ? 1 : 0;
-    record.tdsTemperatureCompensatedAtRun = 1;
+    record.sensorFlags = calibrated ? flags : static_cast<std::uint16_t>(flags | kWaterSensorFlagTdsUncalibrated);
     return record;
 }
 
@@ -105,27 +91,15 @@ WaterRecord makeSensorRecord(std::uint32_t startTime,
 void test_water_record_sensor_fields_do_not_reuse_boot_id_storage() {
     WaterRecord record = makeRecord(832032000UL, 1500);
     markWaterRecordBootId(record, 0x12345678UL);
-    record.temperatureAvgCentiC = 2530;
-    record.temperatureMinCentiC = 2480;
-    record.temperatureMaxCentiC = 2570;
-    record.tdsAvgPpm = 8;
-    record.tdsMinPpm = 6;
-    record.tdsMaxPpm = 12;
-    record.tdsVoltageAvgMv = 24;
+    record.temperatureCentiC = 2530;
+    record.tdsPpm = 8;
     record.sensorSampleCount = 30;
     record.sensorFlags = 0x0002;
-    record.tdsCalibrationRevisionAtRun = 7;
-    record.tdsCalibrationModeAtRun = static_cast<std::uint8_t>(TdsCalibrationMode::TwoPoint);
-    record.tdsCalibratedAtRun = 1;
-    record.tdsTemperatureCompensatedAtRun = 1;
-    record.tdsTempFallback25CAtRun = 0;
 
-    TEST_ASSERT_EQUAL_size_t(64, sizeof(WaterRecord));
+    TEST_ASSERT_EQUAL_size_t(40, sizeof(WaterRecord));
     TEST_ASSERT_EQUAL_UINT32(0x12345678UL, waterRecordBootId(record));
-    TEST_ASSERT_EQUAL_INT16(2530, record.temperatureAvgCentiC);
-    TEST_ASSERT_EQUAL_UINT16(8, record.tdsAvgPpm);
-    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(TdsCalibrationMode::TwoPoint),
-                            record.tdsCalibrationModeAtRun);
+    TEST_ASSERT_EQUAL_INT16(2530, record.temperatureCentiC);
+    TEST_ASSERT_EQUAL_UINT16(8, record.tdsPpm);
 }
 
 void test_record_append_keeps_newest_first() {
@@ -319,10 +293,10 @@ void test_record_aggregation_can_include_uncalibrated_sensors_when_requested() {
     TEST_ASSERT_EQUAL_UINT16(1, summary.days[29].uncalibratedSensorRecordCount);
     TEST_ASSERT_EQUAL_INT16(2725, summary.days[29].temperatureAvgCentiC);
     TEST_ASSERT_EQUAL_UINT16(122, summary.days[29].tdsAvgPpm);
-    TEST_ASSERT_EQUAL_INT16(2490, summary.days[29].temperatureMinCentiC);
-    TEST_ASSERT_EQUAL_INT16(2810, summary.days[29].temperatureMaxCentiC);
-    TEST_ASSERT_EQUAL_UINT16(7, summary.days[29].tdsMinPpm);
-    TEST_ASSERT_EQUAL_UINT16(161, summary.days[29].tdsMaxPpm);
+    TEST_ASSERT_EQUAL_INT16(2500, summary.days[29].temperatureMinCentiC);
+    TEST_ASSERT_EQUAL_INT16(2800, summary.days[29].temperatureMaxCentiC);
+    TEST_ASSERT_EQUAL_UINT16(8, summary.days[29].tdsMinPpm);
+    TEST_ASSERT_EQUAL_UINT16(160, summary.days[29].tdsMaxPpm);
 }
 
 void test_record_aggregate_reads_small_pages_for_web_stack_safety() {

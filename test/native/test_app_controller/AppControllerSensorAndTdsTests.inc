@@ -72,11 +72,8 @@ void test_app_records_sensor_summary_on_completed_run() {
 
     TEST_ASSERT_EQUAL_size_t(1, fixture.records.records.size());
     TEST_ASSERT_GREATER_THAN_UINT16(0, fixture.records.records[0].sensorSampleCount);
-    TEST_ASSERT_INT_WITHIN(50, 2500, fixture.records.records[0].temperatureAvgCentiC);
-    TEST_ASSERT_EQUAL_UINT16(10, fixture.records.records[0].tdsAvgPpm);
-    TEST_ASSERT_EQUAL_UINT16(3, fixture.records.records[0].tdsCalibrationRevisionAtRun);
-    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(TdsCalibrationMode::TwoPoint),
-                            fixture.records.records[0].tdsCalibrationModeAtRun);
+    TEST_ASSERT_INT_WITHIN(50, 2500, fixture.records.records[0].temperatureCentiC);
+    TEST_ASSERT_EQUAL_UINT16(10, fixture.records.records[0].tdsPpm);
 }
 
 void test_app_rejects_tds_calibration_when_running() {
@@ -122,4 +119,3 @@ void test_app_expires_idle_tds_calibration_session_from_tick() {
 
     TEST_ASSERT_FALSE(fixture.app.tdsCalibrationSnapshot().sessionActive);
 }
-

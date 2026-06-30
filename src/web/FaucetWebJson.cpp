@@ -508,14 +508,10 @@ bool writeWaterRecordsJson(const WaterRecord* records,
                       record.durationSec);
         writer.append("%s{\"startTime\":%lu,\"volumeMl\":%lu,\"durationSec\":%u,"
                       "\"mode\":\"%s\",\"result\":\"%s\",\"targetValue\":%lu,\"selectedPreset\":%u,"
-                      "\"pulseCount\":%lu,\"rejectedPulseCount\":%lu,\"meteringSchemeId\":%lu,"
+                      "\"pulseCount\":%lu,\"filteredPulseCount\":%lu,\"meteringSchemeId\":%lu,"
                       "\"averageFlowMlPerMin\":%lu,"
-                      "\"temperatureAvgCentiC\":%d,\"temperatureMinCentiC\":%d,\"temperatureMaxCentiC\":%d,"
-                      "\"tdsAvgPpm\":%u,\"tdsMinPpm\":%u,\"tdsMaxPpm\":%u,\"tdsVoltageAvgMv\":%u,"
-                      "\"sensorSampleCount\":%u,\"sensorFlags\":%u,"
-                      "\"tdsCalibrationRevisionAtRun\":%u,\"tdsCalibrationModeAtRun\":%u,"
-                      "\"tdsCalibratedAtRun\":%u,\"tdsTemperatureCompensatedAtRun\":%u,"
-                      "\"tdsTempFallback25CAtRun\":%u}",
+                      "\"temperatureCentiC\":%d,\"tdsPpm\":%u,"
+                      "\"sensorSampleCount\":%u,\"sensorFlags\":%u}",
                       i == 0 ? "" : ",",
                       static_cast<unsigned long>(record.startTime),
                       static_cast<unsigned long>(record.volumeMl),
@@ -525,23 +521,13 @@ bool writeWaterRecordsJson(const WaterRecord* records,
                       static_cast<unsigned long>(record.targetValue),
                       static_cast<unsigned>(record.selectedPreset),
                       static_cast<unsigned long>(record.pulseCount),
-                      static_cast<unsigned long>(record.rejectedPulseCount),
+                      static_cast<unsigned long>(record.filteredPulseCount),
                       static_cast<unsigned long>(record.meteringSchemeId),
                       static_cast<unsigned long>(averageFlowMlPerMin),
-                      static_cast<int>(record.temperatureAvgCentiC),
-                      static_cast<int>(record.temperatureMinCentiC),
-                      static_cast<int>(record.temperatureMaxCentiC),
-                      static_cast<unsigned>(record.tdsAvgPpm),
-                      static_cast<unsigned>(record.tdsMinPpm),
-                      static_cast<unsigned>(record.tdsMaxPpm),
-                      static_cast<unsigned>(record.tdsVoltageAvgMv),
+                      static_cast<int>(record.temperatureCentiC),
+                      static_cast<unsigned>(record.tdsPpm),
                       static_cast<unsigned>(record.sensorSampleCount),
-                      static_cast<unsigned>(record.sensorFlags),
-                      static_cast<unsigned>(record.tdsCalibrationRevisionAtRun),
-                      static_cast<unsigned>(record.tdsCalibrationModeAtRun),
-                      static_cast<unsigned>(record.tdsCalibratedAtRun),
-                      static_cast<unsigned>(record.tdsTemperatureCompensatedAtRun),
-                      static_cast<unsigned>(record.tdsTempFallback25CAtRun));
+                      static_cast<unsigned>(record.sensorFlags));
     }
     writer.append("]}");
     return writer.ok();

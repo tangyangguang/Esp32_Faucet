@@ -341,14 +341,14 @@ ColorDisplayFrame ColorDisplayPresenter::render(const AppSnapshot& snapshot,
             snapshot.lastResultRecordAvailable && snapshot.lastResultRecord.sensorSampleCount > 0;
         SensorValue resultTds{};
         resultTds.valid = hasRecordSensors;
-        resultTds.value = static_cast<std::int32_t>(snapshot.lastResultRecord.tdsAvgPpm);
+        resultTds.value = static_cast<std::int32_t>(snapshot.lastResultRecord.tdsPpm);
         SensorValue resultTemp{};
         resultTemp.valid = hasRecordSensors;
-        resultTemp.value = static_cast<std::int32_t>(snapshot.lastResultRecord.temperatureAvgCentiC);
+        resultTemp.value = static_cast<std::int32_t>(snapshot.lastResultRecord.temperatureCentiC);
         formatTds(tds, sizeof(tds), hasRecordSensors ? resultTds : snapshot.sensors.tdsPpm);
         formatTemperature(temp, sizeof(temp), hasRecordSensors ? resultTemp : snapshot.sensors.temperatureCentiC);
-        addMetric(frame, "均TDS", tds);
-        addMetric(frame, "均水温", temp, "°C");
+        addMetric(frame, "TDS", tds);
+        addMetric(frame, "水温", temp, "°C");
         setHints(frame, "返回", "网页", "30s");
         return frame;
     }

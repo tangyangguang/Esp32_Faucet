@@ -575,7 +575,7 @@ void formatWaterRecordTemperature(const WaterRecord& record, char* out, std::siz
         std::snprintf(out, len, "--");
         return;
     }
-    formatCentiTemperature(record.temperatureAvgCentiC, out, len);
+    formatCentiTemperature(record.temperatureCentiC, out, len);
 }
 
 void formatWaterRecordTds(const WaterRecord& record, char* out, std::size_t len) {
@@ -586,7 +586,7 @@ void formatWaterRecordTds(const WaterRecord& record, char* out, std::size_t len)
         std::snprintf(out, len, "--");
         return;
     }
-    std::snprintf(out, len, "%u ppm", static_cast<unsigned>(record.tdsAvgPpm));
+    std::snprintf(out, len, "%u ppm", static_cast<unsigned>(record.tdsPpm));
 }
 
 void formatSensorIntegerNumber(const SensorValue& value, char* out, std::size_t len) {
@@ -630,62 +630,33 @@ const char* recordTdsCalibrationText(const WaterRecord& record) {
     if (record.sensorSampleCount == 0) {
         return "--";
     }
-    if (record.tdsCalibratedAtRun != 0 && (record.sensorFlags & kWaterSensorFlagTdsUncalibrated) == 0) {
-        return tdsCalibrationModeText(static_cast<TdsCalibrationMode>(record.tdsCalibrationModeAtRun));
+    if ((record.sensorFlags & kWaterSensorFlagTdsUncalibrated) == 0) {
+        return "已校准";
     }
     return "未校准";
 }
 
 void sendWaterRecordSensorRows(const WaterRecord& record) {
-    char temperatureAvg[24]{};
-    char temperatureMin[24]{};
-    char temperatureMax[24]{};
-    char tdsAvg[24]{};
-    formatWaterRecordTemperature(record, temperatureAvg, sizeof(temperatureAvg));
-    if ((record.sensorFlags & kWaterSensorFlagTempInvalid) != 0 || record.sensorSampleCount == 0) {
-        std::snprintf(temperatureMin, sizeof(temperatureMin), "--");
-        std::snprintf(temperatureMax, sizeof(temperatureMax), "--");
-    } else {
-        formatCentiTemperature(record.temperatureMinCentiC, temperatureMin, sizeof(temperatureMin));
-        formatCentiTemperature(record.temperatureMaxCentiC, temperatureMax, sizeof(temperatureMax));
-    }
-    formatWaterRecordTds(record, tdsAvg, sizeof(tdsAvg));
+    char temperature[24]{};
+    char tds[24]{};
+    formatWaterRecordTemperature(record, temperature, sizeof(temperature));
+    formatWaterRecordTds(record, tds, sizeof(tds));
 
     Esp32BaseWeb::sendChunk("<section class='panel record-detail-card'><h3>水质传感器</h3><table class='kv'>");
     if (record.sensorSampleCount == 0) {
         Esp32BaseWeb::sendChunk("<tr><th>水温</th><td>--</td></tr>"
                                 "<tr><th>TDS</th><td>--</td></tr>"
-                                "<tr><th>样本数</th><td>0</td></tr>");
+                                "<tr><th>窗口样本数</th><td>0</td></tr>");
     } else {
-        sendFmt("<tr><th>水温平均</th><td>%s</td></tr>"
-                "<tr><th>水温范围</th><td>%s - %s</td></tr>"
-                "<tr><th>TDS 平均</th><td>%s</td></tr>"
-                "<tr><th>TDS 范围</th><td>",
-                temperatureAvg,
-                temperatureMin,
-                temperatureMax,
-                tdsAvg);
-        if ((record.sensorFlags & kWaterSensorFlagTdsInvalid) != 0) {
-            Esp32BaseWeb::sendChunk("--");
-        } else {
-            sendFmt("%u ppm - %u ppm",
-                    static_cast<unsigned>(record.tdsMinPpm),
-                    static_cast<unsigned>(record.tdsMaxPpm));
-        }
-        sendFmt("</td></tr>"
-                "<tr><th>TDS 电压平均</th><td>%u mV</td></tr>"
-                "<tr><th>样本数</th><td>%u</td></tr>"
+        sendFmt("<tr><th>水温</th><td>%s</td></tr>"
+                "<tr><th>TDS</th><td>%s</td></tr>"
+                "<tr><th>窗口样本数</th><td>%u</td></tr>"
                 "<tr><th>TDS 校准</th><td>%s</td></tr>"
-                "<tr><th>TDS 校准版本</th><td>%u</td></tr>"
-                "<tr><th>温度补偿</th><td>%s</td></tr>"
-                "<tr><th>25C 回退</th><td>%s</td></tr>"
                 "<tr><th>传感器标志</th><td>0x%04x</td></tr>",
-                static_cast<unsigned>(record.tdsVoltageAvgMv),
+                temperature,
+                tds,
                 static_cast<unsigned>(record.sensorSampleCount),
                 recordTdsCalibrationText(record),
-                static_cast<unsigned>(record.tdsCalibrationRevisionAtRun),
-                record.tdsTemperatureCompensatedAtRun ? "开启" : "关闭",
-                record.tdsTempFallback25CAtRun ? "是" : "否",
                 static_cast<unsigned>(record.sensorFlags));
     }
     Esp32BaseWeb::sendChunk("</table></section>");

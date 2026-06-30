@@ -181,20 +181,15 @@ void applyTestMeteringScheme(AppController& app, std::uint32_t stablePulsePerLit
 }
 
 WaterRecord calibrationRecord(std::uint32_t startTime, std::uint32_t totalPulses, std::uint32_t actualMl) {
-    return WaterRecord{
-        startTime,
-        actualMl,
-        actualMl,
-        totalPulses,
-        0,
-        0,
-        WaterMode::Volume,
-        WaterResult::Completed,
-        0,
-        0,
-        1,
-        {0, 0, 0, 0},
-    };
+    WaterRecord record{};
+    record.startTime = startTime;
+    record.volumeMl = actualMl;
+    record.targetValue = actualMl;
+    record.pulseCount = totalPulses;
+    record.mode = WaterMode::Volume;
+    record.result = WaterResult::Completed;
+    record.meteringSchemeId = 1;
+    return record;
 }
 
 void saveCalibrationSessionSample(CalibrationSessionTraceStore& traceStore,
@@ -219,7 +214,7 @@ void saveCalibrationSessionSample(CalibrationSessionTraceStore& traceStore,
     attempt.actualMl = actualMl;
     attempt.summary.actualMl = actualMl;
     attempt.summary.totalPulses = totalPulses;
-    attempt.summary.rejectedPulses = record.rejectedPulseCount;
+    attempt.summary.rejectedPulses = record.filteredPulseCount;
     attempt.summary.durationSec = record.durationSec;
     attempt.summary.stable = true;
     attempt.summary.startupPulseCount = startupPulses;

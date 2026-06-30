@@ -1,7 +1,6 @@
 #include "app/WaterSensorManager.h"
 
 #include <algorithm>
-#include <limits>
 
 namespace faucet {
 namespace {
@@ -117,27 +116,32 @@ void WaterSensorManager::sampleRun() {
 WaterSensorRunSummary WaterSensorManager::finishRun() const {
     WaterSensorRunSummary summary{};
     summary.sensorFlags = run_.flags;
-    summary.sensorSampleCount = run_.count;
-    if (run_.tempCount > 0) {
-        summary.temperatureAvgCentiC = toI16(run_.tempSum / run_.tempCount);
-        summary.temperatureMinCentiC = run_.tempMin;
-        summary.temperatureMaxCentiC = run_.tempMax;
-    } else if (run_.count > 0) {
+    std::int32_t tempSum = 0;
+    std::uint32_t tdsSum = 0;
+    std::uint8_t tempCount = 0;
+    std::uint8_t tdsCount = 0;
+    for (std::uint8_t i = 0; i < run_.count; ++i) {
+        const RunWindowSample& sample = run_.samples[i];
+        if (sample.temperatureValid) {
+            tempSum += sample.temperatureCentiC;
+            ++tempCount;
+        }
+        if (sample.tdsValid) {
+            tdsSum += sample.tdsPpm;
+            ++tdsCount;
+        }
+    }
+    summary.sensorSampleCount = std::max(tempCount, tdsCount);
+    if (tempCount > 0) {
+        summary.temperatureCentiC = toI16(tempSum / tempCount);
+    } else if (enabledTemperature(config_)) {
         summary.sensorFlags |= kWaterSensorFlagTempInvalid;
     }
-    if (run_.tdsCount > 0) {
-        summary.tdsAvgPpm = static_cast<std::uint16_t>(run_.tdsSum / run_.tdsCount);
-        summary.tdsMinPpm = run_.tdsMin;
-        summary.tdsMaxPpm = run_.tdsMax;
-        summary.tdsVoltageAvgMv = static_cast<std::uint16_t>(run_.voltageSum / run_.tdsCount);
-    } else if (run_.count > 0) {
+    if (tdsCount > 0) {
+        summary.tdsPpm = static_cast<std::uint16_t>(tdsSum / tdsCount);
+    } else if (enabledTds(config_)) {
         summary.sensorFlags |= kWaterSensorFlagTdsInvalid;
     }
-    summary.tdsCalibrationRevisionAtRun = config_.tdsCalibrationRevision;
-    summary.tdsCalibrationModeAtRun = static_cast<std::uint8_t>(config_.tdsCalibrationMode);
-    summary.tdsCalibratedAtRun = config_.tdsCalibrated ? 1 : 0;
-    summary.tdsTemperatureCompensatedAtRun = config_.tdsTemperatureCompensationEnabled ? 1 : 0;
-    summary.tdsTempFallback25CAtRun = run_.fallback ? 1 : 0;
     return summary;
 }
 
@@ -463,52 +467,24 @@ bool WaterSensorManager::refreshTdsCalibrationCandidate() {
 
 void WaterSensorManager::accumulateRunSample(const WaterSensorSnapshot& current) {
     const bool hasTemperature = current.temperatureCentiC.valid;
-    const bool hasTds = current.tdsPpm.valid && current.tdsVoltageMv.valid;
-    const bool tdsEnabled = enabledTds(config_);
-    const bool acceptTds = hasTds;
-    const bool acceptTemperature = hasTemperature && (hasTds || !tdsEnabled);
-    if (!acceptTemperature && !acceptTds) {
+    const bool hasTds = current.tdsPpm.valid;
+    if (!hasTemperature && !hasTds) {
         run_.flags |= current.flags;
         return;
     }
 
-    if (acceptTemperature) {
-        const std::int16_t temp = toI16(current.temperatureCentiC.value);
-        if (run_.tempCount == 0) {
-            run_.tempMin = temp;
-            run_.tempMax = temp;
-        } else {
-            run_.tempMin = std::min(run_.tempMin, temp);
-            run_.tempMax = std::max(run_.tempMax, temp);
-        }
-        run_.tempSum += temp;
-        ++run_.tempCount;
-    } else if (!hasTemperature) {
-        run_.flags |= kWaterSensorFlagTempInvalid;
-    }
+    RunWindowSample& sample = run_.samples[run_.next];
+    sample = {};
+    sample.temperatureValid = hasTemperature;
+    sample.tdsValid = hasTds;
+    sample.temperatureCentiC = hasTemperature ? toI16(current.temperatureCentiC.value) : 0;
+    sample.tdsPpm = hasTds ? toU16(current.tdsPpm.value) : 0;
 
-    if (acceptTds) {
-        const std::uint16_t tds = toU16(current.tdsPpm.value);
-        const std::uint16_t voltage = toU16(current.tdsVoltageMv.value);
-        if (run_.tdsCount == 0) {
-            run_.tdsMin = tds;
-            run_.tdsMax = tds;
-        } else {
-            run_.tdsMin = std::min(run_.tdsMin, tds);
-            run_.tdsMax = std::max(run_.tdsMax, tds);
-        }
-        run_.tdsSum += tds;
-        run_.voltageSum += voltage;
-        ++run_.tdsCount;
-    } else {
-        run_.flags |= kWaterSensorFlagTdsInvalid;
-    }
-
-    if (run_.count < std::numeric_limits<std::uint16_t>::max()) {
+    run_.next = static_cast<std::uint8_t>((run_.next + 1U) % kRunWindowSamples);
+    if (run_.count < kRunWindowSamples) {
         ++run_.count;
     }
     run_.flags |= current.flags;
-    run_.fallback = run_.fallback || current.tdsTempFallback25C;
 }
 
 }  // namespace faucet

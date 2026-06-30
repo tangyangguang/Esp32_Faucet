@@ -195,7 +195,7 @@ void test_attempt_keeps_full_water_record_identity() {
     attempt.record.volumeMl = 980;
     attempt.record.targetValue = 1000;
     attempt.record.pulseCount = 221;
-    attempt.record.rejectedPulseCount = 3;
+    attempt.record.filteredPulseCount = 3;
     attempt.record.durationSec = 7;
     attempt.record.mode = WaterMode::Volume;
     attempt.record.result = WaterResult::Completed;
@@ -208,7 +208,7 @@ void test_attempt_keeps_full_water_record_identity() {
     TEST_ASSERT_EQUAL_UINT32(980, stored.record.volumeMl);
     TEST_ASSERT_EQUAL_UINT32(1000, stored.record.targetValue);
     TEST_ASSERT_EQUAL_UINT32(221, stored.record.pulseCount);
-    TEST_ASSERT_EQUAL_UINT32(3, stored.record.rejectedPulseCount);
+    TEST_ASSERT_EQUAL_UINT32(3, stored.record.filteredPulseCount);
     TEST_ASSERT_EQUAL_UINT16(7, stored.record.durationSec);
     TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(WaterMode::Volume), static_cast<unsigned>(stored.record.mode));
     TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(WaterResult::Completed), static_cast<unsigned>(stored.record.result));

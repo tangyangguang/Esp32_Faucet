@@ -13,20 +13,16 @@ namespace {
 constexpr std::size_t kWaterRecordHeaderBytes = 64;
 
 WaterRecord makeRecord(std::uint32_t startTime, std::uint32_t volumeMl) {
-    return WaterRecord{
-        startTime,
-        volumeMl,
-        1500,
-        volumeMl,
-        0,
-        10,
-        WaterMode::Volume,
-        WaterResult::Completed,
-        0,
-        0,
-        1,
-        {0, 0, 0, 0},
-    };
+    WaterRecord record{};
+    record.startTime = startTime;
+    record.volumeMl = volumeMl;
+    record.targetValue = 1500;
+    record.pulseCount = volumeMl;
+    record.durationSec = 10;
+    record.mode = WaterMode::Volume;
+    record.result = WaterResult::Completed;
+    record.meteringSchemeId = 1;
+    return record;
 }
 
 struct RecordFileFixture {

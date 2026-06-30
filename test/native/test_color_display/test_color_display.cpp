@@ -49,12 +49,8 @@ WaterRecord makeLastRecord(std::uint32_t volumeMl,
     record.durationSec = durationSec;
     record.result = result;
     record.mode = WaterMode::Volume;
-    record.temperatureAvgCentiC = 2470;
-    record.temperatureMinCentiC = 2460;
-    record.temperatureMaxCentiC = 2480;
-    record.tdsAvgPpm = 386;
-    record.tdsMinPpm = 380;
-    record.tdsMaxPpm = 390;
+    record.temperatureCentiC = 2470;
+    record.tdsPpm = 386;
     record.sensorSampleCount = 3;
     return record;
 }
@@ -259,9 +255,9 @@ void test_color_display_uses_active_preset_and_record_summary_values() {
     result.sensors.tdsPpm = SensorValue{true, 12};
     result.sensors.temperatureCentiC = SensorValue{true, 3000};
     frame = presenter.render(result, 500, true);
-    assertTextEquals("均TDS", frame.metrics[2].label);
+    assertTextEquals("TDS", frame.metrics[2].label);
     assertTextEquals("386", frame.metrics[2].value);
-    assertTextEquals("均水温", frame.metrics[3].label);
+    assertTextEquals("水温", frame.metrics[3].label);
     assertTextEquals("24.7", frame.metrics[3].value);
 }
 

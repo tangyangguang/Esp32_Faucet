@@ -126,20 +126,17 @@ std::uint32_t testBootId() {
 }
 
 WaterRecord makeWebRecord(std::uint32_t startTime, std::uint32_t volumeMl = 1000) {
-    return WaterRecord{
-        startTime,
-        volumeMl,
-        volumeMl,
-        volumeMl / 10,
-        0,
-        30,
-        WaterMode::Volume,
-        WaterResult::Completed,
-        0,
-        1,
-        7,
-        {0, 0, 0, 0},
-    };
+    WaterRecord record{};
+    record.startTime = startTime;
+    record.volumeMl = volumeMl;
+    record.targetValue = volumeMl;
+    record.pulseCount = volumeMl / 10;
+    record.durationSec = 30;
+    record.mode = WaterMode::Volume;
+    record.result = WaterResult::Completed;
+    record.selectedPreset = 1;
+    record.meteringSchemeId = 7;
+    return record;
 }
 
 void saveWebSessionAttempt(CalibrationSessionTraceStore& traceStore,

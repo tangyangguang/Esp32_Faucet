@@ -82,48 +82,30 @@ struct MeteringParameters {
 
 struct WaterRecord {
     std::uint32_t startTime;
+    std::uint32_t startBootId;
     std::uint32_t volumeMl;
     std::uint32_t targetValue;
     std::uint32_t pulseCount;
-    std::uint32_t rejectedPulseCount;
+    std::uint32_t filteredPulseCount;
+    std::uint32_t meteringSchemeId;
     std::uint16_t durationSec;
+    std::int16_t temperatureCentiC;
+    std::uint16_t tdsPpm;
+    std::uint16_t sensorFlags;
     WaterMode mode;
     WaterResult result;
     std::uint8_t selectedPreset;
-    std::uint8_t reserved0;
-    std::uint32_t meteringSchemeId;
-    std::uint8_t reserved[4];
-    std::int16_t temperatureAvgCentiC;
-    std::int16_t temperatureMinCentiC;
-    std::int16_t temperatureMaxCentiC;
-    std::uint16_t tdsAvgPpm;
-    std::uint16_t tdsMinPpm;
-    std::uint16_t tdsMaxPpm;
-    std::uint16_t tdsVoltageAvgMv;
-    std::uint16_t sensorSampleCount;
-    std::uint16_t sensorFlags;
-    std::uint16_t tdsCalibrationRevisionAtRun;
-    std::uint8_t tdsCalibrationModeAtRun;
-    std::uint8_t tdsCalibratedAtRun;
-    std::uint8_t tdsTemperatureCompensatedAtRun;
-    std::uint8_t tdsTempFallback25CAtRun;
-    std::uint8_t sensorReserved[4];
+    std::uint8_t sensorSampleCount;
 };
 
-static_assert(sizeof(WaterRecord) == 64, "WaterRecord persistent layout changed; bump record file format.");
+static_assert(sizeof(WaterRecord) == 40, "WaterRecord persistent layout changed; bump record file format.");
 
 inline std::uint32_t waterRecordBootId(const WaterRecord& record) {
-    return static_cast<std::uint32_t>(record.reserved[0]) |
-           (static_cast<std::uint32_t>(record.reserved[1]) << 8U) |
-           (static_cast<std::uint32_t>(record.reserved[2]) << 16U) |
-           (static_cast<std::uint32_t>(record.reserved[3]) << 24U);
+    return record.startBootId;
 }
 
 inline void markWaterRecordBootId(WaterRecord& record, std::uint32_t bootId) {
-    record.reserved[0] = static_cast<std::uint8_t>(bootId & 0xFFU);
-    record.reserved[1] = static_cast<std::uint8_t>((bootId >> 8U) & 0xFFU);
-    record.reserved[2] = static_cast<std::uint8_t>((bootId >> 16U) & 0xFFU);
-    record.reserved[3] = static_cast<std::uint8_t>((bootId >> 24U) & 0xFFU);
+    record.startBootId = bootId;
 }
 
 inline void clearWaterRecordBootId(WaterRecord& record) {

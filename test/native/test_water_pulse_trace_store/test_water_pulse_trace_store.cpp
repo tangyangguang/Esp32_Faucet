@@ -11,20 +11,15 @@ using namespace faucet;
 namespace {
 
 WaterRecord makeRecord(std::uint32_t startTime, std::uint32_t pulses, std::uint32_t volumeMl) {
-    return WaterRecord{
-        startTime,
-        volumeMl,
-        volumeMl,
-        pulses,
-        0,
-        0,
-        WaterMode::Volume,
-        WaterResult::Completed,
-        0,
-        0,
-        1,
-        {0, 0, 0, 0},
-    };
+    WaterRecord record{};
+    record.startTime = startTime;
+    record.volumeMl = volumeMl;
+    record.targetValue = volumeMl;
+    record.pulseCount = pulses;
+    record.mode = WaterMode::Volume;
+    record.result = WaterResult::Completed;
+    record.meteringSchemeId = 1;
+    return record;
 }
 
 template <std::size_t TraceCapacity,

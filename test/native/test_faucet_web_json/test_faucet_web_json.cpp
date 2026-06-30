@@ -328,14 +328,29 @@ void test_filters_json_contains_runtime_fields() {
 }
 
 void test_water_records_json_is_paged_and_read_only() {
-    WaterRecord records[2]{
-        {100, 1500, 1500, 675, 2, 30, WaterMode::Volume, WaterResult::Completed, 0, 0, 7, {0, 0, 0, 0}},
-        {200, 300, 60, 135, 1, 10, WaterMode::Time, WaterResult::StoppedByUser, 1, 0, 8, {0, 0, 0, 0}},
-    };
-    records[0].temperatureAvgCentiC = 2530;
-    records[0].tdsAvgPpm = 8;
+    WaterRecord records[2]{};
+    records[0].startTime = 100;
+    records[0].volumeMl = 1500;
+    records[0].targetValue = 1500;
+    records[0].pulseCount = 675;
+    records[0].filteredPulseCount = 2;
+    records[0].durationSec = 30;
+    records[0].mode = WaterMode::Volume;
+    records[0].result = WaterResult::Completed;
+    records[0].meteringSchemeId = 7;
+    records[0].temperatureCentiC = 2530;
+    records[0].tdsPpm = 8;
     records[0].sensorSampleCount = 12;
-    records[0].tdsCalibratedAtRun = 1;
+    records[1].startTime = 200;
+    records[1].volumeMl = 300;
+    records[1].targetValue = 60;
+    records[1].pulseCount = 135;
+    records[1].filteredPulseCount = 1;
+    records[1].durationSec = 10;
+    records[1].mode = WaterMode::Time;
+    records[1].result = WaterResult::StoppedByUser;
+    records[1].selectedPreset = 1;
+    records[1].meteringSchemeId = 8;
     char json[2048]{};
 
     TEST_ASSERT_TRUE(writeWaterRecordsJson(records, 2, 1, 50, 60, "file", "ready", json, sizeof(json)));
@@ -349,13 +364,13 @@ void test_water_records_json_is_paged_and_read_only() {
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"result\":\"stoppedByUser\""));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"targetValue\":60"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"pulseCount\":675"));
-    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"rejectedPulseCount\":1"));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"filteredPulseCount\":1"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"meteringSchemeId\":7"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"meteringSchemeId\":8"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"averageFlowMlPerMin\":3000"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"averageFlowMlPerMin\":1800"));
-    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"temperatureAvgCentiC\":2530"));
-    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"tdsAvgPpm\":8"));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"temperatureCentiC\":2530"));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"tdsPpm\":8"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"sensorSampleCount\":12"));
     TEST_ASSERT_NULL(std::strstr(json, "startWater"));
 }

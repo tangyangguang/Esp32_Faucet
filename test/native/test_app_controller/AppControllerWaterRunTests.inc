@@ -145,7 +145,7 @@ void test_app_controller_completion_writes_record_statistics_and_filters() {
     TEST_ASSERT_EQUAL_UINT32(1500, records.records[0].volumeMl);
     TEST_ASSERT_EQUAL_UINT32(1500, records.records[0].targetValue);
     TEST_ASSERT_EQUAL_UINT32(1500, records.records[0].pulseCount);
-    TEST_ASSERT_EQUAL_UINT32(0, records.records[0].rejectedPulseCount);
+    TEST_ASSERT_EQUAL_UINT32(0, records.records[0].filteredPulseCount);
     TEST_ASSERT_EQUAL_UINT32(99, records.records[0].meteringSchemeId);
     TEST_ASSERT_EQUAL_UINT8(0, records.records[0].selectedPreset);
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(WaterResult::Completed),

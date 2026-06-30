@@ -7,7 +7,7 @@ namespace faucet {
 namespace {
 
 constexpr std::uint32_t kRecordMagic = 0x46575244UL;  // FWRD
-constexpr std::uint16_t kRecordVersion = 2;
+constexpr std::uint16_t kRecordVersion = 3;
 struct RecordHeader {
     std::uint32_t magic;
     std::uint16_t version;

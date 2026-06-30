@@ -46,8 +46,7 @@ bool recordHasSensorErrorFlags(const WaterRecord& record, bool includeUncalibrat
 }
 
 bool recordHasUsableSensorSummary(const WaterRecord& record, bool includeUncalibratedSensors, bool& uncalibrated) {
-    uncalibrated = record.tdsCalibratedAtRun == 0 ||
-                   (record.sensorFlags & kWaterSensorFlagTdsUncalibrated) != 0;
+    uncalibrated = (record.sensorFlags & kWaterSensorFlagTdsUncalibrated) != 0;
     if (record.sensorSampleCount == 0) {
         return false;
     }
@@ -65,20 +64,20 @@ void applySensorSummaryToDaily(DailyUsageBucket& daily,
                                std::int64_t& tempSum,
                                std::uint32_t& tdsSum,
                                std::uint32_t& sampleSum,
-                               bool uncalibrated) {
+    bool uncalibrated) {
     if (daily.sensorRecordCount == 0) {
-        daily.temperatureMinCentiC = record.temperatureMinCentiC;
-        daily.temperatureMaxCentiC = record.temperatureMaxCentiC;
-        daily.tdsMinPpm = record.tdsMinPpm;
-        daily.tdsMaxPpm = record.tdsMaxPpm;
+        daily.temperatureMinCentiC = record.temperatureCentiC;
+        daily.temperatureMaxCentiC = record.temperatureCentiC;
+        daily.tdsMinPpm = record.tdsPpm;
+        daily.tdsMaxPpm = record.tdsPpm;
     } else {
-        daily.temperatureMinCentiC = std::min(daily.temperatureMinCentiC, record.temperatureMinCentiC);
-        daily.temperatureMaxCentiC = std::max(daily.temperatureMaxCentiC, record.temperatureMaxCentiC);
-        daily.tdsMinPpm = std::min(daily.tdsMinPpm, record.tdsMinPpm);
-        daily.tdsMaxPpm = std::max(daily.tdsMaxPpm, record.tdsMaxPpm);
+        daily.temperatureMinCentiC = std::min(daily.temperatureMinCentiC, record.temperatureCentiC);
+        daily.temperatureMaxCentiC = std::max(daily.temperatureMaxCentiC, record.temperatureCentiC);
+        daily.tdsMinPpm = std::min(daily.tdsMinPpm, record.tdsPpm);
+        daily.tdsMaxPpm = std::max(daily.tdsMaxPpm, record.tdsPpm);
     }
-    tempSum += static_cast<std::int64_t>(record.temperatureAvgCentiC) * record.sensorSampleCount;
-    tdsSum += static_cast<std::uint32_t>(record.tdsAvgPpm) * record.sensorSampleCount;
+    tempSum += static_cast<std::int64_t>(record.temperatureCentiC) * record.sensorSampleCount;
+    tdsSum += static_cast<std::uint32_t>(record.tdsPpm) * record.sensorSampleCount;
     sampleSum += record.sensorSampleCount;
     incrementCount(daily.sensorRecordCount);
     if (uncalibrated) {

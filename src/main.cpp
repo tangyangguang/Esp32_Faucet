@@ -40,7 +40,7 @@ constexpr const char* kFirmwareVersion = "0.1.0-dev";
 constexpr const char* kDefaultWebUser = "admin";
 constexpr const char* kDefaultWebPassword = "admin";
 constexpr std::size_t kRamRecordCapacity = 128;
-constexpr std::size_t kWaterRecordCapacity = 20000;
+constexpr std::size_t kWaterRecordCapacity = 15000;
 constexpr std::size_t kPulseTraceCapacity = faucet::kRecentPulseTraceCount;
 constexpr std::size_t kPulseTraceMaxBuckets =
     static_cast<std::size_t>(faucet::kRecentPulseTraceCount) * faucet::kPulseTraceMaxBucketsPerTrace;
@@ -49,7 +49,7 @@ constexpr std::size_t kPulseTraceMaxStartupEdges =
 constexpr std::uint32_t kRuntimePersistenceRetryIntervalMs = 30000UL;
 constexpr std::size_t kMaxFlowPulsesPerTick = 32;
 constexpr std::uint32_t kI2cTimeoutMs = 20UL;
-constexpr const char* kWaterRecordPath = "/faucet_records_v2.bin";
+constexpr const char* kWaterRecordPath = "/faucet_records_v3.bin";
 constexpr const char* kMeteringSchemePath = "/faucet_metering_schemes_v6.bin";
 constexpr const char* kCalibrationSessionPath = "/faucet_cal_session_v1.bin";
 constexpr const char* kCalibrationSessionTracePath = "/faucet_cal_session_traces_v1.bin";

@@ -119,31 +119,21 @@ void handleRecordsPage() {
                 resultStatusClass(records[i].result),
                 resultText(records[i].result));
         Esp32BaseWeb::sendChunk("</td><td><div class='row-actions'>");
-        sendFmt("<a class='btn-link' href='/faucet/records/detail?start=%lu&boot=%lu&volume=%lu&target=%lu&pulses=%lu&rejected=%lu&duration=%lu&mode=%u&result=%u&preset=%u&tempAvg=%d&tempMin=%d&tempMax=%d&tdsAvg=%u&tdsMin=%u&tdsMax=%u&tdsMv=%u&sensorSamples=%u&sensorFlags=%u&tdsRev=%u&tdsMode=%u&tdsCal=%u&tdsComp=%u&tdsFallback=%u&scheme=%lu'>详情</a>",
+        sendFmt("<a class='btn-link' href='/faucet/records/detail?start=%lu&boot=%lu&volume=%lu&target=%lu&pulses=%lu&filtered=%lu&duration=%lu&mode=%u&result=%u&preset=%u&temp=%d&tds=%u&sensorSamples=%u&sensorFlags=%u&scheme=%lu'>详情</a>",
                 static_cast<unsigned long>(records[i].startTime),
                 static_cast<unsigned long>(waterRecordBootId(records[i])),
                 static_cast<unsigned long>(records[i].volumeMl),
                 static_cast<unsigned long>(records[i].targetValue),
                 static_cast<unsigned long>(records[i].pulseCount),
-                static_cast<unsigned long>(records[i].rejectedPulseCount),
+                static_cast<unsigned long>(records[i].filteredPulseCount),
                 static_cast<unsigned long>(records[i].durationSec),
                 static_cast<unsigned>(records[i].mode),
                 static_cast<unsigned>(records[i].result),
                 static_cast<unsigned>(records[i].selectedPreset),
-                static_cast<int>(records[i].temperatureAvgCentiC),
-                static_cast<int>(records[i].temperatureMinCentiC),
-                static_cast<int>(records[i].temperatureMaxCentiC),
-                static_cast<unsigned>(records[i].tdsAvgPpm),
-                static_cast<unsigned>(records[i].tdsMinPpm),
-                static_cast<unsigned>(records[i].tdsMaxPpm),
-                static_cast<unsigned>(records[i].tdsVoltageAvgMv),
+                static_cast<int>(records[i].temperatureCentiC),
+                static_cast<unsigned>(records[i].tdsPpm),
                 static_cast<unsigned>(records[i].sensorSampleCount),
                 static_cast<unsigned>(records[i].sensorFlags),
-                static_cast<unsigned>(records[i].tdsCalibrationRevisionAtRun),
-                static_cast<unsigned>(records[i].tdsCalibrationModeAtRun),
-                static_cast<unsigned>(records[i].tdsCalibratedAtRun),
-                static_cast<unsigned>(records[i].tdsTemperatureCompensatedAtRun),
-                static_cast<unsigned>(records[i].tdsTempFallback25CAtRun),
                 static_cast<unsigned long>(records[i].meteringSchemeId));
         Esp32BaseWeb::sendChunk("</div></td></tr>");
     }
@@ -175,8 +165,8 @@ void handleRecordInfoPage() {
     if (getParam("pulses", text, sizeof(text)) && parseU32(text, parsed)) {
         record.pulseCount = parsed;
     }
-    if (getParam("rejected", text, sizeof(text)) && parseU32(text, parsed)) {
-        record.rejectedPulseCount = parsed;
+    if (getParam("filtered", text, sizeof(text)) && parseU32(text, parsed)) {
+        record.filteredPulseCount = parsed;
     }
     if (getParam("duration", text, sizeof(text)) && parseU32(text, parsed)) {
         record.durationSec = parsed;
@@ -190,47 +180,17 @@ void handleRecordInfoPage() {
     if (getParam("preset", text, sizeof(text)) && parseU32(text, parsed)) {
         record.selectedPreset = static_cast<std::uint8_t>(parsed);
     }
-    if (getParam("tempAvg", text, sizeof(text)) && parseI16(text, parsedI16)) {
-        record.temperatureAvgCentiC = parsedI16;
+    if (getParam("temp", text, sizeof(text)) && parseI16(text, parsedI16)) {
+        record.temperatureCentiC = parsedI16;
     }
-    if (getParam("tempMin", text, sizeof(text)) && parseI16(text, parsedI16)) {
-        record.temperatureMinCentiC = parsedI16;
-    }
-    if (getParam("tempMax", text, sizeof(text)) && parseI16(text, parsedI16)) {
-        record.temperatureMaxCentiC = parsedI16;
-    }
-    if (getParam("tdsAvg", text, sizeof(text)) && parseU32(text, parsed)) {
-        record.tdsAvgPpm = static_cast<std::uint16_t>(parsed);
-    }
-    if (getParam("tdsMin", text, sizeof(text)) && parseU32(text, parsed)) {
-        record.tdsMinPpm = static_cast<std::uint16_t>(parsed);
-    }
-    if (getParam("tdsMax", text, sizeof(text)) && parseU32(text, parsed)) {
-        record.tdsMaxPpm = static_cast<std::uint16_t>(parsed);
-    }
-    if (getParam("tdsMv", text, sizeof(text)) && parseU32(text, parsed)) {
-        record.tdsVoltageAvgMv = static_cast<std::uint16_t>(parsed);
+    if (getParam("tds", text, sizeof(text)) && parseU32(text, parsed)) {
+        record.tdsPpm = static_cast<std::uint16_t>(parsed);
     }
     if (getParam("sensorSamples", text, sizeof(text)) && parseU32(text, parsed)) {
-        record.sensorSampleCount = static_cast<std::uint16_t>(parsed);
+        record.sensorSampleCount = parsed > 255U ? 255U : static_cast<std::uint8_t>(parsed);
     }
     if (getParam("sensorFlags", text, sizeof(text)) && parseU32(text, parsed)) {
         record.sensorFlags = static_cast<std::uint16_t>(parsed);
-    }
-    if (getParam("tdsRev", text, sizeof(text)) && parseU32(text, parsed)) {
-        record.tdsCalibrationRevisionAtRun = static_cast<std::uint16_t>(parsed);
-    }
-    if (getParam("tdsMode", text, sizeof(text)) && parseU32(text, parsed)) {
-        record.tdsCalibrationModeAtRun = static_cast<std::uint8_t>(parsed);
-    }
-    if (getParam("tdsCal", text, sizeof(text)) && parseU32(text, parsed)) {
-        record.tdsCalibratedAtRun = static_cast<std::uint8_t>(parsed);
-    }
-    if (getParam("tdsComp", text, sizeof(text)) && parseU32(text, parsed)) {
-        record.tdsTemperatureCompensatedAtRun = static_cast<std::uint8_t>(parsed);
-    }
-    if (getParam("tdsFallback", text, sizeof(text)) && parseU32(text, parsed)) {
-        record.tdsTempFallback25CAtRun = static_cast<std::uint8_t>(parsed);
     }
     if (getParam("scheme", text, sizeof(text)) && parseU32(text, parsed)) {
         record.meteringSchemeId = parsed;
@@ -267,7 +227,7 @@ void handleRecordInfoPage() {
     sendFmt("<tr><th>有效脉冲</th><td>%lu P</td></tr>"
             "<tr><th>被过滤脉冲</th><td>%lu P</td></tr>",
             static_cast<unsigned long>(record.pulseCount),
-            static_cast<unsigned long>(record.rejectedPulseCount));
+            static_cast<unsigned long>(record.filteredPulseCount));
     MeteringSchemeRecord meteringScheme{};
     if (ensureMeteringSchemesReady() && g_context.meteringSchemes->findById(record.meteringSchemeId, meteringScheme)) {
         char startupDuration[24]{};
@@ -313,4 +273,3 @@ void handleRecordInfoPage() {
 #include "FaucetWebCalibrationPages.inc"
 
 #include "FaucetWebFiltersPages.inc"
-

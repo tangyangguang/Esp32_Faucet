@@ -19,6 +19,7 @@
 #include <vector>
 
 #include "../../../../Esp32Base/src/web/Esp32BaseWeb.cpp"
+#include "../../../src/web/FaucetWebAssets.cpp"
 #include "../../../src/web/FaucetWeb.cpp"
 
 using namespace faucet;

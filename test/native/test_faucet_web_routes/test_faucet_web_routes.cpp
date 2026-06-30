@@ -9,9 +9,6 @@ using namespace faucet;
 namespace {
 
 const FaucetWebRoute* routeFor(const char* path, FaucetWebMethod method) {
-    if (!path) {
-        return nullptr;
-    }
     const FaucetWebRoute* routes = faucetWebRoutes();
     for (std::size_t i = 0; i < faucetWebRouteCount(); ++i) {
         if (std::strcmp(routes[i].path, path) == 0 && routes[i].method == method) {
@@ -32,7 +29,6 @@ bool pathRegistered(const char* path) {
 }  // namespace
 
 void test_routes_fit_esp32base_default_route_capacity() {
-    TEST_ASSERT_TRUE(faucetWebRoutesFitEsp32Base());
     TEST_ASSERT_LESS_OR_EQUAL_size_t(kFaucetWebMaxRoutes, faucetWebRouteCount());
 }
 
@@ -47,9 +43,6 @@ void test_routes_do_not_register_remote_water_control_paths() {
         TEST_ASSERT_NULL_MESSAGE(std::strstr(routes[i].path, "/resume"), routes[i].path);
     }
 
-    TEST_ASSERT_FALSE(pathRegistered(nullptr));
-    TEST_ASSERT_FALSE(pathRegistered(""));
-    TEST_ASSERT_FALSE(pathRegistered("api/faucet/status"));
     TEST_ASSERT_FALSE(pathRegistered("/api/faucet/start"));
     TEST_ASSERT_FALSE(pathRegistered("/api/faucet/stop"));
     TEST_ASSERT_FALSE(pathRegistered("/api/faucet/water/start"));

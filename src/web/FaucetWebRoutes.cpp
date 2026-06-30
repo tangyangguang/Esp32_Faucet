@@ -38,8 +38,4 @@ std::size_t faucetWebRouteCount() {
     return sizeof(kRoutes) / sizeof(kRoutes[0]);
 }
 
-bool faucetWebRoutesFitEsp32Base(std::size_t maxRoutes) {
-    return faucetWebRouteCount() <= maxRoutes;
-}
-
 }  // namespace faucet

@@ -44,6 +44,5 @@ struct FaucetWebRoute {
 
 const FaucetWebRoute* faucetWebRoutes();
 std::size_t faucetWebRouteCount();
-bool faucetWebRoutesFitEsp32Base(std::size_t maxRoutes = kFaucetWebMaxRoutes);
 
 }  // namespace faucet

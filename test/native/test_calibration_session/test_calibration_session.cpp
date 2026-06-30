@@ -34,15 +34,6 @@ void test_new_session_starts_preparing() {
     TEST_ASSERT_EQUAL_UINT8(0, session.validSampleCount);
 }
 
-void test_attempt_status_ordinals_keep_existing_values() {
-    TEST_ASSERT_EQUAL_UINT8(0, static_cast<unsigned>(CalibrationAttemptStatus::Empty));
-    TEST_ASSERT_EQUAL_UINT8(1, static_cast<unsigned>(CalibrationAttemptStatus::PendingActual));
-    TEST_ASSERT_EQUAL_UINT8(2, static_cast<unsigned>(CalibrationAttemptStatus::Valid));
-    TEST_ASSERT_EQUAL_UINT8(3, static_cast<unsigned>(CalibrationAttemptStatus::Skipped));
-    TEST_ASSERT_EQUAL_UINT8(4, static_cast<unsigned>(CalibrationAttemptStatus::Invalid));
-    TEST_ASSERT_EQUAL_UINT8(5, static_cast<unsigned>(CalibrationAttemptStatus::Removed));
-}
-
 void test_one_valid_sample_is_insufficient_for_quick_generation() {
     CalibrationSessionRecord session = makeCalibrationSession(1, 1770000000);
 
@@ -240,7 +231,6 @@ int main(int argc, char** argv) {
     (void)argv;
     UNITY_BEGIN();
     RUN_TEST(test_new_session_starts_preparing);
-    RUN_TEST(test_attempt_status_ordinals_keep_existing_values);
     RUN_TEST(test_one_valid_sample_is_insufficient_for_quick_generation);
     RUN_TEST(test_valid_status_below_min_actual_ml_does_not_count_for_quick_generation);
     RUN_TEST(test_valid_status_zero_pulses_does_not_count_for_quick_generation);

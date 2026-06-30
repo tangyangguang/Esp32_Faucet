@@ -17,7 +17,6 @@
 #include "app/WaterPulseTraceStore.h"
 #include "web/FaucetWebJson.h"
 #include "web/FaucetWebParsing.h"
-#include "web/FaucetWebPolicy.h"
 #include "web/FaucetWebRoutes.h"
 
 #if ESP32BASE_WEB_NATIVE_TEST
@@ -4643,9 +4642,8 @@ void handleFiltersResetApi() {
     if (!Esp32BaseWeb::checkPostAllowed("faucet_filter_reset") || !requireContext()) {
         return;
     }
-    char busyUrl[80]{};
-    if (faucetWebWriteBusyRedirect(waterTaskActive(), FaucetWebWriteTarget::Filters, busyUrl, sizeof(busyUrl))) {
-        Esp32BaseWeb::redirectSeeOther(busyUrl);
+    if (waterTaskActive()) {
+        Esp32BaseWeb::redirectSeeOther("/faucet/filters?error=busy");
         return;
     }
     char text[24]{};
@@ -4721,7 +4719,7 @@ void setFaucetWebContext(const FaucetWebContext& context) {
 }
 
 bool registerFaucetWeb() {
-    if (!faucetWebRoutesFitEsp32Base()) {
+    if (faucetWebRouteCount() > kFaucetWebMaxRoutes) {
         return false;
     }
 

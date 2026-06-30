@@ -4749,10 +4749,6 @@ bool registerFaucetWeb() {
     bool ok = true;
     const FaucetWebRoute* routes = faucetWebRoutes();
     for (std::size_t i = 0; i < faucetWebRouteCount(); ++i) {
-        if (!faucetWebRouteAllowed(routes[i].path)) {
-            ok = false;
-            continue;
-        }
         Esp32BaseWeb::Handler handler = handlerFor(routes[i]);
         if (!handler) {
             ok = false;

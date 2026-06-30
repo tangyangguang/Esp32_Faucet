@@ -4,7 +4,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <limits>
 #include <memory>
 #include <new>
 
@@ -19,11 +18,6 @@
 
 namespace faucet {
 namespace {
-
-std::uint32_t msFromSeconds(std::uint32_t seconds) {
-    constexpr std::uint32_t maxMs = std::numeric_limits<std::uint32_t>::max();
-    return seconds > maxMs / 1000UL ? maxMs : seconds * 1000UL;
-}
 
 WaterPulseTraceState traceStateForResult(WaterResult result) {
     switch (result) {
@@ -342,7 +336,7 @@ void AppController::tick(const AppTickInput& input) {
     }
     handleButtonEvent(event, input.nowMs, input.nowUs, input.nowSeconds, input.timeSynced, input.bootId);
     if (localMode_ == LocalUiMode::Result && config_.resultDisplaySec > 0 &&
-        elapsedAtLeast(input.nowMs, resultDisplayStartMs_, msFromSeconds(config_.resultDisplaySec))) {
+        elapsedAtLeast(input.nowMs, resultDisplayStartMs_, secondsToMillis(config_.resultDisplaySec))) {
         localMode_ = LocalUiMode::Normal;
     }
 

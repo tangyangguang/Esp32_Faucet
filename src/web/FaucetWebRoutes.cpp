@@ -1,7 +1,5 @@
 #include "web/FaucetWebRoutes.h"
 
-#include <cstring>
-
 namespace faucet {
 namespace {
 
@@ -31,10 +29,6 @@ constexpr FaucetWebRoute kRoutes[] = {
     {"/api/faucet/filters/reset", FaucetWebMethod::Post, nullptr, FaucetWebHandler::FiltersResetApi},
 };
 
-bool equals(const char* a, const char* b) {
-    return a && b && std::strcmp(a, b) == 0;
-}
-
 }  // namespace
 
 const FaucetWebRoute* faucetWebRoutes() {
@@ -43,18 +37,6 @@ const FaucetWebRoute* faucetWebRoutes() {
 
 std::size_t faucetWebRouteCount() {
     return sizeof(kRoutes) / sizeof(kRoutes[0]);
-}
-
-bool faucetWebRouteAllowed(const char* path) {
-    if (!path || path[0] != '/') {
-        return false;
-    }
-    for (std::size_t i = 0; i < faucetWebRouteCount(); ++i) {
-        if (equals(path, kRoutes[i].path)) {
-            return true;
-        }
-    }
-    return false;
 }
 
 bool faucetWebRoutesFitEsp32Base(std::size_t maxRoutes) {

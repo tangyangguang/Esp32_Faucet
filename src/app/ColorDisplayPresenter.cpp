@@ -10,10 +10,6 @@
 namespace faucet {
 namespace {
 
-std::uint32_t msFromSeconds(std::uint32_t seconds) {
-    return seconds * 1000UL;
-}
-
 template <std::size_t N>
 void copyText(char (&dest)[N], const char* src) {
     std::strncpy(dest, src ? src : "", N - 1);
@@ -190,7 +186,7 @@ const char* alertReason(WaterResult result) {
 }  // namespace
 
 ColorDisplayPresenter::ColorDisplayPresenter(std::uint32_t sleepTimeoutSec)
-    : sleepTimeoutMs_(msFromSeconds(sleepTimeoutSec)),
+    : sleepTimeoutMs_(secondsToMillis(sleepTimeoutSec)),
       lastWakeMs_(0),
       lastWaterState_(WaterState::Idle),
       lastTrendSampleMs_(0),
@@ -199,7 +195,7 @@ ColorDisplayPresenter::ColorDisplayPresenter(std::uint32_t sleepTimeoutSec)
       trendCount_(0) {}
 
 void ColorDisplayPresenter::configure(std::uint32_t sleepTimeoutSec) {
-    sleepTimeoutMs_ = msFromSeconds(sleepTimeoutSec);
+    sleepTimeoutMs_ = secondsToMillis(sleepTimeoutSec);
     resetTrends();
 }
 

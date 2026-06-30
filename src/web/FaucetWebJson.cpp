@@ -243,23 +243,6 @@ void appendPresetSummary(JsonWriter& writer,
 
 }  // namespace
 
-bool writeStatusJson(const AppSnapshot& snapshot, char* out, std::size_t len) {
-    return writeStatusJson(snapshot, false, out, len);
-}
-
-bool writeStatusJson(const AppSnapshot& snapshot, bool screenOn, char* out, std::size_t len) {
-    const SystemConfig config = makeDefaultConfig();
-    return writeStatusJson(snapshot, screenOn, config, out, len);
-}
-
-bool writeStatusJson(const AppSnapshot& snapshot,
-                     bool screenOn,
-                     const SystemConfig& config,
-                     char* out,
-                     std::size_t len) {
-    return writeStatusJson(snapshot, screenOn, config, nullptr, out, len);
-}
-
 bool writeStatusJson(const AppSnapshot& snapshot,
                      bool screenOn,
                      const SystemConfig& config,
@@ -385,20 +368,6 @@ bool writeStatusJson(const AppSnapshot& snapshot,
                       static_cast<long>(configStatus->currentVersion));
     }
     writer.append("}");
-    return writer.ok();
-}
-
-bool writeStatsJson(const StatisticsRecord& record, char* out, std::size_t len) {
-    JsonWriter writer(out, len);
-    writer.append("{\"todayMl\":%lu,\"weekMl\":%lu,\"monthMl\":%lu,\"totalMl\":%lu,"
-                  "\"dayKey\":%lu,\"weekKey\":%lu,\"monthKey\":%lu}",
-                  static_cast<unsigned long>(record.todayMl),
-                  static_cast<unsigned long>(record.weekMl),
-                  static_cast<unsigned long>(record.monthMl),
-                  static_cast<unsigned long>(record.totalMl),
-                  static_cast<unsigned long>(record.lastDayKey),
-                  static_cast<unsigned long>(record.lastWeekKey),
-                  static_cast<unsigned long>(record.lastMonthKey));
     return writer.ok();
 }
 

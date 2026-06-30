@@ -9,6 +9,9 @@ using namespace faucet;
 namespace {
 
 const FaucetWebRoute* routeFor(const char* path, FaucetWebMethod method) {
+    if (!path) {
+        return nullptr;
+    }
     const FaucetWebRoute* routes = faucetWebRoutes();
     for (std::size_t i = 0; i < faucetWebRouteCount(); ++i) {
         if (std::strcmp(routes[i].path, path) == 0 && routes[i].method == method) {
@@ -22,6 +25,10 @@ bool routeExists(const char* path, FaucetWebMethod method) {
     return routeFor(path, method) != nullptr;
 }
 
+bool pathRegistered(const char* path) {
+    return routeFor(path, FaucetWebMethod::Get) || routeFor(path, FaucetWebMethod::Post);
+}
+
 }  // namespace
 
 void test_routes_fit_esp32base_default_route_capacity() {
@@ -32,7 +39,6 @@ void test_routes_fit_esp32base_default_route_capacity() {
 void test_routes_do_not_register_remote_water_control_paths() {
     const FaucetWebRoute* routes = faucetWebRoutes();
     for (std::size_t i = 0; i < faucetWebRouteCount(); ++i) {
-        TEST_ASSERT_TRUE_MESSAGE(faucetWebRouteAllowed(routes[i].path), routes[i].path);
         TEST_ASSERT_NULL_MESSAGE(std::strstr(routes[i].path, "/api/faucet/water/"), routes[i].path);
         TEST_ASSERT_NULL_MESSAGE(std::strstr(routes[i].path, "/water/"), routes[i].path);
         TEST_ASSERT_NULL_MESSAGE(std::strstr(routes[i].path, "/start"), routes[i].path);
@@ -41,12 +47,12 @@ void test_routes_do_not_register_remote_water_control_paths() {
         TEST_ASSERT_NULL_MESSAGE(std::strstr(routes[i].path, "/resume"), routes[i].path);
     }
 
-    TEST_ASSERT_FALSE(faucetWebRouteAllowed(nullptr));
-    TEST_ASSERT_FALSE(faucetWebRouteAllowed(""));
-    TEST_ASSERT_FALSE(faucetWebRouteAllowed("api/faucet/status"));
-    TEST_ASSERT_FALSE(faucetWebRouteAllowed("/api/faucet/start"));
-    TEST_ASSERT_FALSE(faucetWebRouteAllowed("/api/faucet/stop"));
-    TEST_ASSERT_FALSE(faucetWebRouteAllowed("/api/faucet/water/start"));
+    TEST_ASSERT_FALSE(pathRegistered(nullptr));
+    TEST_ASSERT_FALSE(pathRegistered(""));
+    TEST_ASSERT_FALSE(pathRegistered("api/faucet/status"));
+    TEST_ASSERT_FALSE(pathRegistered("/api/faucet/start"));
+    TEST_ASSERT_FALSE(pathRegistered("/api/faucet/stop"));
+    TEST_ASSERT_FALSE(pathRegistered("/api/faucet/water/start"));
 }
 
 void test_navigation_routes_keep_titles_and_hidden_routes_do_not() {

@@ -9,10 +9,6 @@ namespace {
 
 constexpr std::uint32_t kValvePwmFrequencyHz = 20000;
 
-std::uint32_t dutyFromPercent(std::uint8_t percent) {
-    return static_cast<std::uint32_t>(percent) * 255UL / 100UL;
-}
-
 }  // namespace
 
 PwmValveHardware::PwmValveHardware(std::uint8_t pin, std::uint8_t channel) : pin_(pin), channel_(channel) {}
@@ -26,7 +22,7 @@ void PwmValveHardware::begin() {
 }
 
 void PwmValveHardware::apply(ValveOutput output) {
-    ledcWrite(channel_, output.enabled ? dutyFromPercent(output.dutyPercent) : 0);
+    ledcWrite(channel_, output.enabled ? ledcDutyFromPercent(output.dutyPercent) : 0);
 }
 
 }  // namespace faucet

@@ -5,6 +5,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <memory>
 #include <new>
 
 namespace faucet {
@@ -242,12 +243,12 @@ SystemConfig ConfigStore::loadSystemConfig() {
 }
 
 bool ConfigStore::saveSystemConfig(const SystemConfig& config) {
-    SystemConfig* safeStorage = new (std::nothrow) SystemConfig(config);
-    if (!safeStorage) {
+    std::unique_ptr<SystemConfig> storage(new (std::nothrow) SystemConfig(config));
+    if (!storage) {
         return false;
     }
-    sanitizeConfig(*safeStorage);
-    const SystemConfig& safe = *safeStorage;
+    sanitizeConfig(*storage);
+    const SystemConfig& safe = *storage;
 
     bool ok = true;
     ok = okAll(ok, backend_.setInt(kConfigNs, "confirm_s", toInt(safe.confirmTimeoutSec)));
@@ -323,7 +324,6 @@ bool ConfigStore::saveSystemConfig(const SystemConfig& config) {
         ok = backend_.setInt(kConfigNs, "ver", kConfigVersion);
     }
 
-    delete safeStorage;
     return ok;
 }
 

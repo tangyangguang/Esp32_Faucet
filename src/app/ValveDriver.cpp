@@ -5,10 +5,6 @@
 namespace faucet {
 namespace {
 
-std::uint32_t msFromSeconds(std::uint32_t seconds) {
-    return seconds * 1000UL;
-}
-
 bool validConfig(std::uint32_t fullPowerSec, std::uint8_t holdDutyPercent) {
     return fullPowerSec >= 1 && fullPowerSec <= 10 && holdDutyPercent >= kMinValveHoldDutyPercent &&
            holdDutyPercent <= kMaxValveHoldDutyPercent;
@@ -17,7 +13,7 @@ bool validConfig(std::uint32_t fullPowerSec, std::uint8_t holdDutyPercent) {
 }  // namespace
 
 ValveDriver::ValveDriver(std::uint32_t fullPowerSec, std::uint8_t holdDutyPercent)
-    : fullPowerMs_(msFromSeconds(kDefaultValveFullPowerSec)),
+    : fullPowerMs_(secondsToMillis(kDefaultValveFullPowerSec)),
       holdDutyPercent_(kDefaultValveHoldDutyPercent),
       openedAtMs_(0),
       state_(ValveState::Closed) {
@@ -28,7 +24,7 @@ bool ValveDriver::configure(std::uint32_t fullPowerSec, std::uint8_t holdDutyPer
     if (!validConfig(fullPowerSec, holdDutyPercent)) {
         return false;
     }
-    fullPowerMs_ = msFromSeconds(fullPowerSec);
+    fullPowerMs_ = secondsToMillis(fullPowerSec);
     holdDutyPercent_ = holdDutyPercent;
     return true;
 }

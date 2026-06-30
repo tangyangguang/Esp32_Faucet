@@ -25,4 +25,9 @@ constexpr std::uint8_t kLedcChannelValve = 0;
 constexpr std::uint8_t kLedcChannelBeep = 1;
 constexpr std::uint8_t kLedcResolutionBits = 8;
 
+inline std::uint32_t ledcDutyFromPercent(std::uint8_t percent) {
+    constexpr std::uint32_t maxDuty = (1UL << kLedcResolutionBits) - 1UL;
+    return static_cast<std::uint32_t>(percent) * maxDuty / 100UL;
+}
+
 }  // namespace faucet

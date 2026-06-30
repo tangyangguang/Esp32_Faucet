@@ -26,21 +26,35 @@ void advanceSample(WaterSensorManager& manager, std::uint32_t& nowMs) {
     manager.tick(nowMs);
 }
 
+struct SensorManagerFixture {
+    FakeAdcReader adc;
+    SystemConfig config;
+    WaterSensorManager manager;
+
+    explicit SensorManagerFixture(const SystemConfig& initialConfig = enabledSensorConfig(),
+                                  bool sampleInputVoltage = true)
+        : config(initialConfig),
+          manager(adc, sampleInputVoltage) {
+        manager.configure(config);
+        TEST_ASSERT_TRUE(manager.begin());
+    }
+
+    void setDefaultReadings() {
+        adc.values[0] = okMv(1091);
+        adc.values[1] = okMv(1650);
+        adc.values[2] = okMv(24);
+    }
+};
+
 }  // namespace
 
 void test_manager_samples_a0_input_voltage_a1_temp_a2_tds() {
-    FakeAdcReader adc;
-    adc.values[0] = okMv(1091);
-    adc.values[1] = okMv(1650);
-    adc.values[2] = okMv(24);
-    WaterSensorManager manager(adc);
-    manager.configure(enabledSensorConfig());
-
-    manager.begin();
+    SensorManagerFixture fixture;
+    fixture.setDefaultReadings();
     std::uint32_t nowMs = 0;
-    advanceSample(manager, nowMs);
+    advanceSample(fixture.manager, nowMs);
 
-    const WaterSensorSnapshot snapshot = manager.snapshot();
+    const WaterSensorSnapshot snapshot = fixture.manager.snapshot();
     TEST_ASSERT_TRUE(snapshot.inputVoltageMv.valid);
     TEST_ASSERT_EQUAL_INT32(12001, snapshot.inputVoltageMv.value);
     TEST_ASSERT_TRUE(snapshot.temperatureCentiC.valid);
@@ -49,133 +63,110 @@ void test_manager_samples_a0_input_voltage_a1_temp_a2_tds() {
     TEST_ASSERT_EQUAL_INT32(10, snapshot.tdsPpm.value);
     TEST_ASSERT_TRUE(snapshot.tdsVoltageMv.valid);
     TEST_ASSERT_EQUAL_INT32(24, snapshot.tdsVoltageMv.value);
-    TEST_ASSERT_EQUAL_size_t(1, adc.readCount[0]);
-    TEST_ASSERT_EQUAL_size_t(1, adc.readCount[1]);
-    TEST_ASSERT_EQUAL_size_t(1, adc.readCount[2]);
+    TEST_ASSERT_EQUAL_size_t(1, fixture.adc.readCount[0]);
+    TEST_ASSERT_EQUAL_size_t(1, fixture.adc.readCount[1]);
+    TEST_ASSERT_EQUAL_size_t(1, fixture.adc.readCount[2]);
 }
 
 void test_manager_can_skip_input_voltage_when_only_water_sensors_are_wired() {
-    FakeAdcReader adc;
-    adc.values[1] = okMv(1650);
-    adc.values[2] = okMv(24);
-    WaterSensorManager manager(adc, false);
-    manager.configure(enabledSensorConfig());
-
-    manager.begin();
+    SensorManagerFixture fixture(enabledSensorConfig(), false);
+    fixture.adc.values[1] = okMv(1650);
+    fixture.adc.values[2] = okMv(24);
     std::uint32_t nowMs = 0;
-    advanceSample(manager, nowMs);
-    advanceSample(manager, nowMs);
-    advanceSample(manager, nowMs);
+    advanceSample(fixture.manager, nowMs);
+    advanceSample(fixture.manager, nowMs);
+    advanceSample(fixture.manager, nowMs);
 
-    const WaterSensorSnapshot snapshot = manager.snapshot();
+    const WaterSensorSnapshot snapshot = fixture.manager.snapshot();
     TEST_ASSERT_FALSE(snapshot.inputVoltageMv.valid);
     TEST_ASSERT_TRUE(snapshot.temperatureCentiC.valid);
     TEST_ASSERT_TRUE(snapshot.tdsPpm.valid);
     TEST_ASSERT_TRUE((snapshot.flags & kWaterSensorFlagAds1115Offline) == 0);
-    TEST_ASSERT_EQUAL_size_t(0, adc.readCount[0]);
-    TEST_ASSERT_EQUAL_size_t(3, adc.readCount[1]);
-    TEST_ASSERT_EQUAL_size_t(3, adc.readCount[2]);
+    TEST_ASSERT_EQUAL_size_t(0, fixture.adc.readCount[0]);
+    TEST_ASSERT_EQUAL_size_t(3, fixture.adc.readCount[1]);
+    TEST_ASSERT_EQUAL_size_t(3, fixture.adc.readCount[2]);
 }
 
 void test_manager_marks_ads_offline_after_three_failures() {
-    FakeAdcReader adc;
-    adc.failAll = true;
-    WaterSensorManager manager(adc);
-    manager.configure(enabledSensorConfig());
-    manager.begin();
+    SensorManagerFixture fixture;
+    fixture.adc.failAll = true;
     std::uint32_t nowMs = 0;
 
-    advanceSample(manager, nowMs);
-    advanceSample(manager, nowMs);
-    advanceSample(manager, nowMs);
+    advanceSample(fixture.manager, nowMs);
+    advanceSample(fixture.manager, nowMs);
+    advanceSample(fixture.manager, nowMs);
 
-    TEST_ASSERT_TRUE((manager.snapshot().flags & kWaterSensorFlagAds1115Offline) != 0);
+    TEST_ASSERT_TRUE((fixture.manager.snapshot().flags & kWaterSensorFlagAds1115Offline) != 0);
 }
 
 void test_manager_recovers_after_three_successes() {
-    FakeAdcReader adc;
-    adc.failAll = true;
-    WaterSensorManager manager(adc);
-    manager.configure(enabledSensorConfig());
-    manager.begin();
+    SensorManagerFixture fixture;
+    fixture.adc.failAll = true;
     std::uint32_t nowMs = 0;
-    advanceSample(manager, nowMs);
-    advanceSample(manager, nowMs);
-    advanceSample(manager, nowMs);
-    TEST_ASSERT_TRUE((manager.snapshot().flags & kWaterSensorFlagAds1115Offline) != 0);
+    advanceSample(fixture.manager, nowMs);
+    advanceSample(fixture.manager, nowMs);
+    advanceSample(fixture.manager, nowMs);
+    TEST_ASSERT_TRUE((fixture.manager.snapshot().flags & kWaterSensorFlagAds1115Offline) != 0);
 
-    adc.failAll = false;
-    adc.values[0] = okMv(1091);
-    adc.values[1] = okMv(1650);
-    adc.values[2] = okMv(24);
-    advanceSample(manager, nowMs);
-    advanceSample(manager, nowMs);
-    advanceSample(manager, nowMs);
+    fixture.adc.failAll = false;
+    fixture.setDefaultReadings();
+    advanceSample(fixture.manager, nowMs);
+    advanceSample(fixture.manager, nowMs);
+    advanceSample(fixture.manager, nowMs);
 
-    TEST_ASSERT_TRUE((manager.snapshot().flags & kWaterSensorFlagAds1115Offline) == 0);
+    TEST_ASSERT_TRUE((fixture.manager.snapshot().flags & kWaterSensorFlagAds1115Offline) == 0);
 }
 
 void test_tds_range_switches_up_at_85_percent() {
-    FakeAdcReader adc;
-    adc.values[0] = okMv(1091);
-    adc.values[1] = okMv(1650);
-    adc.values[2] = okMv(230);
-    WaterSensorManager manager(adc);
-    manager.configure(enabledSensorConfig());
-    manager.begin();
+    SensorManagerFixture fixture;
+    fixture.adc.values[0] = okMv(1091);
+    fixture.adc.values[1] = okMv(1650);
+    fixture.adc.values[2] = okMv(230);
 
     std::uint32_t nowMs = 0;
-    advanceSample(manager, nowMs);
+    advanceSample(fixture.manager, nowMs);
 
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(AdcRange::P512),
-                            static_cast<std::uint8_t>(adc.ranges[2]));
-    TEST_ASSERT_FALSE(manager.snapshot().tdsPpm.valid);
+                            static_cast<std::uint8_t>(fixture.adc.ranges[2]));
+    TEST_ASSERT_FALSE(fixture.manager.snapshot().tdsPpm.valid);
 }
 
 void test_tds_range_switches_down_after_eight_low_windows() {
-    FakeAdcReader adc;
-    adc.values[0] = okMv(1091);
-    adc.values[1] = okMv(1650);
-    adc.values[2] = okMv(230);
-    WaterSensorManager manager(adc);
-    manager.configure(enabledSensorConfig());
-    manager.begin();
+    SensorManagerFixture fixture;
+    fixture.adc.values[0] = okMv(1091);
+    fixture.adc.values[1] = okMv(1650);
+    fixture.adc.values[2] = okMv(230);
     std::uint32_t nowMs = 0;
-    advanceSample(manager, nowMs);
+    advanceSample(fixture.manager, nowMs);
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(AdcRange::P512),
-                            static_cast<std::uint8_t>(adc.ranges[2]));
+                            static_cast<std::uint8_t>(fixture.adc.ranges[2]));
 
-    adc.values[2] = okMv(100);
+    fixture.adc.values[2] = okMv(100);
     for (std::uint8_t i = 0; i < 9; ++i) {
-        advanceSample(manager, nowMs);
+        advanceSample(fixture.manager, nowMs);
     }
 
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(AdcRange::P256),
-                            static_cast<std::uint8_t>(adc.ranges[2]));
+                            static_cast<std::uint8_t>(fixture.adc.ranges[2]));
 }
 
 void test_run_summary_aggregates_valid_samples_only() {
-    FakeAdcReader adc;
-    adc.values[0] = okMv(1091);
-    adc.values[1] = okMv(1650);
-    adc.values[2] = okMv(24);
-    WaterSensorManager manager(adc);
-    manager.configure(enabledSensorConfig());
-    manager.begin();
-    manager.beginRun();
+    SensorManagerFixture fixture;
+    fixture.setDefaultReadings();
+    fixture.manager.beginRun();
     std::uint32_t nowMs = 0;
 
-    advanceSample(manager, nowMs);
-    manager.sampleRun();
-    adc.values[1] = okMv(1840);
-    adc.values[2] = okMv(48);
-    advanceSample(manager, nowMs);
-    manager.sampleRun();
-    adc.values[2] = {};
-    advanceSample(manager, nowMs);
-    manager.sampleRun();
+    advanceSample(fixture.manager, nowMs);
+    fixture.manager.sampleRun();
+    fixture.adc.values[1] = okMv(1840);
+    fixture.adc.values[2] = okMv(48);
+    advanceSample(fixture.manager, nowMs);
+    fixture.manager.sampleRun();
+    fixture.adc.values[2] = {};
+    advanceSample(fixture.manager, nowMs);
+    fixture.manager.sampleRun();
 
-    const WaterSensorRunSummary summary = manager.finishRun();
+    const WaterSensorRunSummary summary = fixture.manager.finishRun();
     TEST_ASSERT_EQUAL_UINT16(2, summary.sensorSampleCount);
     TEST_ASSERT_TRUE(summary.temperatureMinCentiC <= summary.temperatureAvgCentiC);
     TEST_ASSERT_TRUE(summary.temperatureAvgCentiC <= summary.temperatureMaxCentiC);
@@ -187,25 +178,22 @@ void test_run_summary_aggregates_valid_samples_only() {
 }
 
 void test_run_summary_records_tds_when_temperature_sensor_is_disabled() {
-    FakeAdcReader adc;
-    adc.values[0] = okMv(1091);
-    adc.values[1] = {};
-    adc.values[2] = okMv(24);
     SystemConfig config = enabledSensorConfig();
     config.temperatureEnabled = false;
     config.temperatureKind = TemperatureKind::None;
-    WaterSensorManager manager(adc);
-    manager.configure(config);
-    manager.begin();
-    manager.beginRun();
+    SensorManagerFixture fixture(config);
+    fixture.adc.values[0] = okMv(1091);
+    fixture.adc.values[1] = {};
+    fixture.adc.values[2] = okMv(24);
+    fixture.manager.beginRun();
     std::uint32_t nowMs = 0;
 
-    advanceSample(manager, nowMs);
-    manager.sampleRun();
-    advanceSample(manager, nowMs);
-    manager.sampleRun();
+    advanceSample(fixture.manager, nowMs);
+    fixture.manager.sampleRun();
+    advanceSample(fixture.manager, nowMs);
+    fixture.manager.sampleRun();
 
-    const WaterSensorRunSummary summary = manager.finishRun();
+    const WaterSensorRunSummary summary = fixture.manager.finishRun();
     TEST_ASSERT_EQUAL_UINT16(2, summary.sensorSampleCount);
     TEST_ASSERT_EQUAL_UINT16(10, summary.tdsAvgPpm);
     TEST_ASSERT_EQUAL_UINT16(10, summary.tdsMinPpm);
@@ -215,70 +203,64 @@ void test_run_summary_records_tds_when_temperature_sensor_is_disabled() {
 }
 
 void test_calibration_uses_25c_fallback_without_failing() {
-    FakeAdcReader adc;
-    adc.values[0] = okMv(1091);
-    adc.values[1] = {};
-    adc.values[2] = okMv(24);
     SystemConfig config = makeDefaultConfig();
     config.tdsEnabled = true;
     config.tdsKind = TdsKind::AnalogTdsAo;
     config.temperatureEnabled = false;
-    WaterSensorManager manager(adc);
-    manager.configure(config);
-    manager.begin();
+    SensorManagerFixture fixture(config);
+    fixture.adc.values[0] = okMv(1091);
+    fixture.adc.values[1] = {};
+    fixture.adc.values[2] = okMv(24);
 
-    TEST_ASSERT_TRUE(manager.startTdsCalibrationSession(1720000000UL));
-    TEST_ASSERT_TRUE(manager.startTdsCalibrationPoint(10, 1720000001UL));
+    TEST_ASSERT_TRUE(fixture.manager.startTdsCalibrationSession(1720000000UL));
+    TEST_ASSERT_TRUE(fixture.manager.startTdsCalibrationPoint(10, 1720000001UL));
     std::uint32_t nowMs = 0;
     for (std::uint8_t i = 0; i < 20; ++i) {
-        advanceSample(manager, nowMs);
+        advanceSample(fixture.manager, nowMs);
     }
 
-    const TdsCalibrationSessionSnapshot session = manager.calibrationSnapshot();
+    const TdsCalibrationSessionSnapshot session = fixture.manager.calibrationSnapshot();
     TEST_ASSERT_TRUE(session.samplingActive);
     TEST_ASSERT_TRUE(session.readyToSave);
     TEST_ASSERT_TRUE(session.tempFallback25C);
-    TEST_ASSERT_TRUE(manager.saveStableTdsCalibrationPoint(1720000020UL));
-    TEST_ASSERT_TRUE(manager.applyReadyTdsCalibration(config, 1720000021UL));
+    TEST_ASSERT_TRUE(fixture.manager.saveStableTdsCalibrationPoint(1720000020UL));
+    TEST_ASSERT_TRUE(fixture.manager.applyReadyTdsCalibration(config, 1720000021UL));
     TEST_ASSERT_TRUE(config.tdsCalibrated);
     TEST_ASSERT_EQUAL_UINT16(1, config.tdsCalibrationRevision);
     TEST_ASSERT_EQUAL_INT16(2500, config.tdsCalibrationTemperatureCentiC);
 }
 
 void test_two_point_calibration_saves_low_then_high_without_flash_progress_dependency() {
-    FakeAdcReader adc;
-    adc.values[0] = okMv(1091);
-    adc.values[1] = okMv(1650);
-    adc.values[2] = okMv(12);
     SystemConfig config = enabledSensorConfig();
     config.tdsCalibrated = false;
     config.tdsCalibrationMode = TdsCalibrationMode::None;
     config.tdsCalibrationRevision = 0;
-    WaterSensorManager manager(adc);
-    manager.configure(config);
-    manager.begin();
+    SensorManagerFixture fixture(config);
+    fixture.adc.values[0] = okMv(1091);
+    fixture.adc.values[1] = okMv(1650);
+    fixture.adc.values[2] = okMv(12);
 
-    TEST_ASSERT_TRUE(manager.startTdsCalibrationSession(1720000000UL));
-    TEST_ASSERT_TRUE(manager.startTdsCalibrationPoint(0, 1720000001UL));
+    TEST_ASSERT_TRUE(fixture.manager.startTdsCalibrationSession(1720000000UL));
+    TEST_ASSERT_TRUE(fixture.manager.startTdsCalibrationPoint(0, 1720000001UL));
     std::uint32_t nowMs = 0;
     for (std::uint8_t i = 0; i < 20; ++i) {
-        advanceSample(manager, nowMs);
+        advanceSample(fixture.manager, nowMs);
     }
-    TEST_ASSERT_TRUE(manager.calibrationSnapshot().readyToSave);
-    TEST_ASSERT_TRUE(manager.saveStableTdsCalibrationPoint(1720000020UL));
+    TEST_ASSERT_TRUE(fixture.manager.calibrationSnapshot().readyToSave);
+    TEST_ASSERT_TRUE(fixture.manager.saveStableTdsCalibrationPoint(1720000020UL));
     TEST_ASSERT_FALSE(config.tdsCalibrated);
     TEST_ASSERT_EQUAL_UINT16(0, config.tdsCalibrationRevision);
 
-    adc.values[2] = okMv(380);
-    TEST_ASSERT_TRUE(manager.startTdsCalibrationPoint(160, 1720000030UL));
+    fixture.adc.values[2] = okMv(380);
+    TEST_ASSERT_TRUE(fixture.manager.startTdsCalibrationPoint(160, 1720000030UL));
     for (std::uint8_t i = 0; i < 20; ++i) {
-        advanceSample(manager, nowMs);
+        advanceSample(fixture.manager, nowMs);
     }
 
-    const TdsCalibrationSessionSnapshot session = manager.calibrationSnapshot();
+    const TdsCalibrationSessionSnapshot session = fixture.manager.calibrationSnapshot();
     TEST_ASSERT_TRUE(session.readyToSave);
-    TEST_ASSERT_TRUE(manager.saveStableTdsCalibrationPoint(1720000050UL));
-    TEST_ASSERT_TRUE(manager.applyReadyTdsCalibration(config, 1720000051UL));
+    TEST_ASSERT_TRUE(fixture.manager.saveStableTdsCalibrationPoint(1720000050UL));
+    TEST_ASSERT_TRUE(fixture.manager.applyReadyTdsCalibration(config, 1720000051UL));
     TEST_ASSERT_TRUE(config.tdsCalibrated);
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(TdsCalibrationMode::TwoPoint),
                             static_cast<std::uint8_t>(config.tdsCalibrationMode));
@@ -289,22 +271,18 @@ void test_two_point_calibration_saves_low_then_high_without_flash_progress_depen
 }
 
 void test_tds_calibration_point_session_generates_after_one_point() {
-    FakeAdcReader adc;
-    SystemConfig config = enabledSensorConfig();
-    WaterSensorManager manager(adc);
-    manager.configure(config);
-    TEST_ASSERT_TRUE(manager.begin());
+    SensorManagerFixture fixture;
 
-    TEST_ASSERT_TRUE(manager.startTdsCalibrationSession(1720000000UL));
-    TEST_ASSERT_TRUE(manager.startTdsCalibrationPoint(160, 1720000001UL));
+    TEST_ASSERT_TRUE(fixture.manager.startTdsCalibrationSession(1720000000UL));
+    TEST_ASSERT_TRUE(fixture.manager.startTdsCalibrationPoint(160, 1720000001UL));
     std::uint32_t nowMs = 0;
     for (std::uint8_t i = 0; i < 16; ++i) {
-        adc.values[2] = okMv(380);
-        advanceSample(manager, nowMs);
+        fixture.adc.values[2] = okMv(380);
+        advanceSample(fixture.manager, nowMs);
     }
-    TEST_ASSERT_TRUE(manager.saveStableTdsCalibrationPoint(1720000020UL));
+    TEST_ASSERT_TRUE(fixture.manager.saveStableTdsCalibrationPoint(1720000020UL));
 
-    const TdsCalibrationSessionSnapshot session = manager.calibrationSnapshot();
+    const TdsCalibrationSessionSnapshot session = fixture.manager.calibrationSnapshot();
     TEST_ASSERT_TRUE(session.sessionActive);
     TEST_ASSERT_EQUAL_UINT8(1, session.pointCount);
     TEST_ASSERT_TRUE(session.candidateReady);
@@ -313,24 +291,20 @@ void test_tds_calibration_point_session_generates_after_one_point() {
 }
 
 void test_tds_calibration_session_rejects_duplicate_start_without_clearing_points() {
-    FakeAdcReader adc;
-    SystemConfig config = enabledSensorConfig();
-    WaterSensorManager manager(adc);
-    manager.configure(config);
-    TEST_ASSERT_TRUE(manager.begin());
+    SensorManagerFixture fixture;
 
-    TEST_ASSERT_TRUE(manager.startTdsCalibrationSession(1720000000UL));
-    TEST_ASSERT_TRUE(manager.startTdsCalibrationPoint(160, 1720000001UL));
+    TEST_ASSERT_TRUE(fixture.manager.startTdsCalibrationSession(1720000000UL));
+    TEST_ASSERT_TRUE(fixture.manager.startTdsCalibrationPoint(160, 1720000001UL));
     std::uint32_t nowMs = 0;
     for (std::uint8_t i = 0; i < 16; ++i) {
-        adc.values[2] = okMv(420);
-        advanceSample(manager, nowMs);
+        fixture.adc.values[2] = okMv(420);
+        advanceSample(fixture.manager, nowMs);
     }
-    TEST_ASSERT_TRUE(manager.saveStableTdsCalibrationPoint(1720000020UL));
+    TEST_ASSERT_TRUE(fixture.manager.saveStableTdsCalibrationPoint(1720000020UL));
 
-    TEST_ASSERT_FALSE(manager.startTdsCalibrationSession(1720000030UL));
+    TEST_ASSERT_FALSE(fixture.manager.startTdsCalibrationSession(1720000030UL));
 
-    const TdsCalibrationSessionSnapshot session = manager.calibrationSnapshot();
+    const TdsCalibrationSessionSnapshot session = fixture.manager.calibrationSnapshot();
     TEST_ASSERT_TRUE(session.sessionActive);
     TEST_ASSERT_EQUAL_UINT8(1, session.pointCount);
     TEST_ASSERT_TRUE(session.candidateReady);
@@ -338,30 +312,27 @@ void test_tds_calibration_session_rejects_duplicate_start_without_clearing_point
 }
 
 void test_tds_calibration_point_session_multi_point_fit_and_apply() {
-    FakeAdcReader adc;
     SystemConfig config = enabledSensorConfig();
-    WaterSensorManager manager(adc);
-    manager.configure(config);
-    TEST_ASSERT_TRUE(manager.begin());
+    SensorManagerFixture fixture(config);
 
-    TEST_ASSERT_TRUE(manager.startTdsCalibrationSession(1720000000UL));
+    TEST_ASSERT_TRUE(fixture.manager.startTdsCalibrationSession(1720000000UL));
     std::uint32_t nowMs = 0;
 
-    TEST_ASSERT_TRUE(manager.startTdsCalibrationPoint(20, 1720000001UL));
+    TEST_ASSERT_TRUE(fixture.manager.startTdsCalibrationPoint(20, 1720000001UL));
     for (std::uint8_t i = 0; i < 16; ++i) {
-        adc.values[2] = okMv(160);
-        advanceSample(manager, nowMs);
+        fixture.adc.values[2] = okMv(160);
+        advanceSample(fixture.manager, nowMs);
     }
-    TEST_ASSERT_TRUE(manager.saveStableTdsCalibrationPoint(1720000020UL));
+    TEST_ASSERT_TRUE(fixture.manager.saveStableTdsCalibrationPoint(1720000020UL));
 
-    TEST_ASSERT_TRUE(manager.startTdsCalibrationPoint(160, 1720000030UL));
+    TEST_ASSERT_TRUE(fixture.manager.startTdsCalibrationPoint(160, 1720000030UL));
     for (std::uint8_t i = 0; i < 16; ++i) {
-        adc.values[2] = okMv(420);
-        advanceSample(manager, nowMs);
+        fixture.adc.values[2] = okMv(420);
+        advanceSample(fixture.manager, nowMs);
     }
-    TEST_ASSERT_TRUE(manager.saveStableTdsCalibrationPoint(1720000040UL));
+    TEST_ASSERT_TRUE(fixture.manager.saveStableTdsCalibrationPoint(1720000040UL));
 
-    TEST_ASSERT_TRUE(manager.applyReadyTdsCalibration(config, 1720000050UL));
+    TEST_ASSERT_TRUE(fixture.manager.applyReadyTdsCalibration(config, 1720000050UL));
     TEST_ASSERT_TRUE(config.tdsCalibrated);
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(TdsCalibrationMode::TwoPoint),
                             static_cast<std::uint8_t>(config.tdsCalibrationMode));
@@ -369,53 +340,46 @@ void test_tds_calibration_point_session_multi_point_fit_and_apply() {
 }
 
 void test_tds_calibration_apply_saves_low_and_high_by_reference_not_entry_order() {
-    FakeAdcReader adc;
     SystemConfig config = enabledSensorConfig();
-    WaterSensorManager manager(adc);
-    manager.configure(config);
-    TEST_ASSERT_TRUE(manager.begin());
+    SensorManagerFixture fixture(config);
 
-    TEST_ASSERT_TRUE(manager.startTdsCalibrationSession(1720000000UL));
+    TEST_ASSERT_TRUE(fixture.manager.startTdsCalibrationSession(1720000000UL));
     std::uint32_t nowMs = 0;
 
-    TEST_ASSERT_TRUE(manager.startTdsCalibrationPoint(160, 1720000001UL));
+    TEST_ASSERT_TRUE(fixture.manager.startTdsCalibrationPoint(160, 1720000001UL));
     for (std::uint8_t i = 0; i < 16; ++i) {
-        adc.values[2] = okMv(420);
-        advanceSample(manager, nowMs);
+        fixture.adc.values[2] = okMv(420);
+        advanceSample(fixture.manager, nowMs);
     }
-    TEST_ASSERT_TRUE(manager.saveStableTdsCalibrationPoint(1720000020UL));
+    TEST_ASSERT_TRUE(fixture.manager.saveStableTdsCalibrationPoint(1720000020UL));
 
-    TEST_ASSERT_TRUE(manager.startTdsCalibrationPoint(20, 1720000030UL));
+    TEST_ASSERT_TRUE(fixture.manager.startTdsCalibrationPoint(20, 1720000030UL));
     for (std::uint8_t i = 0; i < 16; ++i) {
-        adc.values[2] = okMv(160);
-        advanceSample(manager, nowMs);
+        fixture.adc.values[2] = okMv(160);
+        advanceSample(fixture.manager, nowMs);
     }
-    TEST_ASSERT_TRUE(manager.saveStableTdsCalibrationPoint(1720000040UL));
+    TEST_ASSERT_TRUE(fixture.manager.saveStableTdsCalibrationPoint(1720000040UL));
 
-    TEST_ASSERT_TRUE(manager.applyReadyTdsCalibration(config, 1720000050UL));
+    TEST_ASSERT_TRUE(fixture.manager.applyReadyTdsCalibration(config, 1720000050UL));
     TEST_ASSERT_EQUAL_UINT16(20, config.tdsLowReferencePpm);
     TEST_ASSERT_EQUAL_UINT16(160, config.tdsHighReferencePpm);
     TEST_ASSERT_TRUE(config.tdsLowRawPpm < config.tdsHighRawPpm);
 }
 
 void test_tds_calibration_point_removal_recomputes_candidate() {
-    FakeAdcReader adc;
-    SystemConfig config = enabledSensorConfig();
-    WaterSensorManager manager(adc);
-    manager.configure(config);
-    TEST_ASSERT_TRUE(manager.begin());
+    SensorManagerFixture fixture;
 
-    TEST_ASSERT_TRUE(manager.startTdsCalibrationSession(1720000000UL));
-    TEST_ASSERT_TRUE(manager.startTdsCalibrationPoint(160, 1720000001UL));
+    TEST_ASSERT_TRUE(fixture.manager.startTdsCalibrationSession(1720000000UL));
+    TEST_ASSERT_TRUE(fixture.manager.startTdsCalibrationPoint(160, 1720000001UL));
     std::uint32_t nowMs = 0;
     for (std::uint8_t i = 0; i < 16; ++i) {
-        adc.values[2] = okMv(420);
-        advanceSample(manager, nowMs);
+        fixture.adc.values[2] = okMv(420);
+        advanceSample(fixture.manager, nowMs);
     }
-    TEST_ASSERT_TRUE(manager.saveStableTdsCalibrationPoint(1720000020UL));
-    TEST_ASSERT_TRUE(manager.removeTdsCalibrationPoint(0, 1720000030UL));
+    TEST_ASSERT_TRUE(fixture.manager.saveStableTdsCalibrationPoint(1720000020UL));
+    TEST_ASSERT_TRUE(fixture.manager.removeTdsCalibrationPoint(0, 1720000030UL));
 
-    const TdsCalibrationSessionSnapshot session = manager.calibrationSnapshot();
+    const TdsCalibrationSessionSnapshot session = fixture.manager.calibrationSnapshot();
     TEST_ASSERT_EQUAL_UINT8(0, session.pointCount);
     TEST_ASSERT_FALSE(session.candidateReady);
 }

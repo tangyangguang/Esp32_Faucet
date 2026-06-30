@@ -123,7 +123,7 @@ void handleFilterEditPage() {
     sendFmt("%u", static_cast<unsigned>(kFilterNameMaxChars));
     Esp32BaseWeb::sendChunk("' value='");
     sendHtmlAttrEscapedBounded(filter.name, sizeof(filter.name));
-    Esp32BaseWeb::sendChunk("'><small class='hint'>最多 30 个字符，用于列表和状态页显示</small></label>"
+    Esp32BaseWeb::sendChunk("'><small class='hint'>最多 15 个汉字，用于列表和状态页显示</small></label>"
                             "<div class='span-4'></div>");
     Esp32BaseWeb::sendChunk("<div class='span-3'>");
     sendMonthInput("建议更换周期（月）", "recommendMonths", filter.recommendDays);
@@ -138,4 +138,3 @@ void handleFilterEditPage() {
                             "<a href='/faucet/filters'>取消</a></div></form></section>");
     sendPageEnd();
 }
-

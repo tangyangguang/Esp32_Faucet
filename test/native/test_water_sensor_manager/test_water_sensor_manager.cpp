@@ -11,12 +11,9 @@ namespace {
 
 SystemConfig enabledSensorConfig() {
     SystemConfig config = makeDefaultConfig();
-    config.temperatureEnabled = true;
     config.temperatureKind = TemperatureKind::Ntc50kB3950;
-    config.tdsEnabled = true;
     config.tdsKind = TdsKind::AnalogTdsAo;
     config.tdsCalibrated = true;
-    config.tdsCalibrationMode = TdsCalibrationMode::TwoPoint;
     return config;
 }
 
@@ -174,7 +171,6 @@ void test_run_summary_aggregates_valid_samples_only() {
 
 void test_run_summary_records_tds_when_temperature_sensor_is_disabled() {
     SystemConfig config = enabledSensorConfig();
-    config.temperatureEnabled = false;
     config.temperatureKind = TemperatureKind::None;
     SensorManagerFixture fixture(config);
     fixture.adc.values[0] = okMv(1091);
@@ -197,9 +193,7 @@ void test_run_summary_records_tds_when_temperature_sensor_is_disabled() {
 
 void test_calibration_uses_25c_fallback_without_failing() {
     SystemConfig config = makeDefaultConfig();
-    config.tdsEnabled = true;
     config.tdsKind = TdsKind::AnalogTdsAo;
-    config.temperatureEnabled = false;
     SensorManagerFixture fixture(config);
     fixture.adc.values[0] = okMv(1091);
     fixture.adc.values[1] = {};
@@ -219,14 +213,12 @@ void test_calibration_uses_25c_fallback_without_failing() {
     TEST_ASSERT_TRUE(fixture.manager.saveStableTdsCalibrationPoint(1720000020UL));
     TEST_ASSERT_TRUE(fixture.manager.applyReadyTdsCalibration(config, 1720000021UL));
     TEST_ASSERT_TRUE(config.tdsCalibrated);
-    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(TdsCalibrationMode::SinglePoint),
-                            static_cast<std::uint8_t>(config.tdsCalibrationMode));
+    TEST_ASSERT_TRUE(config.tdsScale > 0.0f);
 }
 
 void test_two_point_calibration_saves_low_then_high_without_flash_progress_dependency() {
     SystemConfig config = enabledSensorConfig();
     config.tdsCalibrated = false;
-    config.tdsCalibrationMode = TdsCalibrationMode::None;
     SensorManagerFixture fixture(config);
     fixture.adc.values[0] = okMv(1091);
     fixture.adc.values[1] = okMv(1650);
@@ -253,8 +245,6 @@ void test_two_point_calibration_saves_low_then_high_without_flash_progress_depen
     TEST_ASSERT_TRUE(fixture.manager.saveStableTdsCalibrationPoint(1720000050UL));
     TEST_ASSERT_TRUE(fixture.manager.applyReadyTdsCalibration(config, 1720000051UL));
     TEST_ASSERT_TRUE(config.tdsCalibrated);
-    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(TdsCalibrationMode::TwoPoint),
-                            static_cast<std::uint8_t>(config.tdsCalibrationMode));
     TEST_ASSERT_TRUE(config.tdsScale > 0.0f);
 }
 
@@ -274,8 +264,7 @@ void test_tds_calibration_point_session_generates_after_one_point() {
     TEST_ASSERT_TRUE(session.sessionActive);
     TEST_ASSERT_EQUAL_UINT8(1, session.pointCount);
     TEST_ASSERT_TRUE(session.candidateReady);
-    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(TdsCalibrationMode::SinglePoint),
-                            static_cast<std::uint8_t>(session.candidateMode));
+    TEST_ASSERT_TRUE(session.candidateScale > 0.0f);
 }
 
 void test_tds_calibration_session_rejects_duplicate_start_without_clearing_points() {
@@ -322,8 +311,6 @@ void test_tds_calibration_point_session_multi_point_fit_and_apply() {
 
     TEST_ASSERT_TRUE(fixture.manager.applyReadyTdsCalibration(config, 1720000050UL));
     TEST_ASSERT_TRUE(config.tdsCalibrated);
-    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(TdsCalibrationMode::TwoPoint),
-                            static_cast<std::uint8_t>(config.tdsCalibrationMode));
     TEST_ASSERT_TRUE(config.tdsScale > 0.0f);
 }
 
@@ -350,8 +337,6 @@ void test_tds_calibration_apply_is_order_independent() {
 
     TEST_ASSERT_TRUE(fixture.manager.applyReadyTdsCalibration(config, 1720000050UL));
     TEST_ASSERT_TRUE(config.tdsCalibrated);
-    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(TdsCalibrationMode::TwoPoint),
-                            static_cast<std::uint8_t>(config.tdsCalibrationMode));
     TEST_ASSERT_TRUE(config.tdsScale > 0.0f);
 }
 

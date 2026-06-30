@@ -13,8 +13,10 @@ std::uint32_t saturatingAdd(std::uint32_t a, std::uint32_t b) {
 
 }  // namespace
 
-FilterStore::FilterStore(const FilterRecord (&records)[kFilterCount]) {
-    std::copy(records, records + kFilterCount, records_);
+FilterStore::FilterStore(const FilterConfig (&configs)[kFilterCount]) {
+    for (std::size_t i = 0; i < kFilterCount; ++i) {
+        records_[i] = mergeFilterRecord(configs[i], FilterRuntime{});
+    }
 }
 
 const FilterRecord (&FilterStore::records() const)[kFilterCount] {
@@ -26,6 +28,20 @@ const FilterRecord& FilterStore::record(std::size_t index) const {
         return records_[0];
     }
     return records_[index];
+}
+
+void FilterStore::applyRuntime(const FilterRuntime (&runtime)[kFilterCount]) {
+    for (std::size_t i = 0; i < kFilterCount; ++i) {
+        records_[i].startTime = runtime[i].startTime;
+        records_[i].usedMl = runtime[i].usedMl;
+        records_[i].startBootId = runtime[i].startBootId;
+    }
+}
+
+void FilterStore::copyRuntime(FilterRuntime (&runtime)[kFilterCount]) const {
+    for (std::size_t i = 0; i < kFilterCount; ++i) {
+        runtime[i] = filterRuntimeFromRecord(records_[i]);
+    }
 }
 
 bool FilterStore::updateFilter(std::size_t index, const FilterRecord& record) {

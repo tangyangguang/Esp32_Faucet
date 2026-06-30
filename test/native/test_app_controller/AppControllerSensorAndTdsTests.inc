@@ -105,8 +105,6 @@ void test_app_tds_point_calibration_apply_persists_to_config() {
 
     const SystemConfig updated = fixture.app.config();
     TEST_ASSERT_TRUE(updated.tdsCalibrated);
-    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(TdsCalibrationMode::SinglePoint),
-                            static_cast<std::uint8_t>(updated.tdsCalibrationMode));
     TEST_ASSERT_TRUE(updated.tdsScale > 0.0f);
 }
 

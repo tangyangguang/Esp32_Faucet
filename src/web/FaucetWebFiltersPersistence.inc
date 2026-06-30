@@ -7,25 +7,17 @@ bool persistFilterConfig(const FilterRecord& record, std::size_t index) {
     if (!safe) {
         return false;
     }
-    safe->filters[index] = record;
+    safe->filters[index] = filterConfigFromRecord(record);
     sanitizeConfig(*safe);
 
-    FilterRecord runtime[kFilterCount]{};
-    const FilterRecord* current = g_context.filters->records();
-    for (std::size_t i = 0; i < kFilterCount; ++i) {
-        runtime[i] = current[i];
-    }
-    runtime[index].startTime = record.startTime;
-    runtime[index].usedMl = record.usedMl;
-    runtime[index].startBootId = record.startBootId;
+    FilterRuntime runtime[kFilterCount]{};
+    g_context.filters->copyRuntime(runtime);
+    runtime[index] = filterRuntimeFromRecord(record);
 
     if (!g_context.configStore->saveSystemConfig(*safe) || !g_context.configStore->saveFilterRuntime(runtime)) {
         return false;
     }
-    FilterRecord liveRecord = safe->filters[index];
-    liveRecord.startTime = runtime[index].startTime;
-    liveRecord.usedMl = runtime[index].usedMl;
-    liveRecord.startBootId = runtime[index].startBootId;
+    FilterRecord liveRecord = mergeFilterRecord(safe->filters[index], runtime[index]);
     if (!g_context.app->applyConfig(*safe) || !g_context.filters->updateFilter(index, liveRecord)) {
         return false;
     }
@@ -35,4 +27,3 @@ bool persistFilterConfig(const FilterRecord& record, std::size_t index) {
     }
     return true;
 }
-

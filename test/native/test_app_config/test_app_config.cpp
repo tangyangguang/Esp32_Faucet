@@ -80,9 +80,6 @@ void test_default_filters_support_six_lightweight_records() {
     TEST_ASSERT_EQUAL_UINT32(180, config.filters[0].recommendDays);
     TEST_ASSERT_EQUAL_UINT32(180, config.filters[0].maxDays);
     TEST_ASSERT_EQUAL_UINT32(0, config.filters[0].lifeMl);
-    TEST_ASSERT_EQUAL_UINT32(0, config.filters[0].startTime);
-    TEST_ASSERT_EQUAL_UINT32(0, config.filters[0].usedMl);
-    TEST_ASSERT_EQUAL_UINT32(0, config.filters[0].startBootId);
 
     for (std::size_t i = 1; i < kFilterCount; ++i) {
         char name[kFilterNameLength]{};
@@ -92,25 +89,20 @@ void test_default_filters_support_six_lightweight_records() {
         TEST_ASSERT_EQUAL_UINT32(180, config.filters[i].recommendDays);
         TEST_ASSERT_EQUAL_UINT32(180, config.filters[i].maxDays);
         TEST_ASSERT_EQUAL_UINT32(0, config.filters[i].lifeMl);
-        TEST_ASSERT_EQUAL_UINT32(0, config.filters[i].startTime);
-        TEST_ASSERT_EQUAL_UINT32(0, config.filters[i].usedMl);
-        TEST_ASSERT_EQUAL_UINT32(0, config.filters[i].startBootId);
     }
 }
 
 void test_sensor_config_defaults_disabled() {
     const SystemConfig config = makeDefaultConfig();
 
-    TEST_ASSERT_EQUAL_UINT16(3300, config.sensorVrefMv);
-    TEST_ASSERT_FALSE(config.temperatureEnabled);
+    TEST_ASSERT_EQUAL_UINT16(3300, kSensorVrefMv);
+    TEST_ASSERT_FALSE(temperatureSensorEnabled(config));
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(TemperatureKind::None),
                             static_cast<std::uint8_t>(config.temperatureKind));
     TEST_ASSERT_EQUAL_INT16(0, config.temperatureOffsetCentiC);
     TEST_ASSERT_FALSE(config.temperatureCalibrated);
-    TEST_ASSERT_FALSE(config.tdsEnabled);
+    TEST_ASSERT_FALSE(tdsSensorEnabled(config));
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(TdsKind::None), static_cast<std::uint8_t>(config.tdsKind));
-    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(TdsCalibrationMode::None),
-                            static_cast<std::uint8_t>(config.tdsCalibrationMode));
     TEST_ASSERT_EQUAL_FLOAT(1.0f, config.tdsScale);
     TEST_ASSERT_EQUAL_INT16(0, config.tdsOffsetPpm);
     TEST_ASSERT_FALSE(config.tdsCalibrated);
@@ -202,7 +194,7 @@ void test_record_page_size_and_filter_life_helpers() {
     TEST_ASSERT_EQUAL_UINT16(1, sanitizeRecordPageSize(1));
     TEST_ASSERT_EQUAL_UINT16(kMaxRecordPageSize, sanitizeRecordPageSize(999));
 
-    FilterRecord filter = makeDefaultConfig().filters[0];
+    FilterRecord filter = mergeFilterRecord(makeDefaultConfig().filters[0], FilterRuntime{});
     filter.enabled = true;
     filter.recommendDays = 90;
     filter.maxDays = 180;

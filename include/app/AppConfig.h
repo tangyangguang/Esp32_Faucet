@@ -67,6 +67,7 @@ constexpr std::uint16_t kMaxRecordPageSize = 200;
 constexpr std::uint32_t kDaysPerLifeMonth = 30;
 constexpr std::uint32_t kMaxFilterLifeDays = 3650;
 constexpr std::uint32_t kMaxFilterLifeMl = 10000000;
+constexpr std::uint16_t kSensorVrefMv = 3300;
 
 enum class FilterLifeStatus : std::uint8_t {
     Normal = 0,
@@ -82,13 +83,6 @@ enum class TemperatureKind : std::uint8_t {
 enum class TdsKind : std::uint8_t {
     None = 0,
     AnalogTdsAo = 1,
-};
-
-enum class TdsCalibrationMode : std::uint8_t {
-    None = 0,
-    SinglePoint = 1,
-    TwoPoint = 2,
-    MultiPoint = 3,
 };
 
 struct SystemConfig {
@@ -108,21 +102,25 @@ struct SystemConfig {
     std::uint32_t displaySleepSec;
     std::uint32_t resultDisplaySec;
     bool beepEnabled;
-    std::uint16_t sensorVrefMv;
-    bool temperatureEnabled;
     TemperatureKind temperatureKind;
     std::int16_t temperatureOffsetCentiC;
     bool temperatureCalibrated;
-    bool tdsEnabled;
     TdsKind tdsKind;
-    TdsCalibrationMode tdsCalibrationMode;
     float tdsScale;
     std::int16_t tdsOffsetPpm;
     bool tdsCalibrated;
     bool tdsTemperatureCompensationEnabled;
     PresetConfig presets[kPresetCount];
-    FilterRecord filters[kFilterCount];
+    FilterConfig filters[kFilterCount];
 };
+
+inline bool temperatureSensorEnabled(const SystemConfig& config) {
+    return config.temperatureKind != TemperatureKind::None;
+}
+
+inline bool tdsSensorEnabled(const SystemConfig& config) {
+    return config.tdsKind != TdsKind::None;
+}
 
 SystemConfig makeDefaultConfig();
 void sanitizeConfig(SystemConfig& config);

@@ -75,7 +75,9 @@ void handleFiltersResetApi() {
         Esp32BaseWeb::sendJson(500, "{\"error\":\"reset_failed\"}");
         return;
     }
-    const bool ok = g_context.configStore->saveFilterRuntime(g_context.filters->records());
+    FilterRuntime runtime[kFilterCount]{};
+    g_context.filters->copyRuntime(runtime);
+    const bool ok = g_context.configStore->saveFilterRuntime(runtime);
     Esp32BaseWeb::redirectSeeOther(ok ? "/faucet/filters?reset=1" : "/faucet/filters?error=save_failed");
 }
 
@@ -126,4 +128,3 @@ Esp32BaseWeb::Handler handlerFor(const FaucetWebRoute& route) {
 }
 
 }  // namespace
-

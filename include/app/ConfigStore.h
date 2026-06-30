@@ -40,8 +40,8 @@ public:
     bool saveStatistics(const StatisticsRecord& record);
     bool resetStatistics(const PeriodKeys& keys);
 
-    void loadFilterRuntime(FilterRecord (&records)[kFilterCount]);
-    bool saveFilterRuntime(const FilterRecord (&records)[kFilterCount]);
+    void loadFilterRuntime(FilterRuntime (&runtime)[kFilterCount]);
+    bool saveFilterRuntime(const FilterRuntime (&runtime)[kFilterCount]);
 
 private:
     ConfigBackend& backend_;

@@ -33,21 +33,11 @@ std::int16_t toI16(std::int32_t value) {
 }
 
 bool enabledTemperature(const SystemConfig& config) {
-    return config.temperatureEnabled && config.temperatureKind == TemperatureKind::Ntc50kB3950;
+    return config.temperatureKind == TemperatureKind::Ntc50kB3950;
 }
 
 bool enabledTds(const SystemConfig& config) {
-    return config.tdsEnabled && config.tdsKind == TdsKind::AnalogTdsAo;
-}
-
-TdsCalibrationMode tdsModeForPointCount(std::uint8_t pointCount) {
-    if (pointCount == 1) {
-        return TdsCalibrationMode::SinglePoint;
-    }
-    if (pointCount == 2) {
-        return TdsCalibrationMode::TwoPoint;
-    }
-    return pointCount > 2 ? TdsCalibrationMode::MultiPoint : TdsCalibrationMode::None;
+    return config.tdsKind == TdsKind::AnalogTdsAo;
 }
 
 }  // namespace
@@ -167,7 +157,6 @@ TdsCalibrationSessionSnapshot WaterSensorManager::calibrationSnapshot() const {
     session.rawSpanPpm = tdsCalibrationFit_.rawSpanPpm;
     session.candidateScale = tdsCalibrationFit_.scale;
     session.candidateOffsetPpm = tdsCalibrationFit_.offsetPpm;
-    session.candidateMode = tdsCalibrationFit_.valid ? tdsModeForPointCount(tdsCalibrationPointCount_) : TdsCalibrationMode::None;
     for (std::uint8_t i = 0; i < tdsCalibrationPointCount_; ++i) {
         session.points[i] = tdsCalibrationPoints_[i];
     }
@@ -275,7 +264,6 @@ bool WaterSensorManager::applyReadyTdsCalibration(SystemConfig& config, std::uin
     config.tdsScale = tdsCalibrationFit_.scale;
     config.tdsOffsetPpm = tdsCalibrationFit_.offsetPpm;
     config.tdsCalibrated = true;
-    config.tdsCalibrationMode = tdsModeForPointCount(tdsCalibrationPointCount_);
     sanitizeConfig(config);
     configure(config);
     return discardTdsCalibrationSession();
@@ -298,9 +286,9 @@ void WaterSensorManager::sampleOnce() {
 
     if (enabledTemperature(config_)) {
         const AdcReadResult temp = adc_.readSingleEnded(AdcChannel::A1);
-        if (temp.ok && temp.millivolts > 0 && temp.millivolts < config_.sensorVrefMv) {
+        if (temp.ok && temp.millivolts > 0 && temp.millivolts < kSensorVrefMv) {
             const std::int16_t rawCentiC =
-                ntcCentiCFromDividerMv(static_cast<std::uint16_t>(temp.millivolts), config_.sensorVrefMv, kNtcPullupOhm);
+                ntcCentiCFromDividerMv(static_cast<std::uint16_t>(temp.millivolts), kSensorVrefMv, kNtcPullupOhm);
             next.temperatureRawCentiC.valid = true;
             next.temperatureRawCentiC.value = rawCentiC;
             next.temperatureCentiC.valid = true;

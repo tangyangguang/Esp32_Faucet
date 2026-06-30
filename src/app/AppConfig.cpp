@@ -9,9 +9,6 @@
 namespace faucet {
 namespace {
 
-constexpr std::uint16_t kDefaultSensorVrefMv = 3300;
-constexpr std::uint16_t kMinSensorVrefMv = 3000;
-constexpr std::uint16_t kMaxSensorVrefMv = 3600;
 constexpr std::int16_t kMinTemperatureOffsetCentiC = -1000;
 constexpr std::int16_t kMaxTemperatureOffsetCentiC = 1000;
 constexpr float kMinTdsScale = 0.05f;
@@ -43,14 +40,11 @@ void setPreset(PresetConfig& preset, bool enabled, PresetType type, std::uint32_
     copyText(preset.name, name);
 }
 
-void setFilter(FilterRecord& filter, bool enabled, const char* name) {
+void setFilter(FilterConfig& filter, bool enabled, const char* name) {
     filter.enabled = enabled;
     filter.recommendDays = 180;
     filter.maxDays = 180;
     filter.lifeMl = 0;
-    filter.startTime = 0;
-    filter.usedMl = 0;
-    filter.startBootId = 0;
     copyText(filter.name, name);
 }
 
@@ -74,14 +68,10 @@ SystemConfig makeDefaultConfig() {
     config.displaySleepSec = kDefaultDisplaySleepSec;
     config.resultDisplaySec = kDefaultResultDisplaySec;
     config.beepEnabled = true;
-    config.sensorVrefMv = kDefaultSensorVrefMv;
-    config.temperatureEnabled = false;
     config.temperatureKind = TemperatureKind::None;
     config.temperatureOffsetCentiC = 0;
     config.temperatureCalibrated = false;
-    config.tdsEnabled = false;
     config.tdsKind = TdsKind::None;
-    config.tdsCalibrationMode = TdsCalibrationMode::None;
     config.tdsScale = 1.0f;
     config.tdsOffsetPpm = 0;
     config.tdsCalibrated = false;
@@ -124,34 +114,20 @@ void sanitizeConfig(SystemConfig& config) {
     config.displaySleepSec =
         clampValue<std::uint32_t>(config.displaySleepSec, kMinDisplaySleepSec, kMaxDisplaySleepSec);
     config.resultDisplaySec = clampValue<std::uint32_t>(config.resultDisplaySec, 0, 60);
-    config.sensorVrefMv = clampValue<std::uint16_t>(config.sensorVrefMv, kMinSensorVrefMv, kMaxSensorVrefMv);
     if (!enumInRange(config.temperatureKind, TemperatureKind::None, TemperatureKind::Ntc50kB3950)) {
         config.temperatureKind = TemperatureKind::None;
     }
-    if (config.temperatureEnabled && config.temperatureKind == TemperatureKind::None) {
-        config.temperatureKind = TemperatureKind::Ntc50kB3950;
-    }
-    config.temperatureEnabled = config.temperatureKind != TemperatureKind::None;
     config.temperatureOffsetCentiC = clampValue<std::int16_t>(
         config.temperatureOffsetCentiC, kMinTemperatureOffsetCentiC, kMaxTemperatureOffsetCentiC);
     if (!enumInRange(config.tdsKind, TdsKind::None, TdsKind::AnalogTdsAo)) {
         config.tdsKind = TdsKind::None;
-    }
-    if (config.tdsEnabled && config.tdsKind == TdsKind::None) {
-        config.tdsKind = TdsKind::AnalogTdsAo;
-    }
-    config.tdsEnabled = config.tdsKind != TdsKind::None;
-    if (!enumInRange(config.tdsCalibrationMode, TdsCalibrationMode::None, TdsCalibrationMode::MultiPoint)) {
-        config.tdsCalibrationMode = TdsCalibrationMode::None;
     }
     if (!isfinite(config.tdsScale)) {
         config.tdsScale = 1.0f;
     }
     config.tdsScale = clampValue<float>(config.tdsScale, kMinTdsScale, kMaxTdsScale);
     config.tdsOffsetPpm = clampValue<std::int16_t>(config.tdsOffsetPpm, kMinTdsOffsetPpm, kMaxTdsOffsetPpm);
-    if (config.tdsCalibrationMode == TdsCalibrationMode::None) {
-        config.tdsCalibrated = false;
-    }
+    config.tdsCalibrated = config.tdsCalibrated && tdsSensorEnabled(config);
 
     for (auto& preset : config.presets) {
         if (preset.type == PresetType::Volume) {
@@ -162,7 +138,7 @@ void sanitizeConfig(SystemConfig& config) {
         preset.name[kPresetNameLength - 1] = '\0';
     }
 
-    for (auto& filter : config.filters) {
+    for (FilterConfig& filter : config.filters) {
         filter.name[kFilterNameLength - 1] = '\0';
         filter.recommendDays = clampValue<std::uint32_t>(filter.recommendDays, 0, kMaxFilterLifeDays);
         filter.maxDays = clampValue<std::uint32_t>(filter.maxDays, 0, kMaxFilterLifeDays);

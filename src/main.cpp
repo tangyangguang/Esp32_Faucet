@@ -391,7 +391,8 @@ void initializeApplication() {
     faucet::PeriodKeys periodKeys{};
     currentPeriodKeys(nowSeconds, periodKeys);
     g_statistics = faucet::StatisticsStore(g_configStore.loadStatistics(periodKeys));
-    g_configStore.loadFilterRuntime(g_config.filters);
+    faucet::FilterRuntime filterRuntime[faucet::kFilterCount]{};
+    g_configStore.loadFilterRuntime(filterRuntime);
     g_runtimeStateInitComplete = true;
     logStartupPhase("runtime_state_ready");
     g_filters = new (std::nothrow) faucet::FilterStore(g_config.filters);
@@ -399,6 +400,7 @@ void initializeApplication() {
         ESP32BASE_LOG_E("app", "filter store allocation failed");
         return;
     }
+    g_filters->applyRuntime(filterRuntime);
     if (g_pulseTraces) {
         g_pulseTraces->setRecentTraceLimit(faucet::kRecentPulseTraceCount);
     }
@@ -514,8 +516,12 @@ void handleTimeSynced(const Esp32BaseNtp::TimeSnapshot& time) {
             }
         }
     }
-    if (filtersChanged && !g_configStore.saveFilterRuntime(g_filters->records())) {
-        ESP32BASE_LOG_E("app", "filter time correction persistence failed");
+    if (filtersChanged) {
+        faucet::FilterRuntime filterRuntime[faucet::kFilterCount]{};
+        g_filters->copyRuntime(filterRuntime);
+        if (!g_configStore.saveFilterRuntime(filterRuntime)) {
+            ESP32BASE_LOG_E("app", "filter time correction persistence failed");
+        }
     }
     if (recordCount > 0 || filtersChanged) {
         ESP32BASE_LOG_I("app",
@@ -605,8 +611,10 @@ void runApplicationTick() {
         faucet::elapsedAtLeast(nowMs, g_lastRuntimePersistenceFailureMs, kRuntimePersistenceRetryIntervalMs);
     if (runtimePersistenceRetryDue && g_app->consumePersistenceDirty() && g_filters) {
         ESP32BASE_LOG_I("app", "runtime_persistence_begin");
+        faucet::FilterRuntime filterRuntime[faucet::kFilterCount]{};
+        g_filters->copyRuntime(filterRuntime);
         const bool ok = g_configStore.saveStatistics(g_statistics.record()) &&
-                        g_configStore.saveFilterRuntime(g_filters->records());
+                        g_configStore.saveFilterRuntime(filterRuntime);
         ESP32BASE_LOG_I("app", "runtime_persistence_done ok=%s", ok ? "yes" : "no");
         if (!ok && !g_persistenceFailureLogged) {
             ESP32BASE_LOG_E("app", "runtime persistence failed");

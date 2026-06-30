@@ -619,8 +619,6 @@ bool parseI16(const char* text, std::int16_t& value) {
     return true;
 }
 
-const char* tdsCalibrationModeText(TdsCalibrationMode mode);
-
 const char* recordTdsCalibrationText(const WaterRecord& record) {
     if (record.sensorSampleCount == 0) {
         return "--";
@@ -655,20 +653,6 @@ void sendWaterRecordSensorRows(const WaterRecord& record) {
                 static_cast<unsigned>(record.sensorFlags));
     }
     Esp32BaseWeb::sendChunk("</table></section>");
-}
-
-const char* tdsCalibrationModeText(TdsCalibrationMode mode) {
-    switch (mode) {
-        case TdsCalibrationMode::None:
-            return "未校准";
-        case TdsCalibrationMode::SinglePoint:
-            return "单点";
-        case TdsCalibrationMode::TwoPoint:
-            return "两点";
-        case TdsCalibrationMode::MultiPoint:
-            return "多点";
-    }
-    return "未知";
 }
 
 void sendCalibrationCenterFlowCard(const AppSnapshot& snapshot) {
@@ -708,7 +692,7 @@ void sendCalibrationCenterFlowCard(const AppSnapshot& snapshot) {
 void sendCalibrationCenterTemperatureCard(const AppSnapshot& snapshot, const SystemConfig& config) {
     char temperatureText[24]{};
     formatSensorTemperature(snapshot.sensors.temperatureCentiC, temperatureText, sizeof(temperatureText));
-    const bool enabled = config.temperatureEnabled && config.temperatureKind == TemperatureKind::Ntc50kB3950;
+    const bool enabled = config.temperatureKind == TemperatureKind::Ntc50kB3950;
     Esp32BaseWeb::sendChunk("<section class='panel calibration-center-card'><div class='panel-head'><h3>温度校准</h3>");
     sendFmt("<span class='status-pill %s'>%s</span></div>",
             enabled ? (config.temperatureCalibrated ? "status-ok" : "status-warn") : "status-muted",
@@ -728,11 +712,11 @@ void sendCalibrationCenterTdsCard(const AppSnapshot& snapshot, const SystemConfi
     formatSensorIntegerValue(snapshot.sensors.tdsPpm, "ppm", tdsText, sizeof(tdsText));
     formatSensorIntegerValue(snapshot.sensors.tdsVoltageMv, "mV", voltageText, sizeof(voltageText));
     formatSensorTemperature(snapshot.sensors.temperatureCentiC, tempText, sizeof(tempText));
-    const bool enabled = config.tdsEnabled && config.tdsKind == TdsKind::AnalogTdsAo;
+    const bool enabled = config.tdsKind == TdsKind::AnalogTdsAo;
     Esp32BaseWeb::sendChunk("<section class='panel calibration-center-card'><div class='panel-head'><h3>水质校准</h3>");
     sendFmt("<span class='status-pill %s'>%s</span></div>",
             enabled ? (config.tdsCalibrated ? "status-ok" : "status-warn") : "status-muted",
-            enabled ? (config.tdsCalibrated ? tdsCalibrationModeText(config.tdsCalibrationMode) : "未校准") : "未启用");
+            enabled ? (config.tdsCalibrated ? "已校准" : "未校准") : "未启用");
     Esp32BaseWeb::sendChunk("<div class='tds-calibration-summary'>");
     sendFmt("<div><span>当前 TDS</span><strong>%s</strong></div>", enabled ? tdsText : "未启用");
     sendFmt("<div><span>采样电压</span><strong>%s</strong></div>", enabled ? voltageText : "-");
@@ -771,7 +755,7 @@ void handleTemperatureCalibrationPage() {
     char calibratedText[24]{};
     formatSensorTemperature(snapshot.sensors.temperatureRawCentiC, rawText, sizeof(rawText));
     formatSensorTemperature(snapshot.sensors.temperatureCentiC, calibratedText, sizeof(calibratedText));
-    const bool enabled = config.temperatureEnabled && config.temperatureKind == TemperatureKind::Ntc50kB3950;
+    const bool enabled = config.temperatureKind == TemperatureKind::Ntc50kB3950;
     Esp32BaseWeb::sendHeader("温度校准");
     Esp32BaseWeb::sendChunk("<h2>温度校准</h2><p><a class='btn-link' href='/faucet/calibration'>返回校准中心</a></p>");
     sendNoticeFromQuery();
@@ -809,7 +793,7 @@ void handleTdsCalibrationPage() {
     formatSensorIntegerValue(snapshot.sensors.tdsPpm, "ppm", tdsText, sizeof(tdsText));
     formatSensorIntegerValue(snapshot.sensors.tdsVoltageMv, "mV", voltageText, sizeof(voltageText));
     formatSensorTemperature(snapshot.sensors.temperatureCentiC, tempText, sizeof(tempText));
-    const bool enabled = config.tdsEnabled && config.tdsKind == TdsKind::AnalogTdsAo;
+    const bool enabled = config.tdsKind == TdsKind::AnalogTdsAo;
     const bool canWrite = enabled && !waterTaskActive();
 
     Esp32BaseWeb::sendHeader("水质校准");
@@ -818,7 +802,7 @@ void handleTdsCalibrationPage() {
     Esp32BaseWeb::sendChunk("<section class='panel tds-calibration-panel'><div class='panel-head'><h3>当前水质状态</h3>");
     sendFmt("<span class='status-pill %s'>%s</span></div>",
             enabled ? (config.tdsCalibrated ? "status-ok" : "status-warn") : "status-muted",
-            enabled ? (config.tdsCalibrated ? tdsCalibrationModeText(config.tdsCalibrationMode) : "未校准") : "未启用");
+            enabled ? (config.tdsCalibrated ? "已校准" : "未校准") : "未启用");
     Esp32BaseWeb::sendChunk("<div class='tds-calibration-summary'>");
     sendFmt("<div><span>当前 TDS</span><strong>%s</strong></div>", enabled ? tdsText : "未启用");
     sendFmt("<div><span>采样电压</span><strong>%s</strong></div>", enabled ? voltageText : "-");

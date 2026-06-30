@@ -174,14 +174,29 @@ struct PresetConfig {
     char name[16];
 };
 
-struct FilterRecord {
+struct FilterConfig {
     bool enabled;
-    char name[16];
+    char name[46];       // up to 15 Chinese chars plus null terminator
     uint32_t recommendDays; // suggested replacement point, 0 when disabled
     uint32_t maxDays;       // maximum usage point, 0 when disabled
     uint32_t lifeMl;     // 0 when disabled
+};
+
+struct FilterRuntime {
     uint32_t startTime;  // seconds since 2000-01-01, 0 when unknown
     uint32_t usedMl;
+    uint32_t startBootId;
+};
+
+struct FilterRecord {
+    bool enabled;
+    char name[46];
+    uint32_t recommendDays;
+    uint32_t maxDays;
+    uint32_t lifeMl;
+    uint32_t startTime;
+    uint32_t usedMl;
+    uint32_t startBootId;
 };
 
 struct WaterRecord {

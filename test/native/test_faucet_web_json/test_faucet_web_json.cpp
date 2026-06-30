@@ -313,10 +313,15 @@ void test_filters_json_contains_runtime_fields() {
     config.filters[0].recommendDays = 180;
     config.filters[0].maxDays = 365;
     config.filters[0].lifeMl = 2000000;
-    config.filters[0].startTime = 1714502400;
-    config.filters[0].usedMl = 123456;
+    FilterRuntime runtime[kFilterCount]{};
+    runtime[0].startTime = 1714502400;
+    runtime[0].usedMl = 123456;
+    FilterRecord records[kFilterCount]{};
+    for (std::size_t i = 0; i < kFilterCount; ++i) {
+        records[i] = mergeFilterRecord(config.filters[i], runtime[i]);
+    }
 
-    TEST_ASSERT_TRUE(writeFiltersJson(config.filters, json, sizeof(json)));
+    TEST_ASSERT_TRUE(writeFiltersJson(records, json, sizeof(json)));
 
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"filters\""));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"index\":5"));

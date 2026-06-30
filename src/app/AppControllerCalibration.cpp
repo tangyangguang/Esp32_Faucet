@@ -432,8 +432,7 @@ bool AppController::applyTdsCalibrationForWeb(std::uint32_t nowSeconds) {
 }
 
 bool AppController::saveTemperatureCalibrationForWeb(std::int16_t referenceCentiC) {
-    if (!canApplyConfig() || !waterSensors_ || !config_.temperatureEnabled ||
-        config_.temperatureKind != TemperatureKind::Ntc50kB3950) {
+    if (!canApplyConfig() || !waterSensors_ || config_.temperatureKind != TemperatureKind::Ntc50kB3950) {
         return false;
     }
     const WaterSensorSnapshot sensors = waterSensors_->snapshot();

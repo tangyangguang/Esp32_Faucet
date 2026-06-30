@@ -14,9 +14,8 @@ namespace {
 constexpr const char* kConfigNs = "faucet_cfg";
 constexpr const char* kStatNs = "faucet_stat";
 constexpr const char* kRunNs = "faucet_run";
-constexpr std::int32_t kConfigVersion = 20;
+constexpr std::int32_t kConfigVersion = 21;
 constexpr std::int32_t kRuntimeVersion = 1;
-constexpr std::uint16_t kDefaultSensorVrefMv = 3300;
 constexpr const char* kSensorNone = "none";
 constexpr const char* kTemperatureSensorNtc50k = "ntc50k_b3950";
 constexpr const char* kTdsSensorAnalogAo = "tds_board_v1";
@@ -80,21 +79,17 @@ const char* tdsSensorConfigValue(const SystemConfig& config) {
 
 void applyTemperatureSensorConfigValue(SystemConfig& config, const char* value) {
     if (std::strcmp(value ? value : "", kTemperatureSensorNtc50k) == 0) {
-        config.temperatureEnabled = true;
         config.temperatureKind = TemperatureKind::Ntc50kB3950;
         return;
     }
-    config.temperatureEnabled = false;
     config.temperatureKind = TemperatureKind::None;
 }
 
 void applyTdsSensorConfigValue(SystemConfig& config, const char* value) {
     if (std::strcmp(value ? value : "", kTdsSensorAnalogAo) == 0) {
-        config.tdsEnabled = true;
         config.tdsKind = TdsKind::AnalogTdsAo;
         return;
     }
-    config.tdsEnabled = false;
     config.tdsKind = TdsKind::None;
 }
 
@@ -126,7 +121,6 @@ void loadCommonSystemConfig(ConfigBackend& backend, SystemConfig& config) {
     config.resultDisplaySec =
         static_cast<std::uint32_t>(backend.getInt(kConfigNs, "result_s", toInt(config.resultDisplaySec)));
     config.beepEnabled = backend.getBool(kConfigNs, "beep", config.beepEnabled);
-    config.sensorVrefMv = kDefaultSensorVrefMv;
     char sensorText[32]{};
     if (readStrKey(backend, kConfigNs, "temp_sensor", sensorText, sizeof(sensorText))) {
         applyTemperatureSensorConfigValue(config, sensorText);
@@ -137,8 +131,6 @@ void loadCommonSystemConfig(ConfigBackend& backend, SystemConfig& config) {
     if (readStrKey(backend, kConfigNs, "tds_sensor", sensorText, sizeof(sensorText))) {
         applyTdsSensorConfigValue(config, sensorText);
     }
-    config.tdsCalibrationMode = static_cast<TdsCalibrationMode>(
-        backend.getInt(kConfigNs, "tds_cal_mode", static_cast<std::int32_t>(config.tdsCalibrationMode)));
     config.tdsScale =
         static_cast<float>(backend.getInt(kConfigNs,
                                           "tds_scale_milli",
@@ -167,7 +159,7 @@ void loadPresets(ConfigBackend& backend, SystemConfig& config) {
     }
 }
 
-void loadFilterBasics(ConfigBackend& backend, FilterRecord& filter, std::size_t index) {
+void loadFilterBasics(ConfigBackend& backend, FilterConfig& filter, std::size_t index) {
     char key[12]{};
     filterKey(key, sizeof(key), index, "en");
     filter.enabled = backend.getBool(kConfigNs, key, filter.enabled);
@@ -244,7 +236,6 @@ bool ConfigStore::saveSystemConfig(const SystemConfig& config) {
     ok = okAll(ok, backend_.setInt(kConfigNs, "temp_off_c", safe.temperatureOffsetCentiC));
     ok = okAll(ok, backend_.setBool(kConfigNs, "temp_cal", safe.temperatureCalibrated));
     ok = okAll(ok, backend_.setStr(kConfigNs, "tds_sensor", tdsSensorConfigValue(safe)));
-    ok = okAll(ok, backend_.setInt(kConfigNs, "tds_cal_mode", static_cast<std::int32_t>(safe.tdsCalibrationMode)));
     ok = okAll(ok,
                backend_.setInt(kConfigNs,
                                "tds_scale_milli",
@@ -341,7 +332,7 @@ bool ConfigStore::resetStatistics(const PeriodKeys& keys) {
     return backend_.clearNamespace(kStatNs) && saveStatistics(record);
 }
 
-void ConfigStore::loadFilterRuntime(FilterRecord (&records)[kFilterCount]) {
+void ConfigStore::loadFilterRuntime(FilterRuntime (&runtime)[kFilterCount]) {
     const std::int32_t version = backend_.getInt(kRunNs, "ver", 0);
     if (!isCurrentRuntimeVersion(version)) {
         return;
@@ -350,24 +341,24 @@ void ConfigStore::loadFilterRuntime(FilterRecord (&records)[kFilterCount]) {
     for (std::size_t i = 0; i < kFilterCount; ++i) {
         char key[12]{};
         filterKey(key, sizeof(key), i, "start");
-        records[i].startTime = getU32(backend_, kRunNs, key, records[i].startTime);
+        runtime[i].startTime = getU32(backend_, kRunNs, key, runtime[i].startTime);
         filterKey(key, sizeof(key), i, "used");
-        records[i].usedMl = getU32(backend_, kRunNs, key, records[i].usedMl);
+        runtime[i].usedMl = getU32(backend_, kRunNs, key, runtime[i].usedMl);
         filterKey(key, sizeof(key), i, "boot");
-        records[i].startBootId = getU32(backend_, kRunNs, key, records[i].startBootId);
+        runtime[i].startBootId = getU32(backend_, kRunNs, key, runtime[i].startBootId);
     }
 }
 
-bool ConfigStore::saveFilterRuntime(const FilterRecord (&records)[kFilterCount]) {
+bool ConfigStore::saveFilterRuntime(const FilterRuntime (&runtime)[kFilterCount]) {
     bool ok = backend_.setInt(kRunNs, "ver", kRuntimeVersion);
     for (std::size_t i = 0; i < kFilterCount; ++i) {
         char key[12]{};
         filterKey(key, sizeof(key), i, "start");
-        ok = okAll(ok, setU32(backend_, kRunNs, key, records[i].startTime));
+        ok = okAll(ok, setU32(backend_, kRunNs, key, runtime[i].startTime));
         filterKey(key, sizeof(key), i, "used");
-        ok = okAll(ok, setU32(backend_, kRunNs, key, records[i].usedMl));
+        ok = okAll(ok, setU32(backend_, kRunNs, key, runtime[i].usedMl));
         filterKey(key, sizeof(key), i, "boot");
-        ok = okAll(ok, setU32(backend_, kRunNs, key, records[i].startBootId));
+        ok = okAll(ok, setU32(backend_, kRunNs, key, runtime[i].startBootId));
     }
     return ok;
 }

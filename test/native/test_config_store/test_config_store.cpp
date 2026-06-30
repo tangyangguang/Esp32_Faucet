@@ -67,8 +67,6 @@ void test_config_save_and_load_round_trips_system_config() {
     config.filters[1].recommendDays = 180;
     config.filters[1].maxDays = 365;
     config.filters[1].lifeMl = 2000000;
-    config.filters[1].startTime = 1714502400;
-    config.filters[1].usedMl = 123456;
 
     TEST_ASSERT_TRUE(store.saveSystemConfig(config));
 
@@ -98,22 +96,18 @@ void test_config_save_and_load_round_trips_system_config() {
     TEST_ASSERT_EQUAL_UINT32(180, loaded.filters[1].recommendDays);
     TEST_ASSERT_EQUAL_UINT32(365, loaded.filters[1].maxDays);
     TEST_ASSERT_EQUAL_UINT32(2000000, loaded.filters[1].lifeMl);
-    TEST_ASSERT_EQUAL_UINT32(0, loaded.filters[1].startTime);
-    TEST_ASSERT_EQUAL_UINT32(0, loaded.filters[1].usedMl);
+    TEST_ASSERT_EQUAL_INT32(-7, backend.getInt("faucet_cfg", "f1_start", -7));
+    TEST_ASSERT_EQUAL_INT32(-7, backend.getInt("faucet_cfg", "f1_used", -7));
 }
 
 void test_config_save_and_load_round_trips_sensor_config() {
     FakeConfigBackend backend;
     ConfigStore store(backend);
     SystemConfig config = makeDefaultConfig();
-    config.sensorVrefMv = 3275;
-    config.temperatureEnabled = true;
     config.temperatureKind = TemperatureKind::Ntc50kB3950;
     config.temperatureOffsetCentiC = -35;
     config.temperatureCalibrated = true;
-    config.tdsEnabled = true;
     config.tdsKind = TdsKind::AnalogTdsAo;
-    config.tdsCalibrationMode = TdsCalibrationMode::MultiPoint;
     config.tdsScale = 1.234f;
     config.tdsOffsetPpm = -4;
     config.tdsCalibrated = true;
@@ -121,8 +115,9 @@ void test_config_save_and_load_round_trips_sensor_config() {
 
     TEST_ASSERT_TRUE(store.saveSystemConfig(config));
 
-    TEST_ASSERT_EQUAL_INT32(20, backend.getInt("faucet_cfg", "ver", 0));
+    TEST_ASSERT_EQUAL_INT32(21, backend.getInt("faucet_cfg", "ver", 0));
     TEST_ASSERT_EQUAL_INT32(1234, backend.getInt("faucet_cfg", "tds_scale_milli", 0));
+    TEST_ASSERT_EQUAL_INT32(-7, backend.getInt("faucet_cfg", "tds_cal_mode", -7));
     TEST_ASSERT_EQUAL_INT32(-7, backend.getInt("faucet_cfg", "tds_cal_rev", -7));
     TEST_ASSERT_EQUAL_INT32(-7, backend.getInt("faucet_cfg", "tds_low_ref", -7));
     TEST_ASSERT_EQUAL_INT32(-7, backend.getInt("faucet_cfg", "tds_low_raw", -7));
@@ -136,17 +131,14 @@ void test_config_save_and_load_round_trips_sensor_config() {
     TEST_ASSERT_TRUE(backend.getStr("faucet_cfg", "tds_sensor", sensorText, sizeof(sensorText), ""));
     TEST_ASSERT_EQUAL_STRING("tds_board_v1", sensorText);
     const SystemConfig loaded = store.loadSystemConfig();
-    TEST_ASSERT_EQUAL_UINT16(3300, loaded.sensorVrefMv);
-    TEST_ASSERT_TRUE(loaded.temperatureEnabled);
+    TEST_ASSERT_TRUE(temperatureSensorEnabled(loaded));
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(TemperatureKind::Ntc50kB3950),
                             static_cast<std::uint8_t>(loaded.temperatureKind));
     TEST_ASSERT_EQUAL_INT16(-35, loaded.temperatureOffsetCentiC);
     TEST_ASSERT_TRUE(loaded.temperatureCalibrated);
-    TEST_ASSERT_TRUE(loaded.tdsEnabled);
+    TEST_ASSERT_TRUE(tdsSensorEnabled(loaded));
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(TdsKind::AnalogTdsAo),
                             static_cast<std::uint8_t>(loaded.tdsKind));
-    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(TdsCalibrationMode::MultiPoint),
-                            static_cast<std::uint8_t>(loaded.tdsCalibrationMode));
     TEST_ASSERT_FLOAT_WITHIN(0.001f, 1.234f, loaded.tdsScale);
     TEST_ASSERT_EQUAL_INT16(-4, loaded.tdsOffsetPpm);
     TEST_ASSERT_TRUE(loaded.tdsCalibrated);
@@ -257,30 +249,26 @@ void test_statistics_runtime_future_version_uses_defaults_without_erasing_storag
 void test_filter_runtime_round_trips_start_used_and_boot() {
     FakeConfigBackend backend;
     ConfigStore store(backend);
-    SystemConfig config = makeDefaultConfig();
-    config.filters[0].startTime = 111;
-    config.filters[0].usedMl = 4000000000UL;
-    config.filters[0].startBootId = 9;
-    config.filters[1].startTime = 222;
-    config.filters[1].usedMl = 333;
-    config.filters[1].startBootId = 10;
+    FilterRuntime runtime[kFilterCount]{};
+    runtime[0].startTime = 111;
+    runtime[0].usedMl = 4000000000UL;
+    runtime[0].startBootId = 9;
+    runtime[1].startTime = 222;
+    runtime[1].usedMl = 333;
+    runtime[1].startBootId = 10;
 
-    TEST_ASSERT_TRUE(store.saveFilterRuntime(config.filters));
+    TEST_ASSERT_TRUE(store.saveFilterRuntime(runtime));
 
-    SystemConfig loaded = makeDefaultConfig();
-    loaded.filters[0].startTime = 999;
-    loaded.filters[1].startTime = 888;
-    store.loadFilterRuntime(loaded.filters);
-    TEST_ASSERT_EQUAL_UINT32(111, loaded.filters[0].startTime);
-    TEST_ASSERT_EQUAL_UINT32(4000000000UL, loaded.filters[0].usedMl);
-    TEST_ASSERT_EQUAL_UINT32(9, loaded.filters[0].startBootId);
-    TEST_ASSERT_EQUAL_UINT32(222, loaded.filters[1].startTime);
-    TEST_ASSERT_EQUAL_UINT32(333, loaded.filters[1].usedMl);
-    TEST_ASSERT_EQUAL_UINT32(10, loaded.filters[1].startBootId);
-    TEST_ASSERT_EQUAL_STRING("第1级滤芯", loaded.filters[0].name);
-    TEST_ASSERT_EQUAL_UINT32(180, loaded.filters[0].recommendDays);
-    TEST_ASSERT_EQUAL_UINT32(180, loaded.filters[0].maxDays);
-    TEST_ASSERT_EQUAL_UINT32(0, loaded.filters[0].lifeMl);
+    FilterRuntime loaded[kFilterCount]{};
+    loaded[0].startTime = 999;
+    loaded[1].startTime = 888;
+    store.loadFilterRuntime(loaded);
+    TEST_ASSERT_EQUAL_UINT32(111, loaded[0].startTime);
+    TEST_ASSERT_EQUAL_UINT32(4000000000UL, loaded[0].usedMl);
+    TEST_ASSERT_EQUAL_UINT32(9, loaded[0].startBootId);
+    TEST_ASSERT_EQUAL_UINT32(222, loaded[1].startTime);
+    TEST_ASSERT_EQUAL_UINT32(333, loaded[1].usedMl);
+    TEST_ASSERT_EQUAL_UINT32(10, loaded[1].startBootId);
 }
 
 void test_filter_runtime_ignores_values_in_system_config_namespace() {
@@ -289,12 +277,12 @@ void test_filter_runtime_ignores_values_in_system_config_namespace() {
     backend.setInt("faucet_cfg", "f0_start", 1714502400);
     backend.setInt("faucet_cfg", "f0_used", 123456);
     ConfigStore store(backend);
-    SystemConfig config = makeDefaultConfig();
+    FilterRuntime runtime[kFilterCount]{};
 
-    store.loadFilterRuntime(config.filters);
+    store.loadFilterRuntime(runtime);
 
-    TEST_ASSERT_EQUAL_UINT32(0, config.filters[0].startTime);
-    TEST_ASSERT_EQUAL_UINT32(0, config.filters[0].usedMl);
+    TEST_ASSERT_EQUAL_UINT32(0, runtime[0].startTime);
+    TEST_ASSERT_EQUAL_UINT32(0, runtime[0].usedMl);
     TEST_ASSERT_EQUAL_INT32(0, backend.getInt("faucet_run", "ver", 0));
 }
 
@@ -314,7 +302,6 @@ void test_system_config_load_does_not_merge_filter_runtime_storage() {
                             static_cast<std::uint8_t>(store.lastSystemConfigLoadStatus()));
     TEST_ASSERT_TRUE(loaded.filters[0].enabled);
     TEST_ASSERT_EQUAL_STRING("PP", loaded.filters[0].name);
-    TEST_ASSERT_EQUAL_UINT32(0, loaded.filters[0].startTime);
     TEST_ASSERT_EQUAL_INT32(0, backend.getInt("faucet_cfg", "f0_start", 0));
 }
 
@@ -323,12 +310,12 @@ void test_filter_runtime_future_version_keeps_current_records_and_storage() {
     backend.setInt("faucet_run", "ver", 255);
     backend.setStr("faucet_run", "f0_used", "123456");
     ConfigStore store(backend);
-    SystemConfig config = makeDefaultConfig();
-    config.filters[0].usedMl = 77;
+    FilterRuntime runtime[kFilterCount]{};
+    runtime[0].usedMl = 77;
 
-    store.loadFilterRuntime(config.filters);
+    store.loadFilterRuntime(runtime);
 
-    TEST_ASSERT_EQUAL_UINT32(77, config.filters[0].usedMl);
+    TEST_ASSERT_EQUAL_UINT32(77, runtime[0].usedMl);
     TEST_ASSERT_EQUAL_INT32(255, backend.getInt("faucet_run", "ver", 0));
     char text[16]{};
     TEST_ASSERT_TRUE(backend.getStr("faucet_run", "f0_used", text, sizeof(text), ""));

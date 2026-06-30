@@ -320,9 +320,7 @@ void dispatchPresetPost() {
 }
 
 void enableTdsForFixture(WebFixture& fixture) {
-    fixture.config.tdsEnabled = true;
     fixture.config.tdsKind = TdsKind::AnalogTdsAo;
-    fixture.config.temperatureEnabled = true;
     fixture.config.temperatureKind = TemperatureKind::Ntc50kB3950;
     TEST_ASSERT_TRUE(fixture.app.applyConfig(fixture.config));
 }
@@ -709,8 +707,7 @@ void test_tds_calibration_save_persists_config_after_stable_samples() {
                              Esp32BaseWeb::nativeTestResponseHeader("Location"));
     const SystemConfig persisted = fixture.configStore.loadSystemConfig();
     TEST_ASSERT_TRUE(persisted.tdsCalibrated);
-    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(TdsCalibrationMode::SinglePoint),
-                            static_cast<std::uint8_t>(persisted.tdsCalibrationMode));
+    TEST_ASSERT_TRUE(persisted.tdsScale > 0.0f);
 }
 
 void test_calibration_post_rejects_missing_action_as_invalid_action() {

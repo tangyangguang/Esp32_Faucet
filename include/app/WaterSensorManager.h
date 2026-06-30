@@ -47,7 +47,6 @@ struct TdsCalibrationSessionSnapshot {
     std::uint16_t rawSpanPpm = 0;
     float candidateScale = 1.0f;
     std::int16_t candidateOffsetPpm = 0;
-    TdsCalibrationMode candidateMode = TdsCalibrationMode::None;
     TdsCalibrationPointSnapshot points[kTdsCalibrationMaxPoints]{};
 };
 

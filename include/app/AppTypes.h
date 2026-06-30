@@ -9,7 +9,7 @@ constexpr std::size_t kPresetCount = 9;
 constexpr std::size_t kFilterCount = 6;
 constexpr std::size_t kNameLength = 16;
 constexpr std::size_t kPresetNameLength = kNameLength;
-constexpr std::size_t kFilterNameMaxChars = 30;
+constexpr std::size_t kFilterNameMaxChars = 15;
 constexpr std::size_t kFilterNameLength = kFilterNameMaxChars * 3 + 1;
 constexpr std::uint32_t kMinRealDateSeconds = 631152000UL;  // 2020-01-01 in seconds since 2000-01-01.
 
@@ -43,6 +43,20 @@ struct PresetConfig {
     char name[kPresetNameLength];
 };
 
+struct FilterConfig {
+    bool enabled;
+    char name[kFilterNameLength];
+    std::uint32_t recommendDays;
+    std::uint32_t maxDays;
+    std::uint32_t lifeMl;
+};
+
+struct FilterRuntime {
+    std::uint32_t startTime;
+    std::uint32_t usedMl;
+    std::uint32_t startBootId;
+};
+
 struct FilterRecord {
     bool enabled;
     char name[kFilterNameLength];
@@ -53,6 +67,37 @@ struct FilterRecord {
     std::uint32_t usedMl;
     std::uint32_t startBootId;
 };
+
+inline FilterConfig filterConfigFromRecord(const FilterRecord& record) {
+    FilterConfig config{};
+    config.enabled = record.enabled;
+    for (std::size_t i = 0; i < kFilterNameLength; ++i) {
+        config.name[i] = record.name[i];
+    }
+    config.recommendDays = record.recommendDays;
+    config.maxDays = record.maxDays;
+    config.lifeMl = record.lifeMl;
+    return config;
+}
+
+inline FilterRuntime filterRuntimeFromRecord(const FilterRecord& record) {
+    return FilterRuntime{record.startTime, record.usedMl, record.startBootId};
+}
+
+inline FilterRecord mergeFilterRecord(const FilterConfig& config, const FilterRuntime& runtime) {
+    FilterRecord record{};
+    record.enabled = config.enabled;
+    for (std::size_t i = 0; i < kFilterNameLength; ++i) {
+        record.name[i] = config.name[i];
+    }
+    record.recommendDays = config.recommendDays;
+    record.maxDays = config.maxDays;
+    record.lifeMl = config.lifeMl;
+    record.startTime = runtime.startTime;
+    record.usedMl = runtime.usedMl;
+    record.startBootId = runtime.startBootId;
+    return record;
+}
 
 struct MeteringParameters {
     constexpr MeteringParameters()

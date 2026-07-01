@@ -292,7 +292,7 @@ bool WaterRecordFileStore::loadHeader() {
 }
 
 bool WaterRecordFileStore::saveHeader() {
-    const std::uint32_t nextSeq = commitSeq_ + 1U == 0 ? 1U : commitSeq_ + 1U;
+    const std::uint32_t nextSeq = commitSeq_ == UINT32_MAX ? 1U : commitSeq_ + 1U;
     const RecordHeader header = makeHeader(capacity_, count_, oldestIndex_, nextSeq);
     const std::size_t offset = (nextSeq % 2U) == 0 ? backupHeaderOffset() : 0;
     if (!backend_.writeAt(path_, offset, reinterpret_cast<const std::uint8_t*>(&header), sizeof(header))) {

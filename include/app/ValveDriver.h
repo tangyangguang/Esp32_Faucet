@@ -20,8 +20,8 @@ struct ValveOutput {
 
 class ValveDriver {
 public:
-    ValveDriver(std::uint32_t fullPowerSec = kDefaultValveFullPowerSec,
-                std::uint8_t holdDutyPercent = kDefaultValveHoldDutyPercent);
+    explicit ValveDriver(std::uint32_t fullPowerSec = kDefaultValveFullPowerSec,
+                         std::uint8_t holdDutyPercent = kDefaultValveHoldDutyPercent);
 
     bool configure(std::uint32_t fullPowerSec, std::uint8_t holdDutyPercent);
     void open(std::uint32_t nowMs);

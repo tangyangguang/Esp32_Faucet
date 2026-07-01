@@ -548,11 +548,13 @@ void runApplicationTick() {
         }
     }
 
+    const bool cancelInterruptPending = g_buttons.consumeCancelInterrupt();
     const std::uint32_t nowMs = millis();
     const std::uint32_t nowUs = micros();
+    if (cancelInterruptPending) {
+        g_app->emergencyStop(nowMs);
+    }
     const faucet::ButtonLevels levels = g_buttons.read();
-    const bool cancelInterruptPending = g_buttons.consumeCancelInterrupt();
-    (void)cancelInterruptPending;
 
     std::uint32_t pulseUs = 0;
     std::size_t processedPulses = 0;

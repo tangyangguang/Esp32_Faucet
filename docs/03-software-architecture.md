@@ -211,7 +211,7 @@ struct WaterRecord {
     int16_t temperatureCentiC;
     uint16_t tdsPpm;
     uint16_t sensorFlags;
-    uint8_t mode;          // volume/time/calibration
+    uint8_t mode;          // volume/time
     uint8_t result;        // completed/stopped/safety/error/pause_timeout
     uint8_t selectedPreset;
     uint8_t sensorSampleCount;

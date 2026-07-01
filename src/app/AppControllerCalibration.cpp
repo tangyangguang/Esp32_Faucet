@@ -6,6 +6,15 @@
 namespace faucet {
 namespace {
 
+bool pulseBucketsCoverDuration(std::size_t bucketCount, std::uint32_t durationSec) {
+    if (durationSec == 0) {
+        return false;
+    }
+    const std::uint64_t coveredMs = static_cast<std::uint64_t>(bucketCount) * kPulseTraceBucketMs;
+    const std::uint64_t durationMs = static_cast<std::uint64_t>(durationSec) * 1000ULL;
+    return coveredMs >= durationMs;
+}
+
 CalibrationSampleSummary makeCalibrationSummary(const WaterPulseTrace& trace,
                                                 const WaterPulseTraceBucketSample* buckets,
                                                 std::size_t bucketCount,
@@ -37,7 +46,10 @@ CalibrationSampleSummary makeCalibrationSummary(const WaterPulseTrace& trace,
         summary.stablePulsePerSec =
             static_cast<float>(trace.totalPulses) / static_cast<float>(summary.durationSec);
     }
-    summary.usableForGeneration = summary.stable && summary.stablePulseCount > 0;
+    const bool bucketDataComplete =
+        (trace.flags & kPulseTraceFlagBucketOverflow) == 0 ||
+        pulseBucketsCoverDuration(bucketCount, summary.durationSec);
+    summary.usableForGeneration = summary.stable && summary.stablePulseCount > 0 && bucketDataComplete;
     return summary;
 }
 

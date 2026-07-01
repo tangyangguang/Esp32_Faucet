@@ -88,6 +88,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_app_controller_auto_generates_after_second_valid_calibration_sample);
     RUN_TEST(test_app_controller_saves_unstable_actual_without_counting_valid_sample);
     RUN_TEST(test_app_controller_accepts_bucket_overflow_calibration_when_summary_is_stable);
+    RUN_TEST(test_app_controller_saves_incomplete_bucket_overflow_sample_without_generation_use);
     RUN_TEST(test_app_controller_generated_calibration_can_continue_collecting_samples);
     RUN_TEST(test_app_controller_submit_actual_succeeds_when_auto_refresh_cannot_generate);
     RUN_TEST(test_app_controller_pending_actual_sample_can_be_skipped);

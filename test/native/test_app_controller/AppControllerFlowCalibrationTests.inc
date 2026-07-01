@@ -173,6 +173,56 @@ void test_app_controller_saves_long_high_pulse_calibration_without_bucket_overfl
     TEST_ASSERT_FALSE((stored.trace.flags & kPulseTraceFlagBucketOverflow) != 0);
 }
 
+void test_app_controller_bucket_overflow_completion_still_awaits_actual() {
+    SystemConfig config = makeDefaultConfig();
+    config.maxOutTimeSec = 7200;
+    StatisticsStore statistics;
+    statistics.reset({20260506, 202619, 202605});
+    FilterStore filters(config.filters);
+    MemoryRecordWriter records;
+    MemoryFileBackend backend;
+    MeteringSchemeStore schemes(backend, "/schemes.bin");
+    MeteringSchemeRecord active{};
+    TEST_ASSERT_TRUE(prepareMeteringScheme(schemes, 1000, active));
+    CalibrationSessionFileStore sessionStore(backend, "/cal-session.bin");
+    CalibrationSessionTraceStore traceStore(backend, "/cal-traces.bin");
+    TEST_ASSERT_TRUE(sessionStore.begin());
+    TEST_ASSERT_TRUE(traceStore.begin());
+    WaterPulseTrace traces[1]{};
+    WaterPulseTraceBucketSample buckets[4]{};
+    WaterPulseTraceSample startupEdges[16]{};
+    WaterPulseTraceStore pulseTraces(traces, 1, buckets, 4, startupEdges, 16, 1);
+    AppController app(config,
+                      active,
+                      statistics,
+                      filters,
+                      records,
+                      schemes,
+                      &pulseTraces,
+                      &sessionStore,
+                      &traceStore);
+
+    TEST_ASSERT_TRUE(app.startCalibrationSessionForWeb(1714502400));
+    app.resetInputs({false, false, false, false}, 0);
+    pressAndReleaseOkAt(app, 300, 1714502400);
+    for (std::uint32_t i = 0; i < 5; ++i) {
+        app.onFlowPulse(1000000UL + i * 550000UL);
+    }
+    pressAndReleaseCancelAt(app, 3200, 1714502403);
+
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationSessionStatus::AwaitingActual),
+                            static_cast<unsigned>(app.snapshot().calibrationStatus));
+    CalibrationSessionRecord persisted{};
+    TEST_ASSERT_TRUE(sessionStore.load(persisted));
+    TEST_ASSERT_EQUAL_UINT8(1, persisted.attemptCount);
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationAttemptStatus::PendingActual),
+                            static_cast<unsigned>(persisted.attempts[0].status));
+    const WaterPulseTrace* trace = pulseTraces.findByRecord(persisted.attempts[0].record);
+    TEST_ASSERT_NOT_NULL(trace);
+    TEST_ASSERT_TRUE((trace->flags & kPulseTraceFlagBucketOverflow) != 0);
+    TEST_ASSERT_FALSE((trace->flags & kPulseTraceFlagStartupOverflow) != 0);
+}
+
 void test_app_controller_calibration_run_ignores_preset_target_until_local_cancel() {
     CalibrationAppFixture fixture;
     fixture.config.presets[0].value = 1500;
@@ -275,6 +325,42 @@ void test_app_controller_saves_unstable_actual_without_counting_valid_sample() {
     TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationInvalidReason::None),
                             static_cast<unsigned>(persisted.attempts[1].invalidReason));
     TEST_ASSERT_FALSE(persisted.attempts[1].summary.usableForGeneration);
+}
+
+void test_app_controller_accepts_bucket_overflow_calibration_when_summary_is_stable() {
+    CalibrationAppFixture fixture;
+    CalibrationSessionRecord session = makeCalibrationSession(77, 1714502400);
+    saveCalibrationSessionSample(fixture.traceStore, session, 0, 1714502401, 1500, 40, 210, 6);
+    savePendingRamCalibrationAttempt(fixture, session, 1, 1714502410, 7500, 40, 1540, 11);
+
+    const WaterPulseTrace* savedTrace = fixture.pulseTraces.findByRecord(session.attempts[1].record);
+    TEST_ASSERT_NOT_NULL(savedTrace);
+    WaterPulseTrace* trace = fixture.pulseTraces.findById(savedTrace->traceId);
+    TEST_ASSERT_NOT_NULL(trace);
+    trace->flags |= kPulseTraceFlagBucketOverflow;
+
+    session.status = CalibrationSessionStatus::AwaitingActual;
+    session.validSampleCount = countValidCalibrationSamples(session);
+    TEST_ASSERT_TRUE(fixture.sessionStore.save(session));
+    fixture.createApp();
+
+    TEST_ASSERT_TRUE(fixture.app->submitCalibrationActualForWeb(7500, 1714502500));
+
+    const AppSnapshot snapshot = fixture.app->snapshot();
+    TEST_ASSERT_EQUAL_UINT8(2, snapshot.calibrationValidSampleCount);
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationSessionStatus::Generated),
+                            static_cast<unsigned>(snapshot.calibrationStatus));
+
+    CalibrationSessionRecord persisted{};
+    TEST_ASSERT_TRUE(fixture.sessionStore.load(persisted));
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationAttemptStatus::Valid),
+                            static_cast<unsigned>(persisted.attempts[1].status));
+    TEST_ASSERT_FALSE(persisted.attempts[1].summary.truncated);
+    TEST_ASSERT_TRUE(persisted.attempts[1].summary.usableForGeneration);
+
+    CalibrationStoredTrace stored{};
+    TEST_ASSERT_TRUE(fixture.traceStore.load(1, stored));
+    TEST_ASSERT_TRUE((stored.trace.flags & kPulseTraceFlagBucketOverflow) != 0);
 }
 
 void test_app_controller_generated_calibration_can_continue_collecting_samples() {

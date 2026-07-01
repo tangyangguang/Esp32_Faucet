@@ -306,7 +306,7 @@ std::size_t aggregateWaterPulseTrace(const WaterPulseTrace& trace,
 }
 
 bool waterPulseTraceAnalysisEligible(const WaterPulseTrace& trace) {
-    return (trace.flags & kPulseTraceFlagBucketOverflow) == 0 && trace.bucketCount > 0;
+    return trace.bucketCount > 0;
 }
 
 SegmentedCalibrationOptions defaultSegmentedCalibrationOptions() {

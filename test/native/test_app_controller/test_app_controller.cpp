@@ -82,10 +82,12 @@ int main(int argc, char** argv) {
     RUN_TEST(test_app_controller_reboot_drops_awaiting_actual_when_ram_trace_missing);
     RUN_TEST(test_app_controller_local_ok_starts_calibration_run_and_completion_awaits_actual);
     RUN_TEST(test_app_controller_saves_long_high_pulse_calibration_without_bucket_overflow);
+    RUN_TEST(test_app_controller_bucket_overflow_completion_still_awaits_actual);
     RUN_TEST(test_app_controller_calibration_run_ignores_preset_target_until_local_cancel);
     RUN_TEST(test_app_controller_generates_calibration_session_candidate);
     RUN_TEST(test_app_controller_auto_generates_after_second_valid_calibration_sample);
     RUN_TEST(test_app_controller_saves_unstable_actual_without_counting_valid_sample);
+    RUN_TEST(test_app_controller_accepts_bucket_overflow_calibration_when_summary_is_stable);
     RUN_TEST(test_app_controller_generated_calibration_can_continue_collecting_samples);
     RUN_TEST(test_app_controller_submit_actual_succeeds_when_auto_refresh_cannot_generate);
     RUN_TEST(test_app_controller_pending_actual_sample_can_be_skipped);

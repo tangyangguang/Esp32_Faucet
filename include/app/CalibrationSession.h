@@ -72,7 +72,6 @@ struct CalibrationAttempt {
     std::uint32_t actualMl = 0;
     CalibrationAttemptStatus status = CalibrationAttemptStatus::Empty;
     CalibrationInvalidReason invalidReason = CalibrationInvalidReason::None;
-    bool truncated = false;
     CalibrationSampleSummary summary{};
 };
 

@@ -222,6 +222,24 @@ void test_trace_analysis_finds_stable_start_after_slow_ramp() {
     TEST_ASSERT_GREATER_THAN_UINT16(0, analysis.confidence);
 }
 
+void test_trace_analysis_allows_bucket_overflow_when_captured_buckets_are_stable() {
+    TraceStoreFixture<2, 80, 80, 2> fixture;
+    WaterPulseTraceStore& store = fixture.store;
+    const std::uint32_t id = store.beginTrace(1000, kDefaultPulseMinIntervalUs);
+    fillTrace(store, id, {1, 2, 3, 5, 6, 7, 7, 7, 6, 7, 7, 7});
+    TEST_ASSERT_TRUE(store.finishTrace(id, makeRecord(1000, 65, 7500), WaterPulseTraceState::Completed));
+    WaterPulseTrace* trace = store.findById(id);
+    TEST_ASSERT_NOT_NULL(trace);
+    trace->flags |= kPulseTraceFlagBucketOverflow;
+
+    const WaterPulseTraceAnalysis analysis = analyzeWaterPulseTrace(*trace, store);
+
+    TEST_ASSERT_TRUE(waterPulseTraceAnalysisEligible(*trace));
+    TEST_ASSERT_TRUE(analysis.stable);
+    TEST_ASSERT_EQUAL_UINT16(5, analysis.stableStartSec);
+    TEST_ASSERT_EQUAL_UINT32(17, analysis.startupPulseCount);
+}
+
 void test_trace_bucket_aggregation_sums_pulses_by_selected_seconds() {
     TraceStoreFixture<1, 16, 16, 1> fixture;
     WaterPulseTraceStore& store = fixture.store;
@@ -537,6 +555,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_trace_store_drops_oldest_when_recent_trace_count_is_exceeded);
     RUN_TEST(test_trace_store_marks_bucket_overflow_after_single_trace_bucket_limit);
     RUN_TEST(test_trace_analysis_finds_stable_start_after_slow_ramp);
+    RUN_TEST(test_trace_analysis_allows_bucket_overflow_when_captured_buckets_are_stable);
     RUN_TEST(test_trace_bucket_aggregation_sums_pulses_by_selected_seconds);
     RUN_TEST(test_trace_bucket_aggregation_accepts_four_second_bucket);
     RUN_TEST(test_segmented_calibration_uses_two_valid_samples);

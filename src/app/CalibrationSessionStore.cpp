@@ -8,7 +8,7 @@ namespace faucet {
 namespace {
 
 constexpr std::uint32_t kSessionMagic = 0x46435353UL;  // FCSS
-constexpr std::uint16_t kSessionVersion = 1;
+constexpr std::uint16_t kSessionVersion = 2;
 
 struct SessionFile {
     std::uint32_t magic;

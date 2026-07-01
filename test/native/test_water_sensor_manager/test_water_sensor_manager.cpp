@@ -187,6 +187,7 @@ void test_run_summary_records_tds_when_temperature_sensor_is_disabled() {
     const WaterSensorRunSummary summary = fixture.manager.finishRun();
     TEST_ASSERT_EQUAL_UINT8(2, summary.sensorSampleCount);
     TEST_ASSERT_EQUAL_UINT16(10, summary.tdsPpm);
+    TEST_ASSERT_TRUE((summary.sensorFlags & kWaterSensorFlagTempUnavailable) != 0);
     TEST_ASSERT_FALSE((summary.sensorFlags & kWaterSensorFlagTempInvalid) != 0);
     TEST_ASSERT_TRUE((summary.sensorFlags & kWaterSensorFlagTdsTempFallback25C) != 0);
 }

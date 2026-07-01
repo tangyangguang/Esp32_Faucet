@@ -566,7 +566,9 @@ void formatWaterRecordTemperature(const WaterRecord& record, char* out, std::siz
     if (!out || len == 0) {
         return;
     }
-    if (record.sensorSampleCount == 0 || (record.sensorFlags & kWaterSensorFlagTempInvalid) != 0) {
+    if (record.sensorSampleCount == 0 ||
+        (record.sensorFlags &
+         (kWaterSensorFlagAdcOffline | kWaterSensorFlagTempInvalid | kWaterSensorFlagTempUnavailable)) != 0) {
         std::snprintf(out, len, "--");
         return;
     }
@@ -577,7 +579,10 @@ void formatWaterRecordTds(const WaterRecord& record, char* out, std::size_t len)
     if (!out || len == 0) {
         return;
     }
-    if (record.sensorSampleCount == 0 || (record.sensorFlags & kWaterSensorFlagTdsInvalid) != 0) {
+    if (record.sensorSampleCount == 0 ||
+        (record.sensorFlags &
+         (kWaterSensorFlagAdcOffline | kWaterSensorFlagTdsAdcOverflow | kWaterSensorFlagTdsInvalid |
+          kWaterSensorFlagTdsUnavailable)) != 0) {
         std::snprintf(out, len, "--");
         return;
     }

@@ -103,6 +103,7 @@ void handlePresetsApi() {
 }
 
 void handleRecordsApi() {
+    constexpr std::uint16_t kMaxRecordsApiPageSize = 80;
     char text[32]{};
     if (!Esp32BaseWeb::checkAuth() || !requireContext()) {
         return;
@@ -123,8 +124,8 @@ void handleRecordsApi() {
     if (getParam("pageSize", text, sizeof(text))) {
         parseU32(text, pageSize);
     }
-    if (pageSize > kMaxRecordPageSize) {
-        pageSize = kMaxRecordPageSize;
+    if (pageSize > kMaxRecordsApiPageSize) {
+        pageSize = kMaxRecordsApiPageSize;
     }
     WaterRecordFilter filter{};
     char dateText[16]{};
@@ -151,7 +152,7 @@ void handleRecordsApi() {
     }
 
     const std::uint16_t sanitizedPageSize = sanitizeRecordPageSize(static_cast<std::uint16_t>(pageSize));
-    WaterRecord* records = new (std::nothrow) WaterRecord[kMaxRecordPageSize]{};
+    WaterRecord* records = new (std::nothrow) WaterRecord[kMaxRecordsApiPageSize]{};
     char* json = new (std::nothrow) char[32768]{};
     if (!records || !json) {
         delete[] records;
@@ -163,7 +164,7 @@ void handleRecordsApi() {
     const bool ready = g_context.records->ready();
     std::size_t totalCount = 0;
     const std::size_t readCount =
-        ready ? queryWaterRecords(*g_context.records, filter, page, sanitizedPageSize, records, kMaxRecordPageSize, &totalCount) : 0;
+        ready ? queryWaterRecords(*g_context.records, filter, page, sanitizedPageSize, records, kMaxRecordsApiPageSize, &totalCount) : 0;
     sendJsonBuffer(writeWaterRecordsJson(records,
                                       readCount,
                                       page,
@@ -201,4 +202,3 @@ void handleStatsApi() {
     sendJsonBuffer(writeUsageSummaryJson(*summary, totalMl, json, 32768), json);
     delete[] json;
 }
-

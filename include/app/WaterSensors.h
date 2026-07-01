@@ -11,6 +11,8 @@ constexpr std::uint16_t kWaterSensorFlagTempInvalid = 1U << 2U;
 constexpr std::uint16_t kWaterSensorFlagTdsInvalid = 1U << 3U;
 constexpr std::uint16_t kWaterSensorFlagTdsUncalibrated = 1U << 4U;
 constexpr std::uint16_t kWaterSensorFlagTdsTempFallback25C = 1U << 5U;
+constexpr std::uint16_t kWaterSensorFlagTempUnavailable = 1U << 6U;
+constexpr std::uint16_t kWaterSensorFlagTdsUnavailable = 1U << 7U;
 
 struct SensorValue {
     bool valid = false;

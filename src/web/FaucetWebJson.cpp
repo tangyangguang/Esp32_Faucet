@@ -392,7 +392,8 @@ bool writeUsageSummaryJson(const WaterUsageSummary& summary,
         writer.append("%s{\"day\":%lu,\"volumeMl\":%lu,\"durationSec\":%lu,\"count\":%u,"
                       "\"temperatureAvgCentiC\":%d,\"temperatureMinCentiC\":%d,\"temperatureMaxCentiC\":%d,"
                       "\"tdsAvgPpm\":%u,\"tdsMinPpm\":%u,\"tdsMaxPpm\":%u,"
-                      "\"sensorRecordCount\":%u,\"uncalibratedSensorRecordCount\":%u}",
+                      "\"sensorRecordCount\":%u,\"uncalibratedSensorRecordCount\":%u,"
+                      "\"temperatureRecordCount\":%u,\"tdsRecordCount\":%u}",
                       i == 0 ? "" : ",",
                       static_cast<unsigned long>(summary.days[i].dayIndex),
                       static_cast<unsigned long>(summary.days[i].volumeMl),
@@ -405,7 +406,9 @@ bool writeUsageSummaryJson(const WaterUsageSummary& summary,
                       static_cast<unsigned>(summary.days[i].tdsMinPpm),
                       static_cast<unsigned>(summary.days[i].tdsMaxPpm),
                       static_cast<unsigned>(summary.days[i].sensorRecordCount),
-                      static_cast<unsigned>(summary.days[i].uncalibratedSensorRecordCount));
+                      static_cast<unsigned>(summary.days[i].uncalibratedSensorRecordCount),
+                      static_cast<unsigned>(summary.days[i].temperatureRecordCount),
+                      static_cast<unsigned>(summary.days[i].tdsRecordCount));
     }
     writer.append("],\"presetCounts\":[");
     for (std::size_t i = 0; i < kPresetCount; ++i) {

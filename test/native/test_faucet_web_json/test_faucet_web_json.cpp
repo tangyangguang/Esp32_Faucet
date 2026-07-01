@@ -233,6 +233,8 @@ void test_usage_summary_json_contains_aggregated_series() {
     summary.days[1].temperatureAvgCentiC = 2530;
     summary.days[1].tdsAvgPpm = 8;
     summary.days[1].sensorRecordCount = 2;
+    summary.days[1].temperatureRecordCount = 1;
+    summary.days[1].tdsRecordCount = 2;
     summary.presetCounts[1] = CountVolumeBucket{12000, 4};
     summary.hourBuckets[7] = CountVolumeBucket{6000, 3};
     summary.resultCounts[static_cast<std::size_t>(WaterResult::FlowError)] = 1;
@@ -250,6 +252,8 @@ void test_usage_summary_json_contains_aggregated_series() {
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"tdsAvgPpm\":8"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"sensorRecordCount\":2"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"uncalibratedSensorRecordCount\":1"));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"temperatureRecordCount\":1"));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"tdsRecordCount\":2"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"presetCounts\""));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"hour\":7"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"resultCounts\""));

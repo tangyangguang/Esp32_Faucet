@@ -25,6 +25,8 @@ struct DailyUsageBucket {
     std::uint16_t tdsMaxPpm;
     std::uint16_t sensorRecordCount;
     std::uint16_t uncalibratedSensorRecordCount;
+    std::uint16_t temperatureRecordCount;
+    std::uint16_t tdsRecordCount;
 };
 
 struct CountVolumeBucket {

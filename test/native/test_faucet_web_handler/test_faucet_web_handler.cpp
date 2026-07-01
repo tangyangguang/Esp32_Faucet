@@ -501,6 +501,26 @@ void test_records_api_filters_by_documented_date_params() {
     TEST_ASSERT_NULL(std::strstr(body.c_str(), "\"volumeMl\":1101"));
 }
 
+void test_records_api_caps_page_size_to_json_buffer_safe_limit() {
+    WebFixture fixture;
+    CountingWaterRecordReader reader;
+    for (std::uint32_t i = 0; i < 100; ++i) {
+        reader.records.push_back(makeWebRecord(secondsSince2000(2026, 5, 4, 8, 0, 0) - i * 60UL, 1000 + i));
+    }
+    fixture.installContext(reader);
+    registerRoutes();
+    beginWebGet("/api/faucet/records");
+    Esp32BaseWeb::nativeTestSetParam("pageSize", "200");
+
+    TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch("/api/faucet/records", Esp32BaseWeb::METHOD_GET));
+
+    const std::string& body = Esp32BaseWeb::nativeTestResponse().body;
+    TEST_ASSERT_EQUAL(200, Esp32BaseWeb::nativeTestResponse().code);
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "\"pageSize\":80"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "\"count\":80"));
+    TEST_ASSERT_NULL(std::strstr(body.c_str(), "buffer_too_small"));
+}
+
 void test_filter_reset_handler_rejects_missing_auth_before_context_work() {
     registerRoutes();
     beginWebPost("/api/faucet/filters/reset", false);
@@ -852,6 +872,7 @@ int main(int, char**) {
     RUN_TEST(test_flow_calibration_rejects_unknown_write_action);
     RUN_TEST(test_running_water_allows_read_only_business_pages);
     RUN_TEST(test_records_api_filters_by_documented_date_params);
+    RUN_TEST(test_records_api_caps_page_size_to_json_buffer_safe_limit);
     RUN_TEST(test_filter_reset_handler_rejects_missing_auth_before_context_work);
     RUN_TEST(test_filter_reset_handler_rejects_cross_origin_post);
     RUN_TEST(test_filter_reset_handler_returns_invalid_index_without_runtime_write);

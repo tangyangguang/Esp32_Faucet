@@ -271,10 +271,12 @@ void test_record_aggregation_excludes_uncalibrated_sensors_by_default() {
 
     const WaterUsageSummary summary = aggregateWaterRecords(store, today, 30);
 
-    TEST_ASSERT_EQUAL_UINT32(1, summary.sensorRecordCount);
+    TEST_ASSERT_EQUAL_UINT32(2, summary.sensorRecordCount);
     TEST_ASSERT_EQUAL_UINT32(1, summary.uncalibratedSensorRecordCount);
-    TEST_ASSERT_EQUAL_UINT16(1, summary.days[29].sensorRecordCount);
-    TEST_ASSERT_EQUAL_INT16(2500, summary.days[29].temperatureAvgCentiC);
+    TEST_ASSERT_EQUAL_UINT16(2, summary.days[29].sensorRecordCount);
+    TEST_ASSERT_EQUAL_UINT16(2, summary.days[29].temperatureRecordCount);
+    TEST_ASSERT_EQUAL_UINT16(1, summary.days[29].tdsRecordCount);
+    TEST_ASSERT_EQUAL_INT16(2725, summary.days[29].temperatureAvgCentiC);
     TEST_ASSERT_EQUAL_UINT16(8, summary.days[29].tdsAvgPpm);
 }
 
@@ -297,6 +299,25 @@ void test_record_aggregation_can_include_uncalibrated_sensors_when_requested() {
     TEST_ASSERT_EQUAL_INT16(2800, summary.days[29].temperatureMaxCentiC);
     TEST_ASSERT_EQUAL_UINT16(8, summary.days[29].tdsMinPpm);
     TEST_ASSERT_EQUAL_UINT16(160, summary.days[29].tdsMaxPpm);
+}
+
+void test_record_aggregation_tracks_temperature_and_tds_validity_separately() {
+    WaterRecord records[4]{};
+    WaterRecordStore store(records, 4);
+    constexpr std::uint32_t today = 832032000UL;
+    TEST_ASSERT_TRUE(store.append(makeSensorRecord(
+        today, 1000, 0, 80, 5, true, kWaterSensorFlagTempUnavailable | kWaterSensorFlagTdsTempFallback25C)));
+
+    const WaterUsageSummary summary = aggregateWaterRecords(store, today, 30);
+
+    TEST_ASSERT_EQUAL_UINT32(1, summary.sensorRecordCount);
+    TEST_ASSERT_EQUAL_UINT16(1, summary.days[29].sensorRecordCount);
+    TEST_ASSERT_EQUAL_UINT16(0, summary.days[29].temperatureRecordCount);
+    TEST_ASSERT_EQUAL_UINT16(1, summary.days[29].tdsRecordCount);
+    TEST_ASSERT_EQUAL_INT16(0, summary.days[29].temperatureAvgCentiC);
+    TEST_ASSERT_EQUAL_UINT16(80, summary.days[29].tdsAvgPpm);
+    TEST_ASSERT_EQUAL_UINT16(80, summary.days[29].tdsMinPpm);
+    TEST_ASSERT_EQUAL_UINT16(80, summary.days[29].tdsMaxPpm);
 }
 
 void test_record_aggregate_reads_small_pages_for_web_stack_safety() {
@@ -365,6 +386,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_record_aggregate_uses_practical_volume_histogram_ranges);
     RUN_TEST(test_record_aggregation_excludes_uncalibrated_sensors_by_default);
     RUN_TEST(test_record_aggregation_can_include_uncalibrated_sensors_when_requested);
+    RUN_TEST(test_record_aggregation_tracks_temperature_and_tds_validity_separately);
     RUN_TEST(test_record_aggregate_reads_small_pages_for_web_stack_safety);
     RUN_TEST(test_record_aggregate_stops_after_records_older_than_window);
     RUN_TEST(test_record_query_filters_real_records_by_time_range_and_paginates_matches);

@@ -124,13 +124,19 @@ WaterSensorRunSummary WaterSensorManager::finishRun() const {
     summary.sensorSampleCount = std::max(tempCount, tdsCount);
     if (tempCount > 0) {
         summary.temperatureCentiC = toI16(tempSum / tempCount);
-    } else if (enabledTemperature(config_)) {
-        summary.sensorFlags |= kWaterSensorFlagTempInvalid;
+    } else {
+        summary.sensorFlags |= kWaterSensorFlagTempUnavailable;
+        if (enabledTemperature(config_)) {
+            summary.sensorFlags |= kWaterSensorFlagTempInvalid;
+        }
     }
     if (tdsCount > 0) {
         summary.tdsPpm = static_cast<std::uint16_t>(tdsSum / tdsCount);
-    } else if (enabledTds(config_)) {
-        summary.sensorFlags |= kWaterSensorFlagTdsInvalid;
+    } else {
+        summary.sensorFlags |= kWaterSensorFlagTdsUnavailable;
+        if (enabledTds(config_)) {
+            summary.sensorFlags |= kWaterSensorFlagTdsInvalid;
+        }
     }
     return summary;
 }

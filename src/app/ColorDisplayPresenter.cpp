@@ -337,13 +337,18 @@ ColorDisplayFrame ColorDisplayPresenter::render(const AppSnapshot& snapshot,
         }
         char tds[12]{};
         char temp[12]{};
-        const bool hasRecordSensors =
-            snapshot.lastResultRecordAvailable && snapshot.lastResultRecord.sensorSampleCount > 0;
+        const bool hasRecordSensors = snapshot.lastResultRecordAvailable && snapshot.lastResultRecord.sensorSampleCount > 0;
         SensorValue resultTds{};
-        resultTds.valid = hasRecordSensors;
+        resultTds.valid = hasRecordSensors &&
+                          (snapshot.lastResultRecord.sensorFlags &
+                           (kWaterSensorFlagAdcOffline | kWaterSensorFlagTdsAdcOverflow |
+                            kWaterSensorFlagTdsInvalid | kWaterSensorFlagTdsUnavailable)) == 0;
         resultTds.value = static_cast<std::int32_t>(snapshot.lastResultRecord.tdsPpm);
         SensorValue resultTemp{};
-        resultTemp.valid = hasRecordSensors;
+        resultTemp.valid = hasRecordSensors &&
+                           (snapshot.lastResultRecord.sensorFlags &
+                            (kWaterSensorFlagAdcOffline | kWaterSensorFlagTempInvalid |
+                             kWaterSensorFlagTempUnavailable)) == 0;
         resultTemp.value = static_cast<std::int32_t>(snapshot.lastResultRecord.temperatureCentiC);
         formatTds(tds, sizeof(tds), hasRecordSensors ? resultTds : snapshot.sensors.tdsPpm);
         formatTemperature(temp, sizeof(temp), hasRecordSensors ? resultTemp : snapshot.sensors.temperatureCentiC);

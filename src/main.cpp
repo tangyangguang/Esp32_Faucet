@@ -50,7 +50,7 @@ constexpr std::uint32_t kRuntimePersistenceRetryIntervalMs = 30000UL;
 constexpr std::size_t kMaxFlowPulsesPerTick = 32;
 constexpr std::uint32_t kI2cTimeoutMs = 20UL;
 constexpr const char* kWaterRecordPath = "/faucet_records_v3.bin";
-constexpr const char* kMeteringSchemePath = "/faucet_metering_schemes_v7.bin";
+constexpr const char* kMeteringSchemePath = "/faucet_metering_schemes_v8.bin";
 constexpr const char* kCalibrationSessionPath = "/faucet_cal_session_v1.bin";
 constexpr const char* kCalibrationSessionTracePath = "/faucet_cal_session_traces_v1.bin";
 

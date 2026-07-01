@@ -1,8 +1,7 @@
-bool readTdsCalibrationInput(std::uint16_t& referencePpm, bool allowZero) {
+bool readTdsCalibrationInput(std::uint16_t& referencePpm) {
     char text[32]{};
     std::uint32_t value = 0;
-    if (!getParam("referencePpm", text, sizeof(text)) || !parseU32(text, value) ||
-        value > 2000 || (!allowZero && value == 0)) {
+    if (!getParam("referencePpm", text, sizeof(text)) || !parseU32(text, value) || value > 2000) {
         return false;
     }
     referencePpm = static_cast<std::uint16_t>(value);
@@ -109,7 +108,7 @@ void handleCalibrationPost() {
     }
     if (std::strcmp(text, "tds_start_point") == 0) {
         std::uint16_t referencePpm = 0;
-        if (!readTdsCalibrationInput(referencePpm, true)) {
+        if (!readTdsCalibrationInput(referencePpm)) {
             redirectTdsCalibrationFailure("invalid_value");
             return;
         }

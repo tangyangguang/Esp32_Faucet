@@ -4,7 +4,6 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
-#include <math.h>
 
 namespace faucet {
 namespace {
@@ -122,7 +121,7 @@ void sanitizeConfig(SystemConfig& config) {
     if (!enumInRange(config.tdsKind, TdsKind::None, TdsKind::AnalogTdsAo)) {
         config.tdsKind = TdsKind::None;
     }
-    if (!isfinite(config.tdsScale)) {
+    if (!std::isfinite(config.tdsScale)) {
         config.tdsScale = 1.0f;
     }
     config.tdsScale = clampValue<float>(config.tdsScale, kMinTdsScale, kMaxTdsScale);

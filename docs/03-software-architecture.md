@@ -38,7 +38,7 @@
 | `ButtonInput` | 四键消抖、短按/长按 |
 | `ColorDisplayPresenter` | 240x240 TFT 页面模型、状态摘要和刷新节流 |
 | `BeepDriver` | 操作、完成、异常提示 |
-| `WaterRecordStore` | 出水记录写入、滚动、分页 |
+| `WaterRecordFileStore` / `WaterRecordStore` | 文件记录写入、滚动、分页；记录查询和统计聚合 |
 | `StatisticsStore` | 今日、本周、本月、总累计 |
 | `FilterStore` | 最多 6 个滤芯的配置、已用天数、已用流量和重置 |
 | `FaucetWeb` | 业务页面和 `/api/faucet/...` API |

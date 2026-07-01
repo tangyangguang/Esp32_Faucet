@@ -236,8 +236,7 @@ struct WebFixture {
     ConfigStore configStore{backend};
     StatisticsStore statistics;
     FilterStore filters{config.filters};
-    WaterRecord recordsStorage[4]{};
-    WaterRecordStore records{recordsStorage, 4};
+    CountingWaterRecordReader records;
     MemoryRecordWriter recordWriter;
     MemoryFileBackend calibrationFiles;
     MeteringSchemeStore meteringSchemes{calibrationFiles, "/metering-schemes.bin"};

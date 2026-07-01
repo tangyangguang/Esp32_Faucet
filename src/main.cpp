@@ -18,7 +18,6 @@
 #include "app/StatisticsStore.h"
 #include "app/TimeUtils.h"
 #include "app/WaterRecordFileStore.h"
-#include "app/WaterRecordStore.h"
 #include "app/WaterPulseTraceStore.h"
 #include "drivers/BoardPins.h"
 #include "drivers/Esp32AnalogAdcReader.h"
@@ -39,7 +38,6 @@ constexpr const char* kFirmwareName = "esp32-faucet";
 constexpr const char* kFirmwareVersion = "0.1.0-dev";
 constexpr const char* kDefaultWebUser = "admin";
 constexpr const char* kDefaultWebPassword = "admin";
-constexpr std::size_t kRamRecordCapacity = 128;
 constexpr std::size_t kWaterRecordCapacity = 15000;
 constexpr std::size_t kPulseTraceCapacity = faucet::kRecentPulseTraceCount;
 constexpr std::size_t kPulseTraceMaxBuckets =
@@ -54,64 +52,16 @@ constexpr const char* kMeteringSchemePath = "/faucet_metering_schemes_v8.bin";
 constexpr const char* kCalibrationSessionPath = "/faucet_cal_session_v1.bin";
 constexpr const char* kCalibrationSessionTracePath = "/faucet_cal_session_traces_v1.bin";
 
-class PersistentRecordWriter : public faucet::WaterRecordWriter, public faucet::WaterRecordReader {
+class FileRecordWriter : public faucet::WaterRecordWriter {
 public:
-    PersistentRecordWriter() : fileStore_(nullptr), ramStore_(records_, kRamRecordCapacity) {}
-
-    void setFileStore(faucet::WaterRecordFileStore* store) {
-        fileStore_ = store;
-    }
+    explicit FileRecordWriter(faucet::WaterRecordFileStore& fileStore) : fileStore_(fileStore) {}
 
     bool append(const faucet::WaterRecord& record) override {
-        if (fileStore_ && fileStore_->append(record)) {
-            return true;
-        }
-        return ramStore_.append(record);
-    }
-
-    std::size_t rewriteBootRelativeTimes(std::uint32_t bootId, std::uint32_t bootStartRealSec) {
-        if (fileStore_ && fileStore_->ready()) {
-            return fileStore_->rewriteBootRelativeTimes(bootId, bootStartRealSec);
-        }
-        return ramStore_.rewriteBootRelativeTimes(bootId, bootStartRealSec);
-    }
-
-    std::size_t readPage(std::size_t pageIndex,
-                         std::uint16_t pageSize,
-                         faucet::WaterRecord* output,
-                         std::size_t outputCapacity) const override {
-        if (fileStore_ && fileStore_->ready()) {
-            return fileStore_->readPage(pageIndex, pageSize, output, outputCapacity);
-        }
-        return ramStore_.readPage(pageIndex, pageSize, output, outputCapacity);
-    }
-
-    std::size_t count() const override {
-        return fileStore_ && fileStore_->ready() ? fileStore_->count() : ramStore_.count();
-    }
-
-    bool ready() const override {
-        return (fileStore_ && fileStore_->ready()) || ramStore_.ready();
-    }
-
-    const char* storageName() const override {
-        return fileStore_ && fileStore_->ready() ? fileStore_->storageName() : ramStore_.storageName();
-    }
-
-    faucet::WaterRecordFileStatus status() const override {
-        if (fileStore_) {
-            const faucet::WaterRecordFileStatus fileStatus = fileStore_->status();
-            if (fileStatus != faucet::WaterRecordFileStatus::Ready) {
-                return fileStatus;
-            }
-        }
-        return fileStore_ && fileStore_->ready() ? fileStore_->status() : ramStore_.status();
+        return fileStore_.append(record);
     }
 
 private:
-    faucet::WaterRecordFileStore* fileStore_;
-    faucet::WaterRecord records_[kRamRecordCapacity]{};
-    faucet::WaterRecordStore ramStore_;
+    faucet::WaterRecordFileStore& fileStore_;
 };
 
 faucet::Esp32BaseConfigBackend g_configBackend;
@@ -124,7 +74,7 @@ faucet::WaterRecordFileStore g_waterRecordFile(g_waterRecordBackend, kWaterRecor
 faucet::MeteringSchemeStore g_meteringSchemes(g_waterRecordBackend, kMeteringSchemePath);
 faucet::CalibrationSessionFileStore g_calibrationSession(g_waterRecordBackend, kCalibrationSessionPath);
 faucet::CalibrationSessionTraceStore g_calibrationSessionTraces(g_waterRecordBackend, kCalibrationSessionTracePath);
-PersistentRecordWriter g_records;
+FileRecordWriter g_recordWriter(g_waterRecordFile);
 faucet::WaterPulseTrace* g_pulseTraceRecords = nullptr;
 faucet::WaterPulseTraceBucketSample* g_pulseTraceBuckets = nullptr;
 faucet::WaterPulseTraceSample* g_pulseTraceStartupEdges = nullptr;
@@ -357,7 +307,6 @@ void initializeApplication() {
     g_configInitComplete = true;
     const std::uint32_t nowSeconds = currentSeconds();
     const bool waterRecordReady = g_waterRecordFile.begin();
-    g_records.setFileStore(&g_waterRecordFile);
     const bool meteringSchemesReady = g_meteringSchemes.begin();
     if (!meteringSchemesReady) {
         ESP32BASE_LOG_W("app", "metering scheme store unavailable, using config fallback");
@@ -410,7 +359,7 @@ void initializeApplication() {
             g_config, activeScheme,
             g_statistics,
             *g_filters,
-            g_records,
+            g_recordWriter,
             g_meteringSchemes,
             g_pulseTraces,
             &g_calibrationSession,
@@ -421,7 +370,7 @@ void initializeApplication() {
             g_config,
             g_statistics,
             *g_filters,
-            g_records,
+            g_recordWriter,
             g_pulseTraces,
             &g_calibrationSession,
             &g_calibrationSessionTraces,
@@ -442,7 +391,7 @@ void initializeApplication() {
                                  &g_statistics,
                                  g_app,
                                  g_filters,
-                                 &g_records,
+                                 &g_waterRecordFile,
                                  &g_meteringSchemes,
                                  &g_calibrationSession,
                                  &g_calibrationSessionTraces,
@@ -485,7 +434,7 @@ void initializeApplication() {
                     "application initialized rtc=%s st7789=%s records=%s",
                     g_rtc.present() ? "present" : "absent",
                     g_st7789.present() ? "present" : "absent",
-                    g_waterRecordFile.ready() ? "file" : "ram");
+                    g_waterRecordFile.ready() ? "file" : "unavailable");
 }
 
 void handleTimeSynced(const Esp32BaseNtp::TimeSnapshot& time) {
@@ -498,7 +447,7 @@ void handleTimeSynced(const Esp32BaseNtp::TimeSnapshot& time) {
         return;
     }
     const std::uint32_t bootStartRealSec = localSecondsFromUnix(bootStartEpochSec);
-    const std::size_t recordCount = g_records.rewriteBootRelativeTimes(time.bootId, bootStartRealSec);
+    const std::size_t recordCount = g_waterRecordFile.rewriteBootRelativeTimes(time.bootId, bootStartRealSec);
     bool filtersChanged = false;
     if (g_filters) {
         for (std::size_t i = 0; i < faucet::kFilterCount; ++i) {

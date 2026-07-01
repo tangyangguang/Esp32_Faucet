@@ -3,7 +3,9 @@
 #include "app/WaterRecordStore.h"
 #include "app/WaterSensors.h"
 
+#include <algorithm>
 #include <cstring>
+#include <vector>
 
 using namespace faucet;
 
@@ -59,6 +61,47 @@ public:
     }
 };
 
+class MemoryWaterRecordReader : public WaterRecordReader {
+public:
+    void append(const WaterRecord& record) {
+        records.push_back(record);
+    }
+
+    std::size_t readPage(std::size_t pageIndex,
+                         std::uint16_t pageSize,
+                         WaterRecord* output,
+                         std::size_t outputCapacity) const override {
+        if (!output || outputCapacity == 0 || pageSize == 0) {
+            return 0;
+        }
+        const std::size_t startOffset = pageIndex * static_cast<std::size_t>(pageSize);
+        if (startOffset >= records.size()) {
+            return 0;
+        }
+        const std::size_t available = records.size() - startOffset;
+        const std::size_t limit = std::min<std::size_t>({available, pageSize, outputCapacity});
+        for (std::size_t i = 0; i < limit; ++i) {
+            output[i] = records[records.size() - 1 - (startOffset + i)];
+        }
+        return limit;
+    }
+
+    std::size_t count() const override {
+        return records.size();
+    }
+
+    bool ready() const override {
+        return readyFlag;
+    }
+
+    const char* storageName() const override {
+        return readyFlag ? "memory-test" : "unavailable";
+    }
+
+    std::vector<WaterRecord> records;
+    bool readyFlag = true;
+};
+
 WaterRecord makeRecord(std::uint32_t startTime,
                        std::uint32_t volumeMl,
                        std::uint16_t durationSec,
@@ -102,115 +145,24 @@ void test_water_record_sensor_fields_do_not_reuse_boot_id_storage() {
     TEST_ASSERT_EQUAL_UINT16(8, record.tdsPpm);
 }
 
-void test_record_append_keeps_newest_first() {
-    WaterRecord records[4]{};
-    WaterRecordStore store(records, 4);
-
-    TEST_ASSERT_TRUE(store.append(makeRecord(100, 1000)));
-    TEST_ASSERT_TRUE(store.append(makeRecord(200, 2000)));
-    TEST_ASSERT_TRUE(store.append(makeRecord(300, 3000)));
-
-    TEST_ASSERT_EQUAL_UINT32(300, store.newest(0)->startTime);
-    TEST_ASSERT_EQUAL_UINT32(200, store.newest(1)->startTime);
-    TEST_ASSERT_EQUAL_UINT32(100, store.newest(2)->startTime);
-    TEST_ASSERT_NULL(store.newest(3));
-}
-
-void test_record_rolls_when_capacity_is_full() {
-    WaterRecord records[3]{};
-    WaterRecordStore store(records, 3);
-
-    TEST_ASSERT_TRUE(store.append(makeRecord(100, 1000)));
-    TEST_ASSERT_TRUE(store.append(makeRecord(200, 2000)));
-    TEST_ASSERT_TRUE(store.append(makeRecord(300, 3000)));
-    TEST_ASSERT_TRUE(store.append(makeRecord(400, 4000)));
-
-    TEST_ASSERT_TRUE(store.full());
-    TEST_ASSERT_EQUAL_size_t(3, store.count());
-    TEST_ASSERT_EQUAL_UINT32(400, store.newest(0)->startTime);
-    TEST_ASSERT_EQUAL_UINT32(300, store.newest(1)->startTime);
-    TEST_ASSERT_EQUAL_UINT32(200, store.newest(2)->startTime);
-}
-
-void test_record_reads_pages_newest_first() {
-    WaterRecord records[6]{};
-    WaterRecordStore store(records, 6);
-    for (std::uint32_t i = 1; i <= 6; ++i) {
-        TEST_ASSERT_TRUE(store.append(makeRecord(i * 100, i * 1000)));
-    }
-
-    WaterRecord page[2]{};
-    TEST_ASSERT_EQUAL_size_t(2, store.readPage(0, 2, page, 2));
-    TEST_ASSERT_EQUAL_UINT32(600, page[0].startTime);
-    TEST_ASSERT_EQUAL_UINT32(500, page[1].startTime);
-
-    TEST_ASSERT_EQUAL_size_t(2, store.readPage(2, 2, page, 2));
-    TEST_ASSERT_EQUAL_UINT32(200, page[0].startTime);
-    TEST_ASSERT_EQUAL_UINT32(100, page[1].startTime);
-}
-
-void test_record_page_size_is_sanitized_and_limited_by_output() {
-    WaterRecord records[5]{};
-    WaterRecordStore store(records, 5);
-    for (std::uint32_t i = 1; i <= 5; ++i) {
-        TEST_ASSERT_TRUE(store.append(makeRecord(i, i)));
-    }
-
-    WaterRecord page[3]{};
-    TEST_ASSERT_EQUAL_size_t(3, store.readPage(0, 0, page, 3));
-    TEST_ASSERT_EQUAL_UINT32(5, page[0].startTime);
-    TEST_ASSERT_EQUAL_UINT32(3, page[2].startTime);
-}
-
 void test_record_rejects_missing_storage() {
-    WaterRecordStore store(nullptr, 0);
+    MemoryWaterRecordReader store;
+    store.readyFlag = false;
     WaterRecord page[1]{};
 
-    TEST_ASSERT_FALSE(store.append(makeRecord(1, 1)));
     TEST_ASSERT_EQUAL_size_t(0, store.readPage(0, 1, page, 1));
-}
-
-void test_record_clear_resets_count_and_order() {
-    WaterRecord records[2]{};
-    WaterRecordStore store(records, 2);
-    TEST_ASSERT_TRUE(store.append(makeRecord(100, 1000)));
-    TEST_ASSERT_TRUE(store.append(makeRecord(200, 2000)));
-
-    store.clear();
-
-    TEST_ASSERT_EQUAL_size_t(0, store.count());
-    TEST_ASSERT_FALSE(store.full());
-    TEST_ASSERT_NULL(store.newest(0));
-}
-
-void test_record_rewrites_current_boot_relative_times() {
-    WaterRecord records[4]{};
-    WaterRecordStore store(records, 4);
-    WaterRecord current = makeRecord(21, 1500);
-    markWaterRecordBootId(current, 9);
-    WaterRecord previous = makeRecord(30, 500);
-    markWaterRecordBootId(previous, 8);
-
-    TEST_ASSERT_TRUE(store.append(current));
-    TEST_ASSERT_TRUE(store.append(previous));
-
-    TEST_ASSERT_EQUAL_size_t(1, store.rewriteBootRelativeTimes(9, 815500000));
-    TEST_ASSERT_EQUAL_UINT32(30, store.newest(0)->startTime);
-    TEST_ASSERT_EQUAL_UINT32(8, waterRecordBootId(*store.newest(0)));
-    TEST_ASSERT_EQUAL_UINT32(815500021, store.newest(1)->startTime);
-    TEST_ASSERT_EQUAL_UINT32(0, waterRecordBootId(*store.newest(1)));
+    TEST_ASSERT_EQUAL_size_t(0, queryWaterRecords(store, {}, 0, 1, page, 1));
 }
 
 void test_record_aggregate_uses_calendar_month_and_real_daily_buckets() {
-    WaterRecord records[8]{};
-    WaterRecordStore store(records, 8);
-    TEST_ASSERT_TRUE(store.append(makeRecord(832032000UL, 12000, 60, 1, WaterResult::Completed)));      // 2026-05-16 00:00
-    TEST_ASSERT_TRUE(store.append(makeRecord(831686400UL, 6000, 30, 2, WaterResult::StoppedByUser)));  // 2026-05-12 00:00
-    TEST_ASSERT_TRUE(store.append(makeRecord(830995200UL, 5000, 25, 1, WaterResult::FlowError)));      // 2026-05-04 00:00
-    TEST_ASSERT_TRUE(store.append(makeRecord(829612800UL, 7000, 40, 0, WaterResult::Completed)));      // 2026-04-18 00:00
+    MemoryWaterRecordReader store;
+    store.append(makeRecord(832032000UL, 12000, 60, 1, WaterResult::Completed));      // 2026-05-16 00:00
+    store.append(makeRecord(831686400UL, 6000, 30, 2, WaterResult::StoppedByUser));  // 2026-05-12 00:00
+    store.append(makeRecord(830995200UL, 5000, 25, 1, WaterResult::FlowError));      // 2026-05-04 00:00
+    store.append(makeRecord(829612800UL, 7000, 40, 0, WaterResult::Completed));      // 2026-04-18 00:00
     WaterRecord unknown = makeRecord(20, 900, 7, 3, WaterResult::SafetyStopped);
     markWaterRecordBootId(unknown, 42);
-    TEST_ASSERT_TRUE(store.append(unknown));
+    store.append(unknown);
 
     const WaterUsageSummary summary = aggregateWaterRecords(store, 832032000UL, 30);
 
@@ -241,17 +193,16 @@ void test_record_aggregate_uses_calendar_month_and_real_daily_buckets() {
 }
 
 void test_record_aggregate_uses_practical_volume_histogram_ranges() {
-    WaterRecord records[8]{};
-    WaterRecordStore store(records, 8);
+    MemoryWaterRecordReader store;
     constexpr std::uint32_t today = 832032000UL;
-    TEST_ASSERT_TRUE(store.append(makeRecord(today, 499)));
-    TEST_ASSERT_TRUE(store.append(makeRecord(today, 500)));
-    TEST_ASSERT_TRUE(store.append(makeRecord(today, 1999)));
-    TEST_ASSERT_TRUE(store.append(makeRecord(today, 2000)));
-    TEST_ASSERT_TRUE(store.append(makeRecord(today, 4999)));
-    TEST_ASSERT_TRUE(store.append(makeRecord(today, 5000)));
-    TEST_ASSERT_TRUE(store.append(makeRecord(today, 9999)));
-    TEST_ASSERT_TRUE(store.append(makeRecord(today, 10000)));
+    store.append(makeRecord(today, 499));
+    store.append(makeRecord(today, 500));
+    store.append(makeRecord(today, 1999));
+    store.append(makeRecord(today, 2000));
+    store.append(makeRecord(today, 4999));
+    store.append(makeRecord(today, 5000));
+    store.append(makeRecord(today, 9999));
+    store.append(makeRecord(today, 10000));
 
     const WaterUsageSummary summary = aggregateWaterRecords(store, today, 30);
 
@@ -263,11 +214,10 @@ void test_record_aggregate_uses_practical_volume_histogram_ranges() {
 }
 
 void test_record_aggregation_excludes_uncalibrated_sensors_by_default() {
-    WaterRecord records[4]{};
-    WaterRecordStore store(records, 4);
+    MemoryWaterRecordReader store;
     constexpr std::uint32_t today = 832032000UL;
-    TEST_ASSERT_TRUE(store.append(makeSensorRecord(today, 1000, 2500, 8, 10, true)));
-    TEST_ASSERT_TRUE(store.append(makeSensorRecord(today, 1000, 2800, 160, 30, false, kWaterSensorFlagTdsUncalibrated)));
+    store.append(makeSensorRecord(today, 1000, 2500, 8, 10, true));
+    store.append(makeSensorRecord(today, 1000, 2800, 160, 30, false, kWaterSensorFlagTdsUncalibrated));
 
     const WaterUsageSummary summary = aggregateWaterRecords(store, today, 30);
 
@@ -281,11 +231,10 @@ void test_record_aggregation_excludes_uncalibrated_sensors_by_default() {
 }
 
 void test_record_aggregation_can_include_uncalibrated_sensors_when_requested() {
-    WaterRecord records[4]{};
-    WaterRecordStore store(records, 4);
+    MemoryWaterRecordReader store;
     constexpr std::uint32_t today = 832032000UL;
-    TEST_ASSERT_TRUE(store.append(makeSensorRecord(today, 1000, 2500, 8, 10, true)));
-    TEST_ASSERT_TRUE(store.append(makeSensorRecord(today, 1000, 2800, 160, 30, false, kWaterSensorFlagTdsUncalibrated)));
+    store.append(makeSensorRecord(today, 1000, 2500, 8, 10, true));
+    store.append(makeSensorRecord(today, 1000, 2800, 160, 30, false, kWaterSensorFlagTdsUncalibrated));
 
     const WaterUsageSummary summary = aggregateWaterRecords(store, today, 30, true);
 
@@ -302,11 +251,10 @@ void test_record_aggregation_can_include_uncalibrated_sensors_when_requested() {
 }
 
 void test_record_aggregation_tracks_temperature_and_tds_validity_separately() {
-    WaterRecord records[4]{};
-    WaterRecordStore store(records, 4);
+    MemoryWaterRecordReader store;
     constexpr std::uint32_t today = 832032000UL;
-    TEST_ASSERT_TRUE(store.append(makeSensorRecord(
-        today, 1000, 0, 80, 5, true, kWaterSensorFlagTempUnavailable | kWaterSensorFlagTdsTempFallback25C)));
+    store.append(makeSensorRecord(
+        today, 1000, 0, 80, 5, true, kWaterSensorFlagTempUnavailable | kWaterSensorFlagTdsTempFallback25C));
 
     const WaterUsageSummary summary = aggregateWaterRecords(store, today, 30);
 
@@ -340,16 +288,15 @@ void test_record_aggregate_stops_after_records_older_than_window() {
 }
 
 void test_record_query_filters_real_records_by_time_range_and_paginates_matches() {
-    WaterRecord records[6]{};
-    WaterRecordStore store(records, 6);
-    TEST_ASSERT_TRUE(store.append(makeRecord(831686400UL, 1000)));
+    MemoryWaterRecordReader store;
+    store.append(makeRecord(831686400UL, 1000));
     WaterRecord unknown = makeRecord(20, 2000);
     markWaterRecordBootId(unknown, 7);
-    TEST_ASSERT_TRUE(store.append(unknown));
-    TEST_ASSERT_TRUE(store.append(makeRecord(831772800UL, 3000)));
-    TEST_ASSERT_TRUE(store.append(makeRecord(831859200UL, 4000)));
-    TEST_ASSERT_TRUE(store.append(makeRecord(831945600UL, 5000)));
-    TEST_ASSERT_TRUE(store.append(makeRecord(832032000UL, 6000)));
+    store.append(unknown);
+    store.append(makeRecord(831772800UL, 3000));
+    store.append(makeRecord(831859200UL, 4000));
+    store.append(makeRecord(831945600UL, 5000));
+    store.append(makeRecord(832032000UL, 6000));
 
     WaterRecordFilter filter{};
     filter.hasStart = true;
@@ -375,13 +322,7 @@ int main(int argc, char** argv) {
 
     UNITY_BEGIN();
     RUN_TEST(test_water_record_sensor_fields_do_not_reuse_boot_id_storage);
-    RUN_TEST(test_record_append_keeps_newest_first);
-    RUN_TEST(test_record_rolls_when_capacity_is_full);
-    RUN_TEST(test_record_reads_pages_newest_first);
-    RUN_TEST(test_record_page_size_is_sanitized_and_limited_by_output);
     RUN_TEST(test_record_rejects_missing_storage);
-    RUN_TEST(test_record_clear_resets_count_and_order);
-    RUN_TEST(test_record_rewrites_current_boot_relative_times);
     RUN_TEST(test_record_aggregate_uses_calendar_month_and_real_daily_buckets);
     RUN_TEST(test_record_aggregate_uses_practical_volume_histogram_ranges);
     RUN_TEST(test_record_aggregation_excludes_uncalibrated_sensors_by_default);

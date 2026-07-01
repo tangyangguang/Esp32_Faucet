@@ -1,5 +1,7 @@
 #include "app/AppController.h"
 
+#include "app/WaterPulseTraceAnalysis.h"
+
 #include <memory>
 #include <new>
 

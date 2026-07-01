@@ -218,8 +218,7 @@ void AppController::tick(const AppTickInput& input) {
                       resultStartSynced,
                       resultBootId,
                       input.timeSynced ? input.nowSeconds : 0,
-                      flow,
-                      input.nowUs);
+                      flow);
         water_.clearResult();
     }
 
@@ -552,13 +551,11 @@ void AppController::syncFlow(std::uint32_t nowUs) {
     }
 }
 
-void AppController::finishPulseTrace(const WaterRecord& record,
-                                     WaterPulseTraceState finalState,
-                                     std::uint32_t nowUs) {
+void AppController::finishPulseTrace(const WaterRecord& record, WaterPulseTraceState finalState) {
     if (!pulseTraces_ || activeTraceId_ == 0) {
         return;
     }
-    pulseTraces_->finishTrace(activeTraceId_, record, finalState, elapsedSince(nowUs, activeTraceStartUs_));
+    pulseTraces_->finishTrace(activeTraceId_, record, finalState);
     activeTraceId_ = 0;
     activeTraceStartUs_ = 0;
 }
@@ -583,8 +580,7 @@ void AppController::processResult(std::uint32_t startTime,
                                   bool startTimeSynced,
                                   std::uint32_t bootId,
                                   std::uint32_t nowSeconds,
-                                  const FlowSnapshot& flow,
-                                  std::uint32_t nowUs) {
+                                  const FlowSnapshot& flow) {
     const WaterTaskResult result = water_.result();
     if (!result.valid) {
         return;
@@ -620,7 +616,7 @@ void AppController::processResult(std::uint32_t startTime,
                      static_cast<unsigned long>(record.pulseCount),
                      static_cast<unsigned long>(record.meteringSchemeId));
     const WaterPulseTraceState traceState = traceStateForResult(result.result);
-    finishPulseTrace(record, traceState, nowUs);
+    finishPulseTrace(record, traceState);
 
     lastResultRecord_ = WaterRecord{};
     lastResultRecordValid_ = false;

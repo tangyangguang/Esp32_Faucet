@@ -128,9 +128,7 @@ bool WaterPulseTraceStore::appendPulseEdge(std::uint32_t traceId, std::uint32_t 
 
 bool WaterPulseTraceStore::finishTrace(std::uint32_t traceId,
                                        const WaterRecord& record,
-                                       WaterPulseTraceState finalState,
-                                       std::uint32_t endElapsedUs) {
-    (void)endElapsedUs;
+                                       WaterPulseTraceState finalState) {
     WaterPulseTrace* trace = findById(traceId);
     if (!trace) {
         return false;

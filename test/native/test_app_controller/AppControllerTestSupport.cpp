@@ -312,8 +312,7 @@ void savePendingRamCalibrationAttempt(CalibrationAppFixture& fixture,
     const std::uint32_t totalPulses = startupPulses + stablePulses;
     WaterRecord record = calibrationRecord(startTime, totalPulses, actualMl);
     record.durationSec = 5 + stableSeconds;
-    TEST_ASSERT_TRUE(fixture.pulseTraces.finishTrace(
-        traceId, record, WaterPulseTraceState::Completed, record.durationSec * 1000000UL));
+    TEST_ASSERT_TRUE(fixture.pulseTraces.finishTrace(traceId, record, WaterPulseTraceState::Completed));
 
     CalibrationAttempt attempt{};
     attempt.attemptIndex = slot;
@@ -340,8 +339,7 @@ void savePendingRamCalibrationAttemptWithPulseEdges(CalibrationAppFixture& fixtu
 
     WaterRecord record = calibrationRecord(startTime, static_cast<std::uint32_t>(edgeCount), actualMl);
     record.durationSec = durationSec;
-    TEST_ASSERT_TRUE(fixture.pulseTraces.finishTrace(
-        traceId, record, WaterPulseTraceState::Completed, durationSec * 1000000UL));
+    TEST_ASSERT_TRUE(fixture.pulseTraces.finishTrace(traceId, record, WaterPulseTraceState::Completed));
 
     CalibrationAttempt attempt{};
     attempt.attemptIndex = slot;

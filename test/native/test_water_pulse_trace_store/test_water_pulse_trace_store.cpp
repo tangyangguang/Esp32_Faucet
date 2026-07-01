@@ -1,5 +1,6 @@
 #include <unity.h>
 
+#include "app/WaterPulseTraceAnalysis.h"
 #include "app/WaterPulseTraceStore.h"
 
 #include <cstddef>

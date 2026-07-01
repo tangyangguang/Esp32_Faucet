@@ -396,7 +396,7 @@ void test_app_controller_saves_incomplete_bucket_overflow_sample_without_generat
     }
     WaterRecord record = calibrationRecord(1714502410, totalPulses, 7500);
     record.durationSec = 10;
-    TEST_ASSERT_TRUE(pulseTraces.finishTrace(traceId, record, WaterPulseTraceState::Completed, 10000000UL));
+    TEST_ASSERT_TRUE(pulseTraces.finishTrace(traceId, record, WaterPulseTraceState::Completed));
     const WaterPulseTrace* trace = pulseTraces.findById(traceId);
     TEST_ASSERT_NOT_NULL(trace);
     TEST_ASSERT_TRUE((trace->flags & kPulseTraceFlagBucketOverflow) != 0);

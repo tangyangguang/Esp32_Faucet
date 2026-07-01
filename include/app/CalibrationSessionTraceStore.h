@@ -1,7 +1,8 @@
 #pragma once
 
 #include "app/AppStorageStatus.h"
-#include "app/WaterPulseTraceStore.h"
+#include "app/WaterPulseTraceTypes.h"
+#include "app/WaterRecordFileStore.h"
 
 #include <cstddef>
 #include <cstdint>

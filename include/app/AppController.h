@@ -179,9 +179,7 @@ private:
     std::uint8_t selectCalibrationSessionTraceSlot() const;
     void persistCalibrationPendingAttempt(const WaterRecord& record, std::uint32_t nowSeconds);
     void syncFlow(std::uint32_t nowUs);
-    void finishPulseTrace(const WaterRecord& record,
-                          WaterPulseTraceState finalState,
-                          std::uint32_t nowUs);
+    void finishPulseTrace(const WaterRecord& record, WaterPulseTraceState finalState);
     bool canUseTdsCalibration() const;
     void syncValve(std::uint32_t nowMs);
     void processResult(std::uint32_t startTime,
@@ -190,8 +188,7 @@ private:
                        bool startTimeSynced,
                        std::uint32_t bootId,
                        std::uint32_t nowSeconds,
-                       const FlowSnapshot& flow,
-                       std::uint32_t nowUs);
+                       const FlowSnapshot& flow);
 
     SystemConfig config_;
     MeteringSchemeRecord activeMeteringScheme_;

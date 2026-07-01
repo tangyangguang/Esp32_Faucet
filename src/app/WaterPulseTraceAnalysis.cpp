@@ -1,3 +1,5 @@
+#include "app/WaterPulseTraceAnalysis.h"
+
 #include "app/WaterPulseTraceStore.h"
 
 #include "app/MeteringScheme.h"

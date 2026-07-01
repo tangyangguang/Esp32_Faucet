@@ -37,6 +37,7 @@ namespace {
 
 constexpr std::uint32_t kChartDays = kUsageSummaryMaxDays;
 constexpr std::size_t kHomeTodayRecordLimit = 5;
+constexpr std::size_t kStatusJsonBufferSize = 3072;
 FaucetWebContext g_context{};
 
 struct TodayOverview {
@@ -1025,7 +1026,7 @@ void sendCurrentStatusJson() {
     };
     AppSnapshot snapshot = g_context.app->snapshot();
     applyTargetDurationEstimate(snapshot, false);
-    static char json[4096]{};
+    static char json[kStatusJsonBufferSize]{};
     json[0] = '\0';
     sendJsonBuffer(
         writeStatusJson(snapshot, displayStatus.screenOn, *g_context.config, &configStatus, json, sizeof(json)),

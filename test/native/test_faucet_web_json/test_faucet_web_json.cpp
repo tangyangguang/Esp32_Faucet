@@ -144,6 +144,66 @@ void test_status_json_can_include_config_runtime_status() {
     TEST_ASSERT_NULL(std::strstr(json, "password"));
 }
 
+void test_status_json_fits_runtime_buffer_with_escaped_names_and_large_values() {
+    char json[3072]{};
+    SystemConfig config = makeDefaultConfig();
+    for (std::size_t i = 0; i < kPresetCount; ++i) {
+        config.presets[i].enabled = true;
+        for (std::size_t j = 0; j + 1 < kPresetNameLength; ++j) {
+            config.presets[i].name[j] = (j % 3 == 0) ? '"' : ((j % 3 == 1) ? '\\' : '\x01');
+        }
+        config.presets[i].name[kPresetNameLength - 1] = '\0';
+    }
+    config.presets[7].type = PresetType::Time;
+    config.presets[7].value = UINT32_MAX;
+    config.presets[8].type = PresetType::Time;
+    config.presets[8].value = UINT32_MAX;
+
+    AppSnapshot snapshot = makeSnapshot();
+    snapshot.water.state = WaterState::Error;
+    snapshot.water.mode = WaterMode::Time;
+    snapshot.water.selectedPreset = 8;
+    snapshot.water.activePreset = 7;
+    snapshot.water.volumeMl = UINT32_MAX;
+    snapshot.water.elapsedSec = UINT32_MAX;
+    snapshot.water.targetValue = UINT32_MAX;
+    snapshot.pulsePerLiter = UINT32_MAX;
+    snapshot.meteringParams = MeteringParameters{UINT32_MAX, UINT32_MAX, UINT32_MAX, UINT32_MAX, UINT32_MAX};
+    snapshot.calibrationStatus = CalibrationSessionStatus::Failed;
+    snapshot.calibrationAttemptCount = UINT8_MAX;
+    snapshot.calibrationValidSampleCount = UINT8_MAX;
+    snapshot.calibrationMinActualMl = UINT32_MAX;
+    snapshot.calibrationMaxActualMl = UINT32_MAX;
+    snapshot.targetEstimatedDurationSec = UINT32_MAX;
+    snapshot.targetEstimatedVolumeMl = UINT32_MAX;
+    snapshot.targetEstimatedPulseCount = UINT32_MAX;
+    snapshot.targetStablePulsePerSec = 12345.67f;
+    snapshot.selectedPresetEstimatedDurationSec = UINT32_MAX;
+    snapshot.selectedPresetEstimatedVolumeMl = UINT32_MAX;
+    snapshot.selectedPresetEstimatedPulseCount = UINT32_MAX;
+    snapshot.selectedPresetStablePulsePerSec = 12345.67f;
+    snapshot.currentFlowMlPerMin = UINT32_MAX;
+    snapshot.instantFlowMlPerMin = UINT32_MAX;
+    snapshot.windowFlowMlPerMin = UINT32_MAX;
+    snapshot.displayFlowMlPerMin = UINT32_MAX;
+    snapshot.runAverageFlowMlPerMin = UINT32_MAX;
+    snapshot.recentAverageFlowMlPerMin = UINT32_MAX;
+    snapshot.flowDroppedPulses = UINT32_MAX;
+    snapshot.maxLoopIntervalUs = UINT32_MAX;
+    snapshot.maxAppTickUs = UINT32_MAX;
+    snapshot.maxBaseHandleUs = UINT32_MAX;
+    snapshot.sensors.inputVoltageMv = SensorValue{true, INT32_MAX};
+    snapshot.sensors.temperatureCentiC = SensorValue{true, INT32_MAX};
+    snapshot.sensors.tdsPpm = SensorValue{true, INT32_MAX};
+    snapshot.sensors.tdsVoltageMv = SensorValue{true, INT32_MAX};
+    snapshot.sensors.flags = UINT16_MAX;
+    const ConfigRuntimeStatus status{"incompatible_format", INT32_MAX, INT32_MAX};
+
+    TEST_ASSERT_TRUE(writeStatusJson(snapshot, true, config, &status, json, sizeof(json)));
+    TEST_ASSERT_TRUE(std::strlen(json) + 1U < sizeof(json));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\\u0001"));
+}
+
 void test_status_json_contains_next_preset_summary() {
     char json[4096]{};
     SystemConfig config = makeDefaultConfig();
@@ -398,6 +458,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_status_json_can_report_screen_state);
     RUN_TEST(test_status_json_uses_configured_valve_pwm_values);
     RUN_TEST(test_status_json_can_include_config_runtime_status);
+    RUN_TEST(test_status_json_fits_runtime_buffer_with_escaped_names_and_large_values);
     RUN_TEST(test_status_json_contains_next_preset_summary);
     RUN_TEST(test_status_json_reports_time_target_estimate_from_stable_pulses);
     RUN_TEST(test_status_json_reports_missing_time_estimate_reason);

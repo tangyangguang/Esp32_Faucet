@@ -17,7 +17,11 @@ void handleRecordsPage() {
     if (getParam("pageSize", text, sizeof(text))) {
         parseU32(text, requestedPageSize);
     }
-    const std::uint16_t pageSize = sanitizeRecordPageSize(static_cast<std::uint16_t>(requestedPageSize));
+    std::uint16_t pageSize = sanitizeRecordPageSize(static_cast<std::uint16_t>(requestedPageSize));
+    constexpr std::uint16_t kMaxRecordsPagePageSize = 50;
+    if (pageSize > kMaxRecordsPagePageSize) {
+        pageSize = kMaxRecordsPagePageSize;
+    }
     WaterRecordFilter filter{};
     WaterRecord* records = new (std::nothrow) WaterRecord[pageSize]{};
     if (!records) {

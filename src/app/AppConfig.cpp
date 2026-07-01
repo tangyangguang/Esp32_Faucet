@@ -118,6 +118,7 @@ void sanitizeConfig(SystemConfig& config) {
     }
     config.temperatureOffsetCentiC = clampValue<std::int16_t>(
         config.temperatureOffsetCentiC, kMinTemperatureOffsetCentiC, kMaxTemperatureOffsetCentiC);
+    config.temperatureCalibrated = config.temperatureCalibrated && temperatureSensorEnabled(config);
     if (!enumInRange(config.tdsKind, TdsKind::None, TdsKind::AnalogTdsAo)) {
         config.tdsKind = TdsKind::None;
     }

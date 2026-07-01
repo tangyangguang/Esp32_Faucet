@@ -186,6 +186,29 @@ void test_sanitize_config_clamps_preset_values_by_type() {
     TEST_ASSERT_EQUAL_UINT32(kMaxFilterLifeMl, config.filters[0].lifeMl);
 }
 
+void test_sanitize_config_clears_calibration_flags_when_sensors_disabled() {
+    SystemConfig config = makeDefaultConfig();
+    config.temperatureKind = TemperatureKind::Ntc50kB3950;
+    config.temperatureCalibrated = true;
+    config.tdsKind = TdsKind::AnalogTdsAo;
+    config.tdsCalibrated = true;
+
+    sanitizeConfig(config);
+
+    TEST_ASSERT_TRUE(config.temperatureCalibrated);
+    TEST_ASSERT_TRUE(config.tdsCalibrated);
+
+    config.temperatureKind = TemperatureKind::None;
+    config.temperatureCalibrated = true;
+    config.tdsKind = TdsKind::None;
+    config.tdsCalibrated = true;
+
+    sanitizeConfig(config);
+
+    TEST_ASSERT_FALSE(config.temperatureCalibrated);
+    TEST_ASSERT_FALSE(config.tdsCalibrated);
+}
+
 void test_record_page_size_and_filter_life_helpers() {
     TEST_ASSERT_EQUAL_UINT16(10, kDefaultRecordPageSize);
     TEST_ASSERT_EQUAL_UINT16(kDefaultRecordPageSize, sanitizeRecordPageSize(0));
@@ -229,6 +252,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_sensor_config_defaults_disabled);
     RUN_TEST(test_sanitize_config_clamps_scalar_ranges);
     RUN_TEST(test_sanitize_config_clamps_preset_values_by_type);
+    RUN_TEST(test_sanitize_config_clears_calibration_flags_when_sensors_disabled);
     RUN_TEST(test_record_page_size_and_filter_life_helpers);
     RUN_TEST(test_calibration_trace_storage_limits_match_small_session_scope);
     return UNITY_END();

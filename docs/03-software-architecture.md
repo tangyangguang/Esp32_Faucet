@@ -31,6 +31,7 @@
 | `WaterController` | 出水状态机、安全兜底、命令处理 |
 | `ConfigStore` | 应用配置默认值、钳位、读写 |
 | `FlowMeter` | 脉冲计数、容量换算、实时流速窗口估算和诊断瞬时流速 |
+| `WaterPulseTraceStore` / `WaterPulseTraceAnalysis` | 校准脉冲轨迹暂存、趋势聚合、稳定段识别和分段校准拟合 |
 | `AdcReader` / `Esp32AnalogAdcReader` | ADC 抽象与 ESP32 原生 ADC1 读取，native 测试使用 fake ADC |
 | `WaterSensors` | 输入电压、50K B3950 NTC 和 TDS AO 的纯算法换算 |
 | `WaterSensorManager` | 1s 采样、ADC 故障降级、TDS 自动量程、实时快照和出水摘要聚合 |

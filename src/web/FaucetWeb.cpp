@@ -577,17 +577,17 @@ const char* waterRecordFileStatusMessage(WaterRecordFileStatus status) {
         case WaterRecordFileStatus::Ready:
             return "记录存储正常。";
         case WaterRecordFileStatus::Missing:
-            return "记录文件不存在，正在使用 RAM 临时记录；下次写入会尝试重新创建文件。";
+            return "记录文件不存在；下次写入会尝试重新创建文件。";
         case WaterRecordFileStatus::InvalidPath:
-            return "记录文件路径配置无效，正在使用 RAM 临时记录。";
+            return "记录文件路径配置无效，当前不能读取或写入出水记录。";
         case WaterRecordFileStatus::InvalidCapacity:
-            return "记录文件容量配置无效，正在使用 RAM 临时记录。";
+            return "记录文件容量配置无效，当前不能读取或写入出水记录。";
         case WaterRecordFileStatus::BackendFailure:
-            return "记录文件读写失败，正在使用 RAM 临时记录；请检查 Flash 文件系统。";
+            return "记录文件读写失败；请检查 Flash 文件系统。";
         case WaterRecordFileStatus::Corrupt:
-            return "记录文件损坏或不完整，正在使用 RAM 临时记录。";
+            return "记录文件损坏或不完整；为保护数据，系统不会自动删除。";
         case WaterRecordFileStatus::IncompatibleFormat:
-            return "记录文件格式不兼容，正在使用 RAM 临时记录。";
+            return "记录文件格式不兼容；为保护数据，系统不会自动删除。";
         case WaterRecordFileStatus::Unavailable:
         default:
             return "记录存储不可用。";

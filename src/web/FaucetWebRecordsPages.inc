@@ -87,7 +87,7 @@ void handleRecordsPage() {
                 waterRecordFileStatusMessage(recordStatus));
     }
     if (!ready) {
-        Esp32BaseWeb::sendChunk("<p class='err'>当前没有可读取的临时记录。</p>");
+        Esp32BaseWeb::sendChunk("<p class='err'>当前没有可读取的出水记录。</p>");
     } else if (total == 0) {
         Esp32BaseWeb::sendChunk("<p class='ok'>暂无出水记录。</p>");
     }

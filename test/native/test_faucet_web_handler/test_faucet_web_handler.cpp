@@ -320,6 +320,10 @@ void dispatchPresetPost() {
     TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch("/api/faucet/presets", Esp32BaseWeb::METHOD_POST));
 }
 
+void dispatchFilterPost() {
+    TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch("/api/faucet/filters", Esp32BaseWeb::METHOD_POST));
+}
+
 void enableTdsForFixture(WebFixture& fixture) {
     fixture.config.tdsKind = TdsKind::AnalogTdsAo;
     fixture.config.temperatureKind = TemperatureKind::Ntc50kB3950;
@@ -590,6 +594,54 @@ void test_records_page_caps_manual_page_size_to_lightweight_limit() {
     TEST_ASSERT_EQUAL(200, Esp32BaseWeb::nativeTestResponse().code);
     TEST_ASSERT_EQUAL_UINT16(50, reader.lastPageSize);
     TEST_ASSERT_NOT_NULL(std::strstr(Esp32BaseWeb::nativeTestResponse().body.c_str(), "pageSize=50"));
+}
+
+void test_filter_save_rejects_missing_enabled_without_changing_live_state() {
+    WebFixture fixture;
+    registerRoutes();
+    beginWebPost("/api/faucet/filters");
+    Esp32BaseWeb::nativeTestSetParam("index", "0");
+
+    dispatchFilterPost();
+
+    TEST_ASSERT_EQUAL(303, Esp32BaseWeb::nativeTestResponse().code);
+    TEST_ASSERT_EQUAL_STRING("/faucet/filters?error=invalid_enabled",
+                             Esp32BaseWeb::nativeTestResponseHeader("Location"));
+    TEST_ASSERT_TRUE(fixture.filters.record(0).enabled);
+    TEST_ASSERT_EQUAL_INT32(0, fixture.backend.getInt("faucet_cfg", "ver", 0));
+    TEST_ASSERT_EQUAL_UINT32(0, fixture.backend.filterRuntimeWrites);
+}
+
+void test_filter_save_allows_explicit_disabled_form_submission() {
+    WebFixture fixture;
+    registerRoutes();
+    beginWebPost("/api/faucet/filters");
+    Esp32BaseWeb::nativeTestSetParam("index", "0");
+    Esp32BaseWeb::nativeTestSetParam("enabledSet", "1");
+
+    dispatchFilterPost();
+
+    TEST_ASSERT_EQUAL(303, Esp32BaseWeb::nativeTestResponse().code);
+    TEST_ASSERT_EQUAL_STRING("/faucet/filters?saved=1", Esp32BaseWeb::nativeTestResponseHeader("Location"));
+    TEST_ASSERT_FALSE(fixture.filters.record(0).enabled);
+    const SystemConfig persisted = fixture.configStore.loadSystemConfig();
+    TEST_ASSERT_FALSE(persisted.filters[0].enabled);
+}
+
+void test_filter_save_accepts_explicit_enabled_zero_value() {
+    WebFixture fixture;
+    registerRoutes();
+    beginWebPost("/api/faucet/filters");
+    Esp32BaseWeb::nativeTestSetParam("index", "0");
+    Esp32BaseWeb::nativeTestSetParam("enabled", "0");
+
+    dispatchFilterPost();
+
+    TEST_ASSERT_EQUAL(303, Esp32BaseWeb::nativeTestResponse().code);
+    TEST_ASSERT_EQUAL_STRING("/faucet/filters?saved=1", Esp32BaseWeb::nativeTestResponseHeader("Location"));
+    TEST_ASSERT_FALSE(fixture.filters.record(0).enabled);
+    const SystemConfig persisted = fixture.configStore.loadSystemConfig();
+    TEST_ASSERT_FALSE(persisted.filters[0].enabled);
 }
 
 void test_filter_reset_handler_rejects_missing_auth_before_context_work() {
@@ -947,6 +999,9 @@ int main(int, char**) {
     RUN_TEST(test_records_api_filters_by_documented_date_params);
     RUN_TEST(test_records_api_caps_page_size_to_json_buffer_safe_limit);
     RUN_TEST(test_records_page_caps_manual_page_size_to_lightweight_limit);
+    RUN_TEST(test_filter_save_rejects_missing_enabled_without_changing_live_state);
+    RUN_TEST(test_filter_save_allows_explicit_disabled_form_submission);
+    RUN_TEST(test_filter_save_accepts_explicit_enabled_zero_value);
     RUN_TEST(test_filter_reset_handler_rejects_missing_auth_before_context_work);
     RUN_TEST(test_filter_reset_handler_rejects_cross_origin_post);
     RUN_TEST(test_filter_reset_handler_returns_invalid_index_without_runtime_write);

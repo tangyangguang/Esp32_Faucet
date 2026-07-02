@@ -114,6 +114,7 @@ void handleFilterEditPage() {
     sendFmt("<h2>第 %u 级滤芯设置</h2>"
             "<section class='panel'><form method='post' action='/api/faucet/filters' onsubmit='return once(this)'>"
             "<input type='hidden' name='index' value='%u'><input type='hidden' name='return' value='/faucet/filters'>"
+            "<input type='hidden' name='enabledSet' value='1'>"
             "<div class='form-grid'>",
             static_cast<unsigned>(index + 1),
             static_cast<unsigned>(index));

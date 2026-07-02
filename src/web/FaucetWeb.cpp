@@ -975,7 +975,27 @@ void applyU32Param(const char* name, std::uint32_t& value) {
 }
 
 bool checkboxParam(const char* name) {
-    return Esp32BaseWeb::hasParam(name);
+    if (!Esp32BaseWeb::hasParam(name)) {
+        return false;
+    }
+    char text[8]{};
+    if (!Esp32BaseWeb::getParam(name, text, sizeof(text))) {
+        return true;
+    }
+    return std::strcmp(text, "0") != 0 && std::strcmp(text, "false") != 0 &&
+           std::strcmp(text, "off") != 0;
+}
+
+bool explicitCheckboxParam(const char* name, const char* unsetMarkerName, bool& value) {
+    if (Esp32BaseWeb::hasParam(name)) {
+        value = checkboxParam(name);
+        return true;
+    }
+    if (unsetMarkerName && Esp32BaseWeb::hasParam(unsetMarkerName)) {
+        value = false;
+        return true;
+    }
+    return false;
 }
 
 bool persistPresetConfig(std::size_t index, const PresetConfig& preset) {

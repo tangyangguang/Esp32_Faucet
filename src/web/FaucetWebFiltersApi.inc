@@ -15,7 +15,12 @@ void handleFiltersApi() {
         }
 
         FilterRecord record = g_context.filters->record(index);
-        record.enabled = checkboxParam("enabled");
+        bool enabled = false;
+        if (!explicitCheckboxParam("enabled", "enabledSet", enabled)) {
+            Esp32BaseWeb::redirectSeeOther("/faucet/filters?error=invalid_enabled");
+            return;
+        }
+        record.enabled = enabled;
         Esp32BaseWeb::getParam("name", record.name, sizeof(record.name));
         std::uint32_t months = 0;
         if (getParam("recommendMonths", text, sizeof(text)) && parseU32(text, months)) {

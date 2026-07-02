@@ -370,7 +370,7 @@ void test_app_css_covers_current_page_layout_classes() {
     TEST_ASSERT_NULL(std::strstr(body.c_str(), "font-weight:760"));
 }
 
-void test_stats_page_renders_daily_volume_chart() {
+void test_stats_page_renders_daily_charts_and_usage_panels() {
     WebFixture fixture;
     CountingWaterRecordReader reader;
     fillCountingRecords(reader);
@@ -383,7 +383,13 @@ void test_stats_page_renders_daily_volume_chart() {
     const std::string& body = Esp32BaseWeb::nativeTestResponse().body;
     TEST_ASSERT_EQUAL(200, Esp32BaseWeb::nativeTestResponse().code);
     TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "class='daily-chart'"));
-    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "<svg viewBox='0 0 1000 112'"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "<svg viewBox='0 0 1000 210'"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "volume-key"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "duration-key"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "class='usage-grid'"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "按时段分布"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "完成结果"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "单次出水分布"));
 }
 
 void test_after_format_fs_notification_resets_runtime_statistics() {
@@ -928,7 +934,7 @@ int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_home_page_initial_render_does_not_read_record_pages);
     RUN_TEST(test_app_css_covers_current_page_layout_classes);
-    RUN_TEST(test_stats_page_renders_daily_volume_chart);
+    RUN_TEST(test_stats_page_renders_daily_charts_and_usage_panels);
     RUN_TEST(test_after_format_fs_notification_resets_runtime_statistics);
     RUN_TEST(test_after_format_fs_notification_notifies_app_storage_rebuild);
     RUN_TEST(test_calibration_home_redirects_active_flow_session_to_workflow);

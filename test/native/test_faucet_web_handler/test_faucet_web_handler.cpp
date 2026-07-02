@@ -342,6 +342,22 @@ void test_home_page_initial_render_does_not_read_record_pages() {
     TEST_ASSERT_EQUAL_UINT32(0, reader.readPageCalls);
 }
 
+void test_app_css_covers_current_page_layout_classes() {
+    WebFixture fixture;
+    registerRoutes();
+    beginWebGet("/faucet/app.css");
+
+    TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch("/faucet/app.css", Esp32BaseWeb::METHOD_GET));
+
+    const std::string& body = Esp32BaseWeb::nativeTestResponse().body;
+    TEST_ASSERT_EQUAL(200, Esp32BaseWeb::nativeTestResponse().code);
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), ".next-preset-control"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), ".machine-status-strip"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), ".today-meta-line"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), ".filter-head"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), ".calibration-session-badges"));
+}
+
 void test_after_format_fs_notification_resets_runtime_statistics() {
     WebFixture fixture;
     StatisticsRecord record{};
@@ -883,6 +899,7 @@ void test_presets_handler_running_select_next_only_changes_next_preset() {
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_home_page_initial_render_does_not_read_record_pages);
+    RUN_TEST(test_app_css_covers_current_page_layout_classes);
     RUN_TEST(test_after_format_fs_notification_resets_runtime_statistics);
     RUN_TEST(test_after_format_fs_notification_notifies_app_storage_rebuild);
     RUN_TEST(test_calibration_home_redirects_active_flow_session_to_workflow);

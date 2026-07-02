@@ -374,6 +374,34 @@ void test_app_css_covers_current_page_layout_classes() {
     TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), ".calibration-session-panel .status-pill"));
     TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), ".calibration-kpi-main"));
     TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), ".calibration-slot-table th,.metering-scheme-table th{font-weight:500}"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), ".filter-life-details"));
+}
+
+void test_filter_page_renders_replacement_date_and_life_details() {
+    WebFixture fixture;
+    FilterRecord filter = fixture.filters.record(0);
+    filter.startTime = secondsSince2000(2026, 5, 1, 0, 0, 0);
+    filter.startBootId = 0;
+    filter.recommendDays = 180;
+    filter.maxDays = 360;
+    filter.lifeMl = 1200000;
+    TEST_ASSERT_TRUE(fixture.filters.updateFilter(0, filter));
+    registerRoutes();
+    beginWebGet("/faucet/filters");
+
+    TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch("/faucet/filters", Esp32BaseWeb::METHOD_GET));
+
+    const std::string& body = Esp32BaseWeb::nativeTestResponse().body;
+    TEST_ASSERT_EQUAL(200, Esp32BaseWeb::nativeTestResponse().code);
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "<th>上次更换</th>"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "<th>寿命详情</th>"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "2026-05-01"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "建议/最短"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "6 个月</strong><small>180 天</small>"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "最长"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "12 个月</strong><small>360 天</small>"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "流量寿命"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "1200.00 L"));
 }
 
 void test_stats_page_renders_daily_charts_and_usage_panels() {
@@ -988,6 +1016,7 @@ int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_home_page_initial_render_does_not_read_record_pages);
     RUN_TEST(test_app_css_covers_current_page_layout_classes);
+    RUN_TEST(test_filter_page_renders_replacement_date_and_life_details);
     RUN_TEST(test_stats_page_renders_daily_charts_and_usage_panels);
     RUN_TEST(test_after_format_fs_notification_resets_runtime_statistics);
     RUN_TEST(test_after_format_fs_notification_notifies_app_storage_rebuild);

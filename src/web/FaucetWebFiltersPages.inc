@@ -10,12 +10,14 @@ void handleFiltersPage() {
     char todayDate[16]{};
     formatDate(now >= kMinRealDateSeconds ? now : 0, todayDate, sizeof(todayDate));
     sendNoticeFromQuery();
-    Esp32BaseWeb::sendChunk("<h2>滤芯</h2><table class='filters-table'><tr><th>名称</th><th>启用状态</th><th>已用天数 (天)</th><th>已用流量 (L)</th><th>寿命规则</th><th>状态</th><th>操作</th></tr>");
+    Esp32BaseWeb::sendChunk("<h2>滤芯</h2><table class='filters-table'><tr><th>名称</th><th>启用状态</th><th>上次更换</th><th>已用天数</th><th>已用流量</th><th>寿命详情</th><th>状态</th><th>操作</th></tr>");
     for (std::size_t i = 0; i < kFilterCount; ++i) {
         const FilterRecord& filter = g_context.filters->record(i);
         const std::uint32_t usedDays = filter.startTime >= kMinRealDateSeconds ? g_context.filters->usedDays(i, now) : 0;
-        char life[32]{};
-        formatLifeRange(filter, life, sizeof(life));
+        char replacementDate[16]{};
+        if (filter.startTime >= kMinRealDateSeconds && filter.startBootId == 0) {
+            formatDate(filter.startTime, replacementDate, sizeof(replacementDate));
+        }
         sendFmt("<tr%s data-filter-start='%lu' data-filter-boot='%lu' data-filter-enabled='%u' data-filter-recommend-days='%lu' data-filter-max-days='%lu' data-filter-life-ml='%lu' data-filter-used-ml='%lu'><td>",
                 filter.enabled ? "" : " class='disabled-row'",
                 static_cast<unsigned long>(filter.startTime),
@@ -26,17 +28,40 @@ void handleFiltersPage() {
                 static_cast<unsigned long>(filter.lifeMl),
                 static_cast<unsigned long>(filter.usedMl));
         sendHtmlEscapedBounded(filter.name, sizeof(filter.name));
-        sendFmt("</td><td>%s</td><td class='filter-used-days'>%lu 天</td><td>",
-                filter.enabled ? "启用" : "停用",
-                static_cast<unsigned long>(usedDays));
+        sendFmt("</td><td>%s</td><td>", filter.enabled ? "启用" : "停用");
+        if (replacementDate[0] != '\0') {
+            sendHtmlEscapedBounded(replacementDate, sizeof(replacementDate));
+        } else if (filter.startBootId != 0) {
+            Esp32BaseWeb::sendChunk("待校时");
+        } else {
+            Esp32BaseWeb::sendChunk("未设置");
+        }
+        sendFmt("</td><td class='filter-used-days'>%lu 天</td><td>", static_cast<unsigned long>(usedDays));
         sendLiters(filter.usedMl);
-        sendFmt("</td><td>%s", life);
-        Esp32BaseWeb::sendChunk(" / ");
+        Esp32BaseWeb::sendChunk("</td><td><div class='filter-life-details'><div><span>建议/最短</span><strong>");
+        if (filter.recommendDays > 0) {
+            sendFmt("%lu 个月</strong><small>%lu 天</small>",
+                    static_cast<unsigned long>(daysToMonths(filter.recommendDays)),
+                    static_cast<unsigned long>(filter.recommendDays));
+        } else {
+            Esp32BaseWeb::sendChunk("未设置</strong><small>-</small>");
+        }
+        Esp32BaseWeb::sendChunk("</div><div><span>最长</span><strong>");
+        if (filter.maxDays > 0) {
+            sendFmt("%lu 个月</strong><small>%lu 天</small>",
+                    static_cast<unsigned long>(daysToMonths(filter.maxDays)),
+                    static_cast<unsigned long>(filter.maxDays));
+        } else {
+            Esp32BaseWeb::sendChunk("未设置</strong><small>-</small>");
+        }
+        Esp32BaseWeb::sendChunk("</div><div><span>流量寿命</span><strong>");
         if (filter.lifeMl > 0) {
             sendLiters(filter.lifeMl);
+            Esp32BaseWeb::sendChunk("</strong><small>按累计出水</small>");
         } else {
-            Esp32BaseWeb::sendChunk("未设置流量");
+            Esp32BaseWeb::sendChunk("未设置</strong><small>不按流量判断</small>");
         }
+        Esp32BaseWeb::sendChunk("</div></div>");
         sendFmt("</td><td><span class='status-pill filter-status %s'>%s</span></td><td><div class='row-actions'><a href='/faucet/filters/edit?index=%u'>设置</a>",
                 filterStatusClass(filter, usedDays),
                 filterDisplayStatusText(filter, usedDays),

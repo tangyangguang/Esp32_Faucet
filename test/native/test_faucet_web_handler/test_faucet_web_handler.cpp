@@ -367,6 +367,9 @@ void test_app_css_covers_current_page_layout_classes() {
     TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), ".distribution-head"));
     TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), ".count-line"));
     TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), ".chart-unit"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), ".calibration-session-panel .status-pill"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), ".calibration-kpi-main"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), ".calibration-slot-table th,.metering-scheme-table th{font-weight:500}"));
 }
 
 void test_stats_page_renders_daily_charts_and_usage_panels() {

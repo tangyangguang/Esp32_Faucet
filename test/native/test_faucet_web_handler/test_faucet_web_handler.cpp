@@ -351,11 +351,12 @@ void test_app_css_covers_current_page_layout_classes() {
 
     const std::string& body = Esp32BaseWeb::nativeTestResponse().body;
     TEST_ASSERT_EQUAL(200, Esp32BaseWeb::nativeTestResponse().code);
-    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "--bg:#fff"));
-    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), ".machine-status-strip{align-items:center;gap:7px;margin-top:10px}"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "--bg:#fbfcfb"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "body{max-width:1120px"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), ".machine-status-strip{display:flex;align-items:center;gap:7px;flex-wrap:wrap}"));
     TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), ".next-preset-control"));
     TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), ".machine-status-strip"));
-    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), ".today-meta-line"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), ".today-total-meta"));
     TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), ".filter-head"));
     TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), ".calibration-session-badges"));
     TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), ".machine-task-card{display:flex"));
@@ -363,11 +364,9 @@ void test_app_css_covers_current_page_layout_classes() {
     TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), ".temperature-calibration-summary>div"));
     TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), ".active-metering-metrics"));
     TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), ".metering-metric{min-width:0"));
-    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "strong,b{font-weight:500}"));
-    TEST_ASSERT_NULL(std::strstr(body.c_str(), "font-weight:650"));
-    TEST_ASSERT_NULL(std::strstr(body.c_str(), "font-weight:700"));
-    TEST_ASSERT_NULL(std::strstr(body.c_str(), "font-weight:750"));
-    TEST_ASSERT_NULL(std::strstr(body.c_str(), "font-weight:760"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), ".distribution-head"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), ".count-line"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), ".chart-unit"));
 }
 
 void test_stats_page_renders_daily_charts_and_usage_panels() {
@@ -383,13 +382,13 @@ void test_stats_page_renders_daily_charts_and_usage_panels() {
     const std::string& body = Esp32BaseWeb::nativeTestResponse().body;
     TEST_ASSERT_EQUAL(200, Esp32BaseWeb::nativeTestResponse().code);
     TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "class='daily-chart'"));
-    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "<svg viewBox='0 0 1000 210'"));
-    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "volume-key"));
-    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "duration-key"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "<svg viewBox='0 0 1080 292'"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "chart-unit"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "count-line"));
     TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "class='usage-grid'"));
-    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "按时段分布"));
-    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "完成结果"));
-    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "单次出水分布"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "最近 30 天分布"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "按容量段分布"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "按完成结果分布"));
 }
 
 void test_after_format_fs_notification_resets_runtime_statistics() {

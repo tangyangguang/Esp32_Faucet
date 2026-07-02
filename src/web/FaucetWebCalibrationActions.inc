@@ -64,6 +64,64 @@ void persistTdsCalibrationResult(bool ok, const char* success, const char* failu
     redirectTdsCalibrationResult(true, success, failure);
 }
 
+bool readManualMeteringParametersInput(char* name, std::size_t nameLen, MeteringParameters& params) {
+    char text[32]{};
+    if (!getParam("name", name, nameLen) || !name[0]) {
+        return false;
+    }
+    if (!getParam("startupPulseCount", text, sizeof(text)) || !parseU32(text, params.startupPulseCount) ||
+        !getParam("startupVolumeMl", text, sizeof(text)) || !parseU32(text, params.startupVolumeMl) ||
+        !getParam("stablePulsePerLiter", text, sizeof(text)) || !parseU32(text, params.stablePulsePerLiter) ||
+        !getParam("stableFlowMlPerMin", text, sizeof(text)) || !parseU32(text, params.stableFlowMlPerMin)) {
+        return false;
+    }
+    float startupDurationSec = 0.0f;
+    if (!getParam("startupDurationSec", text, sizeof(text)) || !parseFloat(text, startupDurationSec) ||
+        startupDurationSec < 0.0f ||
+        startupDurationSec > static_cast<float>(kMaxSegmentedStartupDurationMs) / 1000.0f) {
+        return false;
+    }
+    params.startupDurationMs = static_cast<std::uint32_t>(startupDurationSec * 1000.0f + 0.5f);
+    return validMeteringSchemeParameters(params);
+}
+
+void handleCreateMeteringSchemeApi(bool ajax, std::uint32_t now) {
+    if (waterTaskActive() || !g_context.app || !g_context.app->canApplyConfig()) {
+        sendFlowCalibrationPostFailure(ajax, "busy");
+        return;
+    }
+    if (!ensureMeteringSchemesReady()) {
+        sendFlowCalibrationPostFailure(ajax, "metering_storage_unavailable");
+        return;
+    }
+    char name[kMeteringSchemeNameLength]{};
+    MeteringParameters params{};
+    if (!readManualMeteringParametersInput(name, sizeof(name), params)) {
+        sendFlowCalibrationPostFailure(ajax, "invalid_value");
+        return;
+    }
+    std::uint32_t newId = 0;
+    if (!g_context.meteringSchemes->createManualAsCurrent(name, params, now, newId)) {
+        sendFlowCalibrationPostFailure(ajax, "save_failed");
+        return;
+    }
+    MeteringSchemeRecord active{};
+    if (!g_context.meteringSchemes->activeScheme(active) || !g_context.app->applyActiveMeteringScheme(active)) {
+        sendFlowCalibrationPostFailure(ajax, "save_failed");
+        return;
+    }
+    if (ajax) {
+        Esp32BaseWeb::sendJson(200, "{\"ok\":true}");
+        return;
+    }
+    char url[128]{};
+    std::snprintf(url,
+                  sizeof(url),
+                  "/faucet/calibration/flow?saved=metering_manual&createdScheme=%lu",
+                  static_cast<unsigned long>(newId));
+    Esp32BaseWeb::redirectSeeOther(url);
+}
+
 void handleCalibrationPost() {
     if (!Esp32BaseWeb::isMethod(Esp32BaseWeb::METHOD_POST)) {
         Esp32BaseWeb::sendJson(405, "{\"error\":\"method_not_allowed\"}");
@@ -219,6 +277,10 @@ void handleFlowCalibrationPost() {
                                       g_context.app && g_context.app->applyGeneratedCalibrationForWeb(now),
                                       "applied",
                                       "no_generated_result");
+        return;
+    }
+    if (std::strcmp(text, "create_metering_scheme") == 0) {
+        handleCreateMeteringSchemeApi(ajax, now);
         return;
     }
     sendFlowCalibrationPostFailure(ajax, "invalid_value");

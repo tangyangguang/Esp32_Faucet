@@ -26,6 +26,7 @@ constexpr std::uint32_t kMaxStableFlowMlPerMin = 30000;
 enum class MeteringSchemeSource : std::uint8_t {
     Default = 0,
     CalibrationSession = 1,
+    Manual = 2,
 };
 
 struct MeteringSchemeRecord {
@@ -97,5 +98,10 @@ bool appendCandidateMeteringScheme(MeteringSchemeCollection& schemes,
                                    const char* name,
                                    std::uint32_t nowSeconds,
                                    std::uint32_t& newSchemeId);
+bool appendManualMeteringScheme(MeteringSchemeCollection& schemes,
+                                const char* name,
+                                const MeteringParameters& params,
+                                std::uint32_t nowSeconds,
+                                std::uint32_t& newSchemeId);
 
 }  // namespace faucet

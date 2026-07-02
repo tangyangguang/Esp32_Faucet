@@ -309,6 +309,15 @@ void beginWebPost(const char* path, bool authenticated = true, bool sameOrigin =
     beginWebRequest(Esp32BaseWeb::METHOD_POST, path, authenticated, sameOrigin);
 }
 
+void setManualMeteringParams(const char* name = "手工参数") {
+    Esp32BaseWeb::nativeTestSetParam("name", name);
+    Esp32BaseWeb::nativeTestSetParam("startupPulseCount", "10");
+    Esp32BaseWeb::nativeTestSetParam("startupVolumeMl", "210");
+    Esp32BaseWeb::nativeTestSetParam("stablePulsePerLiter", "420");
+    Esp32BaseWeb::nativeTestSetParam("startupDurationSec", "3.5");
+    Esp32BaseWeb::nativeTestSetParam("stableFlowMlPerMin", "1600");
+}
+
 void beginPresetPost(const char* action) {
     beginWebPost("/api/faucet/presets");
     if (action) {
@@ -493,6 +502,43 @@ void test_flow_calibration_page_preserves_active_session_state() {
                             static_cast<unsigned>(loaded.status));
 }
 
+void test_flow_calibration_page_renders_manual_metering_entry() {
+    WebFixture fixture;
+    registerRoutes();
+
+    beginWebGet("/faucet/calibration/flow");
+    TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch("/faucet/calibration/flow", Esp32BaseWeb::METHOD_GET));
+
+    const std::string& body = Esp32BaseWeb::nativeTestResponse().body;
+    TEST_ASSERT_EQUAL(200, Esp32BaseWeb::nativeTestResponse().code);
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "历史参数"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "手工设置参数"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "修改当前参数"));
+}
+
+void test_flow_calibration_manual_page_prefills_current_parameters() {
+    WebFixture fixture;
+    registerRoutes();
+
+    beginWebGet("/faucet/calibration/flow");
+    Esp32BaseWeb::nativeTestSetParam("manual", "1");
+    Esp32BaseWeb::nativeTestSetParam("name", "复制参数");
+    Esp32BaseWeb::nativeTestSetParam("startupPulseCount", "10");
+    Esp32BaseWeb::nativeTestSetParam("startupVolumeMl", "210");
+    Esp32BaseWeb::nativeTestSetParam("stablePulsePerLiter", "420");
+    Esp32BaseWeb::nativeTestSetParam("startupDurationMs", "3500");
+    Esp32BaseWeb::nativeTestSetParam("stableFlowMlPerMin", "1600");
+    TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch("/faucet/calibration/flow", Esp32BaseWeb::METHOD_GET));
+
+    const std::string& body = Esp32BaseWeb::nativeTestResponse().body;
+    TEST_ASSERT_EQUAL(200, Esp32BaseWeb::nativeTestResponse().code);
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "手工设置计量参数"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "name='action' value='create_metering_scheme'"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "value='复制参数'"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "name='startupDurationSec'"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "value='3.500'"));
+}
+
 void test_temperature_calibration_post_accepts_celsius_decimal_input() {
     WebFixture fixture;
     enableTdsForFixture(fixture);
@@ -509,6 +555,48 @@ void test_temperature_calibration_post_accepts_celsius_decimal_input() {
                              Esp32BaseWeb::nativeTestResponseHeader("Location"));
     TEST_ASSERT_TRUE(fixture.app.config().temperatureCalibrated);
     TEST_ASSERT_TRUE(fixture.config.temperatureCalibrated);
+}
+
+void test_flow_calibration_manual_post_creates_current_parameter() {
+    WebFixture fixture;
+    TEST_ASSERT_TRUE(fixture.meteringSchemes.begin());
+    const std::uint32_t oldActiveId = fixture.meteringSchemes.activeSchemeId();
+    TEST_ASSERT_EQUAL_UINT32(99, fixture.app.activeMeteringScheme().id);
+    registerRoutes();
+
+    beginWebPost("/faucet/calibration/flow");
+    Esp32BaseWeb::nativeTestSetParam("action", "create_metering_scheme");
+    setManualMeteringParams("手工低压");
+    TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch("/faucet/calibration/flow", Esp32BaseWeb::METHOD_POST));
+
+    TEST_ASSERT_EQUAL(303, Esp32BaseWeb::nativeTestResponse().code);
+    TEST_ASSERT_NOT_EQUAL(oldActiveId, fixture.meteringSchemes.activeSchemeId());
+    TEST_ASSERT_NOT_EQUAL(99, fixture.app.activeMeteringScheme().id);
+    TEST_ASSERT_EQUAL_UINT32(fixture.meteringSchemes.activeSchemeId(), fixture.app.activeMeteringScheme().id);
+    TEST_ASSERT_EQUAL_STRING("手工低压", fixture.app.activeMeteringScheme().name);
+    TEST_ASSERT_EQUAL_UINT32(420, fixture.app.activeMeteringScheme().params.stablePulsePerLiter);
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(MeteringSchemeSource::Manual),
+                            static_cast<unsigned>(fixture.app.activeMeteringScheme().sourceType));
+    TEST_ASSERT_NOT_NULL(std::strstr(Esp32BaseWeb::nativeTestResponseHeader("Location"),
+                                     "/faucet/calibration/flow?saved=metering_manual&createdScheme="));
+}
+
+void test_flow_calibration_manual_post_rejects_busy_without_changing_current() {
+    WebFixture fixture;
+    TEST_ASSERT_TRUE(fixture.meteringSchemes.begin());
+    const std::uint32_t oldActiveId = fixture.meteringSchemes.activeSchemeId();
+    setRunning(fixture.app);
+    registerRoutes();
+
+    beginWebPost("/faucet/calibration/flow");
+    Esp32BaseWeb::nativeTestSetParam("action", "create_metering_scheme");
+    setManualMeteringParams("busy manual");
+    TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch("/faucet/calibration/flow", Esp32BaseWeb::METHOD_POST));
+
+    TEST_ASSERT_EQUAL(303, Esp32BaseWeb::nativeTestResponse().code);
+    TEST_ASSERT_EQUAL_UINT32(oldActiveId, fixture.meteringSchemes.activeSchemeId());
+    TEST_ASSERT_EQUAL_STRING("/faucet/calibration/flow?error=busy",
+                             Esp32BaseWeb::nativeTestResponseHeader("Location"));
 }
 
 void test_flow_calibration_rejects_unknown_write_action() {
@@ -1022,7 +1110,11 @@ int main(int, char**) {
     RUN_TEST(test_after_format_fs_notification_notifies_app_storage_rebuild);
     RUN_TEST(test_calibration_home_redirects_active_flow_session_to_workflow);
     RUN_TEST(test_flow_calibration_page_preserves_active_session_state);
+    RUN_TEST(test_flow_calibration_page_renders_manual_metering_entry);
+    RUN_TEST(test_flow_calibration_manual_page_prefills_current_parameters);
     RUN_TEST(test_temperature_calibration_post_accepts_celsius_decimal_input);
+    RUN_TEST(test_flow_calibration_manual_post_creates_current_parameter);
+    RUN_TEST(test_flow_calibration_manual_post_rejects_busy_without_changing_current);
     RUN_TEST(test_flow_calibration_rejects_unknown_write_action);
     RUN_TEST(test_running_water_allows_read_only_business_pages);
     RUN_TEST(test_records_api_filters_by_documented_date_params);

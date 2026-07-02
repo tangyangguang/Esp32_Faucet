@@ -546,6 +546,8 @@ const char* meteringSchemeSourceName(MeteringSchemeSource source) {
             return "默认";
         case MeteringSchemeSource::CalibrationSession:
             return "校准生成";
+        case MeteringSchemeSource::Manual:
+            return "手工设置";
     }
     return "-";
 }

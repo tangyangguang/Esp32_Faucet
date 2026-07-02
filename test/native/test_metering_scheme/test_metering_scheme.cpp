@@ -98,6 +98,26 @@ void test_candidate_uses_free_slot_and_fails_when_collection_is_full() {
     TEST_ASSERT_EQUAL_UINT32(0, overflowId);
 }
 
+void test_manual_parameters_append_history_record() {
+    MeteringSchemeRecord records[3]{};
+    MeteringSchemeCollection schemes = collectionFor(records);
+    TEST_ASSERT_TRUE(initializeDefaultMeteringSchemes(schemes, 1770000000));
+
+    std::uint32_t newId = 0;
+    TEST_ASSERT_TRUE(appendManualMeteringScheme(
+        schemes, "手工低压", MeteringParameters{9, 123, 456, 2500, 1800}, 1770000400, newId));
+
+    TEST_ASSERT_EQUAL_UINT32(2, newId);
+    TEST_ASSERT_EQUAL_UINT32(3, schemes.nextSchemeId);
+    const MeteringSchemeRecord* saved = findMeteringSchemeById(schemes, newId);
+    TEST_ASSERT_NOT_NULL(saved);
+    TEST_ASSERT_EQUAL_STRING("手工低压", saved->name);
+    TEST_ASSERT_EQUAL_UINT32(456, saved->params.stablePulsePerLiter);
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(MeteringSchemeSource::Manual),
+                            static_cast<unsigned>(saved->sourceType));
+    TEST_ASSERT_EQUAL_UINT16(0, saved->sampleCount);
+}
+
 void test_metering_estimate_uses_segmented_parameters_for_target_volume() {
     const MeteringParameters params{8, 36, 225, 5000, 1950};
 
@@ -142,6 +162,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_default_store_has_one_current_default_scheme);
     RUN_TEST(test_candidate_appends_history_record);
     RUN_TEST(test_candidate_uses_free_slot_and_fails_when_collection_is_full);
+    RUN_TEST(test_manual_parameters_append_history_record);
     RUN_TEST(test_metering_estimate_uses_segmented_parameters_for_target_volume);
     RUN_TEST(test_metering_estimate_handles_no_startup_segment);
     RUN_TEST(test_metering_estimate_allows_startup_pulse_offset_without_startup_volume);

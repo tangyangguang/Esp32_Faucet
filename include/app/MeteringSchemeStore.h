@@ -36,6 +36,10 @@ public:
                                 const char* name,
                                 std::uint32_t nowSeconds,
                                 std::uint32_t& newId);
+    bool createManualAsCurrent(const char* name,
+                               const MeteringParameters& params,
+                               std::uint32_t nowSeconds,
+                               std::uint32_t& newId);
 
 private:
     bool validPath() const;

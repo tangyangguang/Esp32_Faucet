@@ -230,4 +230,22 @@ bool appendCandidateMeteringScheme(MeteringSchemeCollection& schemes,
     return true;
 }
 
+bool appendManualMeteringScheme(MeteringSchemeCollection& schemes,
+                                const char* name,
+                                const MeteringParameters& params,
+                                std::uint32_t nowSeconds,
+                                std::uint32_t& newSchemeId) {
+    newSchemeId = 0;
+    if (!validMeteringSchemeParameters(params) || schemes.nextSchemeId == 0) {
+        return false;
+    }
+    MeteringSchemeRecord* slot = findFreeSchemeSlot(schemes);
+    if (!slot) {
+        return false;
+    }
+    newSchemeId = schemes.nextSchemeId++;
+    initializeCommonScheme(*slot, newSchemeId, name, params, MeteringSchemeSource::Manual, nowSeconds);
+    return true;
+}
+
 }  // namespace faucet

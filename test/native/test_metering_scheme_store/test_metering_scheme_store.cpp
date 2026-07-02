@@ -102,6 +102,24 @@ void test_save_candidate_as_current_updates_current_id() {
     TEST_ASSERT_EQUAL_UINT32(id, active.id);
 }
 
+void test_create_manual_as_current_updates_current_id_and_source() {
+    MemoryFileBackend backend;
+    MeteringSchemeStore store(backend, "/schemes.bin");
+    TEST_ASSERT_TRUE(store.begin());
+
+    std::uint32_t id = 0;
+    TEST_ASSERT_TRUE(store.createManualAsCurrent(
+        "手工参数", MeteringParameters{10, 210, 420, 3500, 1600}, 1770000100, id));
+
+    TEST_ASSERT_EQUAL_UINT32(id, store.activeSchemeId());
+    MeteringSchemeRecord active{};
+    TEST_ASSERT_TRUE(store.activeScheme(active));
+    TEST_ASSERT_EQUAL_STRING("手工参数", active.name);
+    TEST_ASSERT_EQUAL_UINT32(420, active.params.stablePulsePerLiter);
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(MeteringSchemeSource::Manual),
+                            static_cast<unsigned>(active.sourceType));
+}
+
 void test_full_store_overwrites_oldest_non_current_record() {
     MemoryFileBackend backend;
     MeteringSchemeStore store(backend, "/schemes.bin");
@@ -155,6 +173,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_begin_rebuilds_incompatible_scheme_file);
     RUN_TEST(test_list_returns_scheme_records_in_order);
     RUN_TEST(test_save_candidate_as_current_updates_current_id);
+    RUN_TEST(test_create_manual_as_current_updates_current_id_and_source);
     RUN_TEST(test_full_store_overwrites_oldest_non_current_record);
     RUN_TEST(test_save_candidate_header_failure_rolls_back_written_record);
     return UNITY_END();

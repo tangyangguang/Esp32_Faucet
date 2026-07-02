@@ -234,6 +234,47 @@ bool MeteringSchemeStore::saveCandidateAsCurrent(const MeteringSchemeCandidate& 
     return true;
 }
 
+bool MeteringSchemeStore::createManualAsCurrent(const char* name,
+                                                const MeteringParameters& params,
+                                                std::uint32_t nowSeconds,
+                                                std::uint32_t& newId) {
+    newId = 0;
+    if (!ready()) {
+        return false;
+    }
+    MeteringSchemeRecord records[1]{};
+    MeteringSchemeCollection collection{records, 1, header_.activeSchemeId, header_.nextSchemeId};
+    if (!appendManualMeteringScheme(collection, name, params, nowSeconds, newId)) {
+        return false;
+    }
+
+    std::size_t slot = 0;
+    if (!findFreeSlot(slot) && !findOldestNonCurrentSlot(slot)) {
+        newId = 0;
+        return false;
+    }
+    MeteringSchemeRecord previousRecord{};
+    if (!readRecord(slot, previousRecord)) {
+        newId = 0;
+        return false;
+    }
+    if (!writeRecord(slot, records[0])) {
+        newId = 0;
+        return false;
+    }
+    MeteringSchemeStoreHeader previous = header_;
+    header_.activeSchemeId = newId;
+    header_.nextSchemeId = collection.nextSchemeId;
+    header_.checksum = headerChecksum(header_);
+    if (!saveHeader()) {
+        header_ = previous;
+        writeRecord(slot, previousRecord);
+        newId = 0;
+        return false;
+    }
+    return true;
+}
+
 bool MeteringSchemeStore::validPath() const {
     return path_ && path_[0] == '/';
 }

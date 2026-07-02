@@ -138,7 +138,7 @@ void test_trace_store_records_seconds_and_reports_memory_stats() {
     TEST_ASSERT_EQUAL_UINT32(1000000, store.startupEdgeAt(*trace, 2)->elapsedUs);
 }
 
-void test_trace_store_does_not_synthesize_edges_to_match_record_duration() {
+void test_trace_store_keeps_captured_buckets_shorter_than_record_duration() {
     TraceStoreFixture<2, 16, 32, 2> fixture;
     WaterPulseTraceStore& store = fixture.store;
 
@@ -566,7 +566,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_trace_store_filters_too_close_edges_without_bucket_counting);
     RUN_TEST(test_trace_store_bucket_overflow_keeps_counting_totals);
     RUN_TEST(test_trace_store_records_seconds_and_reports_memory_stats);
-    RUN_TEST(test_trace_store_does_not_synthesize_edges_to_match_record_duration);
+    RUN_TEST(test_trace_store_keeps_captured_buckets_shorter_than_record_duration);
     RUN_TEST(test_trace_store_drops_oldest_when_recent_trace_count_is_exceeded);
     RUN_TEST(test_trace_store_marks_bucket_overflow_after_single_trace_bucket_limit);
     RUN_TEST(test_trace_analysis_finds_stable_start_after_slow_ramp);

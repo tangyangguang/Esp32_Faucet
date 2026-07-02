@@ -136,7 +136,7 @@ public:
     bool saveTdsCalibrationPointForWeb(std::uint32_t nowSeconds);
     bool removeTdsCalibrationPointForWeb(std::uint8_t index, std::uint32_t nowSeconds);
     bool discardTdsCalibrationForWeb();
-    bool applyTdsCalibrationForWeb(std::uint32_t nowSeconds);
+    bool applyTdsCalibrationForWeb();
     bool saveTemperatureCalibrationForWeb(std::int16_t referenceCentiC);
     TdsCalibrationSessionSnapshot tdsCalibrationSnapshot() const;
     const SystemConfig& config() const;

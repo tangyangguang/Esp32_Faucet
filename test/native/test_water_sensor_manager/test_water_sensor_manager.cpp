@@ -212,7 +212,7 @@ void test_calibration_uses_25c_fallback_without_failing() {
     TEST_ASSERT_TRUE(session.readyToSave);
     TEST_ASSERT_TRUE(session.tempFallback25C);
     TEST_ASSERT_TRUE(fixture.manager.saveStableTdsCalibrationPoint(1720000020UL));
-    TEST_ASSERT_TRUE(fixture.manager.applyReadyTdsCalibration(config, 1720000021UL));
+    TEST_ASSERT_TRUE(fixture.manager.applyReadyTdsCalibration(config));
     TEST_ASSERT_TRUE(config.tdsCalibrated);
     TEST_ASSERT_TRUE(config.tdsScale > 0.0f);
 }
@@ -244,7 +244,7 @@ void test_tds_calibration_saves_two_points_without_flash_progress_dependency() {
     const TdsCalibrationSessionSnapshot session = fixture.manager.calibrationSnapshot();
     TEST_ASSERT_TRUE(session.readyToSave);
     TEST_ASSERT_TRUE(fixture.manager.saveStableTdsCalibrationPoint(1720000050UL));
-    TEST_ASSERT_TRUE(fixture.manager.applyReadyTdsCalibration(config, 1720000051UL));
+    TEST_ASSERT_TRUE(fixture.manager.applyReadyTdsCalibration(config));
     TEST_ASSERT_TRUE(config.tdsCalibrated);
     TEST_ASSERT_TRUE(config.tdsScale > 0.0f);
 }
@@ -310,7 +310,7 @@ void test_tds_calibration_point_session_combines_saved_points_and_apply() {
     }
     TEST_ASSERT_TRUE(fixture.manager.saveStableTdsCalibrationPoint(1720000040UL));
 
-    TEST_ASSERT_TRUE(fixture.manager.applyReadyTdsCalibration(config, 1720000050UL));
+    TEST_ASSERT_TRUE(fixture.manager.applyReadyTdsCalibration(config));
     TEST_ASSERT_TRUE(config.tdsCalibrated);
     TEST_ASSERT_TRUE(config.tdsScale > 0.0f);
 }
@@ -336,7 +336,7 @@ void test_tds_calibration_apply_is_order_independent() {
     }
     TEST_ASSERT_TRUE(fixture.manager.saveStableTdsCalibrationPoint(1720000040UL));
 
-    TEST_ASSERT_TRUE(fixture.manager.applyReadyTdsCalibration(config, 1720000050UL));
+    TEST_ASSERT_TRUE(fixture.manager.applyReadyTdsCalibration(config));
     TEST_ASSERT_TRUE(config.tdsCalibrated);
     TEST_ASSERT_TRUE(config.tdsScale > 0.0f);
 }

@@ -62,7 +62,7 @@ public:
     bool removeTdsCalibrationPoint(std::uint8_t index, std::uint32_t nowSeconds);
     bool discardTdsCalibrationSession();
     bool expireTdsCalibrationSession(std::uint32_t nowSeconds);
-    bool applyReadyTdsCalibration(SystemConfig& config, std::uint32_t nowSeconds);
+    bool applyReadyTdsCalibration(SystemConfig& config);
 
 private:
     static constexpr std::size_t kCalibrationMaxSamples = 32;

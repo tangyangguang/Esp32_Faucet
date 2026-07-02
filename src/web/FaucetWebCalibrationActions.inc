@@ -149,9 +149,7 @@ void handleCalibrationPost() {
         return;
     }
     if (std::strcmp(text, "tds_apply_session") == 0) {
-        persistTdsCalibrationResult(g_context.app &&
-                                        g_context.app->applyTdsCalibrationForWeb(
-                                            g_context.nowSeconds ? g_context.nowSeconds() : 0),
+        persistTdsCalibrationResult(g_context.app && g_context.app->applyTdsCalibrationForWeb(),
                                     "tds_saved",
                                     "invalid_state");
         return;

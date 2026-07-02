@@ -358,12 +358,12 @@ bool AppController::discardTdsCalibrationForWeb() {
     return canUseTdsCalibration() && waterSensors_->discardTdsCalibrationSession();
 }
 
-bool AppController::applyTdsCalibrationForWeb(std::uint32_t nowSeconds) {
+bool AppController::applyTdsCalibrationForWeb() {
     if (!canUseTdsCalibration()) {
         return false;
     }
     SystemConfig updated = config_;
-    if (!waterSensors_->applyReadyTdsCalibration(updated, nowSeconds)) {
+    if (!waterSensors_->applyReadyTdsCalibration(updated)) {
         return false;
     }
     sanitizeConfig(updated);

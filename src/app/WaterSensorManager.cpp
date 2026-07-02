@@ -254,8 +254,7 @@ bool WaterSensorManager::expireTdsCalibrationSession(std::uint32_t nowSeconds) {
     return discardTdsCalibrationSession();
 }
 
-bool WaterSensorManager::applyReadyTdsCalibration(SystemConfig& config, std::uint32_t nowSeconds) {
-    (void)nowSeconds;
+bool WaterSensorManager::applyReadyTdsCalibration(SystemConfig& config) {
     if (!tdsCalibrationSessionActive_ || !tdsCalibrationFit_.valid || tdsCalibrationPointCount_ == 0) {
         return false;
     }

@@ -101,7 +101,7 @@ void test_app_tds_point_calibration_apply_persists_to_config() {
         fixture.app.tick(input({false, false, false, false}, nowMs, nowMs * 1000UL, 1714502401));
     }
     TEST_ASSERT_TRUE(fixture.app.saveTdsCalibrationPointForWeb(1714502420));
-    TEST_ASSERT_TRUE(fixture.app.applyTdsCalibrationForWeb(1714502430));
+    TEST_ASSERT_TRUE(fixture.app.applyTdsCalibrationForWeb());
 
     const SystemConfig updated = fixture.app.config();
     TEST_ASSERT_TRUE(updated.tdsCalibrated);

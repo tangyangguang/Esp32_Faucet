@@ -361,6 +361,11 @@ void test_app_css_covers_current_page_layout_classes() {
     TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), ".temperature-calibration-summary>div"));
     TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), ".active-metering-metrics"));
     TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), ".metering-metric{min-width:0"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "strong,b{font-weight:500}"));
+    TEST_ASSERT_NULL(std::strstr(body.c_str(), "font-weight:650"));
+    TEST_ASSERT_NULL(std::strstr(body.c_str(), "font-weight:700"));
+    TEST_ASSERT_NULL(std::strstr(body.c_str(), "font-weight:750"));
+    TEST_ASSERT_NULL(std::strstr(body.c_str(), "font-weight:760"));
 }
 
 void test_after_format_fs_notification_resets_runtime_statistics() {

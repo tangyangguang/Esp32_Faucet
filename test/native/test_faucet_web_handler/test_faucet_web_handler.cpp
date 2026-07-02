@@ -356,6 +356,11 @@ void test_app_css_covers_current_page_layout_classes() {
     TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), ".today-meta-line"));
     TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), ".filter-head"));
     TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), ".calibration-session-badges"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), ".machine-task-card{display:flex"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), ".tds-calibration-summary>div"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), ".temperature-calibration-summary>div"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), ".active-metering-metrics"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), ".metering-metric{min-width:0"));
 }
 
 void test_after_format_fs_notification_resets_runtime_statistics() {

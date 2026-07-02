@@ -351,6 +351,8 @@ void test_app_css_covers_current_page_layout_classes() {
 
     const std::string& body = Esp32BaseWeb::nativeTestResponse().body;
     TEST_ASSERT_EQUAL(200, Esp32BaseWeb::nativeTestResponse().code);
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "--bg:#fff"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), ".machine-status-strip{align-items:center;gap:7px;margin-top:10px}"));
     TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), ".next-preset-control"));
     TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), ".machine-status-strip"));
     TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), ".today-meta-line"));
@@ -366,6 +368,22 @@ void test_app_css_covers_current_page_layout_classes() {
     TEST_ASSERT_NULL(std::strstr(body.c_str(), "font-weight:700"));
     TEST_ASSERT_NULL(std::strstr(body.c_str(), "font-weight:750"));
     TEST_ASSERT_NULL(std::strstr(body.c_str(), "font-weight:760"));
+}
+
+void test_stats_page_renders_daily_volume_chart() {
+    WebFixture fixture;
+    CountingWaterRecordReader reader;
+    fillCountingRecords(reader);
+    fixture.installContext(reader);
+    registerRoutes();
+    beginWebGet("/faucet/stats");
+
+    TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch("/faucet/stats", Esp32BaseWeb::METHOD_GET));
+
+    const std::string& body = Esp32BaseWeb::nativeTestResponse().body;
+    TEST_ASSERT_EQUAL(200, Esp32BaseWeb::nativeTestResponse().code);
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "class='daily-chart'"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "<svg viewBox='0 0 1000 112'"));
 }
 
 void test_after_format_fs_notification_resets_runtime_statistics() {
@@ -910,6 +928,7 @@ int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_home_page_initial_render_does_not_read_record_pages);
     RUN_TEST(test_app_css_covers_current_page_layout_classes);
+    RUN_TEST(test_stats_page_renders_daily_volume_chart);
     RUN_TEST(test_after_format_fs_notification_resets_runtime_statistics);
     RUN_TEST(test_after_format_fs_notification_notifies_app_storage_rebuild);
     RUN_TEST(test_calibration_home_redirects_active_flow_session_to_workflow);

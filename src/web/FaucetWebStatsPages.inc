@@ -1,3 +1,61 @@
+void formatStatsDayLabel(std::uint32_t dayIndex, char* out, std::size_t len) {
+    if (!out || len == 0) {
+        return;
+    }
+    std::uint16_t year = 0;
+    std::uint8_t month = 0;
+    std::uint8_t day = 0;
+    dateFromDayIndex(dayIndex, year, month, day);
+    std::snprintf(out, len, "%u/%u", static_cast<unsigned>(month), static_cast<unsigned>(day));
+}
+
+void sendDailyVolumeChart(const WaterUsageSummary& summary) {
+    std::uint32_t maxVolume = 0;
+    for (std::size_t i = 0; i < summary.dayCount; ++i) {
+        maxVolume = std::max(maxVolume, summary.days[i].volumeMl);
+    }
+    Esp32BaseWeb::sendChunk("<section class='daily-chart'><div class='chart-head'><h3>最近 30 天</h3>"
+                            "<span class='chart-key'>出水量</span></div>"
+                            "<svg viewBox='0 0 1000 112' role='img' aria-label='最近30天每日出水量'>"
+                            "<line class='axis' x1='40' y1='78' x2='975' y2='78'></line>");
+    char maxText[24]{};
+    formatLiters(maxVolume, maxText, sizeof(maxText));
+    sendFmt("<text class='y-label' x='38' y='14'>%s</text>", maxText);
+    constexpr std::uint32_t chartHeight = 58;
+    constexpr std::uint32_t baseY = 78;
+    constexpr std::uint32_t left = 46;
+    constexpr std::uint32_t step = 31;
+    constexpr std::uint32_t barWidth = 14;
+    for (std::size_t i = 0; i < summary.dayCount; ++i) {
+        const DailyUsageBucket& day = summary.days[i];
+        const std::uint32_t barHeight = maxVolume == 0 ? 0 : (day.volumeMl * chartHeight) / maxVolume;
+        const std::uint32_t x = left + static_cast<std::uint32_t>(i) * step;
+        const std::uint32_t y = baseY - barHeight;
+        char label[8]{};
+        char volume[24]{};
+        char duration[24]{};
+        formatStatsDayLabel(day.dayIndex, label, sizeof(label));
+        formatLiters(day.volumeMl, volume, sizeof(volume));
+        formatDurationShort(day.durationSec, duration, sizeof(duration));
+        sendFmt("<rect class='%s' x='%lu' y='%lu' width='%lu' height='%lu'><title>%s：%s · %s · %u 次</title></rect>",
+                day.count == 0 ? "bar empty-bar" : "bar",
+                static_cast<unsigned long>(x),
+                static_cast<unsigned long>(barHeight == 0 ? baseY - 2 : y),
+                static_cast<unsigned long>(barWidth),
+                static_cast<unsigned long>(barHeight == 0 ? 2 : barHeight),
+                label,
+                volume,
+                duration,
+                static_cast<unsigned>(day.count));
+        if (i % 5 == 0 || i + 1 == summary.dayCount) {
+            sendFmt("<text class='x-label' x='%lu' y='104'>%s</text>",
+                    static_cast<unsigned long>(x + barWidth / 2),
+                    label);
+        }
+    }
+    Esp32BaseWeb::sendChunk("</svg></section>");
+}
+
 void sendStatsReportPanel() {
     const std::uint32_t now = g_context.nowSeconds();
     std::unique_ptr<WaterUsageSummary> summaryStorage(new (std::nothrow) WaterUsageSummary);
@@ -53,6 +111,7 @@ void sendStatsReportPanel() {
     sendStatsMetricCard("过去 30 天日均", average30, average30Meta);
     sendStatsMetricCard("总累计", total, totalMeta);
     Esp32BaseWeb::sendChunk("</div>");
+    sendDailyVolumeChart(summary);
     Esp32BaseWeb::sendChunk("<section class='panel usage-panel'><h3>按预设分布</h3>"
                             "<table><tr><th>预设</th><th>次数</th><th>出水量</th></tr>");
     for (std::size_t i = 0; i < kPresetCount; ++i) {
@@ -83,4 +142,3 @@ void handleStatsPage() {
     sendStatsReportPanel();
     sendPageEnd();
 }
-

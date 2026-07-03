@@ -234,7 +234,7 @@ void handleCalibrationDetailPage() {
             static_cast<unsigned long>(trace->startupEdgeCount));
     Esp32BaseWeb::sendChunk("</table></section>");
 
-    sendPulseTraceDetailSections(*trace, buckets.get(), loadedBucketCount, bucketSeconds, detailPath, detailSourceParam, nullptr);
+    sendPulseTraceDetailSections(*trace, buckets.get(), loadedBucketCount, bucketSeconds, detailPath, detailSourceParam);
 
     Esp32BaseWeb::sendChunk("<section class='panel'><h3>启动边沿</h3>");
     sendFmt("<p class='hint'>当前显示 %lu/%lu 条启动边沿。</p><table><tr><th>序号</th><th>距任务开始</th><th>与上一边沿间隔</th></tr>",

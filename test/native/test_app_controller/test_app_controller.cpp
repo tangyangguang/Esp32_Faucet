@@ -81,6 +81,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_app_controller_generated_calibration_restores_candidate_and_stays_active_without_idle_timeout);
     RUN_TEST(test_app_controller_reboot_drops_awaiting_actual_when_ram_trace_missing);
     RUN_TEST(test_app_controller_local_ok_starts_calibration_run_and_completion_awaits_actual);
+    RUN_TEST(test_app_controller_local_cancel_exits_calibration_while_awaiting_actual);
     RUN_TEST(test_app_controller_saves_long_high_pulse_calibration_without_bucket_overflow);
     RUN_TEST(test_app_controller_bucket_overflow_completion_still_awaits_actual);
     RUN_TEST(test_app_controller_calibration_run_ignores_preset_target_until_local_cancel);

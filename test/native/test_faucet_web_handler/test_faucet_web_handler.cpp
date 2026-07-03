@@ -4,7 +4,6 @@
 
 #include "app/AppController.h"
 #include "app/ConfigStore.h"
-#include "app/WaterPulseTraceStore.h"
 #include "web/FaucetWeb.h"
 #include "../support/CalibrationTraceTestSupport.h"
 #include "../support/FakeAdcReader.h"
@@ -231,16 +230,6 @@ void fillCountingRecords(CountingWaterRecordReader& reader) {
     }
 }
 
-void saveRamTrace(WaterPulseTraceStore& store, const WaterRecord& record) {
-    const std::uint32_t traceId = store.beginTrace(record.startTime, kDefaultPulseMinIntervalUs);
-    TEST_ASSERT_NOT_EQUAL_UINT32(0, traceId);
-    const std::uint32_t pulseCount = record.pulseCount == 0 ? 1 : record.pulseCount;
-    for (std::uint32_t i = 0; i < pulseCount; ++i) {
-        TEST_ASSERT_TRUE(store.appendPulseEdge(traceId, 100000UL + i * 200000UL));
-    }
-    TEST_ASSERT_TRUE(store.finishTrace(traceId, record, WaterPulseTraceState::Completed));
-}
-
 struct WebFixture {
     SystemConfig config = makeDefaultConfig();
     FakeConfigBackend backend;
@@ -253,10 +242,6 @@ struct WebFixture {
     MeteringSchemeStore meteringSchemes{calibrationFiles, "/metering-schemes.bin"};
     CalibrationSessionFileStore sessionStore{calibrationFiles, "/cal-session.bin"};
     CalibrationSessionTraceStore traceStore{calibrationFiles, "/cal-traces.bin"};
-    WaterPulseTrace ramTraces[2]{};
-    WaterPulseTraceBucketSample ramBuckets[128]{};
-    WaterPulseTraceSample ramStartupEdges[64]{};
-    WaterPulseTraceStore pulseTraces{ramTraces, 2, ramBuckets, 128, ramStartupEdges, 64, 2};
     FakeAdcReader adc;
     WaterSensorManager waterSensors{adc};
     AppController app{config,
@@ -291,7 +276,6 @@ struct WebFixture {
         context.meteringSchemes = &meteringSchemes;
         context.calibrationSessions = &sessionStore;
         context.calibrationSessionTraces = &traceStore;
-        context.pulseTraces = &pulseTraces;
         context.nowSeconds = testNowSeconds;
         context.bootId = testBootId;
         context.afterFormatFs = countAfterFormatFsNotification;
@@ -1037,14 +1021,13 @@ void test_calibration_detail_reads_persisted_bucket_trace_without_ram_cache() {
     TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "2s"));
 }
 
-void test_record_detail_renders_pulse_chart_when_ram_trace_is_available() {
+void test_record_detail_does_not_render_pulse_chart_for_normal_records() {
     WebFixture fixture;
     WaterRecord record = makeWebRecord(testNowSeconds(), 1000);
     record.meteringSchemeId = 0;
     record.pulseCount = 40;
     record.durationSec = 8;
     fixture.records.records.push_back(record);
-    saveRamTrace(fixture.pulseTraces, record);
     registerRoutes();
 
     beginWebGet("/faucet/records/detail");
@@ -1063,14 +1046,13 @@ void test_record_detail_renders_pulse_chart_when_ram_trace_is_available() {
     Esp32BaseWeb::nativeTestSetParam("sensorSamples", "0");
     Esp32BaseWeb::nativeTestSetParam("sensorFlags", "0");
     Esp32BaseWeb::nativeTestSetParam("scheme", "0");
-    Esp32BaseWeb::nativeTestSetParam("bucket", "2");
     TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch("/faucet/records/detail", Esp32BaseWeb::METHOD_GET));
 
     const std::string& body = Esp32BaseWeb::nativeTestResponse().body;
     TEST_ASSERT_EQUAL(200, Esp32BaseWeb::nativeTestResponse().code);
-    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "pulse-detail-chart"));
-    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "实际有效脉冲"));
-    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "2 秒 / 原始 500 ms 桶"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "接水详情"));
+    TEST_ASSERT_NULL(std::strstr(body.c_str(), "pulse-detail-chart"));
+    TEST_ASSERT_NULL(std::strstr(body.c_str(), "脉冲趋势"));
 }
 
 void test_tds_calibration_start_redirects_busy_to_calibration_page() {
@@ -1295,7 +1277,7 @@ int main(int, char**) {
     RUN_TEST(test_calibration_session_start_recovers_missing_session_file_after_format);
     RUN_TEST(test_calibration_detail_reads_persisted_session_trace_without_ram_cache);
     RUN_TEST(test_calibration_detail_reads_persisted_bucket_trace_without_ram_cache);
-    RUN_TEST(test_record_detail_renders_pulse_chart_when_ram_trace_is_available);
+    RUN_TEST(test_record_detail_does_not_render_pulse_chart_for_normal_records);
     RUN_TEST(test_tds_calibration_start_redirects_busy_to_calibration_page);
     RUN_TEST(test_tds_calibration_start_redirects_success_from_idle);
     RUN_TEST(test_tds_calibration_save_persists_config_after_stable_samples);

@@ -20,58 +20,7 @@ std::uint32_t estimateVolumeMlForPulsesForWeb(const MeteringParameters& params, 
     return total > UINT32_MAX ? UINT32_MAX : static_cast<std::uint32_t>(total);
 }
 
-bool loadRamTraceBuckets(const WaterPulseTrace& trace,
-                         std::unique_ptr<WaterPulseTraceBucketSample[]>& buckets,
-                         std::size_t& loadedBucketCount) {
-    loadedBucketCount = 0;
-    if (!g_context.pulseTraces || trace.bucketCount == 0) {
-        return false;
-    }
-    buckets.reset(new (std::nothrow) WaterPulseTraceBucketSample[trace.bucketCount]{});
-    if (!buckets) {
-        return false;
-    }
-    for (std::size_t i = 0; i < trace.bucketCount; ++i) {
-        const WaterPulseTraceBucketSample* bucket = g_context.pulseTraces->bucketAt(trace, i);
-        if (!bucket) {
-            return false;
-        }
-        buckets[i] = *bucket;
-    }
-    loadedBucketCount = trace.bucketCount;
-    return true;
-}
-
-void sendRecordDetailHref(const WaterRecord& record, std::uint32_t bucketSeconds = 1) {
-    sendFmt("/faucet/records/detail?start=%lu&boot=%lu&volume=%lu&target=%lu&pulses=%lu&filtered=%lu&duration=%lu&mode=%u&result=%u&preset=%u&temp=%d&tds=%u&sensorSamples=%u&sensorFlags=%u&scheme=%lu&bucket=%lu",
-            static_cast<unsigned long>(record.startTime),
-            static_cast<unsigned long>(waterRecordBootId(record)),
-            static_cast<unsigned long>(record.volumeMl),
-            static_cast<unsigned long>(record.targetValue),
-            static_cast<unsigned long>(record.pulseCount),
-            static_cast<unsigned long>(record.filteredPulseCount),
-            static_cast<unsigned long>(record.durationSec),
-            static_cast<unsigned>(record.mode),
-            static_cast<unsigned>(record.result),
-            static_cast<unsigned>(record.selectedPreset),
-            static_cast<int>(record.temperatureCentiC),
-            static_cast<unsigned>(record.tdsPpm),
-            static_cast<unsigned>(record.sensorSampleCount),
-            static_cast<unsigned>(record.sensorFlags),
-            static_cast<unsigned long>(record.meteringSchemeId),
-            static_cast<unsigned long>(sanitizeTraceBucketSeconds(bucketSeconds)));
-}
-
-void sendRecordDetailLink(const WaterRecord& record, const char* label) {
-    Esp32BaseWeb::sendChunk("<a class='btn-link' href='");
-    sendRecordDetailHref(record, 1);
-    Esp32BaseWeb::sendChunk("'>");
-    Esp32BaseWeb::sendChunk(label ? label : "详情");
-    Esp32BaseWeb::sendChunk("</a>");
-}
-
-void sendTraceFrequencyLinks(const WaterRecord* record,
-                             const char* detailPath,
+void sendTraceFrequencyLinks(const char* detailPath,
                              const char* detailSourceParam,
                              std::uint32_t bucketSeconds) {
     constexpr std::uint32_t bucketsToShow[] = {1, 2, 3, 4, 5};
@@ -79,11 +28,7 @@ void sendTraceFrequencyLinks(const WaterRecord* record,
     for (std::uint32_t bucket : bucketsToShow) {
         const char* linkClass = bucket == bucketSeconds ? "btn-link page-current" : "btn-link";
         sendFmt("<a class='%s' href='", linkClass);
-        if (record) {
-            sendRecordDetailHref(*record, bucket);
-        } else {
-            sendFmt("%s?%s&bucket=%lu", detailPath, detailSourceParam, static_cast<unsigned long>(bucket));
-        }
+        sendFmt("%s?%s&bucket=%lu", detailPath, detailSourceParam, static_cast<unsigned long>(bucket));
         sendFmt("'>%lus</a>", static_cast<unsigned long>(bucket));
     }
     Esp32BaseWeb::sendChunk("</div>");
@@ -143,8 +88,7 @@ void sendPulseTraceDetailSections(const WaterPulseTrace& trace,
                                   std::size_t compactBucketCount,
                                   std::uint32_t bucketSeconds,
                                   const char* detailPath,
-                                  const char* detailSourceParam,
-                                  const WaterRecord* recordDetailUrl) {
+                                  const char* detailSourceParam) {
     if (!compactBuckets || compactBucketCount == 0) {
         Esp32BaseWeb::sendChunk("<section id='pulse-trend' class='panel'><h3>脉冲趋势</h3><p class='hint'>脉冲明细不可用，当前只显示数值详情。</p></section>");
         return;
@@ -189,7 +133,7 @@ void sendPulseTraceDetailSections(const WaterPulseTrace& trace,
         formatFlowLitersPerMin(scheme.params.stableFlowMlPerMin, stableFlow, sizeof(stableFlow));
     }
     Esp32BaseWeb::sendChunk("<section id='pulse-trend' class='panel'><div class='panel-head'><h3>脉冲趋势</h3>");
-    sendTraceFrequencyLinks(recordDetailUrl, detailPath, detailSourceParam, bucketSeconds);
+    sendTraceFrequencyLinks(detailPath, detailSourceParam, bucketSeconds);
     Esp32BaseWeb::sendChunk("</div><table class='kv pulse-trace-diagnostics'>");
     sendFmt("<tr><th>实际有效脉冲</th><td>%lu P</td></tr>"
             "<tr><th>聚合频率</th><td>%lu 秒 / 原始 %lu ms 桶</td></tr>",

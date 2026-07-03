@@ -330,6 +330,7 @@ bool AppController::applyGeneratedCalibrationForWeb(std::uint32_t nowSeconds) {
     calibrationSession_.status = CalibrationSessionStatus::Applied;
     calibrationSession_.appliedSchemeId = newId;
     calibrationSession_.updatedAt = nowSeconds;
+    localMode_ = LocalUiMode::Normal;
     pendingBeep_ = BeepPattern::Done;
     return saveCalibrationSession();
 }

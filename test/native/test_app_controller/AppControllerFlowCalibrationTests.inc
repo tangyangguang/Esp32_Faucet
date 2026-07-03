@@ -143,6 +143,36 @@ void test_app_controller_local_ok_starts_calibration_run_and_completion_awaits_a
     TEST_ASSERT_EQUAL_size_t(valid.trace.bucketCount, fixture.traceStore.readBuckets(0, copied, 64));
 }
 
+void test_app_controller_local_cancel_exits_calibration_while_awaiting_actual() {
+    CalibrationAppFixture fixture;
+    fixture.active.params = MeteringParameters{0, 0, 1000};
+    fixture.createApp();
+
+    TEST_ASSERT_TRUE(fixture.app->startCalibrationSessionForWeb(1714502400));
+    fixture.app->resetInputs({false, false, false, false}, 0);
+    pressAndReleaseOkAt(*fixture.app, 300, 1714502400);
+    for (std::uint32_t i = 0; i < 500; ++i) {
+        fixture.app->onFlowPulse(1000000UL + i * 2000UL);
+    }
+    pressAndReleaseCancelAt(*fixture.app, 1600, 1714502401);
+
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationSessionStatus::AwaitingActual),
+                            static_cast<unsigned>(fixture.app->snapshot().calibrationStatus));
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(LocalUiMode::Calibration),
+                            static_cast<unsigned>(fixture.app->snapshot().localMode));
+
+    pressAndReleaseCancelAt(*fixture.app, 2000, 1714502402);
+
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationSessionStatus::Discarded),
+                            static_cast<unsigned>(fixture.app->snapshot().calibrationStatus));
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(LocalUiMode::Normal),
+                            static_cast<unsigned>(fixture.app->snapshot().localMode));
+    CalibrationSessionRecord persisted{};
+    TEST_ASSERT_TRUE(fixture.sessionStore.load(persisted));
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationSessionStatus::Discarded),
+                            static_cast<unsigned>(persisted.status));
+}
+
 void test_app_controller_saves_long_high_pulse_calibration_without_bucket_overflow() {
     CompactTraceCalibrationAppFixture fixture;
     fixture.createApp();
@@ -520,6 +550,16 @@ void test_app_controller_applies_generated_session_scheme_and_keeps_old_scheme()
     TEST_ASSERT_TRUE(oldScheme.recordUsed);
     TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(CalibrationSessionStatus::Applied),
                             static_cast<unsigned>(fixture.app->snapshot().calibrationStatus));
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(LocalUiMode::Normal),
+                            static_cast<unsigned>(fixture.app->snapshot().localMode));
+
+    fixture.app->resetInputs({false, false, false, false}, 1714502700);
+    pressAndReleaseOk(*fixture.app, 1714502800);
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(WaterState::Confirm),
+                            static_cast<unsigned>(fixture.app->snapshot().water.state));
+    pressAndReleaseOk(*fixture.app, 1714503000);
+    TEST_ASSERT_EQUAL_UINT8(static_cast<unsigned>(WaterState::Running),
+                            static_cast<unsigned>(fixture.app->snapshot().water.state));
 }
 
 void test_app_controller_pause_timeout_trace_is_not_marked_error_and_can_calibrate() {

@@ -399,7 +399,6 @@ void AppController::handleButtonEvent(ButtonEvent event,
         }
         if (calibrationSession_.status == CalibrationSessionStatus::AwaitingActual &&
             (event.type == ButtonEventType::CancelShort || event.type == ButtonEventType::CancelLong)) {
-            pendingBeep_ = BeepPattern::Error;
             return;
         }
         switch (event.type) {

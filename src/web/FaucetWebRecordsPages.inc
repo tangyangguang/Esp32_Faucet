@@ -123,22 +123,7 @@ void handleRecordsPage() {
                 resultStatusClass(records[i].result),
                 resultText(records[i].result));
         Esp32BaseWeb::sendChunk("</td><td><div class='row-actions'>");
-        sendFmt("<a class='btn-link' href='/faucet/records/detail?start=%lu&boot=%lu&volume=%lu&target=%lu&pulses=%lu&filtered=%lu&duration=%lu&mode=%u&result=%u&preset=%u&temp=%d&tds=%u&sensorSamples=%u&sensorFlags=%u&scheme=%lu'>详情</a>",
-                static_cast<unsigned long>(records[i].startTime),
-                static_cast<unsigned long>(waterRecordBootId(records[i])),
-                static_cast<unsigned long>(records[i].volumeMl),
-                static_cast<unsigned long>(records[i].targetValue),
-                static_cast<unsigned long>(records[i].pulseCount),
-                static_cast<unsigned long>(records[i].filteredPulseCount),
-                static_cast<unsigned long>(records[i].durationSec),
-                static_cast<unsigned>(records[i].mode),
-                static_cast<unsigned>(records[i].result),
-                static_cast<unsigned>(records[i].selectedPreset),
-                static_cast<int>(records[i].temperatureCentiC),
-                static_cast<unsigned>(records[i].tdsPpm),
-                static_cast<unsigned>(records[i].sensorSampleCount),
-                static_cast<unsigned>(records[i].sensorFlags),
-                static_cast<unsigned long>(records[i].meteringSchemeId));
+        sendRecordDetailLink(records[i], "详情");
         Esp32BaseWeb::sendChunk("</div></td></tr>");
     }
     Esp32BaseWeb::sendChunk("</table>");
@@ -198,6 +183,10 @@ void handleRecordInfoPage() {
     }
     if (getParam("scheme", text, sizeof(text)) && parseU32(text, parsed)) {
         record.meteringSchemeId = parsed;
+    }
+    std::uint32_t bucketSeconds = 1;
+    if (getParam("bucket", text, sizeof(text)) && parseU32(text, parsed)) {
+        bucketSeconds = sanitizeTraceBucketSeconds(parsed);
     }
     char startTime[40]{};
     formatWaterRecordListTime(record, startTime, sizeof(startTime));
@@ -271,6 +260,24 @@ void handleRecordInfoPage() {
         Esp32BaseWeb::sendChunk("<tr><th>计量方案</th><td>记录格式不兼容，历史参数不可查看</td></tr>");
     }
     Esp32BaseWeb::sendChunk("</table></section></div>");
+    const WaterPulseTrace* trace = g_context.pulseTraces ? g_context.pulseTraces->findByRecord(record) : nullptr;
+    if (trace && trace->bucketCount > 0) {
+        std::unique_ptr<WaterPulseTraceBucketSample[]> buckets;
+        std::size_t loadedBucketCount = 0;
+        if (loadRamTraceBuckets(*trace, buckets, loadedBucketCount) && loadedBucketCount == trace->bucketCount) {
+            sendPulseTraceDetailSections(*trace,
+                                         buckets.get(),
+                                         loadedBucketCount,
+                                         bucketSeconds,
+                                         "/faucet/records/detail",
+                                         "",
+                                         &record);
+        } else {
+            Esp32BaseWeb::sendChunk("<section id='pulse-trend' class='panel'><h3>脉冲趋势</h3><p class='hint'>脉冲明细读取失败，当前只显示数值详情。</p></section>");
+        }
+    } else {
+        Esp32BaseWeb::sendChunk("<section id='pulse-trend' class='panel'><h3>脉冲趋势</h3><p class='hint'>脉冲明细缓存已被覆盖或不可用，当前只显示数值详情。</p></section>");
+    }
     sendPageEnd();
 }
 

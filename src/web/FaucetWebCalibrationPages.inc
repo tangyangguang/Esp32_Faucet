@@ -134,9 +134,7 @@ void handleCalibrationDetailPage() {
     if (getParam("bucket", text, sizeof(text))) {
         parseU32(text, bucketSeconds);
     }
-    if (bucketSeconds != 2 && bucketSeconds != 3 && bucketSeconds != 4 && bucketSeconds != 5) {
-        bucketSeconds = 1;
-    }
+    bucketSeconds = sanitizeTraceBucketSeconds(bucketSeconds);
 
     const WaterPulseTrace* trace = nullptr;
     WaterPulseTrace sessionTrace{};
@@ -236,36 +234,7 @@ void handleCalibrationDetailPage() {
             static_cast<unsigned long>(trace->startupEdgeCount));
     Esp32BaseWeb::sendChunk("</table></section>");
 
-    Esp32BaseWeb::sendChunk("<section id='pulse-trend' class='panel'><div class='panel-head'><h3>时间桶明细</h3><div class='row-actions'>");
-    constexpr std::uint32_t bucketsToShow[] = {1, 2, 3, 4, 5};
-    for (std::uint32_t bucket : bucketsToShow) {
-        const char* linkClass = bucket == bucketSeconds ? "btn-link page-current" : "btn-link";
-        sendFmt("<a class='%s' href='%s?%s&bucket=%lu'>%lus</a>",
-                linkClass,
-                detailPath,
-                detailSourceParam,
-                static_cast<unsigned long>(bucket),
-                static_cast<unsigned long>(bucket));
-    }
-    Esp32BaseWeb::sendChunk("</div></div>");
-    sendFmt("<p class='hint'>原始明细按 %lums 时间桶保存；本页只展示轻量表格，不生成图表。</p>"
-            "<table><tr><th>时间</th><th>脉冲</th><th>累计</th><th>状态</th></tr>",
-            static_cast<unsigned long>(kPulseTraceBucketMs));
-    std::uint32_t cumulative = 0;
-    for (std::size_t i = 0; i < trace->bucketCount; ++i) {
-        const std::uint32_t startMs = static_cast<std::uint32_t>(i * kPulseTraceBucketMs);
-        const std::uint32_t endMs = startMs + kPulseTraceBucketMs;
-        cumulative += buckets[i].pulseCount;
-        sendFmt("<tr><td>%lu.%03lu-%lu.%03lu s</td><td>%u</td><td>%lu</td><td>%s</td></tr>",
-                static_cast<unsigned long>(startMs / 1000UL),
-                static_cast<unsigned long>(startMs % 1000UL),
-                static_cast<unsigned long>(endMs / 1000UL),
-                static_cast<unsigned long>(endMs % 1000UL),
-                static_cast<unsigned>(buckets[i].pulseCount),
-                static_cast<unsigned long>(cumulative),
-                i >= loadedBucketCount ? "未保存" : "已保存");
-    }
-    Esp32BaseWeb::sendChunk("</table></section>");
+    sendPulseTraceDetailSections(*trace, buckets.get(), loadedBucketCount, bucketSeconds, detailPath, detailSourceParam, nullptr);
 
     Esp32BaseWeb::sendChunk("<section class='panel'><h3>启动边沿</h3>");
     sendFmt("<p class='hint'>当前显示 %lu/%lu 条启动边沿。</p><table><tr><th>序号</th><th>距任务开始</th><th>与上一边沿间隔</th></tr>",

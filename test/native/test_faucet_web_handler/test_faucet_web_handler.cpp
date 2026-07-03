@@ -4,6 +4,7 @@
 
 #include "app/AppController.h"
 #include "app/ConfigStore.h"
+#include "app/WaterPulseTraceStore.h"
 #include "web/FaucetWeb.h"
 #include "../support/CalibrationTraceTestSupport.h"
 #include "../support/FakeAdcReader.h"
@@ -230,6 +231,16 @@ void fillCountingRecords(CountingWaterRecordReader& reader) {
     }
 }
 
+void saveRamTrace(WaterPulseTraceStore& store, const WaterRecord& record) {
+    const std::uint32_t traceId = store.beginTrace(record.startTime, kDefaultPulseMinIntervalUs);
+    TEST_ASSERT_NOT_EQUAL_UINT32(0, traceId);
+    const std::uint32_t pulseCount = record.pulseCount == 0 ? 1 : record.pulseCount;
+    for (std::uint32_t i = 0; i < pulseCount; ++i) {
+        TEST_ASSERT_TRUE(store.appendPulseEdge(traceId, 100000UL + i * 200000UL));
+    }
+    TEST_ASSERT_TRUE(store.finishTrace(traceId, record, WaterPulseTraceState::Completed));
+}
+
 struct WebFixture {
     SystemConfig config = makeDefaultConfig();
     FakeConfigBackend backend;
@@ -242,6 +253,10 @@ struct WebFixture {
     MeteringSchemeStore meteringSchemes{calibrationFiles, "/metering-schemes.bin"};
     CalibrationSessionFileStore sessionStore{calibrationFiles, "/cal-session.bin"};
     CalibrationSessionTraceStore traceStore{calibrationFiles, "/cal-traces.bin"};
+    WaterPulseTrace ramTraces[2]{};
+    WaterPulseTraceBucketSample ramBuckets[128]{};
+    WaterPulseTraceSample ramStartupEdges[64]{};
+    WaterPulseTraceStore pulseTraces{ramTraces, 2, ramBuckets, 128, ramStartupEdges, 64, 2};
     FakeAdcReader adc;
     WaterSensorManager waterSensors{adc};
     AppController app{config,
@@ -276,6 +291,7 @@ struct WebFixture {
         context.meteringSchemes = &meteringSchemes;
         context.calibrationSessions = &sessionStore;
         context.calibrationSessionTraces = &traceStore;
+        context.pulseTraces = &pulseTraces;
         context.nowSeconds = testNowSeconds;
         context.bootId = testBootId;
         context.afterFormatFs = countAfterFormatFsNotification;
@@ -514,6 +530,108 @@ void test_flow_calibration_page_renders_manual_metering_entry() {
     TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "历史参数"));
     TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "手工设置参数"));
     TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "修改当前参数"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "value='开始校准'"));
+    TEST_ASSERT_NULL(std::strstr(body.c_str(), "退出校准流程"));
+}
+
+void test_generated_metering_candidate_uses_compact_table_and_quality_warnings() {
+    WebFixture fixture;
+    registerRoutes();
+    beginWebGet("/widget");
+    TEST_ASSERT_TRUE(Esp32BaseWeb::beginResponse(200, "text/html; charset=utf-8", nullptr));
+    MeteringSchemeCandidate candidate{};
+    candidate.ready = true;
+    candidate.sourceType = MeteringSchemeSource::CalibrationSession;
+    candidate.params = MeteringParameters{190, 111, 2171, 7000, 1891};
+    candidate.generatedAt = testNowSeconds();
+    candidate.sampleCount = 2;
+    candidate.minActualMl = 1000;
+    candidate.maxActualMl = 1800;
+    candidate.maxErrorMl = 40;
+    candidate.maxErrorTenthPercent = 24;
+    sendGeneratedMeteringCandidatePanel(candidate);
+    Esp32BaseWeb::endResponse();
+
+    const std::string& body = Esp32BaseWeb::nativeTestResponse().body;
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "metering-candidate-table"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "启动脉冲"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "稳态流速"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "容量范围"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "最大误差"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "当前只有 2 条有效样本"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "样本容量跨度只有"));
+    TEST_ASSERT_NULL(std::strstr(body.c_str(), "active-metering-metrics"));
+}
+
+void test_applied_calibration_keeps_parameter_visible_and_hides_apply_button() {
+    WebFixture fixture;
+    TEST_ASSERT_TRUE(fixture.meteringSchemes.begin());
+    MeteringSchemeCandidate candidate{};
+    candidate.ready = true;
+    candidate.sourceType = MeteringSchemeSource::CalibrationSession;
+    candidate.params = MeteringParameters{190, 111, 2171, 7000, 1891};
+    candidate.generatedAt = testNowSeconds();
+    candidate.sampleCount = 2;
+    candidate.minActualMl = 1000;
+    candidate.maxActualMl = 1800;
+    candidate.maxErrorMl = 20;
+    candidate.maxErrorTenthPercent = 12;
+    std::uint32_t schemeId = 0;
+    TEST_ASSERT_TRUE(fixture.meteringSchemes.saveCandidateAsCurrent(candidate,
+                                                                    "校准生成计量方案",
+                                                                    testNowSeconds() + 30,
+                                                                    schemeId));
+    CalibrationSessionRecord session = makeCalibrationSession(77, testNowSeconds());
+    session.status = CalibrationSessionStatus::Applied;
+    session.appliedSchemeId = schemeId;
+    TEST_ASSERT_TRUE(fixture.sessionStore.save(session));
+
+    registerRoutes();
+    beginWebGet("/widget");
+    TEST_ASSERT_TRUE(Esp32BaseWeb::beginResponse(200, "text/html; charset=utf-8", nullptr));
+    AppSnapshot snapshot{};
+    snapshot.calibrationStatus = CalibrationSessionStatus::Applied;
+    sendFlowCalibrationSessionPanel(snapshot, false);
+    Esp32BaseWeb::endResponse();
+
+    const std::string& body = Esp32BaseWeb::nativeTestResponse().body;
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "已应用"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "value='开始新校准'"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "metering-candidate-table"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "2171P/L"));
+    TEST_ASSERT_NULL(std::strstr(body.c_str(), "value='使用这组参数'"));
+}
+
+void test_metering_history_orders_newest_created_at_first() {
+    WebFixture fixture;
+    TEST_ASSERT_TRUE(fixture.meteringSchemes.begin());
+    MeteringSchemeCandidate older{};
+    older.ready = true;
+    older.sourceType = MeteringSchemeSource::CalibrationSession;
+    older.params = MeteringParameters{10, 20, 300, 1000, 1500};
+    older.generatedAt = testNowSeconds() + 10;
+    older.sampleCount = 2;
+    older.minActualMl = 1000;
+    older.maxActualMl = 2000;
+    std::uint32_t olderId = 0;
+    TEST_ASSERT_TRUE(fixture.meteringSchemes.saveCandidateAsCurrent(older, "older history", older.generatedAt, olderId));
+    MeteringSchemeCandidate newer = older;
+    newer.params = MeteringParameters{11, 21, 301, 1000, 1500};
+    newer.generatedAt = testNowSeconds() + 20;
+    std::uint32_t newerId = 0;
+    TEST_ASSERT_TRUE(fixture.meteringSchemes.saveCandidateAsCurrent(newer, "newer history", newer.generatedAt, newerId));
+    registerRoutes();
+
+    beginWebGet("/faucet/calibration/flow");
+    TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch("/faucet/calibration/flow", Esp32BaseWeb::METHOD_GET));
+
+    const std::string& body = Esp32BaseWeb::nativeTestResponse().body;
+    const std::size_t newerPos = body.find("newer history");
+    const std::size_t olderPos = body.find("older history");
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, newerPos);
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, olderPos);
+    TEST_ASSERT_LESS_THAN_size_t(olderPos, newerPos);
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "创建："));
 }
 
 void test_flow_calibration_manual_page_prefills_current_parameters() {
@@ -893,6 +1011,9 @@ void test_calibration_detail_reads_persisted_session_trace_without_ram_cache() {
     TEST_ASSERT_EQUAL(200, Esp32BaseWeb::nativeTestResponse().code);
     const std::string& body = Esp32BaseWeb::nativeTestResponse().body;
     TEST_ASSERT_GREATER_THAN_size_t(0, body.size());
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "pulse-detail-chart"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "<svg"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "目标预计总脉冲"));
 }
 
 void test_calibration_detail_reads_persisted_bucket_trace_without_ram_cache() {
@@ -912,6 +1033,44 @@ void test_calibration_detail_reads_persisted_bucket_trace_without_ram_cache() {
     TEST_ASSERT_EQUAL(200, Esp32BaseWeb::nativeTestResponse().code);
     const std::string& body = Esp32BaseWeb::nativeTestResponse().body;
     TEST_ASSERT_GREATER_THAN_size_t(0, body.size());
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "pulse-detail-chart"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "2s"));
+}
+
+void test_record_detail_renders_pulse_chart_when_ram_trace_is_available() {
+    WebFixture fixture;
+    WaterRecord record = makeWebRecord(testNowSeconds(), 1000);
+    record.meteringSchemeId = 0;
+    record.pulseCount = 40;
+    record.durationSec = 8;
+    fixture.records.records.push_back(record);
+    saveRamTrace(fixture.pulseTraces, record);
+    registerRoutes();
+
+    beginWebGet("/faucet/records/detail");
+    Esp32BaseWeb::nativeTestSetParam("start", "1714502400");
+    Esp32BaseWeb::nativeTestSetParam("boot", "0");
+    Esp32BaseWeb::nativeTestSetParam("volume", "1000");
+    Esp32BaseWeb::nativeTestSetParam("target", "1000");
+    Esp32BaseWeb::nativeTestSetParam("pulses", "40");
+    Esp32BaseWeb::nativeTestSetParam("filtered", "0");
+    Esp32BaseWeb::nativeTestSetParam("duration", "8");
+    Esp32BaseWeb::nativeTestSetParam("mode", "0");
+    Esp32BaseWeb::nativeTestSetParam("result", "0");
+    Esp32BaseWeb::nativeTestSetParam("preset", "1");
+    Esp32BaseWeb::nativeTestSetParam("temp", "0");
+    Esp32BaseWeb::nativeTestSetParam("tds", "0");
+    Esp32BaseWeb::nativeTestSetParam("sensorSamples", "0");
+    Esp32BaseWeb::nativeTestSetParam("sensorFlags", "0");
+    Esp32BaseWeb::nativeTestSetParam("scheme", "0");
+    Esp32BaseWeb::nativeTestSetParam("bucket", "2");
+    TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch("/faucet/records/detail", Esp32BaseWeb::METHOD_GET));
+
+    const std::string& body = Esp32BaseWeb::nativeTestResponse().body;
+    TEST_ASSERT_EQUAL(200, Esp32BaseWeb::nativeTestResponse().code);
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "pulse-detail-chart"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "实际有效脉冲"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "2 秒 / 原始 500 ms 桶"));
 }
 
 void test_tds_calibration_start_redirects_busy_to_calibration_page() {
@@ -1111,6 +1270,9 @@ int main(int, char**) {
     RUN_TEST(test_calibration_home_redirects_active_flow_session_to_workflow);
     RUN_TEST(test_flow_calibration_page_preserves_active_session_state);
     RUN_TEST(test_flow_calibration_page_renders_manual_metering_entry);
+    RUN_TEST(test_generated_metering_candidate_uses_compact_table_and_quality_warnings);
+    RUN_TEST(test_applied_calibration_keeps_parameter_visible_and_hides_apply_button);
+    RUN_TEST(test_metering_history_orders_newest_created_at_first);
     RUN_TEST(test_flow_calibration_manual_page_prefills_current_parameters);
     RUN_TEST(test_temperature_calibration_post_accepts_celsius_decimal_input);
     RUN_TEST(test_flow_calibration_manual_post_creates_current_parameter);
@@ -1133,6 +1295,7 @@ int main(int, char**) {
     RUN_TEST(test_calibration_session_start_recovers_missing_session_file_after_format);
     RUN_TEST(test_calibration_detail_reads_persisted_session_trace_without_ram_cache);
     RUN_TEST(test_calibration_detail_reads_persisted_bucket_trace_without_ram_cache);
+    RUN_TEST(test_record_detail_renders_pulse_chart_when_ram_trace_is_available);
     RUN_TEST(test_tds_calibration_start_redirects_busy_to_calibration_page);
     RUN_TEST(test_tds_calibration_start_redirects_success_from_idle);
     RUN_TEST(test_tds_calibration_save_persists_config_after_stable_samples);

@@ -13,6 +13,7 @@
 #include "app/FilterStore.h"
 #include "app/MeteringSchemeStore.h"
 #include "app/WaterRecordStore.h"
+#include "app/WaterPulseTraceAnalysis.h"
 #include "app/WaterPulseTraceStore.h"
 #include "web/FaucetWebAssets.h"
 #include "web/FaucetWebJson.h"
@@ -897,6 +898,8 @@ void sendCheckbox(const char* label, const char* name, bool checked) {
 #include "FaucetWebHomePages.inc"
 
 #include "FaucetWebStatsPages.inc"
+
+#include "FaucetWebPulseTraceWidgets.inc"
 
 #include "FaucetWebRecordsPages.inc"
 

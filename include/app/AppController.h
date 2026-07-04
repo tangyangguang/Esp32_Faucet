@@ -130,6 +130,8 @@ public:
     bool discardCalibrationSessionForWeb(std::uint32_t nowSeconds);
     bool submitCalibrationActualForWeb(std::uint32_t actualMl, std::uint32_t nowSeconds);
     bool skipCalibrationAttemptForWeb(std::uint32_t nowSeconds);
+    bool regenerateCalibrationCandidateForWeb(std::uint32_t nowSeconds);
+    bool discardCalibrationCandidateForWeb(std::uint32_t nowSeconds);
     bool applyGeneratedCalibrationForWeb(std::uint32_t nowSeconds);
     bool startTdsCalibrationSessionForWeb(std::uint32_t nowSeconds);
     bool startTdsCalibrationPointForWeb(std::uint16_t referencePpm, std::uint32_t nowSeconds);

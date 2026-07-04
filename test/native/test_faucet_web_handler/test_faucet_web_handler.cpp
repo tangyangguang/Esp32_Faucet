@@ -575,15 +575,63 @@ void test_applied_calibration_keeps_parameter_visible_and_hides_apply_button() {
     TEST_ASSERT_TRUE(Esp32BaseWeb::beginResponse(200, "text/html; charset=utf-8", nullptr));
     AppSnapshot snapshot{};
     snapshot.calibrationStatus = CalibrationSessionStatus::Applied;
+    snapshot.calibrationValidSampleCount = 2;
+    snapshot.calibrationCanQuickGenerate = true;
     sendFlowCalibrationSessionPanel(snapshot, false);
     Esp32BaseWeb::endResponse();
 
     const std::string& body = Esp32BaseWeb::nativeTestResponse().body;
     TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "已应用"));
     TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "value='开始新校准'"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "根据现有样本重新生成参数"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "name='action' value='regenerate_session'"));
     TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "metering-candidate-table"));
     TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "2171P/L"));
     TEST_ASSERT_NULL(std::strstr(body.c_str(), "value='使用这组参数'"));
+}
+
+void test_applied_calibration_renders_regenerated_candidate_actions() {
+    WebFixture fixture;
+    TEST_ASSERT_TRUE(fixture.meteringSchemes.begin());
+    MeteringSchemeCandidate appliedCandidate{};
+    appliedCandidate.ready = true;
+    appliedCandidate.sourceType = MeteringSchemeSource::CalibrationSession;
+    appliedCandidate.params = MeteringParameters{190, 111, 2171, 7000, 1891};
+    appliedCandidate.generatedAt = testNowSeconds();
+    appliedCandidate.sampleCount = 2;
+    appliedCandidate.minActualMl = 1000;
+    appliedCandidate.maxActualMl = 1800;
+    std::uint32_t schemeId = 0;
+    TEST_ASSERT_TRUE(fixture.meteringSchemes.saveCandidateAsCurrent(appliedCandidate,
+                                                                    "校准生成计量方案",
+                                                                    testNowSeconds() + 30,
+                                                                    schemeId));
+    CalibrationSessionRecord session = makeCalibrationSession(77, testNowSeconds());
+    session.status = CalibrationSessionStatus::Applied;
+    session.appliedSchemeId = schemeId;
+    TEST_ASSERT_TRUE(fixture.sessionStore.save(session));
+
+    registerRoutes();
+    beginWebGet("/widget");
+    TEST_ASSERT_TRUE(Esp32BaseWeb::beginResponse(200, "text/html; charset=utf-8", nullptr));
+    AppSnapshot snapshot{};
+    snapshot.calibrationStatus = CalibrationSessionStatus::Applied;
+    snapshot.calibrationValidSampleCount = 2;
+    snapshot.calibrationCanQuickGenerate = true;
+    snapshot.calibrationCandidate = appliedCandidate;
+    snapshot.calibrationCandidate.params = MeteringParameters{200, 120, 2200, 8000, 1800};
+    snapshot.calibrationCandidate.generatedAt = testNowSeconds() + 60;
+    sendFlowCalibrationSessionPanel(snapshot, false);
+    Esp32BaseWeb::endResponse();
+
+    const std::string& body = Esp32BaseWeb::nativeTestResponse().body;
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "已应用"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "待应用"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "2200P/L"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "value='使用这组参数'"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "value='放弃这组参数'"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "value='再次重新生成'"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "name='action' value='discard_candidate'"));
 }
 
 void test_metering_history_orders_newest_created_at_first() {
@@ -639,6 +687,9 @@ void test_flow_calibration_manual_page_prefills_current_parameters() {
     TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "value='复制参数'"));
     TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "name='startupDurationSec'"));
     TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "value='3.500'"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "data-base-stable-ppl='420'"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "data-base-stable-flow='1600'"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "baseFlow*basePpl/next"));
 }
 
 void test_temperature_calibration_post_accepts_celsius_decimal_input() {
@@ -1254,6 +1305,7 @@ int main(int, char**) {
     RUN_TEST(test_flow_calibration_page_renders_manual_metering_entry);
     RUN_TEST(test_generated_metering_candidate_uses_compact_table_and_quality_warnings);
     RUN_TEST(test_applied_calibration_keeps_parameter_visible_and_hides_apply_button);
+    RUN_TEST(test_applied_calibration_renders_regenerated_candidate_actions);
     RUN_TEST(test_metering_history_orders_newest_created_at_first);
     RUN_TEST(test_flow_calibration_manual_page_prefills_current_parameters);
     RUN_TEST(test_temperature_calibration_post_accepts_celsius_decimal_input);

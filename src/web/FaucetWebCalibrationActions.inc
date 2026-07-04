@@ -272,6 +272,20 @@ void handleFlowCalibrationPost() {
                                       "invalid_state");
         return;
     }
+    if (std::strcmp(text, "regenerate_session") == 0) {
+        sendFlowCalibrationPostResult(ajax,
+                                      g_context.app && g_context.app->regenerateCalibrationCandidateForWeb(now),
+                                      "regenerated",
+                                      "no_generated_result");
+        return;
+    }
+    if (std::strcmp(text, "discard_candidate") == 0) {
+        sendFlowCalibrationPostResult(ajax,
+                                      g_context.app && g_context.app->discardCalibrationCandidateForWeb(now),
+                                      "candidate_discarded",
+                                      "invalid_state");
+        return;
+    }
     if (std::strcmp(text, "apply_session") == 0) {
         sendFlowCalibrationPostResult(ajax,
                                       g_context.app && g_context.app->applyGeneratedCalibrationForWeb(now),

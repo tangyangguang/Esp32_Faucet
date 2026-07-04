@@ -152,7 +152,11 @@ void sendManualMeteringParameterPage(const MeteringSchemeRecord* scheme) {
     const MeteringParameters params = scheme ? scheme->params : defaultMeteringParameters();
     const bool hasValues = scheme != nullptr;
     Esp32BaseWeb::sendChunk("<section class='panel calibration-param-panel manual-param-panel'>"
-                            "<form class='manual-param-form' method='post' action='/faucet/calibration/flow' onsubmit='return once(this)'>"
+                            "<form id='manualMeteringForm' class='manual-param-form' method='post' action='/faucet/calibration/flow' onsubmit='return once(this)'");
+    sendFmt(" data-base-stable-ppl='%lu' data-base-stable-flow='%lu'>",
+            static_cast<unsigned long>(params.stablePulsePerLiter),
+            static_cast<unsigned long>(params.stableFlowMlPerMin));
+    Esp32BaseWeb::sendChunk(
                             "<input type='hidden' name='action' value='create_metering_scheme'>"
                             "<div class='manual-param-section'><h3>参数信息</h3><div class='manual-param-grid'>");
     sendFmt("<label class='compact-field manual-param-field scheme-span-12'><span>名称</span><input name='name' maxlength='%u' required value='",
@@ -170,7 +174,7 @@ void sendManualMeteringParameterPage(const MeteringSchemeRecord* scheme) {
     sendFmt("<label class='compact-field manual-param-field scheme-span-4'><span>启动水量</span><input name='startupVolumeMl' type='number' min='0' max='%lu' step='1' required value='%lu'><small class='hint'>单位 ml；无启动段时填 0。</small></label>",
             static_cast<unsigned long>(kMaxSegmentedStartupVolumeMl),
             static_cast<unsigned long>(params.startupVolumeMl));
-    sendFmt("<label class='compact-field manual-param-field scheme-span-4'><span>稳态 P/L</span><input name='stablePulsePerLiter' type='number' min='%lu' max='%lu' step='1' required value='%lu'><small class='hint'>稳定出水阶段每升脉冲数。</small></label>",
+    sendFmt("<label class='compact-field manual-param-field scheme-span-4'><span>稳态 P/L</span><input name='stablePulsePerLiter' type='number' min='%lu' max='%lu' step='1' required value='%lu'><small class='hint'>稳定出水阶段每升脉冲数；修改后会联动预计稳态流速。</small></label>",
             static_cast<unsigned long>(kMinSegmentedPulsePerLiter),
             static_cast<unsigned long>(kMaxSegmentedPulsePerLiter),
             static_cast<unsigned long>(params.stablePulsePerLiter));
@@ -191,6 +195,15 @@ void sendManualMeteringParameterPage(const MeteringSchemeRecord* scheme) {
                             "<div class='form-actions manual-param-actions'>"
                             "<input class='primary' type='submit' value='保存为当前参数'>"
                             "<a class='btn-link' href='/faucet/calibration/flow'>取消</a></div></form></section>");
+    Esp32BaseWeb::sendChunk("<script>"
+                            "(function(){var f=document.getElementById('manualMeteringForm');if(!f)return;"
+                            "var ppl=f.querySelector('[name=stablePulsePerLiter]'),flow=f.querySelector('[name=stableFlowMlPerMin]');"
+                            "var basePpl=Number(f.getAttribute('data-base-stable-ppl')||0),baseFlow=Number(f.getAttribute('data-base-stable-flow')||0),manual=false;"
+                            "if(!ppl||!flow||basePpl<=0||baseFlow<=0)return;"
+                            "flow.addEventListener('input',function(){manual=true;});"
+                            "ppl.addEventListener('input',function(){if(manual)return;var next=Number(ppl.value)||0;if(next<=0)return;var v=Math.round(baseFlow*basePpl/next);if(v>0)flow.value=String(v);});"
+                            "})();"
+                            "</script>");
     sendPageEnd();
 }
 
@@ -666,7 +679,17 @@ void sendFlowCalibrationSessionPanel(const AppSnapshot& snapshot, bool taskActiv
     const bool canStartSession = calibrationSessionInactive(snapshot.calibrationStatus) && !taskActive;
     const bool canDiscardSession = sessionActive && snapshot.calibrationStatus != CalibrationSessionStatus::Running && !taskActive;
     const bool canEnterActual = snapshot.calibrationStatus == CalibrationSessionStatus::AwaitingActual;
-    const bool canApply = snapshot.calibrationStatus == CalibrationSessionStatus::Generated && !taskActive;
+    const bool hasCandidate = snapshot.calibrationCandidate.ready;
+    const bool canApply =
+        (snapshot.calibrationStatus == CalibrationSessionStatus::Generated ||
+         snapshot.calibrationStatus == CalibrationSessionStatus::Applied) &&
+        hasCandidate && !taskActive;
+    const bool canRegenerate =
+        (snapshot.calibrationStatus == CalibrationSessionStatus::WaitingLocalRun ||
+         snapshot.calibrationStatus == CalibrationSessionStatus::ReadyToGenerate ||
+         snapshot.calibrationStatus == CalibrationSessionStatus::Generated ||
+         snapshot.calibrationStatus == CalibrationSessionStatus::Applied) &&
+        snapshot.calibrationCanQuickGenerate && !taskActive;
     const bool autoRefreshSession =
         snapshot.calibrationStatus == CalibrationSessionStatus::WaitingLocalRun ||
         snapshot.calibrationStatus == CalibrationSessionStatus::Running;
@@ -689,7 +712,7 @@ void sendFlowCalibrationSessionPanel(const AppSnapshot& snapshot, bool taskActiv
     } else if (snapshot.calibrationStatus == CalibrationSessionStatus::Generated) {
         Esp32BaseWeb::sendChunk("<p class='ok'>已自动计算出参数建议；可以继续按 OK 补充样本，或确认使用这组参数。</p>");
     } else if (snapshot.calibrationStatus == CalibrationSessionStatus::Applied) {
-        Esp32BaseWeb::sendChunk("<p class='ok'>这组推荐参数已应用；如需重新校准，请开始新校准。</p>");
+        Esp32BaseWeb::sendChunk("<p class='ok'>这组推荐参数已应用；可以用保留样本重新生成参数，或开始新校准。</p>");
     }
     Esp32BaseWeb::sendChunk("<div class='form-actions calibration-primary-actions'>");
     if (!sessionActive) {
@@ -730,8 +753,27 @@ void sendFlowCalibrationSessionPanel(const AppSnapshot& snapshot, bool taskActiv
                                     "<p class='hint'>已应用参数记录不可查看，可能已被历史参数轮转覆盖。</p></div>"
                                     "<span class='status-pill status-muted'>已应用</span></div></div>");
         }
+        if (hasCandidate) {
+            sendGeneratedMeteringCandidatePanel(snapshot.calibrationCandidate);
+        }
     }
-    if (snapshot.calibrationStatus == CalibrationSessionStatus::Generated) {
+    if (canRegenerate || hasCandidate) {
+        Esp32BaseWeb::sendChunk("<div class='form-actions calibration-secondary-actions'>");
+        if (canRegenerate) {
+            Esp32BaseWeb::sendChunk("<form method='post' action='/faucet/calibration/flow' onsubmit='return once(this)'>"
+                                    "<input type='hidden' name='action' value='regenerate_session'>");
+            sendFmt("<input class='secondary' type='submit' value='%s'></form>",
+                    hasCandidate ? "再次重新生成" : "根据现有样本重新生成参数");
+        }
+        if (hasCandidate) {
+            Esp32BaseWeb::sendChunk("<form method='post' action='/faucet/calibration/flow' onsubmit=\"return confirm('确认放弃这组待应用参数？')&&once(this)\">"
+                                    "<input type='hidden' name='action' value='discard_candidate'>"
+                                    "<input class='secondary' type='submit' value='放弃这组参数'></form>");
+        }
+        Esp32BaseWeb::sendChunk("</div>");
+    }
+    if (snapshot.calibrationStatus == CalibrationSessionStatus::Generated ||
+        (snapshot.calibrationStatus == CalibrationSessionStatus::Applied && hasCandidate)) {
         Esp32BaseWeb::sendChunk("<div class='form-actions calibration-secondary-actions'>"
                                 "<form method='post' action='/faucet/calibration/flow' onsubmit=\"return confirm('确认使用这组计量参数？')&&once(this)\">"
                                 "<input type='hidden' name='action' value='apply_session'>");

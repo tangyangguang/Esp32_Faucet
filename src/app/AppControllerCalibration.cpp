@@ -350,8 +350,7 @@ bool AppController::regenerateCalibrationCandidateForWeb(std::uint32_t nowSecond
     if (!calibrationSessionTraces_ || !calibrationSessionTraces_->ready() ||
         !meteringSchemes_ || !meteringSchemes_->ready() ||
         calibrationSession_.sessionId == 0 ||
-        water_.snapshot().state != WaterState::Idle ||
-        !calibrationCanQuickGenerate(calibrationSession_)) {
+        water_.snapshot().state != WaterState::Idle) {
         return false;
     }
     const bool statusAllowsRegenerate =

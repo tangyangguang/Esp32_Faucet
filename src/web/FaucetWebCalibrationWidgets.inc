@@ -689,7 +689,7 @@ void sendFlowCalibrationSessionPanel(const AppSnapshot& snapshot, bool taskActiv
          snapshot.calibrationStatus == CalibrationSessionStatus::ReadyToGenerate ||
          snapshot.calibrationStatus == CalibrationSessionStatus::Generated ||
          snapshot.calibrationStatus == CalibrationSessionStatus::Applied) &&
-        snapshot.calibrationCanQuickGenerate && !taskActive;
+        snapshot.calibrationValidSampleCount >= kCalibrationMinQuickSamples && !taskActive;
     const bool autoRefreshSession =
         snapshot.calibrationStatus == CalibrationSessionStatus::WaitingLocalRun ||
         snapshot.calibrationStatus == CalibrationSessionStatus::Running;

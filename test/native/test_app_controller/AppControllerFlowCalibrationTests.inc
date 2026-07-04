@@ -570,9 +570,7 @@ void test_app_controller_regenerates_applied_candidate_from_stored_traces() {
     saveCalibrationSessionSample(fixture.traceStore, session, 0, 1714502401, 1500, 40, 210, 6);
     saveCalibrationSessionSample(fixture.traceStore, session, 1, 1714502410, 7500, 40, 1540, 11);
     for (std::uint8_t i = 0; i < session.attemptCount; ++i) {
-        session.attempts[i].summary.startupPulseCount = 1;
-        session.attempts[i].summary.stablePulseCount = 1;
-        session.attempts[i].summary.stablePulsePerSec = 1.0f;
+        session.attempts[i].summary = CalibrationSampleSummary{};
     }
     session.status = CalibrationSessionStatus::Applied;
     session.appliedSchemeId = oldActiveId;

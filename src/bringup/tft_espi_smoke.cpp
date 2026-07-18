@@ -1,9 +1,10 @@
 #include <Arduino.h>
 #include <TFT_eSPI.h>
 
+#include "drivers/BoardPins.h"
+
 namespace {
 constexpr int kStatusLedPin = 2;
-constexpr int kBacklightPin = 13;
 
 TFT_eSPI tft;
 
@@ -48,7 +49,7 @@ void drawPattern(std::uint8_t pattern) {
     tft.setTextDatum(MC_DATUM);
     tft.setTextColor(TFT_WHITE, TFT_BLACK);
     tft.drawString("TFT_eSPI ST7789", 120, 108, 2);
-    tft.drawString("240x240 CS=-1", 120, 132, 2);
+    tft.drawString("240x240 CS=14", 120, 132, 2);
 }
 }  // namespace
 
@@ -58,16 +59,16 @@ void setup() {
     pinMode(kStatusLedPin, OUTPUT);
     digitalWrite(kStatusLedPin, LOW);
 
-    pinMode(kBacklightPin, OUTPUT);
-    digitalWrite(kBacklightPin, HIGH);
+    pinMode(faucet::kPinSt7789Backlight, OUTPUT);
+    digitalWrite(faucet::kPinSt7789Backlight, HIGH);
 
     Serial.println("[tft_espi] setup start");
-    Serial.println("[tft_espi] pins SCL=18 SDA/MOSI=23 RES=14 DC=19 BLK=13 CS=-1");
+    Serial.println("[tft_espi] pins SCL=18 SDA/MOSI=23 RES=16 DC=17 BLK=19 CS=14");
     Serial.println("[tft_espi] driver=ST7789 size=240x240 spi=10MHz");
 
     tft.init();
     tft.setRotation(0);
-    digitalWrite(kBacklightPin, HIGH);
+    digitalWrite(faucet::kPinSt7789Backlight, HIGH);
     drawPattern(g_pattern);
     Serial.println("[tft_espi] started");
 }

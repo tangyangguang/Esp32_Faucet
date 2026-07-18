@@ -1,7 +1,7 @@
 #include <unity.h>
 
 #include "app/AdcReader.h"
-#include "drivers/Esp32AnalogAdcReader.h"
+#include "drivers/Ads1115AdcReader.h"
 
 using namespace faucet;
 
@@ -50,10 +50,15 @@ void test_adc_raw_to_millivolts_marks_full_scale_overflow() {
     TEST_ASSERT_EQUAL_INT16(255, result.millivolts);
 }
 
-void test_esp32_adc_reader_maps_water_sensor_channels_to_adc1_pins() {
-    TEST_ASSERT_EQUAL_UINT8(35, Esp32AnalogAdcReader::defaultPinForChannel(AdcChannel::A1));
-    TEST_ASSERT_EQUAL_UINT8(34, Esp32AnalogAdcReader::defaultPinForChannel(AdcChannel::A2));
-    TEST_ASSERT_EQUAL_UINT8(255, Esp32AnalogAdcReader::defaultPinForChannel(AdcChannel::A0));
+void test_ads1115_channel_and_range_register_mapping() {
+    TEST_ASSERT_EQUAL_HEX8(0x04, Ads1115AdcReader::muxBits(AdcChannel::A0));
+    TEST_ASSERT_EQUAL_HEX8(0x05, Ads1115AdcReader::muxBits(AdcChannel::A1));
+    TEST_ASSERT_EQUAL_HEX8(0x06, Ads1115AdcReader::muxBits(AdcChannel::A2));
+    TEST_ASSERT_EQUAL_HEX8(0x07, Ads1115AdcReader::muxBits(AdcChannel::A3));
+    TEST_ASSERT_EQUAL_HEX8(0x01, Ads1115AdcReader::pgaBits(AdcRange::P4096));
+    TEST_ASSERT_EQUAL_HEX8(0x02, Ads1115AdcReader::pgaBits(AdcRange::P2048));
+    TEST_ASSERT_EQUAL_HEX8(0x04, Ads1115AdcReader::pgaBits(AdcRange::P512));
+    TEST_ASSERT_EQUAL_HEX8(0x05, Ads1115AdcReader::pgaBits(AdcRange::P256));
 }
 
 int main(int argc, char** argv) {
@@ -65,6 +70,6 @@ int main(int argc, char** argv) {
     RUN_TEST(test_adc_range_steps_are_bounded);
     RUN_TEST(test_adc_raw_to_millivolts_rejects_negative_single_ended_values);
     RUN_TEST(test_adc_raw_to_millivolts_marks_full_scale_overflow);
-    RUN_TEST(test_esp32_adc_reader_maps_water_sensor_channels_to_adc1_pins);
+    RUN_TEST(test_ads1115_channel_and_range_register_mapping);
     return UNITY_END();
 }

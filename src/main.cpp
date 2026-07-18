@@ -20,7 +20,7 @@
 #include "app/WaterRecordFileStore.h"
 #include "app/WaterPulseTraceStore.h"
 #include "drivers/BoardPins.h"
-#include "drivers/Esp32AnalogAdcReader.h"
+#include "drivers/Ads1115AdcReader.h"
 #include "drivers/FlowPulseReader.h"
 #include "drivers/GpioButtonReader.h"
 #include "drivers/PwmBeepHardware.h"
@@ -84,10 +84,11 @@ faucet::GpioButtonReader g_buttons(faucet::kPinButtonCancel,
                                    faucet::kPinButtonOk,
                                    faucet::kPinButtonPlus,
                                    faucet::kPinButtonMinus);
-faucet::FlowPulseReader g_flowPulses(faucet::kPinFlow);
-faucet::Esp32AnalogAdcReader g_waterSensorAdc;
+faucet::FlowPulseReader g_flowPulses(faucet::kPinFlowPrimary);
+faucet::Ads1115AdcReader g_waterSensorAdc;
 faucet::WaterSensorManager g_waterSensors(g_waterSensorAdc, false);
-faucet::PwmValveHardware g_valveHardware(faucet::kPinValve, faucet::kLedcChannelValve);
+faucet::PwmValveHardware g_valveHardware(
+    faucet::kPinValvePwm, faucet::kPinValveShutdown, faucet::kLedcChannelValve);
 faucet::BeepDriver g_beep;
 faucet::PwmBeepHardware g_beepHardware(faucet::kPinBeep, faucet::kLedcChannelBeep);
 faucet::RtcClock g_rtc(faucet::kPinI2cSda, faucet::kPinI2cScl);
@@ -298,10 +299,9 @@ void initializeApplication() {
     g_waterSensors.configure(g_config);
     const bool waterSensorAdcReady = g_waterSensors.begin();
     ESP32BASE_LOG_I("app",
-                    "water_sensor_adc=%s temp_gpio=%u tds_gpio=%u",
+                    "water_sensor_adc=%s type=ads1115 address=0x%02x temp_channel=1 tds_channel=2",
                     waterSensorAdcReady ? "ready" : "absent",
-                    static_cast<unsigned>(faucet::kPinTemperatureAdc),
-                    static_cast<unsigned>(faucet::kPinTdsAdc));
+                    static_cast<unsigned>(faucet::kAds1115Address));
     logSystemConfigStatus();
     logStartupPhase("config_ready");
     g_configInitComplete = true;
@@ -623,6 +623,7 @@ void maybeMarkOtaValidAfterHealthCheck() {
 }  // namespace
 
 void setup() {
+    g_valveHardware.forceSafeState();
     Serial.begin(115200);
     delay(200);
     configureBase();

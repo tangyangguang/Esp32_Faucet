@@ -1,4 +1,5 @@
 #include <Arduino.h>
+#include <Wire.h>
 
 #include "drivers/BoardPins.h"
 
@@ -107,11 +108,13 @@ void drawPattern(std::uint8_t pattern) {
 void beginTft() {
     pinMode(faucet::kPinSt7789Sclk, OUTPUT);
     pinMode(faucet::kPinSt7789Mosi, OUTPUT);
+    pinMode(faucet::kPinSt7789Cs, OUTPUT);
     pinMode(faucet::kPinSt7789Dc, OUTPUT);
     pinMode(faucet::kPinSt7789Rst, OUTPUT);
     pinMode(faucet::kPinSt7789Backlight, OUTPUT);
     digitalWrite(faucet::kPinSt7789Sclk, LOW);
     digitalWrite(faucet::kPinSt7789Mosi, LOW);
+    digitalWrite(faucet::kPinSt7789Cs, LOW);
     digitalWrite(faucet::kPinSt7789Dc, HIGH);
     digitalWrite(faucet::kPinSt7789Backlight, HIGH);
 
@@ -162,20 +165,50 @@ void beginTft() {
     command(0x36);
     data(0x00);
 }
+
+void beginBoardSafeState() {
+    pinMode(faucet::kPinValveShutdown, OUTPUT);
+    digitalWrite(faucet::kPinValveShutdown, HIGH);
+    pinMode(faucet::kPinValvePwm, OUTPUT);
+    digitalWrite(faucet::kPinValvePwm, LOW);
+
+    pinMode(faucet::kPinButtonCancel, INPUT);
+    pinMode(faucet::kPinButtonOk, INPUT);
+    pinMode(faucet::kPinButtonPlus, INPUT);
+    pinMode(faucet::kPinButtonMinus, INPUT);
+    pinMode(faucet::kPinFlowPrimary, INPUT);
+    pinMode(faucet::kPinFlowSecondary, INPUT);
+    pinMode(faucet::kPinAds1115Alert, INPUT);
+}
+
+bool probeAds1115() {
+    Wire.begin(faucet::kPinI2cSda, faucet::kPinI2cScl);
+    Wire.setTimeOut(20);
+    Wire.beginTransmission(faucet::kAds1115Address);
+    return Wire.endTransmission() == 0;
+}
 }  // namespace
 
 void setup() {
+    beginBoardSafeState();
     Serial.begin(115200);
     delay(300);
     pinMode(kStatusLedPin, OUTPUT);
     digitalWrite(kStatusLedPin, LOW);
     Serial.println("[bitbang] setup start");
-    Serial.printf("[bitbang] pins SCL=%u SDA=%u RES=%u DC=%u BLK=%u\n",
+    Serial.printf("[bitbang] pins SCL=%u SDA=%u CS=%u RES=%u DC=%u BLK=%u\n",
                   static_cast<unsigned>(faucet::kPinSt7789Sclk),
                   static_cast<unsigned>(faucet::kPinSt7789Mosi),
+                  static_cast<unsigned>(faucet::kPinSt7789Cs),
                   static_cast<unsigned>(faucet::kPinSt7789Rst),
                   static_cast<unsigned>(faucet::kPinSt7789Dc),
                   static_cast<unsigned>(faucet::kPinSt7789Backlight));
+    Serial.printf("[bitbang] valve PWM=%u SD=%u forced_off=yes\n",
+                  static_cast<unsigned>(faucet::kPinValvePwm),
+                  static_cast<unsigned>(faucet::kPinValveShutdown));
+    Serial.printf("[bitbang] ads1115 address=0x%02x present=%s\n",
+                  static_cast<unsigned>(faucet::kAds1115Address),
+                  probeAds1115() ? "yes" : "no");
     beginTft();
     drawPattern(g_pattern);
     Serial.println("[bitbang] started");
@@ -195,5 +228,12 @@ void loop() {
         Serial.printf("[bitbang] alive ms=%lu pattern=%u\n",
                       static_cast<unsigned long>(nowMs),
                       static_cast<unsigned>(g_pattern % 4U));
+        Serial.printf("[bitbang] keys cancel=%d ok=%d plus=%d minus=%d flow1=%d flow2=%d\n",
+                      digitalRead(faucet::kPinButtonCancel) == LOW,
+                      digitalRead(faucet::kPinButtonOk) == LOW,
+                      digitalRead(faucet::kPinButtonPlus) == LOW,
+                      digitalRead(faucet::kPinButtonMinus) == LOW,
+                      digitalRead(faucet::kPinFlowPrimary),
+                      digitalRead(faucet::kPinFlowSecondary));
     }
 }

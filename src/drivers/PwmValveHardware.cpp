@@ -11,18 +11,31 @@ constexpr std::uint32_t kValvePwmFrequencyHz = 20000;
 
 }  // namespace
 
-PwmValveHardware::PwmValveHardware(std::uint8_t pin, std::uint8_t channel) : pin_(pin), channel_(channel) {}
+PwmValveHardware::PwmValveHardware(std::uint8_t pwmPin, std::uint8_t shutdownPin, std::uint8_t channel)
+    : pwmPin_(pwmPin), shutdownPin_(shutdownPin), channel_(channel) {}
+
+void PwmValveHardware::forceSafeState() {
+    pinMode(shutdownPin_, OUTPUT);
+    digitalWrite(shutdownPin_, HIGH);
+    pinMode(pwmPin_, OUTPUT);
+    digitalWrite(pwmPin_, LOW);
+}
 
 void PwmValveHardware::begin() {
-    pinMode(pin_, OUTPUT);
-    digitalWrite(pin_, LOW);
+    forceSafeState();
     ledcSetup(channel_, kValvePwmFrequencyHz, kLedcResolutionBits);
-    ledcAttachPin(pin_, channel_);
+    ledcAttachPin(pwmPin_, channel_);
     ledcWrite(channel_, 0);
 }
 
 void PwmValveHardware::apply(ValveOutput output) {
-    ledcWrite(channel_, output.enabled ? ledcDutyFromPercent(output.dutyPercent) : 0);
+    if (!output.enabled || output.dutyPercent == 0) {
+        digitalWrite(shutdownPin_, HIGH);
+        ledcWrite(channel_, 0);
+        return;
+    }
+    ledcWrite(channel_, ledcDutyFromPercent(output.dutyPercent));
+    digitalWrite(shutdownPin_, LOW);
 }
 
 }  // namespace faucet

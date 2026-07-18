@@ -11,7 +11,7 @@ FlowPulseReader::FlowPulseReader(std::uint8_t pin)
 
 void FlowPulseReader::begin() {
     instance_ = this;
-    pinMode(pin_, INPUT_PULLUP);
+    pinMode(pin_, INPUT);
     attachInterrupt(digitalPinToInterrupt(pin_), FlowPulseReader::isr, RISING);
 }
 

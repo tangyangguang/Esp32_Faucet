@@ -36,6 +36,7 @@
 | `WaterSensors` | 输入电压、50K B3950 NTC 和 TDS AO 的纯算法换算 |
 | `WaterSensorManager` | 1s 采样、ADC 故障降级、TDS 自动量程、实时快照和出水摘要聚合 |
 | `ValveDriver` | 电磁阀开关、全压吸合、PWM 保持 |
+| `PwmValveHardware` | GPIO26/LEDC 输出、GPIO32 安全关断和 100-30000Hz 频率重配置 |
 | `ButtonInput` | 四键消抖、短按/长按 |
 | `ColorDisplayPresenter` | 240x240 TFT 页面模型、状态摘要和刷新节流 |
 | `BeepDriver` | 操作、完成、异常提示 |
@@ -264,3 +265,4 @@ struct StatisticsRecord {
 - 日志文件采用二进制定长记录，Web 输出时转换为 JSON。
 - 当前 PCB 不使用 RTC；NTP 未同步时保留启动内相对时间和 boot id，不扫描 DS3231。
 - 系统设置页的显式保存会把所有注册字段合并到当前运行配置，并写入完整的当前版本配置；新设备即使尚无 `faucet_cfg/ver`，也不得出现“页面显示已保存、运行仍使用默认值”。
+- 系统设置中的阀门全功率时间、保持占空比和 PWM 频率属于同一“电磁阀”分组。前两项更新业务阀门状态机，频率更新硬件 LEDC；三项都只允许待机保存并立即生效。

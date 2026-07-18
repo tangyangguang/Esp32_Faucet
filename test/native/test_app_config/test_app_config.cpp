@@ -45,6 +45,8 @@ void test_default_config_matches_product_defaults() {
     TEST_ASSERT_EQUAL_UINT32(kDefaultValveFullPowerSec, config.valveFullPowerSec);
     TEST_ASSERT_EQUAL_UINT32(5, config.valveFullPowerSec);
     TEST_ASSERT_EQUAL_UINT8(kDefaultValveHoldDutyPercent, config.valveHoldDutyPercent);
+    TEST_ASSERT_EQUAL_UINT32(kDefaultValvePwmFrequencyHz, config.valvePwmFrequencyHz);
+    TEST_ASSERT_EQUAL_UINT32(20000, config.valvePwmFrequencyHz);
     TEST_ASSERT_EQUAL_UINT32(kDefaultDisplaySleepSec, config.displaySleepSec);
     TEST_ASSERT_EQUAL_UINT32(60, config.displaySleepSec);
     TEST_ASSERT_EQUAL_UINT32(kDefaultResultDisplaySec, config.resultDisplaySec);
@@ -124,6 +126,7 @@ void test_sanitize_config_clamps_scalar_ranges() {
     config.pulseMinIntervalUs = 1;
     config.valveFullPowerSec = 0;
     config.valveHoldDutyPercent = 1;
+    config.valvePwmFrequencyHz = 1;
     config.displaySleepSec = 999999;
     config.resultDisplaySec = 999999;
 
@@ -142,8 +145,14 @@ void test_sanitize_config_clamps_scalar_ranges() {
     TEST_ASSERT_EQUAL_UINT32(kMinPulseMinIntervalUs, config.pulseMinIntervalUs);
     TEST_ASSERT_EQUAL_UINT32(1, config.valveFullPowerSec);
     TEST_ASSERT_EQUAL_UINT8(kMinValveHoldDutyPercent, config.valveHoldDutyPercent);
+    TEST_ASSERT_EQUAL_UINT32(kMinValvePwmFrequencyHz, config.valvePwmFrequencyHz);
     TEST_ASSERT_EQUAL_UINT32(300, config.displaySleepSec);
     TEST_ASSERT_EQUAL_UINT32(60, config.resultDisplaySec);
+
+    config = makeDefaultConfig();
+    config.valvePwmFrequencyHz = 999999;
+    sanitizeConfig(config);
+    TEST_ASSERT_EQUAL_UINT32(kMaxValvePwmFrequencyHz, config.valvePwmFrequencyHz);
 
     config = makeDefaultConfig();
     config.displaySleepSec = 5;

@@ -64,6 +64,7 @@ SystemConfig makeDefaultConfig() {
     config.pulseMinIntervalUs = kDefaultPulseMinIntervalUs;
     config.valveFullPowerSec = kDefaultValveFullPowerSec;
     config.valveHoldDutyPercent = kDefaultValveHoldDutyPercent;
+    config.valvePwmFrequencyHz = kDefaultValvePwmFrequencyHz;
     config.displaySleepSec = kDefaultDisplaySleepSec;
     config.resultDisplaySec = kDefaultResultDisplaySec;
     config.beepEnabled = true;
@@ -110,6 +111,8 @@ void sanitizeConfig(SystemConfig& config) {
     config.valveFullPowerSec = clampValue<std::uint32_t>(config.valveFullPowerSec, 1, 10);
     config.valveHoldDutyPercent = clampValue<std::uint8_t>(
         config.valveHoldDutyPercent, kMinValveHoldDutyPercent, kMaxValveHoldDutyPercent);
+    config.valvePwmFrequencyHz = clampValue<std::uint32_t>(
+        config.valvePwmFrequencyHz, kMinValvePwmFrequencyHz, kMaxValvePwmFrequencyHz);
     config.displaySleepSec =
         clampValue<std::uint32_t>(config.displaySleepSec, kMinDisplaySleepSec, kMaxDisplaySleepSec);
     config.resultDisplaySec = clampValue<std::uint32_t>(config.resultDisplaySec, 0, 60);

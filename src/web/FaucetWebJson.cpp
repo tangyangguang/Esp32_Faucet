@@ -308,6 +308,7 @@ bool writeStatusJson(const AppSnapshot& snapshot,
                   "\"recentAverageFlowMlPerMin\":%lu,\"flowDroppedPulses\":%lu,"
                   "\"maxLoopIntervalUs\":%lu,\"maxAppTickUs\":%lu,\"maxBaseHandleUs\":%lu,"
                   "\"valveDutyPercent\":%u,\"valveFullPowerSec\":%lu,\"valveHoldDutyPercent\":%u,"
+                  "\"valvePwmFrequencyHz\":%lu,"
                   "\"screenOn\":%s,\"waterControl\":false",
                   static_cast<unsigned long>(snapshot.currentFlowMlPerMin),
                   static_cast<unsigned long>(snapshot.instantFlowMlPerMin),
@@ -322,6 +323,7 @@ bool writeStatusJson(const AppSnapshot& snapshot,
                   static_cast<unsigned>(snapshot.valve.dutyPercent),
                   static_cast<unsigned long>(config.valveFullPowerSec),
                   static_cast<unsigned>(config.valveHoldDutyPercent),
+                  static_cast<unsigned long>(config.valvePwmFrequencyHz),
                   screenOn ? "true" : "false");
     writer.append(",\"sensor\":{\"inputVoltageMv\":");
     appendSensorValue(writer, snapshot.sensors.inputVoltageMv);

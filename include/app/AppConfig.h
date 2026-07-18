@@ -57,6 +57,9 @@ constexpr std::uint32_t kDefaultValveFullPowerSec = 5;
 constexpr std::uint8_t kDefaultValveHoldDutyPercent = 70;
 constexpr std::uint8_t kMinValveHoldDutyPercent = 20;
 constexpr std::uint8_t kMaxValveHoldDutyPercent = 100;
+constexpr std::uint32_t kDefaultValvePwmFrequencyHz = 20000;
+constexpr std::uint32_t kMinValvePwmFrequencyHz = 100;
+constexpr std::uint32_t kMaxValvePwmFrequencyHz = 30000;
 
 constexpr std::uint32_t kMinDisplaySleepSec = 60;
 constexpr std::uint32_t kDefaultDisplaySleepSec = 60;
@@ -99,6 +102,7 @@ struct SystemConfig {
     std::uint32_t pulseMinIntervalUs;
     std::uint32_t valveFullPowerSec;
     std::uint8_t valveHoldDutyPercent;
+    std::uint32_t valvePwmFrequencyHz;
     std::uint32_t displaySleepSec;
     std::uint32_t resultDisplaySec;
     bool beepEnabled;

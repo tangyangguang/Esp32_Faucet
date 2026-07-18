@@ -50,9 +50,26 @@ void test_non_current_system_config_version_uses_defaults_until_explicit_save() 
 
 void test_explicit_app_config_save_merges_fields_and_establishes_current_version() {
     FakeConfigBackend backend;
+    backend.setInt("faucet_cfg", "confirm_s", 20);
+    backend.setInt("faucet_cfg", "max_time", 1200);
+    backend.setInt("faucet_cfg", "max_ml", 45000);
+    backend.setInt("faucet_cfg", "overflow", 12);
     backend.setInt("faucet_cfg", "valve_s", 2);
     backend.setInt("faucet_cfg", "hold_pct", 50);
+    backend.setInt("faucet_cfg", "valve_hz", 1200);
     backend.setInt("faucet_cfg", "noflow_s", 30);
+    backend.setInt("faucet_cfg", "high_flow", 42000);
+    backend.setInt("faucet_cfg", "high_s", 7);
+    backend.setInt("faucet_cfg", "pause_s", 180);
+    backend.setInt("faucet_cfg", "vol_step", 250);
+    backend.setInt("faucet_cfg", "time_step", 15);
+    backend.setInt("faucet_cfg", "pulse_min_us", 2500);
+    backend.setInt("faucet_cfg", "disp_s", 75);
+    backend.setInt("faucet_cfg", "result_s", 12);
+    backend.setBool("faucet_cfg", "beep", false);
+    backend.setStr("faucet_cfg", "temp_sensor", "ntc50k_b3950");
+    backend.setStr("faucet_cfg", "tds_sensor", "tds_board_v1");
+    backend.setBool("faucet_cfg", "tds_temp_comp", false);
     ConfigStore store(backend);
     SystemConfig live = makeDefaultConfig();
     live.presets[2].enabled = true;
@@ -60,9 +77,26 @@ void test_explicit_app_config_save_merges_fields_and_establishes_current_version
 
     const SystemConfig merged = store.loadSystemConfigForExplicitSave(live);
 
+    TEST_ASSERT_EQUAL_UINT32(20, merged.confirmTimeoutSec);
+    TEST_ASSERT_EQUAL_UINT32(1200, merged.maxOutTimeSec);
+    TEST_ASSERT_EQUAL_UINT32(45000, merged.maxOutVolumeMl);
+    TEST_ASSERT_EQUAL_UINT8(12, merged.overflowPercent);
     TEST_ASSERT_EQUAL_UINT32(2, merged.valveFullPowerSec);
     TEST_ASSERT_EQUAL_UINT8(50, merged.valveHoldDutyPercent);
+    TEST_ASSERT_EQUAL_UINT32(1200, merged.valvePwmFrequencyHz);
     TEST_ASSERT_EQUAL_UINT32(30, merged.noFlowTimeoutSec);
+    TEST_ASSERT_EQUAL_UINT32(42000, merged.highFlowMlPerMin);
+    TEST_ASSERT_EQUAL_UINT32(7, merged.highFlowDurationSec);
+    TEST_ASSERT_EQUAL_UINT32(180, merged.pauseTimeoutSec);
+    TEST_ASSERT_EQUAL_UINT32(250, merged.volumeAdjustStepMl);
+    TEST_ASSERT_EQUAL_UINT32(15, merged.timeAdjustStepSec);
+    TEST_ASSERT_EQUAL_UINT32(2500, merged.pulseMinIntervalUs);
+    TEST_ASSERT_EQUAL_UINT32(75, merged.displaySleepSec);
+    TEST_ASSERT_EQUAL_UINT32(12, merged.resultDisplaySec);
+    TEST_ASSERT_FALSE(merged.beepEnabled);
+    TEST_ASSERT_TRUE(temperatureSensorEnabled(merged));
+    TEST_ASSERT_TRUE(tdsSensorEnabled(merged));
+    TEST_ASSERT_FALSE(merged.tdsTemperatureCompensationEnabled);
     TEST_ASSERT_TRUE(merged.presets[2].enabled);
     TEST_ASSERT_EQUAL_UINT32(2500, merged.presets[2].value);
     TEST_ASSERT_TRUE(store.saveSystemConfig(merged));
@@ -71,6 +105,7 @@ void test_explicit_app_config_save_merges_fields_and_establishes_current_version
     const SystemConfig current = store.loadSystemConfig();
     TEST_ASSERT_EQUAL_UINT32(2, current.valveFullPowerSec);
     TEST_ASSERT_EQUAL_UINT8(50, current.valveHoldDutyPercent);
+    TEST_ASSERT_EQUAL_UINT32(1200, current.valvePwmFrequencyHz);
     TEST_ASSERT_EQUAL_UINT32(30, current.noFlowTimeoutSec);
 }
 
@@ -79,12 +114,22 @@ void test_config_save_and_load_round_trips_system_config() {
     ConfigStore store(backend);
     SystemConfig config = makeDefaultConfig();
     config.confirmTimeoutSec = 20;
+    config.maxOutTimeSec = 1200;
+    config.maxOutVolumeMl = 45000;
+    config.overflowPercent = 12;
+    config.noFlowTimeoutSec = 22;
+    config.highFlowMlPerMin = 42000;
+    config.highFlowDurationSec = 7;
+    config.pauseTimeoutSec = 180;
     config.beepEnabled = false;
     config.displaySleepSec = 75;
     config.resultDisplaySec = 12;
     config.volumeAdjustStepMl = 250;
     config.timeAdjustStepSec = 15;
     config.pulseMinIntervalUs = 2500;
+    config.valveFullPowerSec = 3;
+    config.valveHoldDutyPercent = 55;
+    config.valvePwmFrequencyHz = 1200;
     config.presets[2].enabled = true;
     config.presets[2].type = PresetType::Time;
     config.presets[2].value = 120;
@@ -98,12 +143,22 @@ void test_config_save_and_load_round_trips_system_config() {
 
     const SystemConfig loaded = store.loadSystemConfig();
     TEST_ASSERT_EQUAL_UINT32(20, loaded.confirmTimeoutSec);
+    TEST_ASSERT_EQUAL_UINT32(1200, loaded.maxOutTimeSec);
+    TEST_ASSERT_EQUAL_UINT32(45000, loaded.maxOutVolumeMl);
+    TEST_ASSERT_EQUAL_UINT8(12, loaded.overflowPercent);
+    TEST_ASSERT_EQUAL_UINT32(22, loaded.noFlowTimeoutSec);
+    TEST_ASSERT_EQUAL_UINT32(42000, loaded.highFlowMlPerMin);
+    TEST_ASSERT_EQUAL_UINT32(7, loaded.highFlowDurationSec);
+    TEST_ASSERT_EQUAL_UINT32(180, loaded.pauseTimeoutSec);
     TEST_ASSERT_FALSE(loaded.beepEnabled);
     TEST_ASSERT_EQUAL_UINT32(75, loaded.displaySleepSec);
     TEST_ASSERT_EQUAL_UINT32(12, loaded.resultDisplaySec);
     TEST_ASSERT_EQUAL_UINT32(250, loaded.volumeAdjustStepMl);
     TEST_ASSERT_EQUAL_UINT32(15, loaded.timeAdjustStepSec);
     TEST_ASSERT_EQUAL_UINT32(2500, loaded.pulseMinIntervalUs);
+    TEST_ASSERT_EQUAL_UINT32(3, loaded.valveFullPowerSec);
+    TEST_ASSERT_EQUAL_UINT8(55, loaded.valveHoldDutyPercent);
+    TEST_ASSERT_EQUAL_UINT32(1200, loaded.valvePwmFrequencyHz);
     TEST_ASSERT_EQUAL_INT32(-7, backend.getInt("faucet_cfg", "pulse_win_s", -7));
     TEST_ASSERT_EQUAL_INT32(-7, backend.getInt("faucet_cfg", "cal_an_us", -7));
     TEST_ASSERT_EQUAL_INT32(-7, backend.getInt("faucet_cfg", "cal_win_s", -7));

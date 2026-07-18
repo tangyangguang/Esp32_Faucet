@@ -34,6 +34,7 @@ const char kKeyTimeStep[] = "time_step";
 const char kKeyPulseMinIntervalUs[] = "pulse_min_us";
 const char kKeyValveFullPower[] = "valve_s";
 const char kKeyValveHoldDuty[] = "hold_pct";
+const char kKeyValvePwmFrequency[] = "valve_hz";
 const char kKeyDisplaySleep[] = "disp_s";
 const char kKeyResultDisplay[] = "result_s";
 const char kKeyBeep[] = "beep";
@@ -151,6 +152,7 @@ bool addCoreFields() {
 
     ok = Esp32BaseAppConfig::addInt({kGroupValve, kConfigNs, kKeyValveFullPower, "阀门全功率时间", static_cast<std::int32_t>(kDefaultValveFullPowerSec), 1, 10, 1, "s", "开阀初段全功率吸合的持续时间。", false, nullptr}) && ok;
     ok = Esp32BaseAppConfig::addInt({kGroupValve, kConfigNs, kKeyValveHoldDuty, "阀门保持占空比", kDefaultValveHoldDutyPercent, kMinValveHoldDutyPercent, kMaxValveHoldDutyPercent, 1, "%", "100% 为全压保持；低于 100% 时启用降功耗 PWM 保持。", false, nullptr}) && ok;
+    ok = Esp32BaseAppConfig::addInt({kGroupValve, kConfigNs, kKeyValvePwmFrequency, "阀门 PWM 频率", static_cast<std::int32_t>(kDefaultValvePwmFrequencyHz), static_cast<std::int32_t>(kMinValvePwmFrequencyHz), static_cast<std::int32_t>(kMaxValvePwmFrequencyHz), 100, "Hz", "GPIO26/U7 的 PWM 频率；默认 20kHz。低频可能产生可闻噪声或阀芯抖动，保存后立即生效。", false, nullptr}) && ok;
 
     ok = Esp32BaseAppConfig::addInt({kGroupLocal, kConfigNs, kKeyDisplaySleep, "本地屏熄屏时间", static_cast<std::int32_t>(kDefaultDisplaySleepSec), static_cast<std::int32_t>(kMinDisplaySleepSec), static_cast<std::int32_t>(kMaxDisplaySleepSec), 5, "s", "待机无操作超过该时间关闭 TFT 背光。立即生效。", false, nullptr}) && ok;
     ok = Esp32BaseAppConfig::addInt({kGroupLocal, kConfigNs, kKeyResultDisplay, "结果页显示时间", static_cast<std::int32_t>(kDefaultResultDisplaySec), 0, 60, 1, "s", "出水结束后结果页停留时间，0 表示立即返回。", false, nullptr}) && ok;

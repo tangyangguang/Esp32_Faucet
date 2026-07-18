@@ -243,6 +243,10 @@ void requestRecordStoreRebuildAfterFormatFs() {
 void applyRuntimeSettings(const faucet::SystemConfig& config) {
     g_beep.setEnabled(config.beepEnabled);
     g_waterSensors.configure(config);
+    if (!g_valveHardware.configureFrequency(config.valvePwmFrequencyHz)) {
+        ESP32BASE_LOG_E("app", "valve PWM frequency apply failed hz=%lu",
+                        static_cast<unsigned long>(config.valvePwmFrequencyHz));
+    }
     if (g_colorDisplay) {
         g_colorDisplay->configure(config.displaySleepSec);
         g_colorDisplay->wake(millis());
@@ -390,7 +394,10 @@ void initializeApplication() {
 
     g_buttons.begin();
     g_flowPulses.begin();
-    g_valveHardware.begin();
+    if (!g_valveHardware.begin(g_config.valvePwmFrequencyHz)) {
+        ESP32BASE_LOG_E("app", "valve PWM initialization failed hz=%lu",
+                        static_cast<unsigned long>(g_config.valvePwmFrequencyHz));
+    }
     g_app->setValveOutputSink(applyValveOutput);
     const faucet::ValveOutput startupValve = g_app->snapshot().valve;
     g_valveHardware.apply(startupValve);

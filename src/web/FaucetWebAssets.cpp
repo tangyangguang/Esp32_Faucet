@@ -158,7 +158,7 @@ void sendHomeAutoRefreshScript() {
                             "faucetSet('temperatureStatus',faucetSensorTemp(s.sensor&&s.sensor.temperature));"
                             "faucetSet('tdsStatus',faucetSensorTds(s.sensor&&s.sensor.tds));"
                             "faucetSet('valvePwmDuty',s.valveDutyPercent+'%');"
-                            "faucetSet('valvePwmNote',s.valveFullPowerSec+'s全功率→'+s.valveHoldDutyPercent+'%保持');"
+                            "faucetSet('valvePwmNote',s.valveFullPowerSec+'s全功率→'+s.valveHoldDutyPercent+'%保持 · '+s.valvePwmFrequencyHz+'Hz');"
                             "faucetSet('screenStatus',s.screenOn?'亮屏':'休眠');"
                             "faucetSet('droppedPulses',Number(s.flowDroppedPulses)||0);"
                             "faucetToggle('resultItem',s.state==='error');"

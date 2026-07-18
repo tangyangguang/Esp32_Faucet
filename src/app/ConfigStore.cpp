@@ -116,6 +116,8 @@ void loadCommonSystemConfig(ConfigBackend& backend, SystemConfig& config) {
     config.valveFullPowerSec =
         static_cast<std::uint32_t>(backend.getInt(kConfigNs, "valve_s", toInt(config.valveFullPowerSec)));
     config.valveHoldDutyPercent = static_cast<std::uint8_t>(backend.getInt(kConfigNs, "hold_pct", config.valveHoldDutyPercent));
+    config.valvePwmFrequencyHz =
+        static_cast<std::uint32_t>(backend.getInt(kConfigNs, "valve_hz", toInt(config.valvePwmFrequencyHz)));
     config.displaySleepSec =
         static_cast<std::uint32_t>(backend.getInt(kConfigNs, "disp_s", toInt(config.displaySleepSec)));
     config.resultDisplaySec =
@@ -236,6 +238,7 @@ bool ConfigStore::saveSystemConfig(const SystemConfig& config) {
     ok = okAll(ok, backend_.setInt(kConfigNs, "pulse_min_us", toInt(safe.pulseMinIntervalUs)));
     ok = okAll(ok, backend_.setInt(kConfigNs, "valve_s", toInt(safe.valveFullPowerSec)));
     ok = okAll(ok, backend_.setInt(kConfigNs, "hold_pct", safe.valveHoldDutyPercent));
+    ok = okAll(ok, backend_.setInt(kConfigNs, "valve_hz", toInt(safe.valvePwmFrequencyHz)));
     ok = okAll(ok, backend_.setInt(kConfigNs, "disp_s", toInt(safe.displaySleepSec)));
     ok = okAll(ok, backend_.setInt(kConfigNs, "result_s", toInt(safe.resultDisplaySec)));
     ok = okAll(ok, backend_.setBool(kConfigNs, "beep", safe.beepEnabled));

@@ -93,6 +93,7 @@ void test_status_json_contains_no_remote_control_capability() {
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"valveDutyPercent\":100"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"valveFullPowerSec\":5"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"valveHoldDutyPercent\":70"));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"valvePwmFrequencyHz\":20000"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"screenOn\":false"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"waterControl\":false"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"sensor\""));
@@ -118,6 +119,7 @@ void test_status_json_uses_configured_valve_pwm_values() {
     SystemConfig config = makeDefaultConfig();
     config.valveFullPowerSec = 5;
     config.valveHoldDutyPercent = 45;
+    config.valvePwmFrequencyHz = 1200;
     AppSnapshot snapshot = makeSnapshot();
     snapshot.valve = ValveOutput{ValveState::Holding, true, 45};
 
@@ -126,6 +128,7 @@ void test_status_json_uses_configured_valve_pwm_values() {
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"valveDutyPercent\":45"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"valveFullPowerSec\":5"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"valveHoldDutyPercent\":45"));
+    TEST_ASSERT_NOT_NULL(std::strstr(json, "\"valvePwmFrequencyHz\":1200"));
     TEST_ASSERT_NOT_NULL(std::strstr(json, "\"waterControl\":false"));
 }
 

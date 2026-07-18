@@ -37,7 +37,15 @@ bool PwmValveHardware::configureFrequency(std::uint32_t frequencyHz) {
     if (begun_ && frequencyHz == frequencyHz_) {
         return true;
     }
-    return begin(frequencyHz);
+    if (!begun_) {
+        return begin(frequencyHz);
+    }
+    if (frequencyHz < kMinValvePwmFrequencyHz || frequencyHz > kMaxValvePwmFrequencyHz ||
+        ledcSetup(channel_, frequencyHz, kLedcResolutionBits) == 0) {
+        return false;
+    }
+    frequencyHz_ = frequencyHz;
+    return true;
 }
 
 void PwmValveHardware::apply(ValveOutput output) {

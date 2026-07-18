@@ -240,17 +240,24 @@ void requestRecordStoreRebuildAfterFormatFs() {
     g_rebuildRecordStoreAfterFormatFs = true;
 }
 
-void applyRuntimeSettings(const faucet::SystemConfig& config) {
+void applyImmediateRuntimeSettings(const faucet::SystemConfig& config) {
     g_beep.setEnabled(config.beepEnabled);
-    g_waterSensors.configure(config);
     if (!g_valveHardware.configureFrequency(config.valvePwmFrequencyHz)) {
         ESP32BASE_LOG_E("app", "valve PWM frequency apply failed hz=%lu",
                         static_cast<unsigned long>(config.valvePwmFrequencyHz));
+    }
+    if (g_app) {
+        g_valveHardware.apply(g_app->snapshot().valve);
     }
     if (g_colorDisplay) {
         g_colorDisplay->configure(config.displaySleepSec);
         g_colorDisplay->wake(millis());
     }
+}
+
+void applyRuntimeSettings(const faucet::SystemConfig& config) {
+    applyImmediateRuntimeSettings(config);
+    g_waterSensors.configure(config);
     g_st7789.begin();
 }
 
@@ -386,7 +393,8 @@ void initializeApplication() {
                                  currentDisplayStatus,
                                  currentRuntimeDiagnostics});
     faucet::setFaucetAppConfigContext(
-        faucet::FaucetAppConfigContext{&g_config, &g_configStore, g_app, applyRuntimeSettings});
+        faucet::FaucetAppConfigContext{
+            &g_config, &g_configStore, g_app, applyImmediateRuntimeSettings, applyRuntimeSettings});
 #if ESP32BASE_ENABLE_NTP
     Esp32BaseNtp::onTimeSynced(handleTimeSynced);
 #endif
@@ -522,6 +530,10 @@ void runApplicationTick() {
         currentBootId(),
     };
     g_app->tick(input);
+    if (g_app->applyPendingSystemConfigIfSafe()) {
+        g_config = g_app->config();
+        applyRuntimeSettings(g_config);
+    }
     const faucet::BeepPattern beep = g_app->consumeBeepPattern();
     if (beep != faucet::BeepPattern::None) {
         g_beep.play(beep, nowMs);

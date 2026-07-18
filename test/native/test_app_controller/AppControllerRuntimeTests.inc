@@ -185,7 +185,7 @@ void test_app_controller_emergency_stop_closes_valve_without_debounce() {
                             static_cast<std::uint8_t>(app.snapshot().water.state));
 }
 
-void test_app_controller_rejects_active_task_config_but_allows_result_page_config() {
+void test_app_controller_saves_active_task_config_for_next_task() {
     SystemConfig config = makeDefaultConfig();
     StatisticsStore statistics;
     statistics.reset({20260506, 202619, 202605});
@@ -197,22 +197,104 @@ void test_app_controller_rejects_active_task_config_but_allows_result_page_confi
     SystemConfig updated = config;
     updated.presets[0].value = 2000;
     TEST_ASSERT_TRUE(app.canApplyConfig());
-    TEST_ASSERT_TRUE(app.applyConfig(updated));
+    TEST_ASSERT_TRUE(app.submitSystemConfig(updated));
+    TEST_ASSERT_FALSE(app.hasPendingSystemConfig());
     TEST_ASSERT_EQUAL_UINT32(2000, app.snapshot().water.targetValue);
 
     pressAndReleaseOk(app, 100);
     pressAndReleaseOk(app, 300);
     TEST_ASSERT_FALSE(app.canApplyConfig());
     updated.presets[0].value = 3000;
+    updated.maxOutTimeSec = 60;
     TEST_ASSERT_FALSE(app.applyConfig(updated));
+    TEST_ASSERT_TRUE(app.submitSystemConfig(updated));
+    TEST_ASSERT_TRUE(app.hasPendingSystemConfig());
+    TEST_ASSERT_EQUAL_UINT32(kDefaultMaxOutTimeSec, app.config().maxOutTimeSec);
+    TEST_ASSERT_EQUAL_UINT32(2000, app.snapshot().water.targetValue);
+    TEST_ASSERT_FALSE(app.applyPendingSystemConfigIfSafe());
 
     TEST_ASSERT_TRUE(app.emergencyStop(1000));
     app.tick(input({false, false, false, false}, 1001, 1001000, 1714502401));
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(LocalUiMode::Result),
                             static_cast<std::uint8_t>(app.snapshot().localMode));
     TEST_ASSERT_TRUE(app.canApplyConfig());
-    TEST_ASSERT_TRUE(app.applyConfig(updated));
+    TEST_ASSERT_TRUE(app.applyPendingSystemConfigIfSafe());
+    TEST_ASSERT_FALSE(app.hasPendingSystemConfig());
+    TEST_ASSERT_EQUAL_UINT32(60, app.config().maxOutTimeSec);
     TEST_ASSERT_EQUAL_UINT32(3000, app.snapshot().water.targetValue);
+}
+
+void test_app_controller_latest_pending_system_config_wins() {
+    SystemConfig config = makeDefaultConfig();
+    StatisticsStore statistics;
+    FilterStore filters(config.filters);
+    MemoryRecordWriter records;
+    AppController app(config, statistics, filters, records);
+    applyTestMeteringScheme(app);
+
+    app.resetInputs({false, false, false, false}, 0);
+    pressAndReleaseOk(app, 100);
+    pressAndReleaseOk(app, 300);
+
+    SystemConfig first = config;
+    first.maxOutTimeSec = 60;
+    TEST_ASSERT_TRUE(app.submitSystemConfig(first));
+    SystemConfig latest = config;
+    latest.maxOutTimeSec = 120;
+    TEST_ASSERT_TRUE(app.submitSystemConfig(latest));
+
+    TEST_ASSERT_TRUE(app.emergencyStop(1000));
+    app.tick(input({false, false, false, false}, 1001, 1001000, 1714502401));
+    TEST_ASSERT_TRUE(app.applyPendingSystemConfigIfSafe());
+    TEST_ASSERT_EQUAL_UINT32(120, app.config().maxOutTimeSec);
+}
+
+void test_app_controller_idle_save_supersedes_pending_system_config() {
+    SystemConfig config = makeDefaultConfig();
+    StatisticsStore statistics;
+    FilterStore filters(config.filters);
+    MemoryRecordWriter records;
+    AppController app(config, statistics, filters, records);
+    applyTestMeteringScheme(app);
+
+    app.resetInputs({false, false, false, false}, 0);
+    pressAndReleaseOk(app, 100);
+    pressAndReleaseOk(app, 300);
+    SystemConfig pending = config;
+    pending.maxOutTimeSec = 120;
+    TEST_ASSERT_TRUE(app.submitSystemConfig(pending));
+
+    TEST_ASSERT_TRUE(app.emergencyStop(1000));
+    app.tick(input({false, false, false, false}, 1001, 1001000, 1714502401));
+    SystemConfig idleSave = config;
+    idleSave.maxOutTimeSec = 180;
+    TEST_ASSERT_TRUE(app.submitSystemConfig(idleSave));
+    TEST_ASSERT_FALSE(app.hasPendingSystemConfig());
+    TEST_ASSERT_FALSE(app.applyPendingSystemConfigIfSafe());
+    TEST_ASSERT_EQUAL_UINT32(180, app.config().maxOutTimeSec);
+}
+
+void test_app_controller_result_display_zero_exits_result_page_on_config_apply() {
+    SystemConfig config = makeDefaultConfig();
+    StatisticsStore statistics;
+    FilterStore filters(config.filters);
+    MemoryRecordWriter records;
+    AppController app(config, statistics, filters, records);
+    applyTestMeteringScheme(app);
+
+    app.resetInputs({false, false, false, false}, 0);
+    pressAndReleaseOk(app, 100);
+    pressAndReleaseOk(app, 300);
+    TEST_ASSERT_TRUE(app.emergencyStop(1000));
+    app.tick(input({false, false, false, false}, 1001, 1001000, 1714502401));
+    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(LocalUiMode::Result),
+                            static_cast<std::uint8_t>(app.snapshot().localMode));
+
+    SystemConfig updated = config;
+    updated.resultDisplaySec = 0;
+    TEST_ASSERT_TRUE(app.submitSystemConfig(updated));
+    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(LocalUiMode::Normal),
+                            static_cast<std::uint8_t>(app.snapshot().localMode));
 }
 
 void test_app_controller_applied_valve_and_no_flow_settings_control_runtime() {

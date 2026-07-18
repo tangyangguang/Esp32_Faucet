@@ -102,6 +102,8 @@ AppController::AppController(const SystemConfig& config,
                              CalibrationSessionTraceStore* calibrationSessionTraces,
                              WaterSensorManager* waterSensors)
     : config_(config),
+      pendingSystemConfig_(config),
+      pendingSystemConfigValid_(false),
       activeMeteringScheme_(activeScheme),
       water_(config_),
       localMode_(LocalUiMode::Normal),
@@ -357,7 +359,40 @@ bool AppController::applyConfig(const SystemConfig& config) {
     if (waterSensors_) {
         waterSensors_->configure(config_);
     }
+    if (localMode_ == LocalUiMode::Result && config_.resultDisplaySec == 0) {
+        localMode_ = LocalUiMode::Normal;
+    }
     return true;
+}
+
+bool AppController::submitSystemConfig(const SystemConfig& config) {
+    SystemConfig safe = config;
+    sanitizeConfig(safe);
+    if (canApplyConfig()) {
+        if (!applyConfig(safe)) {
+            return false;
+        }
+        pendingSystemConfigValid_ = false;
+        return true;
+    }
+    pendingSystemConfig_ = safe;
+    pendingSystemConfigValid_ = true;
+    return true;
+}
+
+bool AppController::applyPendingSystemConfigIfSafe() {
+    if (!pendingSystemConfigValid_ || !canApplyConfig()) {
+        return false;
+    }
+    if (!applyConfig(pendingSystemConfig_)) {
+        return false;
+    }
+    pendingSystemConfigValid_ = false;
+    return true;
+}
+
+bool AppController::hasPendingSystemConfig() const {
+    return pendingSystemConfigValid_;
 }
 
 bool AppController::applyActiveMeteringScheme(const MeteringSchemeRecord& activeScheme) {

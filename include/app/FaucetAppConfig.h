@@ -15,6 +15,7 @@ struct FaucetAppConfigContext {
     SystemConfig* config;
     ConfigStore* configStore;
     AppController* app;
+    FaucetAppConfigApplySettings applyImmediateSettings;
     FaucetAppConfigApplySettings applySettings;
 };
 

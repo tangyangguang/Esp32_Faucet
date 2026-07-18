@@ -125,6 +125,9 @@ public:
     bool selectPresetForWeb(std::size_t index);
     bool canApplyConfig() const;
     bool applyConfig(const SystemConfig& config);
+    bool submitSystemConfig(const SystemConfig& config);
+    bool applyPendingSystemConfigIfSafe();
+    bool hasPendingSystemConfig() const;
     bool applyActiveMeteringScheme(const MeteringSchemeRecord& activeScheme);
     bool startCalibrationSessionForWeb(std::uint32_t nowSeconds);
     bool discardCalibrationSessionForWeb(std::uint32_t nowSeconds);
@@ -193,6 +196,8 @@ private:
                        const FlowSnapshot& flow);
 
     SystemConfig config_;
+    SystemConfig pendingSystemConfig_;
+    bool pendingSystemConfigValid_;
     MeteringSchemeRecord activeMeteringScheme_;
     WaterController water_;
     LocalUiMode localMode_;

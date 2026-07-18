@@ -337,7 +337,7 @@ bool AppController::selectPresetForWeb(std::size_t index) {
 }
 
 bool AppController::canApplyConfig() const {
-    return localMode_ != LocalUiMode::Result && water_.canApplyConfig();
+    return water_.canApplyConfig();
 }
 
 bool AppController::applyConfig(const SystemConfig& config) {

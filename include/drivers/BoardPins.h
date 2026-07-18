@@ -27,12 +27,14 @@ constexpr std::uint8_t kPinSt7789Backlight = 19;
 constexpr std::uint8_t kAds1115Address = 0x48;
 
 constexpr std::uint8_t kLedcChannelValve = 0;
-constexpr std::uint8_t kLedcChannelBeep = 1;
+constexpr std::uint8_t kLedcChannelBeep = 2;
 constexpr std::uint8_t kLedcResolutionBits = 8;
 
 static_assert(kPinValvePwm != kPinValveShutdown, "valve PWM and shutdown pins must differ");
 static_assert(kPinBeep != kPinSt7789Backlight, "beep and TFT backlight pins must differ");
 static_assert(kPinFlowPrimary != kPinFlowSecondary, "flow inputs must differ");
+static_assert((kLedcChannelValve / 2U) != (kLedcChannelBeep / 2U),
+              "valve and beep PWM channels must use different LEDC timers");
 
 inline std::uint32_t ledcDutyFromPercent(std::uint8_t percent) {
     constexpr std::uint32_t maxDuty = (1UL << kLedcResolutionBits) - 1UL;

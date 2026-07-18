@@ -29,6 +29,12 @@ void test_board1_bus_and_display_pin_mapping_matches_2026_07_11_netlist() {
     TEST_ASSERT_EQUAL_UINT8(19, kPinSt7789Backlight);
 }
 
+void test_valve_and_beep_use_independent_ledc_timers() {
+    TEST_ASSERT_EQUAL_UINT8(0, kLedcChannelValve);
+    TEST_ASSERT_EQUAL_UINT8(2, kLedcChannelBeep);
+    TEST_ASSERT_NOT_EQUAL(kLedcChannelValve / 2U, kLedcChannelBeep / 2U);
+}
+
 int main(int argc, char** argv) {
     (void)argc;
     (void)argv;
@@ -36,5 +42,6 @@ int main(int argc, char** argv) {
     UNITY_BEGIN();
     RUN_TEST(test_board1_control_pin_mapping_matches_2026_07_11_netlist);
     RUN_TEST(test_board1_bus_and_display_pin_mapping_matches_2026_07_11_netlist);
+    RUN_TEST(test_valve_and_beep_use_independent_ledc_timers);
     return UNITY_END();
 }

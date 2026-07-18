@@ -185,7 +185,7 @@ void test_app_controller_emergency_stop_closes_valve_without_debounce() {
                             static_cast<std::uint8_t>(app.snapshot().water.state));
 }
 
-void test_app_controller_applies_config_only_while_idle() {
+void test_app_controller_rejects_active_task_config_but_allows_result_page_config() {
     SystemConfig config = makeDefaultConfig();
     StatisticsStore statistics;
     statistics.reset({20260506, 202619, 202605});
@@ -205,6 +205,14 @@ void test_app_controller_applies_config_only_while_idle() {
     TEST_ASSERT_FALSE(app.canApplyConfig());
     updated.presets[0].value = 3000;
     TEST_ASSERT_FALSE(app.applyConfig(updated));
+
+    TEST_ASSERT_TRUE(app.emergencyStop(1000));
+    app.tick(input({false, false, false, false}, 1001, 1001000, 1714502401));
+    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(LocalUiMode::Result),
+                            static_cast<std::uint8_t>(app.snapshot().localMode));
+    TEST_ASSERT_TRUE(app.canApplyConfig());
+    TEST_ASSERT_TRUE(app.applyConfig(updated));
+    TEST_ASSERT_EQUAL_UINT32(3000, app.snapshot().water.targetValue);
 }
 
 void test_app_controller_applied_valve_and_no_flow_settings_control_runtime() {

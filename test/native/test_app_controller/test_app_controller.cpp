@@ -68,7 +68,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_app_controller_stop_down_closes_valve_and_records_user_stop);
     RUN_TEST(test_app_controller_normal_output_does_not_collect_ram_pulse_trace);
     RUN_TEST(test_app_controller_emergency_stop_closes_valve_without_debounce);
-    RUN_TEST(test_app_controller_applies_config_only_while_idle);
+    RUN_TEST(test_app_controller_rejects_active_task_config_but_allows_result_page_config);
     RUN_TEST(test_app_controller_applied_valve_and_no_flow_settings_control_runtime);
     RUN_TEST(test_app_controller_emits_beep_patterns_for_actions_and_completion);
     RUN_TEST(test_app_controller_reports_record_write_failure_without_losing_statistics);

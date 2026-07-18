@@ -18,13 +18,12 @@
 | 流量计 | 主脉冲经 SN74LVC2G17 整形后进入 GPIO33；GPIO25 为第二路预留输入 |
 | 传感器 ADC | ADS1115，I2C 地址 `0x48`，ALERT/RDY 接 GPIO27 |
 | 水温 | ADS1115 AIN1；MH-01 50K B3950 NTC，板上 51K 1% 上拉 |
-| TDS | ADS1115 AIN2；TDS Board V1.0 模拟输出经板上分压和滤波接入 |
+| TDS | TDS Board V1.0 使用 PCB 5V 接口；AO 经 10K/15K 分压和滤波进入 ADS1115 AIN2 |
 | 输入电压 | ADS1115 AIN0；当前业务默认不启用，仅保留诊断能力 |
 | 预留模拟量 | ADS1115 AIN3，网络名 `T1`，不进入当前业务逻辑 |
 | 本地屏 | 240x240 ST7789，SPI 接入，独立 CS、RST、DC 和背光控制 |
 | 按键 | 四键低电平有效，使用板上 10K 外部上拉 |
 | 蜂鸣器 | GPIO13 PWM；当前 PCB 未连接，后续通过外部驱动电路飞线接 5V 无源蜂鸣器 |
-| RTC | DS3231 软件保持自动检测；当前 PCB 未提供明确插座，需要时从 I2C 总线外接 |
 | 漏水检测 | 不做 |
 
 ## GPIO
@@ -37,8 +36,8 @@
 | GPIO17 | TFT DC | ST7789 数据/命令 |
 | GPIO18 | TFT SCLK | SPI 时钟 |
 | GPIO19 | TFT BL | 背光，高电平点亮为当前软件默认，需实板确认 |
-| GPIO21 | I2C SDA | ADS1115；可并接 DS3231 |
-| GPIO22 | I2C SCL | ADS1115；可并接 DS3231 |
+| GPIO21 | I2C SDA | ADS1115 |
+| GPIO22 | I2C SCL | ADS1115 |
 | GPIO23 | TFT MOSI | SPI 数据 |
 | GPIO25 | 第二脉冲输入 | 经 SN74LVC2G17 整形，当前只用于上板诊断，不参与计量 |
 | GPIO26 | 电磁阀 PWM | EG27324 INA，经驱动后控制 MOS 栅极 |
@@ -60,10 +59,39 @@ GPIO34、GPIO35、GPIO36、GPIO39 是输入专用且没有内部上下拉。按�
 | --- | --- | --- |
 | AIN0 | VIN 分压 | 输入电压诊断，默认不采样 |
 | AIN1 | NTC50K_IN | 水温 |
-| AIN2 | TDS_ADC_VAL | TDS Board V1.0 模拟输出 |
+| AIN2 | TDS_ADC_VAL | TDS Board V1.0 AO 经 10K/15K 分压后的测量值 |
 | AIN3 | T1 | 预留，不进入当前业务逻辑 |
 
-ADS1115 使用单次转换和 860SPS 数据率。量程由 `WaterSensorManager` 按传感器用途配置；TDS 保留自动升降量程和切换后丢弃首个样本的现有规则。
+ADS1115 使用单次转换和 860SPS 数据率。量程由 `WaterSensorManager` 按传感器用途配置；TDS 保留自动升降量程和切换后丢弃首个样本的现有规则。TDS 计算和页面显示使用软件按 `(10K+15K)/15K` 还原后的模块 AO 电压，PGA 量程判断仍使用 ADS1115 引脚上的实际电压。
+
+## 关键芯片与软件关系
+
+| 位号 | 型号 | 作用 | 软件关系 |
+| --- | --- | --- | --- |
+| U1 | ESP32-WROOM-32E-N4 | 主控 | 当前 `BoardPins.h` 按模块焊盘网络映射 |
+| U2 | AP63205WU-7 | 12V 转 5V 降压 | 纯硬件电源，不注册软件驱动 |
+| U4 | ADS1115IDGSR | 四路 16 位 ADC | 地址 `0x48`；AIN0 VIN、AIN1 水温、AIN2 TDS、AIN3 预留 |
+| U5 | ME6211A33PG-N | 5V 转 3.3V LDO | 纯硬件电源，不注册软件驱动 |
+| U7 | EG27324 | MOS 栅极驱动 | GPIO26 PWM；GPIO32 `SD` 高电平强制关闭 |
+| U8 | SN74LVC2G17DBVR | 双路施密特整形 | 输出到 GPIO33/GPIO25；软件只计量 GPIO33 |
+| Q1 | IRLR7843TRPBF | 阀门低侧 MOS | 由 U7 驱动，不由业务层直接操作 |
+
+PCB BOM 和网表中没有 RTC/DS3231，主固件不包含 RTC 驱动或地址扫描。GPIO13 蜂鸣器是后续飞线功能，不在当前 PCB 网表内。
+
+## 接口针序
+
+| 接口 | 针序 |
+| --- | --- |
+| U3 四键 | 1 GND、2 OK、3 CANCEL/ESC、4 PLUS/UP、5 MINUS/DOWN |
+| U9 MH-01 六线 | 1 TDS_BLUE、2 TDS_RED、3 NTC50K_IN、4 FLOW_PULSE_IN、5 GND、6 5V |
+| CN3 TFT | 1 GND、2 3.3V、3 SCLK、4 MOSI/SDA、5 RST、6 DC、7 CS、8 BLK |
+| CN4 阀门 | 1 VIN/12V、2 VALVE1- |
+| CN5 第二脉冲 | 1 PUL_SIG2、2 GND、3 5V |
+| CN6 主流量 | 1 FLOW_PULSE_IN、2 GND、3 5V |
+| H1 UART | 1 GND、2 TX、3 RX、4 3.3V |
+| H2 TDS 模块方向 A | 1 TDS_ADC_VAL、2 T1、3 GND、4 5V |
+| H3 TDS 模块方向 B | 1 5V、2 GND、3 T1、4 TDS_ADC_VAL |
+| H4 TDS 电极 | 1 TDS_RED、2 TDS_BLUE |
 
 ## 安全与可靠性要求
 
@@ -86,4 +114,5 @@ ADS1115 使用单次转换和 860SPS 数据率。量程由 `WaterSensorManager` 
 - 主流量输入使用 GPIO33；GPIO25 只保留诊断。
 - 水温、TDS 和输入电压统一通过 ADS1115，不再使用 ESP32 内部 ADC。
 - 蜂鸣器固定 GPIO13；当前 PCB 未连接，后续飞线。
+- 当前 PCB 不使用 RTC，主固件不初始化或扫描 DS3231。
 - 当前测试设备允许按新版存储结构和硬件配置直接重建，不保留旧板 GPIO 兼容层。

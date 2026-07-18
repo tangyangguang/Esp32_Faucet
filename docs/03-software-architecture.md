@@ -12,7 +12,7 @@
 
 - Application：`src/main.cpp`，负责固件信息、Esp32Base 生命周期、Web 默认认证、业务模块初始化和主循环调度。
 - Business：承载出水状态机、配置模型、日志、统计、滤芯、Web 业务 API。
-- Drivers：承载电磁阀、流量计、四键、ST7789 TFT、本地蜂鸣器、RTC。
+- Drivers：承载电磁阀、流量计、四键、ST7789 TFT、本地蜂鸣器和 ADS1115。
 - Base：Esp32Base 提供 Log、Config、System、Bus、Watchdog、Sleep、Fs、FileLog、Health、WiFi、DNS、NTP、mDNS、Web、OTA。
 
 ## 调度模型
@@ -262,4 +262,5 @@ struct StatisticsRecord {
 - `CANCEL` ISR 只记录高优先级停止事件，不在 ISR 内做复杂日志、文件、Web 或状态机操作。
 - 控制 tick 必须足够频繁，保证 `CANCEL` 软件停止响应不超过 50ms。
 - 日志文件采用二进制定长记录，Web 输出时转换为 JSON。
-- DS3231 按自动检测实现；未焊接时 RTC 驱动自动降级。
+- 当前 PCB 不使用 RTC；NTP 未同步时保留启动内相对时间和 boot id，不扫描 DS3231。
+- 系统设置页的显式保存会把所有注册字段合并到当前运行配置，并写入完整的当前版本配置；新设备即使尚无 `faucet_cfg/ver`，也不得出现“页面显示已保存、运行仍使用默认值”。

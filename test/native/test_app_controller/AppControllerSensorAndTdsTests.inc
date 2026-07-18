@@ -73,7 +73,7 @@ void test_app_records_sensor_summary_on_completed_run() {
     TEST_ASSERT_EQUAL_size_t(1, fixture.records.records.size());
     TEST_ASSERT_GREATER_THAN_UINT16(0, fixture.records.records[0].sensorSampleCount);
     TEST_ASSERT_INT_WITHIN(50, 2500, fixture.records.records[0].temperatureCentiC);
-    TEST_ASSERT_EQUAL_UINT16(10, fixture.records.records[0].tdsPpm);
+    TEST_ASSERT_EQUAL_UINT16(17, fixture.records.records[0].tdsPpm);
 }
 
 void test_app_rejects_tds_calibration_when_running() {

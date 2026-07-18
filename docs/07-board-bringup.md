@@ -14,7 +14,7 @@
 - Esp32Base 正常启动。
 - LittleFS 正常挂载。
 - Web、WiFi、OTA 基础能力正常。
-- DS3231 不存在时降级为 uptime 时间。
+- 当前 PCB 不使用 RTC；NTP 未同步时使用 uptime 相对时间和 boot id。
 - TFT 未连接或初始化失败时不影响主循环和本地控水。
 - 流量计无脉冲时 GPIO33 不误计数。
 - 未接流量计时不应出现持续的 `flow pulse buffer dropped pulses`；若出现，检查 GPIO33 前级 SN74LVC2G17、上拉、滤波和输入插座。
@@ -101,7 +101,6 @@ pio device monitor -e esp32dev --port <端口> --baud 115200
 
 - 固件名为 `esp32-faucet`。
 - 应用初始化日志出现。
-- `rtc=absent` 合理，因为当前未接 DS3231。
 - `water_sensor_adc=ready type=ads1115 address=0x48 temp_channel=1 tds_channel=2` 表示外部 ADC 初始化完成；水温/TDS 未接线或未启用时传感器值无效是合理状态。
 - `records=file` 优先，若 LittleFS 初始化异常则需要排查分区或文件系统。
 - 不应反复重启，不应出现 panic/backtrace。
@@ -115,12 +114,11 @@ pio device monitor -e esp32dev --port <端口> --baud 115200
 4. 四个按键：验证 `CANCEL=GPIO39`、`OK=GPIO36`、`PLUS=GPIO34`、`MINUS=GPIO35` 外部上拉、低电平有效、消抖和长按。
 5. ADS1115：读取 AIN0-AIN3 原始电压，确认通道没有互换、短路或超量程。
 6. AIN1 水温：接 MH-01 前测绿色温度线到黑色 GND 室温约 40K-70K；接入板上 51K 上拉后状态页水温应接近环境水温。
-7. AIN2 TDS：确认 TDS 模块供电和插座针序，测量 AO 经板上分压后的电压；先验证水样趋势，再保存校准。
+7. AIN2 TDS：使用 PCB 5V 接口，确认插座针序；测量模块 AO 和 ADS1115 AIN2，后者应约为前者的 0.6 倍，页面显示电压应还原为模块 AO 电压；再验证水样趋势并保存校准。
 8. 流量计：先用手动脉冲或低频信号验证 GPIO33 计数；GPIO25 第二通道只观察，不加入计量。
 9. 电磁阀：先不接水，用示波器验证 GPIO26 PWM、GPIO32 SD 和 MOS 栅极；重点验证启动、`CANCEL`、异常和重启均优先关断。
 10. 蜂鸣器：完成 GPIO13 外部驱动飞线后，再验证短提示、异常提示和 Web 开关；未飞线时跳过。
-11. DS3231：如已外接到 GPIO21/22，验证自动检测、时间读取和断开降级；未接时 `rtc=absent` 合理。
-12. 完整水路：验证定量出水、暂停/继续、本次目标调整、记录、统计、滤芯累计、水温/TDS 记录和统计趋势。
+11. 完整水路：验证定量出水、暂停/继续、本次目标调整、记录、统计、滤芯累计、水温/TDS 记录和统计趋势。
 
 ## 暂不执行的验证
 
@@ -142,7 +140,7 @@ pio device monitor -e esp32dev --port <端口> --baud 115200
 - `pio device list` 可识别 CH340 串口。
 - 固件体积预算：当前双 OTA app 分区为 `0x160000`，Flash 使用率已超过 85% 预警线；继续增加 Web 页面、诊断或日志前，优先评估静态 HTML/CSS 字符串体积、可静态化资源迁移到 LittleFS，或重新评估分区表。
 - `pio run -e esp32dev_smoke` 通过。
-- 主固件串口启动正常：进入 `setup()`，`rtc=absent`、`records=file`，WiFi 已连接，Web 服务就绪，NTP 已同步。
+- 旧主固件串口启动正常：进入 `setup()`，当时记录为 `rtc=absent`、`records=file`，WiFi 已连接，Web 服务就绪，NTP 已同步；新版固件已移除 RTC 探测。
 - Web 首页 `http://192.168.2.112/index` 返回 200。
 - 未授权访问 `/index` 返回 401。
 - 状态 API 返回 `idle`、`valveOpen=false`、`waterControl=false`。

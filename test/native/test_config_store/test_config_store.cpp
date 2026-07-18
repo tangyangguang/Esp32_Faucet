@@ -48,6 +48,32 @@ void test_non_current_system_config_version_uses_defaults_until_explicit_save() 
                             static_cast<std::uint8_t>(store.lastSystemConfigLoadStatus()));
 }
 
+void test_explicit_app_config_save_merges_fields_and_establishes_current_version() {
+    FakeConfigBackend backend;
+    backend.setInt("faucet_cfg", "valve_s", 2);
+    backend.setInt("faucet_cfg", "hold_pct", 50);
+    backend.setInt("faucet_cfg", "noflow_s", 30);
+    ConfigStore store(backend);
+    SystemConfig live = makeDefaultConfig();
+    live.presets[2].enabled = true;
+    live.presets[2].value = 2500;
+
+    const SystemConfig merged = store.loadSystemConfigForExplicitSave(live);
+
+    TEST_ASSERT_EQUAL_UINT32(2, merged.valveFullPowerSec);
+    TEST_ASSERT_EQUAL_UINT8(50, merged.valveHoldDutyPercent);
+    TEST_ASSERT_EQUAL_UINT32(30, merged.noFlowTimeoutSec);
+    TEST_ASSERT_TRUE(merged.presets[2].enabled);
+    TEST_ASSERT_EQUAL_UINT32(2500, merged.presets[2].value);
+    TEST_ASSERT_TRUE(store.saveSystemConfig(merged));
+    TEST_ASSERT_EQUAL_INT32(store.currentSystemConfigVersion(), backend.getInt("faucet_cfg", "ver", 0));
+
+    const SystemConfig current = store.loadSystemConfig();
+    TEST_ASSERT_EQUAL_UINT32(2, current.valveFullPowerSec);
+    TEST_ASSERT_EQUAL_UINT8(50, current.valveHoldDutyPercent);
+    TEST_ASSERT_EQUAL_UINT32(30, current.noFlowTimeoutSec);
+}
+
 void test_config_save_and_load_round_trips_system_config() {
     FakeConfigBackend backend;
     ConfigStore store(backend);
@@ -329,6 +355,7 @@ int main(int argc, char** argv) {
     UNITY_BEGIN();
     RUN_TEST(test_config_load_uses_defaults_without_matching_version);
     RUN_TEST(test_non_current_system_config_version_uses_defaults_until_explicit_save);
+    RUN_TEST(test_explicit_app_config_save_merges_fields_and_establishes_current_version);
     RUN_TEST(test_config_save_and_load_round_trips_system_config);
     RUN_TEST(test_config_save_and_load_round_trips_sensor_config);
     RUN_TEST(test_config_load_sanitizes_stored_values);

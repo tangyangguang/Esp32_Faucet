@@ -15,6 +15,11 @@ void test_input_voltage_11_to_1_divider() {
     TEST_ASSERT_EQUAL_UINT32(24002, inputVoltageMvFromDivider(2182, 100000, 10000));
 }
 
+void test_tds_board_voltage_restores_10k_15k_input_divider() {
+    TEST_ASSERT_EQUAL_UINT32(1000, inputVoltageMvFromDivider(600, 10000, 15000));
+    TEST_ASSERT_EQUAL_UINT32(40, inputVoltageMvFromDivider(24, 10000, 15000));
+}
+
 void test_tds_formula_uses_25c_when_temperature_invalid() {
     TdsComputationInput input{};
     input.voltageMv = 24;
@@ -138,6 +143,7 @@ int main(int argc, char** argv) {
     UNITY_BEGIN();
     RUN_TEST(test_ntc_51k_pullup_50k_b3950_key_points);
     RUN_TEST(test_input_voltage_11_to_1_divider);
+    RUN_TEST(test_tds_board_voltage_restores_10k_15k_input_divider);
     RUN_TEST(test_tds_formula_uses_25c_when_temperature_invalid);
     RUN_TEST(test_tds_temperature_compensation_sets_fallback_flag);
     RUN_TEST(test_tds_fit_one_point_uses_scale_with_zero_offset);

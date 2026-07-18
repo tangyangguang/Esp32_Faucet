@@ -8,6 +8,8 @@ namespace {
 constexpr std::uint32_t kSampleIntervalMs = 1000;
 constexpr std::uint32_t kInputDividerHighOhm = 100000;
 constexpr std::uint32_t kInputDividerLowOhm = 10000;
+constexpr std::uint32_t kTdsDividerHighOhm = 10000;
+constexpr std::uint32_t kTdsDividerLowOhm = 15000;
 constexpr std::uint32_t kNtcPullupOhm = 51000;
 constexpr std::uint8_t kOfflineThreshold = 3;
 constexpr std::uint8_t kRecoveryThreshold = 3;
@@ -307,15 +309,18 @@ void WaterSensorManager::sampleOnce() {
             next.flags |= kWaterSensorFlagTdsAdcOverflow;
             updateTdsRange(adcRangeFullScaleMv(tdsRange_));
         } else {
-            const std::uint16_t voltageMv = static_cast<std::uint16_t>(std::max<std::int16_t>(0, tds.millivolts));
-            updateTdsRange(voltageMv);
+            const std::uint16_t adcVoltageMv =
+                static_cast<std::uint16_t>(std::max<std::int16_t>(0, tds.millivolts));
+            updateTdsRange(adcVoltageMv);
             if (discardNextTdsSample_) {
                 discardNextTdsSample_ = false;
             } else {
+                const std::uint16_t moduleVoltageMv = static_cast<std::uint16_t>(
+                    inputVoltageMvFromDivider(adcVoltageMv, kTdsDividerHighOhm, kTdsDividerLowOhm));
                 next.tdsVoltageMv.valid = true;
-                next.tdsVoltageMv.value = voltageMv;
+                next.tdsVoltageMv.value = moduleVoltageMv;
                 TdsComputationInput input{};
-                input.voltageMv = voltageMv;
+                input.voltageMv = moduleVoltageMv;
                 input.temperatureValid = next.temperatureCentiC.valid;
                 input.temperatureCentiC = next.temperatureCentiC.valid ? toI16(next.temperatureCentiC.value) : 2500;
                 input.scale = config_.tdsScale;

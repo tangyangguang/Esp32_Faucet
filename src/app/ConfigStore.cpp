@@ -207,6 +207,13 @@ SystemConfig ConfigStore::loadSystemConfig() {
     return config;
 }
 
+SystemConfig ConfigStore::loadSystemConfigForExplicitSave(const SystemConfig& base) {
+    SystemConfig config = base;
+    loadCommonSystemConfig(backend_, config);
+    sanitizeConfig(config);
+    return config;
+}
+
 bool ConfigStore::saveSystemConfig(const SystemConfig& config) {
     std::unique_ptr<SystemConfig> storage(new (std::nothrow) SystemConfig(config));
     if (!storage) {

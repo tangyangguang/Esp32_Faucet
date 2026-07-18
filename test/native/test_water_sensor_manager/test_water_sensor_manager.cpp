@@ -56,9 +56,9 @@ void test_manager_samples_a0_input_voltage_a1_temp_a2_tds() {
     TEST_ASSERT_TRUE(snapshot.temperatureCentiC.valid);
     TEST_ASSERT_INT_WITHIN(50, 2500, snapshot.temperatureCentiC.value);
     TEST_ASSERT_TRUE(snapshot.tdsPpm.valid);
-    TEST_ASSERT_EQUAL_INT32(10, snapshot.tdsPpm.value);
+    TEST_ASSERT_EQUAL_INT32(17, snapshot.tdsPpm.value);
     TEST_ASSERT_TRUE(snapshot.tdsVoltageMv.valid);
-    TEST_ASSERT_EQUAL_INT32(24, snapshot.tdsVoltageMv.value);
+    TEST_ASSERT_EQUAL_INT32(40, snapshot.tdsVoltageMv.value);
     TEST_ASSERT_EQUAL_size_t(1, fixture.adc.readCount[0]);
     TEST_ASSERT_EQUAL_size_t(1, fixture.adc.readCount[1]);
     TEST_ASSERT_EQUAL_size_t(1, fixture.adc.readCount[2]);
@@ -186,7 +186,7 @@ void test_run_summary_records_tds_when_temperature_sensor_is_disabled() {
 
     const WaterSensorRunSummary summary = fixture.manager.finishRun();
     TEST_ASSERT_EQUAL_UINT8(2, summary.sensorSampleCount);
-    TEST_ASSERT_EQUAL_UINT16(10, summary.tdsPpm);
+    TEST_ASSERT_EQUAL_UINT16(17, summary.tdsPpm);
     TEST_ASSERT_TRUE((summary.sensorFlags & kWaterSensorFlagTempUnavailable) != 0);
     TEST_ASSERT_FALSE((summary.sensorFlags & kWaterSensorFlagTempInvalid) != 0);
     TEST_ASSERT_TRUE((summary.sensorFlags & kWaterSensorFlagTdsTempFallback25C) != 0);

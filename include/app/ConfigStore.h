@@ -31,6 +31,7 @@ public:
     explicit ConfigStore(ConfigBackend& backend);
 
     SystemConfig loadSystemConfig();
+    SystemConfig loadSystemConfigForExplicitSave(const SystemConfig& base);
     bool saveSystemConfig(const SystemConfig& config);
     LoadStatus lastSystemConfigLoadStatus() const;
     std::int32_t lastSystemConfigRawVersion() const;

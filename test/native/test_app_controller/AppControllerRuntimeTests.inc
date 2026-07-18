@@ -207,6 +207,44 @@ void test_app_controller_applies_config_only_while_idle() {
     TEST_ASSERT_FALSE(app.applyConfig(updated));
 }
 
+void test_app_controller_applied_valve_and_no_flow_settings_control_runtime() {
+    SystemConfig config = makeDefaultConfig();
+    StatisticsStore statistics;
+    statistics.reset({20260506, 202619, 202605});
+    FilterStore filters(config.filters);
+    MemoryRecordWriter records;
+    AppController app(config, statistics, filters, records);
+    applyTestMeteringScheme(app);
+
+    SystemConfig updated = config;
+    updated.valveFullPowerSec = 2;
+    updated.valveHoldDutyPercent = 50;
+    updated.noFlowTimeoutSec = 30;
+    TEST_ASSERT_TRUE(app.applyConfig(updated));
+
+    app.resetInputs({false, false, false, false}, 0);
+    pressAndReleaseOk(app, 100);
+    pressAndReleaseOk(app, 300);
+    TEST_ASSERT_EQUAL_UINT8(100, app.snapshot().valve.dutyPercent);
+
+    app.tick(input({false, false, false, false}, 2200, 2200000, 1714502402));
+    TEST_ASSERT_EQUAL_UINT8(100, app.snapshot().valve.dutyPercent);
+    app.tick(input({false, false, false, false}, 2500, 2500000, 1714502402));
+    TEST_ASSERT_EQUAL_UINT8(50, app.snapshot().valve.dutyPercent);
+
+    app.tick(input({false, false, false, false}, 20000, 20000000, 1714502420));
+    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(WaterState::Running),
+                            static_cast<std::uint8_t>(app.snapshot().water.state));
+    TEST_ASSERT_TRUE(app.snapshot().valve.enabled);
+
+    app.tick(input({false, false, false, false}, 31000, 31000000, 1714502431));
+    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(WaterState::Error),
+                            static_cast<std::uint8_t>(app.snapshot().water.state));
+    TEST_ASSERT_FALSE(app.snapshot().valve.enabled);
+    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(WaterResult::FlowError),
+                            static_cast<std::uint8_t>(app.snapshot().water.lastResult));
+}
+
 void test_app_controller_emits_beep_patterns_for_actions_and_completion() {
     SystemConfig config = makeDefaultConfig();
     StatisticsStore statistics;
@@ -452,4 +490,3 @@ void test_app_controller_uses_window_flow_for_high_flow_safety() {
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(WaterState::Running),
                             static_cast<std::uint8_t>(app.snapshot().water.state));
 }
-

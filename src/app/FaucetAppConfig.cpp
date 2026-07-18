@@ -115,9 +115,13 @@ void onAppConfigSave(const Esp32BaseAppConfig::SaveSummary& summary) {
         return;
     }
 
-    SystemConfig loaded = g_context.configStore->loadSystemConfig();
+    SystemConfig loaded = g_context.configStore->loadSystemConfigForExplicitSave(*g_context.config);
+    if (!g_context.configStore->saveSystemConfig(loaded)) {
+        ESP32BASE_LOG_E("appcfg", "full current-version config save failed after app config save");
+        return;
+    }
     if (!g_context.app->applyConfig(loaded)) {
-        ESP32BASE_LOG_W("appcfg", "runtime apply failed after app config save");
+        ESP32BASE_LOG_W("appcfg", "runtime apply failed after full app config save");
         return;
     }
     *g_context.config = loaded;
@@ -155,7 +159,7 @@ bool addCoreFields() {
     ok = Esp32BaseAppConfig::addBool({kGroupLocal, kConfigNs, kKeyBeep, "蜂鸣器提示音", true, "控制按键、完成和异常提示音。信号为 GPIO13 PWM；当前 PCB 未连接，需通过外部三极管或 MOS 驱动电路飞线接入 5V 无源蜂鸣器。立即生效。", false, nullptr}) && ok;
 
     ok = Esp32BaseAppConfig::addEnum({kGroupSensors, kConfigNs, kKeyTemperatureSensor, "水温传感器", "none", kTemperatureSensorOptions, 2, "ADS1115 AIN1；50K B3950 NTC，板上 51K 上拉。", false, nullptr}) && ok;
-    ok = Esp32BaseAppConfig::addEnum({kGroupSensors, kConfigNs, kKeyTdsSensor, "TDS 传感器", "none", kTdsSensorOptions, 2, "ADS1115 AIN2；TDS Board V1.0 模拟输出经板上分压接入。", false, nullptr}) && ok;
+    ok = Esp32BaseAppConfig::addEnum({kGroupSensors, kConfigNs, kKeyTdsSensor, "TDS 传感器", "none", kTdsSensorOptions, 2, "TDS Board V1.0 使用 PCB 5V 接口；AO 经 10K/15K 分压进入 ADS1115 AIN2，软件还原模块端电压。", false, nullptr}) && ok;
     ok = Esp32BaseAppConfig::addBool({kGroupSensors, kConfigNs, kKeyTdsTemperatureCompensation, "TDS 温度补偿", true, "启用后使用当前水温补偿 TDS；无有效水温时按 25C 回退并记录标志。", false, nullptr}) && ok;
 
     return ok;

@@ -25,7 +25,6 @@
 #include "drivers/GpioButtonReader.h"
 #include "drivers/PwmBeepHardware.h"
 #include "drivers/PwmValveHardware.h"
-#include "drivers/RtcClock.h"
 #include "drivers/St7789Display.h"
 #include "web/FaucetWeb.h"
 
@@ -91,7 +90,6 @@ faucet::PwmValveHardware g_valveHardware(
     faucet::kPinValvePwm, faucet::kPinValveShutdown, faucet::kLedcChannelValve);
 faucet::BeepDriver g_beep;
 faucet::PwmBeepHardware g_beepHardware(faucet::kPinBeep, faucet::kLedcChannelBeep);
-faucet::RtcClock g_rtc(faucet::kPinI2cSda, faucet::kPinI2cScl);
 faucet::St7789Display g_st7789(faucet::kPinSt7789Backlight);
 faucet::ColorDisplayPresenter* g_colorDisplay = nullptr;
 faucet::ColorDisplayFrame g_lastColorDisplayFrame{};
@@ -266,25 +264,8 @@ bool currentPeriodKeys(std::uint32_t nowSeconds, faucet::PeriodKeys& keys) {
         keys = faucet::PeriodKeys{dayKey, weekKey, monthKey};
         return true;
     }
-    const faucet::RtcDateTime now = g_rtc.readNow();
-    if (!now.valid) {
-        keys = faucet::PeriodKeys{0, 0, 0};
-        return false;
-    }
-    const std::uint32_t rtcSeconds =
-        faucet::secondsSince2000(now.year, now.month, now.day, now.hour, now.minute, now.second);
-    if (rtcSeconds < faucet::kMinRealDateSeconds) {
-        keys = faucet::PeriodKeys{0, 0, 0};
-        return false;
-    }
-
-    const std::uint32_t dayKey = static_cast<std::uint32_t>(now.year) * 10000UL +
-                                 static_cast<std::uint32_t>(now.month) * 100UL + now.day;
-    const std::uint32_t weekKey = faucet::daysSince2000(now.year, now.month, now.day) / 7UL;
-    const std::uint32_t monthKey =
-        static_cast<std::uint32_t>(now.year) * 100UL + static_cast<std::uint32_t>(now.month);
-    keys = faucet::PeriodKeys{dayKey, weekKey, monthKey};
-    return true;
+    keys = faucet::PeriodKeys{0, 0, 0};
+    return false;
 }
 
 void handleTimeSynced(const Esp32BaseNtp::TimeSnapshot& time);
@@ -293,8 +274,6 @@ void initializeApplication() {
     logStartupPhase("app_init_start");
     initializeI2cBus();
     logStartupPhase("i2c_ready");
-    g_rtc.begin();
-    logStartupPhase("rtc_ready");
     g_config = g_configStore.loadSystemConfig();
     g_waterSensors.configure(g_config);
     const bool waterSensorAdcReady = g_waterSensors.begin();
@@ -431,8 +410,7 @@ void initializeApplication() {
     logStartupPhase("display_ready");
 
     ESP32BASE_LOG_I("app",
-                    "application initialized rtc=%s st7789=%s records=%s",
-                    g_rtc.present() ? "present" : "absent",
+                    "application initialized st7789=%s records=%s",
                     g_st7789.present() ? "present" : "absent",
                     g_waterRecordFile.ready() ? "file" : "unavailable");
 }

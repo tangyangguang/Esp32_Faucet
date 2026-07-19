@@ -69,13 +69,21 @@ SystemConfig makeDefaultConfig() {
     config.resultDisplaySec = kDefaultResultDisplaySec;
     config.beepEnabled = true;
     config.temperatureKind = TemperatureKind::None;
+    config.temperatureNominalOhm = kDefaultTemperatureNominalOhm;
+    config.temperatureBeta = kDefaultTemperatureBeta;
+    config.temperaturePullupOhm = kDefaultTemperaturePullupOhm;
     config.temperatureOffsetCentiC = 0;
     config.temperatureCalibrated = false;
     config.tdsKind = TdsKind::None;
+    config.tdsDividerHighOhm = kDefaultTdsDividerHighOhm;
+    config.tdsDividerLowOhm = kDefaultTdsDividerLowOhm;
     config.tdsScale = 1.0f;
     config.tdsOffsetPpm = 0;
     config.tdsCalibrated = false;
     config.tdsTemperatureCompensationEnabled = true;
+    config.inputVoltageDividerHighOhm = kDefaultInputVoltageDividerHighOhm;
+    config.inputVoltageDividerLowOhm = kDefaultInputVoltageDividerLowOhm;
+    config.inputVoltageCalibration = {};
 
     setPreset(config.presets[0], true, PresetType::Volume, 1500, "1.5L");
     setPreset(config.presets[1], true, PresetType::Volume, 7500, "7.5L");
@@ -116,21 +124,55 @@ void sanitizeConfig(SystemConfig& config) {
     config.displaySleepSec =
         clampValue<std::uint32_t>(config.displaySleepSec, kMinDisplaySleepSec, kMaxDisplaySleepSec);
     config.resultDisplaySec = clampValue<std::uint32_t>(config.resultDisplaySec, 0, 60);
-    if (!enumInRange(config.temperatureKind, TemperatureKind::None, TemperatureKind::Ntc50kB3950)) {
+    if (!enumInRange(config.temperatureKind, TemperatureKind::None, TemperatureKind::NtcBeta)) {
         config.temperatureKind = TemperatureKind::None;
     }
+    config.temperatureNominalOhm = clampValue<std::uint32_t>(
+        config.temperatureNominalOhm, kMinSensorResistanceOhm, kMaxSensorResistanceOhm);
+    config.temperatureBeta =
+        clampValue<std::uint32_t>(config.temperatureBeta, kMinTemperatureBeta, kMaxTemperatureBeta);
+    config.temperaturePullupOhm = clampValue<std::uint32_t>(
+        config.temperaturePullupOhm, kMinSensorResistanceOhm, kMaxSensorResistanceOhm);
     config.temperatureOffsetCentiC = clampValue<std::int16_t>(
         config.temperatureOffsetCentiC, kMinTemperatureOffsetCentiC, kMaxTemperatureOffsetCentiC);
     config.temperatureCalibrated = config.temperatureCalibrated && temperatureSensorEnabled(config);
     if (!enumInRange(config.tdsKind, TdsKind::None, TdsKind::AnalogTdsAo)) {
         config.tdsKind = TdsKind::None;
     }
+    config.tdsDividerHighOhm =
+        clampValue<std::uint32_t>(config.tdsDividerHighOhm, kMinSensorResistanceOhm, kMaxSensorResistanceOhm);
+    config.tdsDividerLowOhm =
+        clampValue<std::uint32_t>(config.tdsDividerLowOhm, kMinSensorResistanceOhm, kMaxSensorResistanceOhm);
     if (!std::isfinite(config.tdsScale)) {
         config.tdsScale = 1.0f;
     }
     config.tdsScale = clampValue<float>(config.tdsScale, kMinTdsScale, kMaxTdsScale);
     config.tdsOffsetPpm = clampValue<std::int16_t>(config.tdsOffsetPpm, kMinTdsOffsetPpm, kMaxTdsOffsetPpm);
     config.tdsCalibrated = config.tdsCalibrated && tdsSensorEnabled(config);
+    config.inputVoltageDividerHighOhm = clampValue<std::uint32_t>(
+        config.inputVoltageDividerHighOhm, kMinSensorResistanceOhm, kMaxSensorResistanceOhm);
+    config.inputVoltageDividerLowOhm = clampValue<std::uint32_t>(
+        config.inputVoltageDividerLowOhm, kMinSensorResistanceOhm, kMaxSensorResistanceOhm);
+    InputVoltageCalibration& voltage = config.inputVoltageCalibration;
+    if (voltage.pointCount > kInputVoltageCalibrationMaxPoints) {
+        voltage = {};
+    }
+    for (std::uint8_t i = 0; i < voltage.pointCount; ++i) {
+        const InputVoltageCalibrationPoint& point = voltage.points[i];
+        if (point.adcRaw < 0 || point.adcRawMin < 0 || point.adcRawMax < point.adcRawMin ||
+            point.adcRaw < point.adcRawMin || point.adcRaw > point.adcRawMax ||
+            point.adcRange > 3 || point.adcMillivolts > 4096 ||
+            point.theoreticalInputMillivolts < 1000 || point.theoreticalInputMillivolts > 60000 ||
+            point.actualInputMillivolts < 1000 || point.actualInputMillivolts > 60000) {
+            voltage = {};
+            break;
+        }
+    }
+    voltage.gainPpm = clampValue<std::int32_t>(
+        voltage.gainPpm, kInputVoltageCalibrationMinGainPpm, kInputVoltageCalibrationMaxGainPpm);
+    voltage.offsetMillivolts = clampValue<std::int32_t>(
+        voltage.offsetMillivolts, kInputVoltageCalibrationMinOffsetMv, kInputVoltageCalibrationMaxOffsetMv);
+    voltage.calibrated = voltage.calibrated && voltage.pointCount > 0;
 
     for (auto& preset : config.presets) {
         if (preset.type == PresetType::Volume) {

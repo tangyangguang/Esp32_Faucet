@@ -5,9 +5,9 @@
 using namespace faucet;
 
 void test_ntc_51k_pullup_50k_b3950_key_points() {
-    TEST_ASSERT_INT16_WITHIN(50, 2500, ntcCentiCFromDividerMv(1634, 3300, 51000));
-    TEST_ASSERT_INT16_WITHIN(120, 1000, ntcCentiCFromDividerMv(2192, 3300, 51000));
-    TEST_ASSERT_INT16_WITHIN(120, 4000, ntcCentiCFromDividerMv(1129, 3300, 51000));
+    TEST_ASSERT_INT16_WITHIN(50, 2500, ntcCentiCFromDividerMv(1634, 3300, 51000, 50000, 3950));
+    TEST_ASSERT_INT16_WITHIN(120, 1000, ntcCentiCFromDividerMv(2192, 3300, 51000, 50000, 3950));
+    TEST_ASSERT_INT16_WITHIN(120, 4000, ntcCentiCFromDividerMv(1129, 3300, 51000, 50000, 3950));
 }
 
 void test_input_voltage_11_to_1_divider() {

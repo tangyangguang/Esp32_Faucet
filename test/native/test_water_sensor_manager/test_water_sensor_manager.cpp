@@ -11,7 +11,7 @@ namespace {
 
 SystemConfig enabledSensorConfig() {
     SystemConfig config = makeDefaultConfig();
-    config.temperatureKind = TemperatureKind::Ntc50kB3950;
+    config.temperatureKind = TemperatureKind::NtcBeta;
     config.tdsKind = TdsKind::AnalogTdsAo;
     config.tdsCalibrated = true;
     return config;
@@ -81,6 +81,54 @@ void test_manager_can_skip_input_voltage_when_only_water_sensors_are_wired() {
     TEST_ASSERT_EQUAL_size_t(0, fixture.adc.readCount[0]);
     TEST_ASSERT_EQUAL_size_t(3, fixture.adc.readCount[1]);
     TEST_ASSERT_EQUAL_size_t(3, fixture.adc.readCount[2]);
+}
+
+void test_temperature_open_and_short_display_as_invalid_without_changing_tds_zero() {
+    SensorManagerFixture fixture;
+    fixture.adc.values[0] = okMv(1091);
+    fixture.adc.values[1] = okMv(3290);
+    fixture.adc.values[2] = okMv(0);
+    std::uint32_t nowMs = 0;
+    advanceSample(fixture.manager, nowMs);
+
+    WaterSensorSnapshot snapshot = fixture.manager.snapshot();
+    TEST_ASSERT_FALSE(snapshot.temperatureCentiC.valid);
+    TEST_ASSERT_TRUE((snapshot.flags & kWaterSensorFlagTempOpen) != 0);
+    TEST_ASSERT_TRUE(snapshot.tdsPpm.valid);
+    TEST_ASSERT_EQUAL_INT32(0, snapshot.tdsPpm.value);
+
+    fixture.adc.values[1] = okMv(10);
+    advanceSample(fixture.manager, nowMs);
+    snapshot = fixture.manager.snapshot();
+    TEST_ASSERT_FALSE(snapshot.temperatureCentiC.valid);
+    TEST_ASSERT_TRUE((snapshot.flags & kWaterSensorFlagTempShort) != 0);
+}
+
+void test_input_voltage_calibration_saves_raw_points_and_recomputes_fit() {
+    SensorManagerFixture fixture;
+    fixture.setDefaultReadings();
+    std::uint32_t nowMs = 0;
+    for (std::uint8_t i = 0; i < 5; ++i) {
+        advanceSample(fixture.manager, nowMs);
+    }
+    TEST_ASSERT_TRUE(fixture.manager.saveInputVoltageCalibrationPoint(fixture.config, 12000, 1720000000));
+    TEST_ASSERT_EQUAL_UINT8(1, fixture.config.inputVoltageCalibration.pointCount);
+    TEST_ASSERT_TRUE(fixture.config.inputVoltageCalibration.calibrated);
+    TEST_ASSERT_INT_WITHIN(5, 8728, fixture.config.inputVoltageCalibration.points[0].adcRaw);
+    TEST_ASSERT_EQUAL_UINT32(12001, fixture.config.inputVoltageCalibration.points[0].theoreticalInputMillivolts);
+
+    fixture.adc.values[0] = okMv(1500);
+    for (std::uint8_t i = 0; i < 5; ++i) {
+        advanceSample(fixture.manager, nowMs);
+    }
+    TEST_ASSERT_TRUE(fixture.manager.saveInputVoltageCalibrationPoint(fixture.config, 16400, 1720000010));
+    TEST_ASSERT_EQUAL_UINT8(2, fixture.config.inputVoltageCalibration.pointCount);
+    TEST_ASSERT_TRUE(fixture.config.inputVoltageCalibration.gainPpm < 1000000);
+    TEST_ASSERT_TRUE(fixture.manager.removeInputVoltageCalibrationPoint(fixture.config, 0));
+    TEST_ASSERT_EQUAL_UINT8(1, fixture.config.inputVoltageCalibration.pointCount);
+    TEST_ASSERT_TRUE(fixture.manager.clearInputVoltageCalibration(fixture.config));
+    TEST_ASSERT_EQUAL_UINT8(0, fixture.config.inputVoltageCalibration.pointCount);
+    TEST_ASSERT_FALSE(fixture.config.inputVoltageCalibration.calibrated);
 }
 
 void test_manager_marks_adc_offline_after_three_failures() {
@@ -366,6 +414,8 @@ int main(int argc, char** argv) {
     UNITY_BEGIN();
     RUN_TEST(test_manager_samples_a0_input_voltage_a1_temp_a2_tds);
     RUN_TEST(test_manager_can_skip_input_voltage_when_only_water_sensors_are_wired);
+    RUN_TEST(test_temperature_open_and_short_display_as_invalid_without_changing_tds_zero);
+    RUN_TEST(test_input_voltage_calibration_saves_raw_points_and_recomputes_fit);
     RUN_TEST(test_manager_marks_adc_offline_after_three_failures);
     RUN_TEST(test_manager_recovers_after_three_successes);
     RUN_TEST(test_tds_range_switches_up_at_85_percent);

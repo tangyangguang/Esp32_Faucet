@@ -63,10 +63,16 @@ public:
     bool discardTdsCalibrationSession();
     bool expireTdsCalibrationSession(std::uint32_t nowSeconds);
     bool applyReadyTdsCalibration(SystemConfig& config);
+    bool saveInputVoltageCalibrationPoint(SystemConfig& config,
+                                          std::uint32_t actualMillivolts,
+                                          std::uint32_t nowSeconds);
+    bool removeInputVoltageCalibrationPoint(SystemConfig& config, std::uint8_t index);
+    bool clearInputVoltageCalibration(SystemConfig& config);
 
 private:
     static constexpr std::size_t kCalibrationMaxSamples = 32;
     static constexpr std::size_t kRunWindowSamples = 5;
+    static constexpr std::size_t kInputVoltageWindowSamples = 5;
 
     struct RunWindowSample {
         bool temperatureValid = false;
@@ -111,6 +117,10 @@ private:
     TdsCalibrationPointSnapshot tdsCalibrationPoints_[kTdsCalibrationMaxPoints];
     std::uint8_t tdsCalibrationPointCount_;
     TdsCalibrationFitResult tdsCalibrationFit_;
+    std::int16_t inputVoltageRawWindow_[kInputVoltageWindowSamples]{};
+    std::uint16_t inputVoltageAdcMvWindow_[kInputVoltageWindowSamples]{};
+    std::uint8_t inputVoltageWindowNext_ = 0;
+    std::uint8_t inputVoltageWindowCount_ = 0;
 
     void sampleOnce();
     void updateOfflineState(std::uint8_t failureCount);
@@ -119,6 +129,8 @@ private:
     bool calibrationReady() const;
     std::uint16_t calibrationRawAverage() const;
     bool refreshTdsCalibrationCandidate();
+    bool refreshInputVoltageCalibration(InputVoltageCalibration& calibration) const;
+    void addInputVoltageSample(const AdcReadResult& input);
     void accumulateRunSample(const WaterSensorSnapshot& current);
 };
 

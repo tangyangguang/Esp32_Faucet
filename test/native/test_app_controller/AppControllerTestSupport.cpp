@@ -40,7 +40,7 @@ MeteringSchemeRecord testMeteringSchemeRecord(std::uint32_t id,
 
 SystemConfig enabledWaterSensorConfig() {
     SystemConfig config = makeDefaultConfig();
-    config.temperatureKind = TemperatureKind::Ntc50kB3950;
+    config.temperatureKind = TemperatureKind::NtcBeta;
     config.tdsKind = TdsKind::AnalogTdsAo;
     config.tdsCalibrated = true;
     return config;

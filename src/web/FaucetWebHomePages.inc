@@ -356,6 +356,16 @@ void sendMachineStatusCard(const AppSnapshot& snapshot, bool screenOn) {
     } else {
         std::snprintf(currentTds, sizeof(currentTds), "--");
     }
+    char inputVoltage[24]{};
+    if (snapshot.sensors.inputVoltageMv.valid) {
+        std::snprintf(inputVoltage,
+                      sizeof(inputVoltage),
+                      "%ld.%03ld V",
+                      static_cast<long>(snapshot.sensors.inputVoltageMv.value / 1000),
+                      static_cast<long>(snapshot.sensors.inputVoltageMv.value % 1000));
+    } else {
+        std::snprintf(inputVoltage, sizeof(inputVoltage), "-- V");
+    }
 
     const bool showResult = snapshot.water.state == WaterState::Error || snapshot.localMode == LocalUiMode::Result;
     const bool showRunningNote = snapshot.water.state == WaterState::Running;
@@ -387,6 +397,11 @@ void sendMachineStatusCard(const AppSnapshot& snapshot, bool screenOn) {
     sendMachineStatusItem("valveStatus", "阀门", snapshot.water.valveOpen ? "开" : "关");
     sendMachineStatusSensorItem("temperatureStatus", "水温", currentTemperature, "C");
     sendMachineStatusSensorItem("tdsStatus", "TDS", currentTds, "ppm");
+    sendMachineStatusItemNote("inputVoltageStatus",
+                              "inputVoltageNote",
+                              "输入",
+                              inputVoltage,
+                              snapshot.sensors.inputVoltageCalibrated ? "已校准" : "参考");
     sendMachineStatusItemNote("valvePwmDuty", "valvePwmNote", "PWM", valvePwmDuty, valvePwmNote);
     sendMachineStatusItem("resultStatus", "结果", resultText(snapshot.water.lastResult), "resultItem", !showResult);
     sendMachineStatusItem("droppedPulses", "丢弃脉冲", droppedPulses, "droppedPulsesItem", snapshot.flowDroppedPulses == 0);
@@ -683,4 +698,3 @@ void handlePresetsPage() {
     Esp32BaseWeb::sendChunk("</table>");
     sendPageEnd();
 }
-

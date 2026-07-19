@@ -327,7 +327,8 @@ bool writeStatusJson(const AppSnapshot& snapshot,
                   screenOn ? "true" : "false");
     writer.append(",\"sensor\":{\"inputVoltageMv\":");
     appendSensorValue(writer, snapshot.sensors.inputVoltageMv);
-    writer.append(",\"temperature\":{\"enabled\":%s,\"currentCentiC\":",
+    writer.append(",\"inputVoltageCalibrated\":%s,\"temperature\":{\"enabled\":%s,\"currentCentiC\":",
+                  snapshot.sensors.inputVoltageCalibrated ? "true" : "false",
                   snapshot.temperatureSensorEnabled ? "true" : "false");
     appendSensorValue(writer, snapshot.sensors.temperatureCentiC);
     writer.append(",\"calibrated\":%s},\"tds\":{\"enabled\":%s,\"currentPpm\":",

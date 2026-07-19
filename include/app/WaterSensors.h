@@ -13,6 +13,8 @@ constexpr std::uint16_t kWaterSensorFlagTdsUncalibrated = 1U << 4U;
 constexpr std::uint16_t kWaterSensorFlagTdsTempFallback25C = 1U << 5U;
 constexpr std::uint16_t kWaterSensorFlagTempUnavailable = 1U << 6U;
 constexpr std::uint16_t kWaterSensorFlagTdsUnavailable = 1U << 7U;
+constexpr std::uint16_t kWaterSensorFlagTempOpen = 1U << 8U;
+constexpr std::uint16_t kWaterSensorFlagTempShort = 1U << 9U;
 
 struct SensorValue {
     bool valid = false;
@@ -21,6 +23,9 @@ struct SensorValue {
 
 struct WaterSensorSnapshot {
     SensorValue inputVoltageMv;
+    SensorValue inputVoltageTheoreticalMv;
+    SensorValue inputVoltageAdcMv;
+    SensorValue inputVoltageAdcRaw;
     SensorValue temperatureRawCentiC;
     SensorValue temperatureCentiC;
     SensorValue tdsPpm;
@@ -29,6 +34,7 @@ struct WaterSensorSnapshot {
     bool tdsCalibrated = false;
     bool tdsTemperatureCompensated = false;
     bool tdsTempFallback25C = false;
+    bool inputVoltageCalibrated = false;
 };
 
 struct TdsComputationInput {
@@ -69,7 +75,11 @@ struct TdsCalibrationFitResult {
     std::uint16_t rawSpanPpm = 0;
 };
 
-std::int16_t ntcCentiCFromDividerMv(std::uint16_t adcMv, std::uint16_t vrefMv, std::uint32_t pullupOhm);
+std::int16_t ntcCentiCFromDividerMv(std::uint16_t adcMv,
+                                    std::uint16_t vrefMv,
+                                    std::uint32_t pullupOhm,
+                                    std::uint32_t nominalOhm,
+                                    std::uint32_t beta);
 
 std::uint32_t inputVoltageMvFromDivider(std::uint16_t adcMv, std::uint32_t highOhm, std::uint32_t lowOhm);
 

@@ -55,6 +55,7 @@ AdcReadResult adcRawToMillivolts(std::int16_t raw, AdcRange range) {
     const std::int32_t mv = static_cast<std::int32_t>(raw) * fullScaleMv / 32768;
     result.ok = true;
     result.overflow = raw >= 32760;
+    result.raw = raw;
     result.millivolts = static_cast<std::int16_t>(mv);
     return result;
 }

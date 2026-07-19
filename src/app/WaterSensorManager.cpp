@@ -6,16 +6,16 @@ namespace faucet {
 namespace {
 
 constexpr std::uint32_t kSampleIntervalMs = 1000;
-constexpr std::uint32_t kInputDividerHighOhm = 100000;
-constexpr std::uint32_t kInputDividerLowOhm = 10000;
-constexpr std::uint32_t kTdsDividerHighOhm = 10000;
-constexpr std::uint32_t kTdsDividerLowOhm = 15000;
-constexpr std::uint32_t kNtcPullupOhm = 51000;
 constexpr std::uint8_t kOfflineThreshold = 3;
 constexpr std::uint8_t kRecoveryThreshold = 3;
 constexpr std::uint8_t kTdsDownshiftWindows = 8;
 constexpr std::uint8_t kCalibrationMinSamples = 12;
 constexpr std::uint32_t kTdsCalibrationSessionTimeoutSec = 30UL * 60UL;
+constexpr std::uint16_t kTemperatureShortThresholdMv = 50;
+constexpr std::uint16_t kTemperatureOpenThresholdMv = 3250;
+constexpr std::uint32_t kInputVoltageCalibrationMinMv = 1000;
+constexpr std::uint32_t kInputVoltageCalibrationMaxMv = 60000;
+constexpr std::uint32_t kInputVoltageCalibrationMinSpanMv = 1000;
 
 std::uint16_t toU16(std::int32_t value) {
     if (value <= 0) {
@@ -35,7 +35,7 @@ std::int16_t toI16(std::int32_t value) {
 }
 
 bool enabledTemperature(const SystemConfig& config) {
-    return config.temperatureKind == TemperatureKind::Ntc50kB3950;
+    return config.temperatureKind == TemperatureKind::NtcBeta;
 }
 
 bool enabledTds(const SystemConfig& config) {
@@ -70,8 +70,14 @@ WaterSensorManager::WaterSensorManager(AdcReader& adc, bool sampleInputVoltage)
       tdsCalibrationFit_{} {}
 
 void WaterSensorManager::configure(const SystemConfig& config) {
+    const bool dividerChanged = config_.inputVoltageDividerHighOhm != config.inputVoltageDividerHighOhm ||
+                                config_.inputVoltageDividerLowOhm != config.inputVoltageDividerLowOhm;
     config_ = config;
     sanitizeConfig(config_);
+    if (dividerChanged) {
+        inputVoltageWindowNext_ = 0;
+        inputVoltageWindowCount_ = 0;
+    }
 }
 
 bool WaterSensorManager::begin() {
@@ -268,6 +274,164 @@ bool WaterSensorManager::applyReadyTdsCalibration(SystemConfig& config) {
     return discardTdsCalibrationSession();
 }
 
+void WaterSensorManager::addInputVoltageSample(const AdcReadResult& input) {
+    inputVoltageRawWindow_[inputVoltageWindowNext_] = input.raw;
+    inputVoltageAdcMvWindow_[inputVoltageWindowNext_] =
+        static_cast<std::uint16_t>(std::max<std::int16_t>(0, input.millivolts));
+    inputVoltageWindowNext_ = static_cast<std::uint8_t>((inputVoltageWindowNext_ + 1U) % kInputVoltageWindowSamples);
+    if (inputVoltageWindowCount_ < kInputVoltageWindowSamples) {
+        ++inputVoltageWindowCount_;
+    }
+}
+
+bool WaterSensorManager::refreshInputVoltageCalibration(InputVoltageCalibration& calibration) const {
+    if (calibration.pointCount == 0) {
+        calibration = {};
+        return true;
+    }
+
+    std::sort(calibration.points,
+              calibration.points + calibration.pointCount,
+              [](const InputVoltageCalibrationPoint& a, const InputVoltageCalibrationPoint& b) {
+                  return a.theoreticalInputMillivolts < b.theoreticalInputMillivolts;
+              });
+
+    double gain = 1.0;
+    double offset = 0.0;
+    if (calibration.pointCount == 1) {
+        const InputVoltageCalibrationPoint& point = calibration.points[0];
+        if (point.theoreticalInputMillivolts == 0) {
+            return false;
+        }
+        gain = static_cast<double>(point.actualInputMillivolts) /
+               static_cast<double>(point.theoreticalInputMillivolts);
+    } else {
+        const std::uint32_t span =
+            calibration.points[calibration.pointCount - 1U].theoreticalInputMillivolts -
+            calibration.points[0].theoreticalInputMillivolts;
+        if (span < kInputVoltageCalibrationMinSpanMv) {
+            return false;
+        }
+        double sumX = 0.0;
+        double sumY = 0.0;
+        double sumXX = 0.0;
+        double sumXY = 0.0;
+        for (std::uint8_t i = 0; i < calibration.pointCount; ++i) {
+            const double x = calibration.points[i].theoreticalInputMillivolts;
+            const double y = calibration.points[i].actualInputMillivolts;
+            sumX += x;
+            sumY += y;
+            sumXX += x * x;
+            sumXY += x * y;
+        }
+        const double n = calibration.pointCount;
+        const double denominator = n * sumXX - sumX * sumX;
+        if (denominator <= 0.0) {
+            return false;
+        }
+        gain = (n * sumXY - sumX * sumY) / denominator;
+        offset = (sumY - gain * sumX) / n;
+    }
+
+    const std::int32_t gainPpm = static_cast<std::int32_t>(gain * 1000000.0 + 0.5);
+    const std::int32_t offsetMv = static_cast<std::int32_t>(offset >= 0.0 ? offset + 0.5 : offset - 0.5);
+    if (gainPpm < kInputVoltageCalibrationMinGainPpm || gainPpm > kInputVoltageCalibrationMaxGainPpm ||
+        offsetMv < kInputVoltageCalibrationMinOffsetMv || offsetMv > kInputVoltageCalibrationMaxOffsetMv) {
+        return false;
+    }
+    for (std::uint8_t i = 0; i < calibration.pointCount; ++i) {
+        const InputVoltageCalibrationPoint& point = calibration.points[i];
+        const double predicted = gain * point.theoreticalInputMillivolts + offset;
+        const double error = std::abs(predicted - point.actualInputMillivolts);
+        const double allowed = std::max(50.0, point.actualInputMillivolts * 0.005);
+        if (calibration.pointCount >= 3 && error > allowed) {
+            return false;
+        }
+    }
+    calibration.gainPpm = gainPpm;
+    calibration.offsetMillivolts = offsetMv;
+    calibration.calibrated = true;
+    return true;
+}
+
+bool WaterSensorManager::saveInputVoltageCalibrationPoint(SystemConfig& config,
+                                                          std::uint32_t actualMillivolts,
+                                                          std::uint32_t nowSeconds) {
+    if (!sampleInputVoltage_ || inputVoltageWindowCount_ < kInputVoltageWindowSamples ||
+        actualMillivolts < kInputVoltageCalibrationMinMv || actualMillivolts > kInputVoltageCalibrationMaxMv ||
+        config.inputVoltageCalibration.pointCount >= kInputVoltageCalibrationMaxPoints) {
+        return false;
+    }
+    std::int16_t raw[kInputVoltageWindowSamples]{};
+    std::uint16_t adcMv[kInputVoltageWindowSamples]{};
+    std::copy(inputVoltageRawWindow_, inputVoltageRawWindow_ + kInputVoltageWindowSamples, raw);
+    std::copy(inputVoltageAdcMvWindow_, inputVoltageAdcMvWindow_ + kInputVoltageWindowSamples, adcMv);
+    std::sort(raw, raw + kInputVoltageWindowSamples);
+    std::sort(adcMv, adcMv + kInputVoltageWindowSamples);
+    const std::uint32_t lowInput =
+        inputVoltageMvFromDivider(adcMv[0], config.inputVoltageDividerHighOhm, config.inputVoltageDividerLowOhm);
+    const std::uint32_t highInput =
+        inputVoltageMvFromDivider(adcMv[kInputVoltageWindowSamples - 1U],
+                                  config.inputVoltageDividerHighOhm,
+                                  config.inputVoltageDividerLowOhm);
+    if (highInput - lowInput > std::max<std::uint32_t>(50, highInput / 500U)) {
+        return false;
+    }
+    InputVoltageCalibration candidate = config.inputVoltageCalibration;
+    InputVoltageCalibrationPoint& point = candidate.points[candidate.pointCount];
+    point.adcRaw = raw[kInputVoltageWindowSamples / 2U];
+    point.adcRawMin = raw[0];
+    point.adcRawMax = raw[kInputVoltageWindowSamples - 1U];
+    point.adcRange = static_cast<std::uint8_t>(AdcRange::P4096);
+    point.adcMillivolts = adcMv[kInputVoltageWindowSamples / 2U];
+    point.theoreticalInputMillivolts =
+        inputVoltageMvFromDivider(static_cast<std::uint16_t>(point.adcMillivolts),
+                                  config.inputVoltageDividerHighOhm,
+                                  config.inputVoltageDividerLowOhm);
+    point.actualInputMillivolts = actualMillivolts;
+    point.capturedAt = nowSeconds;
+    for (std::uint8_t i = 0; i < candidate.pointCount; ++i) {
+        const std::uint32_t existing = candidate.points[i].theoreticalInputMillivolts;
+        const std::uint32_t difference = existing > point.theoreticalInputMillivolts
+                                             ? existing - point.theoreticalInputMillivolts
+                                             : point.theoreticalInputMillivolts - existing;
+        if (difference < kInputVoltageCalibrationMinSpanMv) {
+            return false;
+        }
+    }
+    ++candidate.pointCount;
+    if (!refreshInputVoltageCalibration(candidate)) {
+        return false;
+    }
+    config.inputVoltageCalibration = candidate;
+    configure(config);
+    return true;
+}
+
+bool WaterSensorManager::removeInputVoltageCalibrationPoint(SystemConfig& config, std::uint8_t index) {
+    InputVoltageCalibration candidate = config.inputVoltageCalibration;
+    if (index >= candidate.pointCount) {
+        return false;
+    }
+    for (std::uint8_t i = index; i + 1U < candidate.pointCount; ++i) {
+        candidate.points[i] = candidate.points[i + 1U];
+    }
+    --candidate.pointCount;
+    candidate.points[candidate.pointCount] = {};
+    if (!refreshInputVoltageCalibration(candidate)) {
+        return false;
+    }
+    config.inputVoltageCalibration = candidate;
+    configure(config);
+    return true;
+}
+
+bool WaterSensorManager::clearInputVoltageCalibration(SystemConfig& config) {
+    config.inputVoltageCalibration = {};
+    configure(config);
+    return true;
+}
+
 void WaterSensorManager::sampleOnce() {
     WaterSensorSnapshot next{};
     std::uint8_t failures = 0;
@@ -275,9 +439,24 @@ void WaterSensorManager::sampleOnce() {
     if (sampleInputVoltage_) {
         const AdcReadResult input = adc_.readSingleEnded(AdcChannel::A0);
         if (input.ok) {
+            addInputVoltageSample(input);
+            next.inputVoltageAdcRaw.valid = true;
+            next.inputVoltageAdcRaw.value = input.raw;
+            next.inputVoltageAdcMv.valid = true;
+            next.inputVoltageAdcMv.value = input.millivolts;
+            const std::int32_t theoretical = static_cast<std::int32_t>(
+                inputVoltageMvFromDivider(input.millivolts,
+                                          config_.inputVoltageDividerHighOhm,
+                                          config_.inputVoltageDividerLowOhm));
+            next.inputVoltageTheoreticalMv.valid = true;
+            next.inputVoltageTheoreticalMv.value = theoretical;
+            const std::int64_t calibrated =
+                static_cast<std::int64_t>(theoretical) * config_.inputVoltageCalibration.gainPpm / 1000000LL +
+                config_.inputVoltageCalibration.offsetMillivolts;
             next.inputVoltageMv.valid = true;
-            next.inputVoltageMv.value = static_cast<std::int32_t>(
-                inputVoltageMvFromDivider(input.millivolts, kInputDividerHighOhm, kInputDividerLowOhm));
+            next.inputVoltageMv.value =
+                static_cast<std::int32_t>(std::max<std::int64_t>(0, std::min<std::int64_t>(INT32_MAX, calibrated)));
+            next.inputVoltageCalibrated = config_.inputVoltageCalibration.calibrated;
         } else {
             ++failures;
         }
@@ -285,16 +464,25 @@ void WaterSensorManager::sampleOnce() {
 
     if (enabledTemperature(config_)) {
         const AdcReadResult temp = adc_.readSingleEnded(AdcChannel::A1);
-        if (temp.ok && temp.millivolts > 0 && temp.millivolts < kSensorVrefMv) {
+        if (temp.ok && temp.millivolts > kTemperatureShortThresholdMv &&
+            temp.millivolts < kTemperatureOpenThresholdMv) {
             const std::int16_t rawCentiC =
-                ntcCentiCFromDividerMv(static_cast<std::uint16_t>(temp.millivolts), kSensorVrefMv, kNtcPullupOhm);
+                ntcCentiCFromDividerMv(static_cast<std::uint16_t>(temp.millivolts),
+                                      kSensorVrefMv,
+                                      config_.temperaturePullupOhm,
+                                      config_.temperatureNominalOhm,
+                                      config_.temperatureBeta);
             next.temperatureRawCentiC.valid = true;
             next.temperatureRawCentiC.value = rawCentiC;
             next.temperatureCentiC.valid = true;
             next.temperatureCentiC.value = rawCentiC + config_.temperatureOffsetCentiC;
         } else {
             next.flags |= kWaterSensorFlagTempInvalid;
-            if (!temp.ok) {
+            if (temp.ok && temp.millivolts <= kTemperatureShortThresholdMv) {
+                next.flags |= kWaterSensorFlagTempShort;
+            } else if (temp.ok && temp.millivolts >= kTemperatureOpenThresholdMv) {
+                next.flags |= kWaterSensorFlagTempOpen;
+            } else {
                 ++failures;
             }
         }
@@ -316,7 +504,7 @@ void WaterSensorManager::sampleOnce() {
                 discardNextTdsSample_ = false;
             } else {
                 const std::uint16_t moduleVoltageMv = static_cast<std::uint16_t>(
-                    inputVoltageMvFromDivider(adcVoltageMv, kTdsDividerHighOhm, kTdsDividerLowOhm));
+                inputVoltageMvFromDivider(adcVoltageMv, config_.tdsDividerHighOhm, config_.tdsDividerLowOhm));
                 next.tdsVoltageMv.valid = true;
                 next.tdsVoltageMv.value = moduleVoltageMv;
                 TdsComputationInput input{};

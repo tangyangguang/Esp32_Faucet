@@ -21,6 +21,7 @@ enum class AdcRange : std::uint8_t {
 struct AdcReadResult {
     bool ok = false;
     bool overflow = false;
+    std::int16_t raw = 0;
     std::int16_t millivolts = 0;
 };
 

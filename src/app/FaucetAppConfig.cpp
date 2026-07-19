@@ -39,12 +39,19 @@ const char kKeyDisplaySleep[] = "disp_s";
 const char kKeyResultDisplay[] = "result_s";
 const char kKeyBeep[] = "beep";
 const char kKeyTemperatureSensor[] = "temp_sensor";
+const char kKeyTemperatureNominal[] = "temp_r25";
+const char kKeyTemperatureBeta[] = "temp_beta";
+const char kKeyTemperaturePullup[] = "temp_pull";
 const char kKeyTdsSensor[] = "tds_sensor";
+const char kKeyTdsDividerHigh[] = "tds_rh";
+const char kKeyTdsDividerLow[] = "tds_rl";
 const char kKeyTdsTemperatureCompensation[] = "tds_temp_comp";
+const char kKeyInputDividerHigh[] = "vin_rh";
+const char kKeyInputDividerLow[] = "vin_rl";
 
 const Esp32BaseAppConfig::EnumOption kTemperatureSensorOptions[] = {
     {"none", "禁用"},
-    {"ntc50k_b3950", "50K B3950 NTC"},
+    {"ntc_beta", "NTC 热敏电阻"},
 };
 
 const Esp32BaseAppConfig::EnumOption kTdsSensorOptions[] = {
@@ -119,6 +126,30 @@ void onAppConfigSave(const Esp32BaseAppConfig::SaveSummary& summary) {
     }
 
     SystemConfig loaded = g_context.configStore->loadSystemConfigForExplicitSave(*g_context.config);
+    const bool temperatureHardwareChanged =
+        loaded.temperatureKind != g_context.config->temperatureKind ||
+        loaded.temperatureNominalOhm != g_context.config->temperatureNominalOhm ||
+        loaded.temperatureBeta != g_context.config->temperatureBeta ||
+        loaded.temperaturePullupOhm != g_context.config->temperaturePullupOhm;
+    const bool tdsHardwareChanged =
+        loaded.tdsKind != g_context.config->tdsKind ||
+        loaded.tdsDividerHighOhm != g_context.config->tdsDividerHighOhm ||
+        loaded.tdsDividerLowOhm != g_context.config->tdsDividerLowOhm;
+    const bool inputVoltageHardwareChanged =
+        loaded.inputVoltageDividerHighOhm != g_context.config->inputVoltageDividerHighOhm ||
+        loaded.inputVoltageDividerLowOhm != g_context.config->inputVoltageDividerLowOhm;
+    if (temperatureHardwareChanged) {
+        loaded.temperatureOffsetCentiC = 0;
+        loaded.temperatureCalibrated = false;
+    }
+    if (tdsHardwareChanged) {
+        loaded.tdsScale = 1.0f;
+        loaded.tdsOffsetPpm = 0;
+        loaded.tdsCalibrated = false;
+    }
+    if (inputVoltageHardwareChanged) {
+        loaded.inputVoltageCalibration = {};
+    }
     if (!g_context.configStore->saveSystemConfig(loaded)) {
         ESP32BASE_LOG_E("appcfg", "full current-version config save failed after app config save");
         return;
@@ -165,9 +196,16 @@ bool addCoreFields() {
     ok = Esp32BaseAppConfig::addInt({kGroupLocal, kConfigNs, kKeyTimeStep, "时间步进", static_cast<std::int32_t>(kDefaultTimeAdjustStepSec), static_cast<std::int32_t>(kMinTimeAdjustStepSec), static_cast<std::int32_t>(kMaxTimeAdjustStepSec), 1, "s", checkedHelp("按键确认页时间步进；Web 表单不受影响。"), false, nullptr}) && ok;
     ok = Esp32BaseAppConfig::addBool({kGroupLocal, kConfigNs, kKeyBeep, "蜂鸣器提示音", true, checkedHelp("GPIO13 PWM；PCB 未连接，外接驱动后飞线接 5V 无源蜂鸣器。"), false, nullptr}) && ok;
 
-    ok = Esp32BaseAppConfig::addEnum({kGroupSensors, kConfigNs, kKeyTemperatureSensor, "水温传感器", "none", kTemperatureSensorOptions, 2, checkedHelp("ADS1115 AIN1；50K B3950 NTC，板上 51K 上拉。"), false, nullptr}) && ok;
-    ok = Esp32BaseAppConfig::addEnum({kGroupSensors, kConfigNs, kKeyTdsSensor, "TDS 传感器", "none", kTdsSensorOptions, 2, checkedHelp("PCB 5V TDS；AO 经 10K/15K 分压接 ADS1115 AIN2。"), false, nullptr}) && ok;
+    ok = Esp32BaseAppConfig::addEnum({kGroupSensors, kConfigNs, kKeyTemperatureSensor, "水温传感器", "none", kTemperatureSensorOptions, 2, checkedHelp("ADS1115 AIN1；按探头 R25、B 值和板上上拉电阻计算。"), false, nullptr}) && ok;
+    ok = Esp32BaseAppConfig::addInt({kGroupSensors, kConfigNs, kKeyTemperatureNominal, "温度探头 R25", static_cast<std::int32_t>(kDefaultTemperatureNominalOhm), static_cast<std::int32_t>(kMinSensorResistanceOhm), static_cast<std::int32_t>(kMaxSensorResistanceOhm), 1000, "Ω", checkedHelp("探头在 25C 的标称阻值；修改会清除温度校准。"), false, nullptr}) && ok;
+    ok = Esp32BaseAppConfig::addInt({kGroupSensors, kConfigNs, kKeyTemperatureBeta, "温度探头 B 值", static_cast<std::int32_t>(kDefaultTemperatureBeta), static_cast<std::int32_t>(kMinTemperatureBeta), static_cast<std::int32_t>(kMaxTemperatureBeta), 10, "K", checkedHelp("NTC 数据表标称 B 值；修改会清除温度校准。"), false, nullptr}) && ok;
+    ok = Esp32BaseAppConfig::addInt({kGroupSensors, kConfigNs, kKeyTemperaturePullup, "温度分压上拉电阻", static_cast<std::int32_t>(kDefaultTemperaturePullupOhm), static_cast<std::int32_t>(kMinSensorResistanceOhm), static_cast<std::int32_t>(kMaxSensorResistanceOhm), 1000, "Ω", checkedHelp("填写电路标称阻值；误差由温度校准补偿。"), false, nullptr}) && ok;
+    ok = Esp32BaseAppConfig::addEnum({kGroupSensors, kConfigNs, kKeyTdsSensor, "TDS 传感器", "none", kTdsSensorOptions, 2, checkedHelp("PCB 5V TDS；AO 经可配置分压接 ADS1115 AIN2。"), false, nullptr}) && ok;
+    ok = Esp32BaseAppConfig::addInt({kGroupSensors, kConfigNs, kKeyTdsDividerHigh, "TDS 分压上臂", static_cast<std::int32_t>(kDefaultTdsDividerHighOhm), static_cast<std::int32_t>(kMinSensorResistanceOhm), static_cast<std::int32_t>(kMaxSensorResistanceOhm), 1000, "Ω", checkedHelp("填写电路标称阻值；修改会清除 TDS 校准。"), false, nullptr}) && ok;
+    ok = Esp32BaseAppConfig::addInt({kGroupSensors, kConfigNs, kKeyTdsDividerLow, "TDS 分压下臂", static_cast<std::int32_t>(kDefaultTdsDividerLowOhm), static_cast<std::int32_t>(kMinSensorResistanceOhm), static_cast<std::int32_t>(kMaxSensorResistanceOhm), 1000, "Ω", checkedHelp("填写电路标称阻值；修改会清除 TDS 校准。"), false, nullptr}) && ok;
     ok = Esp32BaseAppConfig::addBool({kGroupSensors, kConfigNs, kKeyTdsTemperatureCompensation, "TDS 温度补偿", true, checkedHelp("启用后使用当前水温补偿 TDS；无有效水温时按 25C 回退并记录标志。"), false, nullptr}) && ok;
+    ok = Esp32BaseAppConfig::addInt({kGroupSensors, kConfigNs, kKeyInputDividerHigh, "输入电压分压上臂", static_cast<std::int32_t>(kDefaultInputVoltageDividerHighOhm), static_cast<std::int32_t>(kMinSensorResistanceOhm), static_cast<std::int32_t>(kMaxSensorResistanceOhm), 1000, "Ω", checkedHelp("默认 100K；修改会清除输入电压校准点。"), false, nullptr}) && ok;
+    ok = Esp32BaseAppConfig::addInt({kGroupSensors, kConfigNs, kKeyInputDividerLow, "输入电压分压下臂", static_cast<std::int32_t>(kDefaultInputVoltageDividerLowOhm), static_cast<std::int32_t>(kMinSensorResistanceOhm), static_cast<std::int32_t>(kMaxSensorResistanceOhm), 1000, "Ω", checkedHelp("默认 10K；填写标称值，精度由电压校准补偿。"), false, nullptr}) && ok;
 
     return ok;
 }

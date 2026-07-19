@@ -960,7 +960,7 @@ void sendCalibrationCenterFlowCard(const AppSnapshot& snapshot) {
 void sendCalibrationCenterTemperatureCard(const AppSnapshot& snapshot, const SystemConfig& config) {
     char temperatureText[24]{};
     formatSensorTemperature(snapshot.sensors.temperatureCentiC, temperatureText, sizeof(temperatureText));
-    const bool enabled = config.temperatureKind == TemperatureKind::Ntc50kB3950;
+    const bool enabled = config.temperatureKind == TemperatureKind::NtcBeta;
     Esp32BaseWeb::sendChunk("<section class='panel calibration-center-card'><div class='panel-head'><h3>温度校准</h3>");
     sendFmt("<span class='status-pill %s'>%s</span></div>",
             enabled ? (config.temperatureCalibrated ? "status-ok" : "status-warn") : "status-muted",
@@ -995,6 +995,96 @@ void sendCalibrationCenterTdsCard(const AppSnapshot& snapshot, const SystemConfi
     Esp32BaseWeb::sendChunk("</div><p><a class='btn-link primary' href='/faucet/calibration?view=tds'>进入水质校准</a></p></section>");
 }
 
+void sendCalibrationCenterInputVoltageCard(const AppSnapshot& snapshot, const SystemConfig& config) {
+    const InputVoltageCalibration& calibration = config.inputVoltageCalibration;
+    Esp32BaseWeb::sendChunk("<section class='panel calibration-center-card'><div class='panel-head'><h3>输入电压校准</h3>");
+    sendFmt("<span class='status-pill %s'>%s</span></div>",
+            calibration.calibrated ? "status-ok" : "status-warn",
+            calibration.calibrated ? "已校准" : "参考值");
+    Esp32BaseWeb::sendChunk("<div class='tds-calibration-summary'>");
+    if (snapshot.sensors.inputVoltageMv.valid) {
+        sendFmt("<div><span>当前输入</span><strong>%ld.%03ld V</strong></div>",
+                static_cast<long>(snapshot.sensors.inputVoltageMv.value / 1000),
+                static_cast<long>(snapshot.sensors.inputVoltageMv.value % 1000));
+    } else {
+        Esp32BaseWeb::sendChunk("<div><span>当前输入</span><strong>-- V</strong></div>");
+    }
+    sendFmt("<div><span>校准点</span><strong>%u / %u</strong></div>",
+            static_cast<unsigned>(calibration.pointCount),
+            static_cast<unsigned>(kInputVoltageCalibrationMaxPoints));
+    Esp32BaseWeb::sendChunk("</div><p><a class='btn-link primary' href='/faucet/calibration?view=voltage'>进入输入电压校准</a></p></section>");
+}
+
+void handleInputVoltageCalibrationPage() {
+    const AppSnapshot snapshot = g_context.app->snapshot();
+    const SystemConfig& config = *g_context.config;
+    const InputVoltageCalibration& calibration = config.inputVoltageCalibration;
+    const bool canCapture = !waterTaskActive() && snapshot.sensors.inputVoltageAdcRaw.valid &&
+                            calibration.pointCount < kInputVoltageCalibrationMaxPoints;
+    Esp32BaseWeb::sendHeader("输入电压校准");
+    Esp32BaseWeb::sendChunk("<h2>输入电压校准</h2><p><a class='btn-link' href='/faucet/calibration'>返回校准中心</a></p>");
+    sendNoticeFromQuery();
+    Esp32BaseWeb::sendChunk("<section class='panel'><div class='panel-head'><h3>当前读数</h3>");
+    sendFmt("<span class='status-pill %s'>%s</span></div><div class='tds-calibration-summary'>",
+            calibration.calibrated ? "status-ok" : "status-warn",
+            calibration.calibrated ? "已校准" : "未校准");
+    if (snapshot.sensors.inputVoltageAdcRaw.valid) {
+        sendFmt("<div><span>ADC 原始值</span><strong>%ld</strong></div>",
+                static_cast<long>(snapshot.sensors.inputVoltageAdcRaw.value));
+        sendFmt("<div><span>ADC 电压</span><strong>%ld mV</strong></div>",
+                static_cast<long>(snapshot.sensors.inputVoltageAdcMv.value));
+        sendFmt("<div><span>理论输入</span><strong>%ld.%03ld V</strong></div>",
+                static_cast<long>(snapshot.sensors.inputVoltageTheoreticalMv.value / 1000),
+                static_cast<long>(snapshot.sensors.inputVoltageTheoreticalMv.value % 1000));
+        sendFmt("<div><span>当前输入</span><strong>%ld.%03ld V</strong></div>",
+                static_cast<long>(snapshot.sensors.inputVoltageMv.value / 1000),
+                static_cast<long>(snapshot.sensors.inputVoltageMv.value % 1000));
+    } else {
+        Esp32BaseWeb::sendChunk("<div><span>ADC 原始值</span><strong>--</strong></div><div><span>当前输入</span><strong>-- V</strong></div>");
+    }
+    sendFmt("<div><span>换算参数</span><strong>gain %.6f，offset %ld mV</strong></div>",
+            static_cast<double>(calibration.gainPpm) / 1000000.0,
+            static_cast<long>(calibration.offsetMillivolts));
+    Esp32BaseWeb::sendChunk("</div><p class='hint'>保持供电稳定，用万用表测量输入端实际电压后录入。系统自动按已有点数计算，无需选择一点或多点模式。</p>"
+                            "<form method='post' action='/faucet/calibration' onsubmit='return once(this)'>"
+                            "<input type='hidden' name='action' value='voltage_save_point'>"
+                            "<label class='compact-field'><span>万用表实际电压</span><span class='estimator-input-row'>"
+                            "<input name='actualVoltage' type='number' min='1' max='60' step='0.001' required><span class='unit-label'>V</span></span></label><div class='form-actions'>");
+    sendFmt("<input class='primary' type='submit' value='保存当前校准点'%s>",
+            canCapture ? "" : " disabled");
+    Esp32BaseWeb::sendChunk("</div></form></section><section class='panel'><div class='panel-head'><h3>已保存校准点</h3>");
+    sendFmt("<span class='status-pill status-muted'>%u / %u</span></div>",
+            static_cast<unsigned>(calibration.pointCount),
+            static_cast<unsigned>(kInputVoltageCalibrationMaxPoints));
+    if (calibration.pointCount == 0) {
+        Esp32BaseWeb::sendChunk("<p class='hint'>尚无校准点，当前首页电压会标记为参考值。</p>");
+    } else {
+        Esp32BaseWeb::sendChunk("<table><tr><th>#</th><th>ADC 原始值</th><th>ADC mV</th><th>理论电压</th><th>实际电压</th><th>操作</th></tr>");
+        for (std::uint8_t i = 0; i < calibration.pointCount; ++i) {
+            const InputVoltageCalibrationPoint& point = calibration.points[i];
+            sendFmt("<tr><td>%u</td><td>%d<br><small>%d~%d</small></td><td>%lu</td><td>%lu.%03lu V</td><td>%lu.%03lu V</td>"
+                    "<td><form method='post' action='/faucet/calibration' onsubmit='return once(this)'>"
+                    "<input type='hidden' name='action' value='voltage_remove_point'><input type='hidden' name='index' value='%u'>"
+                    "<input class='secondary' type='submit' value='删除'></form></td></tr>",
+                    static_cast<unsigned>(i + 1U),
+                    static_cast<int>(point.adcRaw),
+                    static_cast<int>(point.adcRawMin),
+                    static_cast<int>(point.adcRawMax),
+                    static_cast<unsigned long>(point.adcMillivolts),
+                    static_cast<unsigned long>(point.theoreticalInputMillivolts / 1000U),
+                    static_cast<unsigned long>(point.theoreticalInputMillivolts % 1000U),
+                    static_cast<unsigned long>(point.actualInputMillivolts / 1000U),
+                    static_cast<unsigned long>(point.actualInputMillivolts % 1000U),
+                    static_cast<unsigned>(i));
+        }
+        Esp32BaseWeb::sendChunk("</table><form method='post' action='/faucet/calibration' onsubmit=\"return confirm('确认清空全部输入电压校准点？')&&once(this)\">"
+                                "<input type='hidden' name='action' value='voltage_clear'><div class='form-actions'><input class='secondary' type='submit' value='清空全部'></div></form>");
+    }
+    Esp32BaseWeb::sendChunk("</section>");
+    sendCalibrationPageScript();
+    sendPageEnd();
+}
+
 void sendTdsCalibrationPointsTable(const TdsCalibrationSessionSnapshot& session) {
     Esp32BaseWeb::sendChunk("<h4>已保存校准点</h4><table><tr><th>#</th><th>参考 ppm</th><th>原始 ppm</th><th>采样电压</th><th>操作</th></tr>");
     if (session.pointCount == 0) {
@@ -1023,7 +1113,7 @@ void handleTemperatureCalibrationPage() {
     char calibratedText[24]{};
     formatSensorTemperature(snapshot.sensors.temperatureRawCentiC, rawText, sizeof(rawText));
     formatSensorTemperature(snapshot.sensors.temperatureCentiC, calibratedText, sizeof(calibratedText));
-    const bool enabled = config.temperatureKind == TemperatureKind::Ntc50kB3950;
+    const bool enabled = config.temperatureKind == TemperatureKind::NtcBeta;
     Esp32BaseWeb::sendHeader("温度校准");
     Esp32BaseWeb::sendChunk("<h2>温度校准</h2><p><a class='btn-link' href='/faucet/calibration'>返回校准中心</a></p>");
     sendNoticeFromQuery();

@@ -7,9 +7,7 @@
 namespace faucet {
 namespace {
 
-constexpr double kNtcNominalOhm = 50000.0;
 constexpr double kNtcNominalKelvin = 298.15;
-constexpr double kNtcBeta = 3950.0;
 constexpr std::uint16_t kTdsMaxVoltageMv = 2300;
 constexpr std::size_t kTdsMaxStabilitySamples = 64;
 constexpr std::size_t kTdsMinStableSamples = 12;
@@ -60,8 +58,12 @@ bool computeOnePointScale(std::uint16_t referencePpm, std::uint16_t rawPpm, floa
 
 }  // namespace
 
-std::int16_t ntcCentiCFromDividerMv(std::uint16_t adcMv, std::uint16_t vrefMv, std::uint32_t pullupOhm) {
-    if (adcMv == 0 || vrefMv == 0 || adcMv >= vrefMv || pullupOhm == 0) {
+std::int16_t ntcCentiCFromDividerMv(std::uint16_t adcMv,
+                                    std::uint16_t vrefMv,
+                                    std::uint32_t pullupOhm,
+                                    std::uint32_t nominalOhm,
+                                    std::uint32_t beta) {
+    if (adcMv == 0 || vrefMv == 0 || adcMv >= vrefMv || pullupOhm == 0 || nominalOhm == 0 || beta == 0) {
         return 0;
     }
     const double adc = static_cast<double>(adcMv);
@@ -70,7 +72,9 @@ std::int16_t ntcCentiCFromDividerMv(std::uint16_t adcMv, std::uint16_t vrefMv, s
     if (resistance <= 0.0 || !isfinite(resistance)) {
         return 0;
     }
-    const double kelvin = 1.0 / ((1.0 / kNtcNominalKelvin) + (std::log(resistance / kNtcNominalOhm) / kNtcBeta));
+    const double kelvin =
+        1.0 / ((1.0 / kNtcNominalKelvin) +
+               (std::log(resistance / static_cast<double>(nominalOhm)) / static_cast<double>(beta)));
     return roundToI16((kelvin - 273.15) * 100.0);
 }
 

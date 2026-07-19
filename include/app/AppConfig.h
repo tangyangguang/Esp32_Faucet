@@ -71,6 +71,42 @@ constexpr std::uint32_t kDaysPerLifeMonth = 30;
 constexpr std::uint32_t kMaxFilterLifeDays = 3650;
 constexpr std::uint32_t kMaxFilterLifeMl = 10000000;
 constexpr std::uint16_t kSensorVrefMv = 3300;
+constexpr std::uint32_t kDefaultTemperatureNominalOhm = 50000;
+constexpr std::uint32_t kDefaultTemperatureBeta = 3950;
+constexpr std::uint32_t kDefaultTemperaturePullupOhm = 51000;
+constexpr std::uint32_t kDefaultTdsDividerHighOhm = 10000;
+constexpr std::uint32_t kDefaultTdsDividerLowOhm = 15000;
+constexpr std::uint32_t kDefaultInputVoltageDividerHighOhm = 100000;
+constexpr std::uint32_t kDefaultInputVoltageDividerLowOhm = 10000;
+constexpr std::uint32_t kMinSensorResistanceOhm = 1000;
+constexpr std::uint32_t kMaxSensorResistanceOhm = 1000000;
+constexpr std::uint32_t kMinTemperatureBeta = 2000;
+constexpr std::uint32_t kMaxTemperatureBeta = 6000;
+constexpr std::uint8_t kInputVoltageCalibrationMaxPoints = 5;
+constexpr std::int32_t kInputVoltageCalibrationDefaultGainPpm = 1000000;
+constexpr std::int32_t kInputVoltageCalibrationMinGainPpm = 500000;
+constexpr std::int32_t kInputVoltageCalibrationMaxGainPpm = 1500000;
+constexpr std::int32_t kInputVoltageCalibrationMinOffsetMv = -5000;
+constexpr std::int32_t kInputVoltageCalibrationMaxOffsetMv = 5000;
+
+struct InputVoltageCalibrationPoint {
+    std::int16_t adcRaw = 0;
+    std::int16_t adcRawMin = 0;
+    std::int16_t adcRawMax = 0;
+    std::uint8_t adcRange = 0;
+    std::uint32_t adcMillivolts = 0;
+    std::uint32_t theoreticalInputMillivolts = 0;
+    std::uint32_t actualInputMillivolts = 0;
+    std::uint32_t capturedAt = 0;
+};
+
+struct InputVoltageCalibration {
+    bool calibrated = false;
+    std::uint8_t pointCount = 0;
+    std::int32_t gainPpm = kInputVoltageCalibrationDefaultGainPpm;
+    std::int32_t offsetMillivolts = 0;
+    InputVoltageCalibrationPoint points[kInputVoltageCalibrationMaxPoints]{};
+};
 
 enum class FilterLifeStatus : std::uint8_t {
     Normal = 0,
@@ -80,7 +116,7 @@ enum class FilterLifeStatus : std::uint8_t {
 
 enum class TemperatureKind : std::uint8_t {
     None = 0,
-    Ntc50kB3950 = 1,
+    NtcBeta = 1,
 };
 
 enum class TdsKind : std::uint8_t {
@@ -107,13 +143,21 @@ struct SystemConfig {
     std::uint32_t resultDisplaySec;
     bool beepEnabled;
     TemperatureKind temperatureKind;
+    std::uint32_t temperatureNominalOhm;
+    std::uint32_t temperatureBeta;
+    std::uint32_t temperaturePullupOhm;
     std::int16_t temperatureOffsetCentiC;
     bool temperatureCalibrated;
     TdsKind tdsKind;
+    std::uint32_t tdsDividerHighOhm;
+    std::uint32_t tdsDividerLowOhm;
     float tdsScale;
     std::int16_t tdsOffsetPpm;
     bool tdsCalibrated;
     bool tdsTemperatureCompensationEnabled;
+    std::uint32_t inputVoltageDividerHighOhm;
+    std::uint32_t inputVoltageDividerLowOhm;
+    InputVoltageCalibration inputVoltageCalibration;
     PresetConfig presets[kPresetCount];
     FilterConfig filters[kFilterCount];
 };

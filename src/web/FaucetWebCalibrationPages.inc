@@ -15,6 +15,10 @@ void handleCalibrationPage() {
             handleTdsCalibrationPage();
             return;
         }
+        if (std::strcmp(view, "voltage") == 0) {
+            handleInputVoltageCalibrationPage();
+            return;
+        }
     }
 
     const AppSnapshot snapshot = g_context.app->snapshot();
@@ -30,6 +34,7 @@ void handleCalibrationPage() {
     sendCalibrationCenterFlowCard(snapshot);
     sendCalibrationCenterTemperatureCard(snapshot, *g_context.config);
     sendCalibrationCenterTdsCard(snapshot, *g_context.config);
+    sendCalibrationCenterInputVoltageCard(snapshot, *g_context.config);
     sendCalibrationPageScript();
     sendPageEnd();
 }

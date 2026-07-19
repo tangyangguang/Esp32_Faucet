@@ -103,12 +103,22 @@ void test_sensor_config_defaults_disabled() {
                             static_cast<std::uint8_t>(config.temperatureKind));
     TEST_ASSERT_EQUAL_INT16(0, config.temperatureOffsetCentiC);
     TEST_ASSERT_FALSE(config.temperatureCalibrated);
+    TEST_ASSERT_EQUAL_UINT32(50000, config.temperatureNominalOhm);
+    TEST_ASSERT_EQUAL_UINT32(3950, config.temperatureBeta);
+    TEST_ASSERT_EQUAL_UINT32(51000, config.temperaturePullupOhm);
     TEST_ASSERT_FALSE(tdsSensorEnabled(config));
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(TdsKind::None), static_cast<std::uint8_t>(config.tdsKind));
     TEST_ASSERT_EQUAL_FLOAT(1.0f, config.tdsScale);
     TEST_ASSERT_EQUAL_INT16(0, config.tdsOffsetPpm);
     TEST_ASSERT_FALSE(config.tdsCalibrated);
     TEST_ASSERT_TRUE(config.tdsTemperatureCompensationEnabled);
+    TEST_ASSERT_EQUAL_UINT32(10000, config.tdsDividerHighOhm);
+    TEST_ASSERT_EQUAL_UINT32(15000, config.tdsDividerLowOhm);
+    TEST_ASSERT_EQUAL_UINT32(100000, config.inputVoltageDividerHighOhm);
+    TEST_ASSERT_EQUAL_UINT32(10000, config.inputVoltageDividerLowOhm);
+    TEST_ASSERT_EQUAL_UINT8(0, config.inputVoltageCalibration.pointCount);
+    TEST_ASSERT_FALSE(config.inputVoltageCalibration.calibrated);
+    TEST_ASSERT_EQUAL_INT32(1000000, config.inputVoltageCalibration.gainPpm);
 }
 
 void test_sanitize_config_clamps_scalar_ranges() {
@@ -197,7 +207,7 @@ void test_sanitize_config_clamps_preset_values_by_type() {
 
 void test_sanitize_config_clears_calibration_flags_when_sensors_disabled() {
     SystemConfig config = makeDefaultConfig();
-    config.temperatureKind = TemperatureKind::Ntc50kB3950;
+    config.temperatureKind = TemperatureKind::NtcBeta;
     config.temperatureCalibrated = true;
     config.tdsKind = TdsKind::AnalogTdsAo;
     config.tdsCalibrated = true;

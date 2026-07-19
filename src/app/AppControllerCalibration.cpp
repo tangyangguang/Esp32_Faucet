@@ -504,7 +504,7 @@ bool AppController::applyTdsCalibrationForWeb() {
 }
 
 bool AppController::saveTemperatureCalibrationForWeb(std::int16_t referenceCentiC) {
-    if (!canApplyConfig() || !waterSensors_ || config_.temperatureKind != TemperatureKind::Ntc50kB3950) {
+    if (!canApplyConfig() || !waterSensors_ || config_.temperatureKind != TemperatureKind::NtcBeta) {
         return false;
     }
     const WaterSensorSnapshot sensors = waterSensors_->snapshot();
@@ -517,6 +517,49 @@ bool AppController::saveTemperatureCalibrationForWeb(std::int16_t referenceCenti
     sanitizeConfig(config_);
     water_.applyConfig(config_);
     pendingBeep_ = BeepPattern::Done;
+    return true;
+}
+
+bool AppController::saveInputVoltageCalibrationPointForWeb(std::uint32_t actualMillivolts,
+                                                           std::uint32_t nowSeconds) {
+    if (!canApplyConfig() || !waterSensors_) {
+        return false;
+    }
+    SystemConfig updated = config_;
+    if (!waterSensors_->saveInputVoltageCalibrationPoint(updated, actualMillivolts, nowSeconds)) {
+        return false;
+    }
+    config_ = updated;
+    water_.applyConfig(config_);
+    pendingBeep_ = BeepPattern::Done;
+    return true;
+}
+
+bool AppController::removeInputVoltageCalibrationPointForWeb(std::uint8_t index) {
+    if (!canApplyConfig() || !waterSensors_) {
+        return false;
+    }
+    SystemConfig updated = config_;
+    if (!waterSensors_->removeInputVoltageCalibrationPoint(updated, index)) {
+        return false;
+    }
+    config_ = updated;
+    water_.applyConfig(config_);
+    pendingBeep_ = BeepPattern::Click;
+    return true;
+}
+
+bool AppController::clearInputVoltageCalibrationForWeb() {
+    if (!canApplyConfig() || !waterSensors_) {
+        return false;
+    }
+    SystemConfig updated = config_;
+    if (!waterSensors_->clearInputVoltageCalibration(updated)) {
+        return false;
+    }
+    config_ = updated;
+    water_.applyConfig(config_);
+    pendingBeep_ = BeepPattern::Click;
     return true;
 }
 

@@ -335,7 +335,7 @@ void dispatchFilterPost() {
 
 void enableTdsForFixture(WebFixture& fixture) {
     fixture.config.tdsKind = TdsKind::AnalogTdsAo;
-    fixture.config.temperatureKind = TemperatureKind::Ntc50kB3950;
+    fixture.config.temperatureKind = TemperatureKind::NtcBeta;
     TEST_ASSERT_TRUE(fixture.app.applyConfig(fixture.config));
 }
 
@@ -353,6 +353,8 @@ void test_home_page_initial_render_does_not_read_record_pages() {
 
     TEST_ASSERT_EQUAL(200, Esp32BaseWeb::nativeTestResponse().code);
     TEST_ASSERT_EQUAL_UINT32(0, reader.readPageCalls);
+    TEST_ASSERT_NOT_NULL(std::strstr(Esp32BaseWeb::nativeTestResponse().body.c_str(), "id='inputVoltageStatus'"));
+    TEST_ASSERT_NOT_NULL(std::strstr(Esp32BaseWeb::nativeTestResponse().body.c_str(), "id='inputVoltageNote'"));
 }
 
 void test_app_css_covers_current_page_layout_classes() {
@@ -708,6 +710,24 @@ void test_temperature_calibration_post_accepts_celsius_decimal_input() {
                              Esp32BaseWeb::nativeTestResponseHeader("Location"));
     TEST_ASSERT_TRUE(fixture.app.config().temperatureCalibrated);
     TEST_ASSERT_TRUE(fixture.config.temperatureCalibrated);
+}
+
+void test_input_voltage_calibration_page_shows_raw_and_correspondence_columns() {
+    WebFixture fixture;
+    fixture.app.tick(appInput({false, false, false, false}, 1000, 1000000));
+    registerRoutes();
+    beginWebGet("/faucet/calibration");
+    Esp32BaseWeb::nativeTestSetParam("view", "voltage");
+
+    TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch("/faucet/calibration", Esp32BaseWeb::METHOD_GET));
+
+    const std::string& body = Esp32BaseWeb::nativeTestResponse().body;
+    TEST_ASSERT_EQUAL(200, Esp32BaseWeb::nativeTestResponse().code);
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "输入电压校准"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "ADC 原始值"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "理论输入"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "万用表实际电压"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "name='actualVoltage'"));
 }
 
 void test_flow_calibration_manual_post_creates_current_parameter() {
@@ -1309,6 +1329,7 @@ int main(int, char**) {
     RUN_TEST(test_metering_history_orders_newest_created_at_first);
     RUN_TEST(test_flow_calibration_manual_page_prefills_current_parameters);
     RUN_TEST(test_temperature_calibration_post_accepts_celsius_decimal_input);
+    RUN_TEST(test_input_voltage_calibration_page_shows_raw_and_correspondence_columns);
     RUN_TEST(test_flow_calibration_manual_post_creates_current_parameter);
     RUN_TEST(test_flow_calibration_manual_post_rejects_busy_without_changing_current);
     RUN_TEST(test_flow_calibration_rejects_unknown_write_action);

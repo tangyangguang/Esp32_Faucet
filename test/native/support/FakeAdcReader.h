@@ -48,6 +48,7 @@ public:
 inline faucet::AdcReadResult okMv(std::int16_t mv) {
     faucet::AdcReadResult result{};
     result.ok = true;
+    result.raw = static_cast<std::int16_t>(static_cast<std::int32_t>(mv) * 32768 / 4096);
     result.millivolts = mv;
     return result;
 }

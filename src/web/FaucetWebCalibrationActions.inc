@@ -19,6 +19,17 @@ bool readTemperatureCalibrationInput(std::int16_t& referenceCentiC) {
     return true;
 }
 
+bool readInputVoltageCalibrationInput(std::uint32_t& actualMillivolts) {
+    char text[32]{};
+    float actualVoltage = 0.0f;
+    if (!getParam("actualVoltage", text, sizeof(text)) || !parseFloat(text, actualVoltage) ||
+        actualVoltage < 1.0f || actualVoltage > 60.0f) {
+        return false;
+    }
+    actualMillivolts = static_cast<std::uint32_t>(actualVoltage * 1000.0f + 0.5f);
+    return true;
+}
+
 void redirectTemperatureCalibrationResult(const char* saved) {
     char url[96]{};
     std::snprintf(url, sizeof(url), "/faucet/calibration?view=temperature&saved=%s", saved ? saved : "temperature");
@@ -45,6 +56,33 @@ void redirectTdsCalibrationFailure(const char* error) {
     char url[96]{};
     std::snprintf(url, sizeof(url), "/faucet/calibration?view=tds&error=%s", error ? error : "save_failed");
     Esp32BaseWeb::redirectSeeOther(url);
+}
+
+void redirectInputVoltageCalibrationResult(bool ok, const char* success, const char* failure) {
+    char url[112]{};
+    std::snprintf(url,
+                  sizeof(url),
+                  "/faucet/calibration?view=voltage&%s=%s",
+                  ok ? "saved" : "error",
+                  ok ? (success ? success : "voltage_saved") : (failure ? failure : "save_failed"));
+    Esp32BaseWeb::redirectSeeOther(url);
+}
+
+void persistInputVoltageCalibrationResult(bool ok, const char* success, const char* failure) {
+    if (!ok || !g_context.app || !g_context.config || !g_context.configStore) {
+        redirectInputVoltageCalibrationResult(false, success, failure);
+        return;
+    }
+    const SystemConfig updated = g_context.app->config();
+    if (!g_context.configStore->saveSystemConfig(updated)) {
+        redirectInputVoltageCalibrationResult(false, success, "save_failed");
+        return;
+    }
+    *g_context.config = updated;
+    if (g_context.applySettings) {
+        g_context.applySettings(*g_context.config);
+    }
+    redirectInputVoltageCalibrationResult(true, success, failure);
 }
 
 void persistTdsCalibrationResult(bool ok, const char* success, const char* failure) {
@@ -151,6 +189,40 @@ void handleCalibrationPost() {
             g_context.applySettings(*g_context.config);
         }
         redirectTemperatureCalibrationResult("temperature");
+        return;
+    }
+    if (std::strcmp(text, "voltage_save_point") == 0) {
+        std::uint32_t actualMillivolts = 0;
+        if (!readInputVoltageCalibrationInput(actualMillivolts)) {
+            redirectInputVoltageCalibrationResult(false, nullptr, "invalid_value");
+            return;
+        }
+        persistInputVoltageCalibrationResult(
+            g_context.app && g_context.app->saveInputVoltageCalibrationPointForWeb(
+                                 actualMillivolts,
+                                 g_context.nowSeconds ? g_context.nowSeconds() : 0),
+            "voltage_point_saved",
+            "unstable_or_invalid");
+        return;
+    }
+    if (std::strcmp(text, "voltage_remove_point") == 0) {
+        std::uint32_t index = 0;
+        if (!getParam("index", text, sizeof(text)) || !parseU32(text, index) ||
+            index >= kInputVoltageCalibrationMaxPoints) {
+            redirectInputVoltageCalibrationResult(false, nullptr, "invalid_value");
+            return;
+        }
+        persistInputVoltageCalibrationResult(
+            g_context.app &&
+                g_context.app->removeInputVoltageCalibrationPointForWeb(static_cast<std::uint8_t>(index)),
+            "voltage_point_removed",
+            "invalid_state");
+        return;
+    }
+    if (std::strcmp(text, "voltage_clear") == 0) {
+        persistInputVoltageCalibrationResult(g_context.app && g_context.app->clearInputVoltageCalibrationForWeb(),
+                                             "voltage_cleared",
+                                             "invalid_state");
         return;
     }
     if (std::strcmp(text, "tds_start_session") == 0) {

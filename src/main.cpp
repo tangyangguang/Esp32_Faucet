@@ -85,7 +85,7 @@ faucet::GpioButtonReader g_buttons(faucet::kPinButtonCancel,
                                    faucet::kPinButtonMinus);
 faucet::FlowPulseReader g_flowPulses(faucet::kPinFlowPrimary);
 faucet::Ads1115AdcReader g_waterSensorAdc;
-faucet::WaterSensorManager g_waterSensors(g_waterSensorAdc, false);
+faucet::WaterSensorManager g_waterSensors(g_waterSensorAdc, true);
 faucet::PwmValveHardware g_valveHardware(
     faucet::kPinValvePwm, faucet::kPinValveShutdown, faucet::kLedcChannelValve);
 faucet::BeepDriver g_beep;

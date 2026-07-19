@@ -14,10 +14,10 @@ namespace {
 constexpr const char* kConfigNs = "faucet_cfg";
 constexpr const char* kStatNs = "faucet_stat";
 constexpr const char* kRunNs = "faucet_run";
-constexpr std::int32_t kConfigVersion = 21;
+constexpr std::int32_t kConfigVersion = 22;
 constexpr std::int32_t kRuntimeVersion = 1;
 constexpr const char* kSensorNone = "none";
-constexpr const char* kTemperatureSensorNtc50k = "ntc50k_b3950";
+constexpr const char* kTemperatureSensorNtcBeta = "ntc_beta";
 constexpr const char* kTdsSensorAnalogAo = "tds_board_v1";
 
 std::int32_t toInt(std::uint32_t value) {
@@ -65,12 +65,16 @@ void filterKey(char* out, std::size_t len, std::size_t index, const char* suffix
     std::snprintf(out, len, "f%u_%s", static_cast<unsigned>(index), suffix);
 }
 
+void voltagePointKey(char* out, std::size_t len, std::size_t index, const char* suffix) {
+    std::snprintf(out, len, "v%u_%s", static_cast<unsigned>(index), suffix);
+}
+
 bool isCurrentRuntimeVersion(std::int32_t version) {
     return version == kRuntimeVersion;
 }
 
 const char* temperatureSensorConfigValue(const SystemConfig& config) {
-    return config.temperatureKind == TemperatureKind::Ntc50kB3950 ? kTemperatureSensorNtc50k : kSensorNone;
+    return config.temperatureKind == TemperatureKind::NtcBeta ? kTemperatureSensorNtcBeta : kSensorNone;
 }
 
 const char* tdsSensorConfigValue(const SystemConfig& config) {
@@ -78,8 +82,8 @@ const char* tdsSensorConfigValue(const SystemConfig& config) {
 }
 
 void applyTemperatureSensorConfigValue(SystemConfig& config, const char* value) {
-    if (std::strcmp(value ? value : "", kTemperatureSensorNtc50k) == 0) {
-        config.temperatureKind = TemperatureKind::Ntc50kB3950;
+    if (std::strcmp(value ? value : "", kTemperatureSensorNtcBeta) == 0) {
+        config.temperatureKind = TemperatureKind::NtcBeta;
         return;
     }
     config.temperatureKind = TemperatureKind::None;
@@ -127,12 +131,17 @@ void loadCommonSystemConfig(ConfigBackend& backend, SystemConfig& config) {
     if (readStrKey(backend, kConfigNs, "temp_sensor", sensorText, sizeof(sensorText))) {
         applyTemperatureSensorConfigValue(config, sensorText);
     }
+    config.temperatureNominalOhm = getU32(backend, kConfigNs, "temp_r25", config.temperatureNominalOhm);
+    config.temperatureBeta = getU32(backend, kConfigNs, "temp_beta", config.temperatureBeta);
+    config.temperaturePullupOhm = getU32(backend, kConfigNs, "temp_pull", config.temperaturePullupOhm);
     config.temperatureOffsetCentiC =
         static_cast<std::int16_t>(backend.getInt(kConfigNs, "temp_off_c", config.temperatureOffsetCentiC));
     config.temperatureCalibrated = backend.getBool(kConfigNs, "temp_cal", config.temperatureCalibrated);
     if (readStrKey(backend, kConfigNs, "tds_sensor", sensorText, sizeof(sensorText))) {
         applyTdsSensorConfigValue(config, sensorText);
     }
+    config.tdsDividerHighOhm = getU32(backend, kConfigNs, "tds_rh", config.tdsDividerHighOhm);
+    config.tdsDividerLowOhm = getU32(backend, kConfigNs, "tds_rl", config.tdsDividerLowOhm);
     config.tdsScale =
         static_cast<float>(backend.getInt(kConfigNs,
                                           "tds_scale_milli",
@@ -142,6 +151,34 @@ void loadCommonSystemConfig(ConfigBackend& backend, SystemConfig& config) {
     config.tdsCalibrated = backend.getBool(kConfigNs, "tds_cal", config.tdsCalibrated);
     config.tdsTemperatureCompensationEnabled =
         backend.getBool(kConfigNs, "tds_temp_comp", config.tdsTemperatureCompensationEnabled);
+    config.inputVoltageDividerHighOhm = getU32(backend, kConfigNs, "vin_rh", config.inputVoltageDividerHighOhm);
+    config.inputVoltageDividerLowOhm = getU32(backend, kConfigNs, "vin_rl", config.inputVoltageDividerLowOhm);
+    InputVoltageCalibration& voltage = config.inputVoltageCalibration;
+    voltage.pointCount =
+        static_cast<std::uint8_t>(backend.getInt(kConfigNs, "vcal_count", voltage.pointCount));
+    voltage.calibrated = backend.getBool(kConfigNs, "vcal_ok", voltage.calibrated);
+    voltage.gainPpm = backend.getInt(kConfigNs, "vcal_gain", voltage.gainPpm);
+    voltage.offsetMillivolts = backend.getInt(kConfigNs, "vcal_off", voltage.offsetMillivolts);
+    for (std::size_t i = 0; i < kInputVoltageCalibrationMaxPoints; ++i) {
+        char key[16]{};
+        InputVoltageCalibrationPoint& point = voltage.points[i];
+        voltagePointKey(key, sizeof(key), i, "raw");
+        point.adcRaw = static_cast<std::int16_t>(backend.getInt(kConfigNs, key, point.adcRaw));
+        voltagePointKey(key, sizeof(key), i, "min");
+        point.adcRawMin = static_cast<std::int16_t>(backend.getInt(kConfigNs, key, point.adcRawMin));
+        voltagePointKey(key, sizeof(key), i, "max");
+        point.adcRawMax = static_cast<std::int16_t>(backend.getInt(kConfigNs, key, point.adcRawMax));
+        voltagePointKey(key, sizeof(key), i, "rng");
+        point.adcRange = static_cast<std::uint8_t>(backend.getInt(kConfigNs, key, point.adcRange));
+        voltagePointKey(key, sizeof(key), i, "adc");
+        point.adcMillivolts = getU32(backend, kConfigNs, key, point.adcMillivolts);
+        voltagePointKey(key, sizeof(key), i, "theory");
+        point.theoreticalInputMillivolts = getU32(backend, kConfigNs, key, point.theoreticalInputMillivolts);
+        voltagePointKey(key, sizeof(key), i, "actual");
+        point.actualInputMillivolts = getU32(backend, kConfigNs, key, point.actualInputMillivolts);
+        voltagePointKey(key, sizeof(key), i, "at");
+        point.capturedAt = getU32(backend, kConfigNs, key, point.capturedAt);
+    }
 }
 
 void loadPresets(ConfigBackend& backend, SystemConfig& config) {
@@ -224,7 +261,7 @@ bool ConfigStore::saveSystemConfig(const SystemConfig& config) {
     sanitizeConfig(*storage);
     const SystemConfig& safe = *storage;
 
-    bool ok = true;
+    bool ok = backend_.setInt(kConfigNs, "ver", 0);
     ok = okAll(ok, backend_.setInt(kConfigNs, "confirm_s", toInt(safe.confirmTimeoutSec)));
     ok = okAll(ok, backend_.setInt(kConfigNs, "max_time", toInt(safe.maxOutTimeSec)));
     ok = okAll(ok, backend_.setInt(kConfigNs, "max_ml", toInt(safe.maxOutVolumeMl)));
@@ -243,9 +280,14 @@ bool ConfigStore::saveSystemConfig(const SystemConfig& config) {
     ok = okAll(ok, backend_.setInt(kConfigNs, "result_s", toInt(safe.resultDisplaySec)));
     ok = okAll(ok, backend_.setBool(kConfigNs, "beep", safe.beepEnabled));
     ok = okAll(ok, backend_.setStr(kConfigNs, "temp_sensor", temperatureSensorConfigValue(safe)));
+    ok = okAll(ok, setU32(backend_, kConfigNs, "temp_r25", safe.temperatureNominalOhm));
+    ok = okAll(ok, setU32(backend_, kConfigNs, "temp_beta", safe.temperatureBeta));
+    ok = okAll(ok, setU32(backend_, kConfigNs, "temp_pull", safe.temperaturePullupOhm));
     ok = okAll(ok, backend_.setInt(kConfigNs, "temp_off_c", safe.temperatureOffsetCentiC));
     ok = okAll(ok, backend_.setBool(kConfigNs, "temp_cal", safe.temperatureCalibrated));
     ok = okAll(ok, backend_.setStr(kConfigNs, "tds_sensor", tdsSensorConfigValue(safe)));
+    ok = okAll(ok, setU32(backend_, kConfigNs, "tds_rh", safe.tdsDividerHighOhm));
+    ok = okAll(ok, setU32(backend_, kConfigNs, "tds_rl", safe.tdsDividerLowOhm));
     ok = okAll(ok,
                backend_.setInt(kConfigNs,
                                "tds_scale_milli",
@@ -253,6 +295,33 @@ bool ConfigStore::saveSystemConfig(const SystemConfig& config) {
     ok = okAll(ok, backend_.setInt(kConfigNs, "tds_off_ppm", safe.tdsOffsetPpm));
     ok = okAll(ok, backend_.setBool(kConfigNs, "tds_cal", safe.tdsCalibrated));
     ok = okAll(ok, backend_.setBool(kConfigNs, "tds_temp_comp", safe.tdsTemperatureCompensationEnabled));
+    ok = okAll(ok, setU32(backend_, kConfigNs, "vin_rh", safe.inputVoltageDividerHighOhm));
+    ok = okAll(ok, setU32(backend_, kConfigNs, "vin_rl", safe.inputVoltageDividerLowOhm));
+    const InputVoltageCalibration& voltage = safe.inputVoltageCalibration;
+    ok = okAll(ok, backend_.setInt(kConfigNs, "vcal_count", voltage.pointCount));
+    ok = okAll(ok, backend_.setBool(kConfigNs, "vcal_ok", voltage.calibrated));
+    ok = okAll(ok, backend_.setInt(kConfigNs, "vcal_gain", voltage.gainPpm));
+    ok = okAll(ok, backend_.setInt(kConfigNs, "vcal_off", voltage.offsetMillivolts));
+    for (std::size_t i = 0; i < kInputVoltageCalibrationMaxPoints; ++i) {
+        char key[16]{};
+        const InputVoltageCalibrationPoint& point = voltage.points[i];
+        voltagePointKey(key, sizeof(key), i, "raw");
+        ok = okAll(ok, backend_.setInt(kConfigNs, key, point.adcRaw));
+        voltagePointKey(key, sizeof(key), i, "min");
+        ok = okAll(ok, backend_.setInt(kConfigNs, key, point.adcRawMin));
+        voltagePointKey(key, sizeof(key), i, "max");
+        ok = okAll(ok, backend_.setInt(kConfigNs, key, point.adcRawMax));
+        voltagePointKey(key, sizeof(key), i, "rng");
+        ok = okAll(ok, backend_.setInt(kConfigNs, key, point.adcRange));
+        voltagePointKey(key, sizeof(key), i, "adc");
+        ok = okAll(ok, setU32(backend_, kConfigNs, key, point.adcMillivolts));
+        voltagePointKey(key, sizeof(key), i, "theory");
+        ok = okAll(ok, setU32(backend_, kConfigNs, key, point.theoreticalInputMillivolts));
+        voltagePointKey(key, sizeof(key), i, "actual");
+        ok = okAll(ok, setU32(backend_, kConfigNs, key, point.actualInputMillivolts));
+        voltagePointKey(key, sizeof(key), i, "at");
+        ok = okAll(ok, setU32(backend_, kConfigNs, key, point.capturedAt));
+    }
 
     for (std::size_t i = 0; i < kPresetCount; ++i) {
         char key[12]{};

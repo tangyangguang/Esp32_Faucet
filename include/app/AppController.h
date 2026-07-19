@@ -143,6 +143,9 @@ public:
     bool discardTdsCalibrationForWeb();
     bool applyTdsCalibrationForWeb();
     bool saveTemperatureCalibrationForWeb(std::int16_t referenceCentiC);
+    bool saveInputVoltageCalibrationPointForWeb(std::uint32_t actualMillivolts, std::uint32_t nowSeconds);
+    bool removeInputVoltageCalibrationPointForWeb(std::uint8_t index);
+    bool clearInputVoltageCalibrationForWeb();
     TdsCalibrationSessionSnapshot tdsCalibrationSnapshot() const;
     const SystemConfig& config() const;
     const MeteringSchemeRecord& activeMeteringScheme() const;

@@ -67,7 +67,7 @@ void test_explicit_app_config_save_merges_fields_and_establishes_current_version
     backend.setInt("faucet_cfg", "disp_s", 75);
     backend.setInt("faucet_cfg", "result_s", 12);
     backend.setBool("faucet_cfg", "beep", false);
-    backend.setStr("faucet_cfg", "temp_sensor", "ntc50k_b3950");
+    backend.setStr("faucet_cfg", "temp_sensor", "ntc_beta");
     backend.setStr("faucet_cfg", "tds_sensor", "tds_board_v1");
     backend.setBool("faucet_cfg", "tds_temp_comp", false);
     ConfigStore store(backend);
@@ -185,18 +185,30 @@ void test_config_save_and_load_round_trips_sensor_config() {
     FakeConfigBackend backend;
     ConfigStore store(backend);
     SystemConfig config = makeDefaultConfig();
-    config.temperatureKind = TemperatureKind::Ntc50kB3950;
+    config.temperatureKind = TemperatureKind::NtcBeta;
+    config.temperatureNominalOhm = 10000;
+    config.temperatureBeta = 3435;
+    config.temperaturePullupOhm = 12000;
     config.temperatureOffsetCentiC = -35;
     config.temperatureCalibrated = true;
     config.tdsKind = TdsKind::AnalogTdsAo;
+    config.tdsDividerHighOhm = 12000;
+    config.tdsDividerLowOhm = 18000;
     config.tdsScale = 1.234f;
     config.tdsOffsetPpm = -4;
     config.tdsCalibrated = true;
     config.tdsTemperatureCompensationEnabled = false;
+    config.inputVoltageDividerHighOhm = 51000;
+    config.inputVoltageDividerLowOhm = 15000;
+    config.inputVoltageCalibration.calibrated = true;
+    config.inputVoltageCalibration.pointCount = 1;
+    config.inputVoltageCalibration.gainPpm = 1005000;
+    config.inputVoltageCalibration.offsetMillivolts = 0;
+    config.inputVoltageCalibration.points[0] = {8000, 7990, 8010, 3, 1000, 4400, 4422, 1720000000};
 
     TEST_ASSERT_TRUE(store.saveSystemConfig(config));
 
-    TEST_ASSERT_EQUAL_INT32(21, backend.getInt("faucet_cfg", "ver", 0));
+    TEST_ASSERT_EQUAL_INT32(store.currentSystemConfigVersion(), backend.getInt("faucet_cfg", "ver", 0));
     TEST_ASSERT_EQUAL_INT32(1234, backend.getInt("faucet_cfg", "tds_scale_milli", 0));
     TEST_ASSERT_EQUAL_INT32(-7, backend.getInt("faucet_cfg", "tds_cal_mode", -7));
     TEST_ASSERT_EQUAL_INT32(-7, backend.getInt("faucet_cfg", "tds_cal_rev", -7));
@@ -208,15 +220,18 @@ void test_config_save_and_load_round_trips_sensor_config() {
     TEST_ASSERT_EQUAL_INT32(-7, backend.getInt("faucet_cfg", "tds_cal_mv", -7));
     char sensorText[32]{};
     TEST_ASSERT_TRUE(backend.getStr("faucet_cfg", "temp_sensor", sensorText, sizeof(sensorText), ""));
-    TEST_ASSERT_EQUAL_STRING("ntc50k_b3950", sensorText);
+    TEST_ASSERT_EQUAL_STRING("ntc_beta", sensorText);
     TEST_ASSERT_TRUE(backend.getStr("faucet_cfg", "tds_sensor", sensorText, sizeof(sensorText), ""));
     TEST_ASSERT_EQUAL_STRING("tds_board_v1", sensorText);
     const SystemConfig loaded = store.loadSystemConfig();
     TEST_ASSERT_TRUE(temperatureSensorEnabled(loaded));
-    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(TemperatureKind::Ntc50kB3950),
+    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(TemperatureKind::NtcBeta),
                             static_cast<std::uint8_t>(loaded.temperatureKind));
     TEST_ASSERT_EQUAL_INT16(-35, loaded.temperatureOffsetCentiC);
     TEST_ASSERT_TRUE(loaded.temperatureCalibrated);
+    TEST_ASSERT_EQUAL_UINT32(10000, loaded.temperatureNominalOhm);
+    TEST_ASSERT_EQUAL_UINT32(3435, loaded.temperatureBeta);
+    TEST_ASSERT_EQUAL_UINT32(12000, loaded.temperaturePullupOhm);
     TEST_ASSERT_TRUE(tdsSensorEnabled(loaded));
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(TdsKind::AnalogTdsAo),
                             static_cast<std::uint8_t>(loaded.tdsKind));
@@ -224,6 +239,14 @@ void test_config_save_and_load_round_trips_sensor_config() {
     TEST_ASSERT_EQUAL_INT16(-4, loaded.tdsOffsetPpm);
     TEST_ASSERT_TRUE(loaded.tdsCalibrated);
     TEST_ASSERT_FALSE(loaded.tdsTemperatureCompensationEnabled);
+    TEST_ASSERT_EQUAL_UINT32(12000, loaded.tdsDividerHighOhm);
+    TEST_ASSERT_EQUAL_UINT32(18000, loaded.tdsDividerLowOhm);
+    TEST_ASSERT_EQUAL_UINT32(51000, loaded.inputVoltageDividerHighOhm);
+    TEST_ASSERT_EQUAL_UINT32(15000, loaded.inputVoltageDividerLowOhm);
+    TEST_ASSERT_TRUE(loaded.inputVoltageCalibration.calibrated);
+    TEST_ASSERT_EQUAL_UINT8(1, loaded.inputVoltageCalibration.pointCount);
+    TEST_ASSERT_EQUAL_INT16(8000, loaded.inputVoltageCalibration.points[0].adcRaw);
+    TEST_ASSERT_EQUAL_UINT32(4422, loaded.inputVoltageCalibration.points[0].actualInputMillivolts);
 }
 
 void test_config_load_sanitizes_stored_values() {
@@ -261,7 +284,7 @@ void test_config_save_does_not_mark_current_version_after_partial_write_failure(
 
     TEST_ASSERT_FALSE(store.saveSystemConfig(makeDefaultConfig()));
 
-    TEST_ASSERT_EQUAL_INT32(-1, backend.getInt("faucet_cfg", "ver", -1));
+    TEST_ASSERT_EQUAL_INT32(0, backend.getInt("faucet_cfg", "ver", -1));
     char name[kPresetNameLength]{};
     TEST_ASSERT_FALSE(backend.getStr("faucet_cfg", "p0_name", name, sizeof(name), ""));
 }

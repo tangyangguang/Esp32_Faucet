@@ -612,6 +612,38 @@ void test_app_controller_regenerates_applied_candidate_from_stored_traces() {
     TEST_ASSERT_FALSE(fixture.app->snapshot().calibrationCandidate.ready);
 }
 
+void test_app_controller_edits_flow_actual_sample_and_recomputes_candidate() {
+    CalibrationAppFixture fixture;
+    CalibrationSessionRecord session = makeCalibrationSession(80, 1714502400);
+    saveCalibrationSessionSample(
+        fixture.traceStore, session, 0, 1714502401, 1500, 40, 210, 6);
+    saveCalibrationSessionSample(
+        fixture.traceStore, session, 1, 1714502410, 7500, 40, 1540, 11);
+    session.status = CalibrationSessionStatus::Generated;
+    session.validSampleCount = countValidCalibrationSamples(session);
+    TEST_ASSERT_TRUE(fixture.sessionStore.save(session));
+    fixture.createApp();
+    TEST_ASSERT_TRUE(fixture.app->regenerateCalibrationCandidateForWeb(1714502600));
+    const std::uint32_t beforePpl =
+        fixture.app->snapshot().calibrationCandidate.params.stablePulsePerLiter;
+
+    TEST_ASSERT_TRUE(
+        fixture.app->updateCalibrationActualForWeb(1, 8000, 1714502700));
+
+    const AppSnapshot snapshot = fixture.app->snapshot();
+    TEST_ASSERT_TRUE(snapshot.calibrationCandidate.ready);
+    TEST_ASSERT_NOT_EQUAL(
+        beforePpl, snapshot.calibrationCandidate.params.stablePulsePerLiter);
+    CalibrationSessionRecord persisted{};
+    TEST_ASSERT_TRUE(fixture.sessionStore.load(persisted));
+    TEST_ASSERT_EQUAL_UINT32(8000, persisted.attempts[1].actualMl);
+    TEST_ASSERT_EQUAL_UINT32(8000, persisted.attempts[1].summary.actualMl);
+    CalibrationStoredTrace stored{};
+    TEST_ASSERT_TRUE(fixture.traceStore.load(1, stored));
+    TEST_ASSERT_EQUAL_UINT32(8000, stored.actualMl);
+    TEST_ASSERT_EQUAL_UINT32(8000, stored.trace.actualMl);
+}
+
 void test_app_controller_pause_timeout_trace_is_not_marked_error_and_can_calibrate() {
     SystemConfig config = makeDefaultConfig();
     config.pauseTimeoutSec = 10;

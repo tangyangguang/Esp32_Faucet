@@ -132,6 +132,9 @@ public:
     bool startCalibrationSessionForWeb(std::uint32_t nowSeconds);
     bool discardCalibrationSessionForWeb(std::uint32_t nowSeconds);
     bool submitCalibrationActualForWeb(std::uint32_t actualMl, std::uint32_t nowSeconds);
+    bool updateCalibrationActualForWeb(std::uint8_t attemptIndex,
+                                       std::uint32_t actualMl,
+                                       std::uint32_t nowSeconds);
     bool skipCalibrationAttemptForWeb(std::uint32_t nowSeconds);
     bool regenerateCalibrationCandidateForWeb(std::uint32_t nowSeconds);
     bool discardCalibrationCandidateForWeb(std::uint32_t nowSeconds);
@@ -139,11 +142,15 @@ public:
     bool startTdsCalibrationSessionForWeb(std::uint32_t nowSeconds);
     bool startTdsCalibrationPointForWeb(std::uint16_t referencePpm, std::uint32_t nowSeconds);
     bool saveTdsCalibrationPointForWeb(std::uint32_t nowSeconds);
+    bool updateTdsCalibrationPointForWeb(std::uint8_t index,
+                                         std::uint16_t referencePpm,
+                                         std::uint32_t nowSeconds);
     bool removeTdsCalibrationPointForWeb(std::uint8_t index, std::uint32_t nowSeconds);
     bool discardTdsCalibrationForWeb();
     bool applyTdsCalibrationForWeb();
     bool saveTemperatureCalibrationForWeb(std::int16_t referenceCentiC);
     bool saveInputVoltageCalibrationPointForWeb(std::uint32_t actualMillivolts, std::uint32_t nowSeconds);
+    bool updateInputVoltageCalibrationPointForWeb(std::uint8_t index, std::uint32_t actualMillivolts);
     bool removeInputVoltageCalibrationPointForWeb(std::uint8_t index);
     bool clearInputVoltageCalibrationForWeb();
     TdsCalibrationSessionSnapshot tdsCalibrationSnapshot() const;

@@ -436,12 +436,25 @@ void sendCalibrationSessionAttemptRow(const CalibrationSessionRecord& session,
         attempt.summary.stable &&
         attempt.summary.stablePulseCount > 0 &&
         !attempt.summary.truncated;
-    sendFmt("<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%luP</td><td>",
+    sendFmt("<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>",
             timeText,
             durationText,
             attempt.targetHintMl > 0 ? targetText : "-",
-            attempt.record.volumeMl > 0 ? estimateText : "-",
-            actualText,
+            attempt.record.volumeMl > 0 ? estimateText : "-");
+    if (attempt.status == CalibrationAttemptStatus::Valid && attempt.actualMl > 0) {
+        sendFmt("<form method='post' action='/faucet/calibration/flow' onsubmit='return once(this)'>"
+                "<input type='hidden' name='action' value='update_actual'>"
+                "<input type='hidden' name='attemptIndex' value='%u'>"
+                "<span class='estimator-input-row'><input name='actualMl' type='number' min='%lu' max='%lu' step='1' value='%lu' required>"
+                "<span class='unit-label'>mL</span><input class='secondary' type='submit' value='修改'></span></form>",
+                static_cast<unsigned>(attempt.attemptIndex),
+                static_cast<unsigned long>(kCalibrationMinActualMl),
+                static_cast<unsigned long>(kMaxVolumePresetMl),
+                static_cast<unsigned long>(attempt.actualMl));
+    } else {
+        Esp32BaseWeb::sendChunk(actualText);
+    }
+    sendFmt("</td><td>%luP</td><td>",
             static_cast<unsigned long>(attempt.record.pulseCount));
     if (firstWindowReady) {
         sendFmt("%luP", static_cast<unsigned long>(firstWindowPulses));
@@ -990,8 +1003,8 @@ void sendCalibrationCenterTdsCard(const AppSnapshot& snapshot, const SystemConfi
     sendFmt("<div><span>采样电压</span><strong>%s</strong></div>", enabled ? voltageText : "-");
     sendFmt("<div><span>水温补偿</span><strong>%s</strong></div>",
             config.tdsTemperatureCompensationEnabled ? tempText : "关闭");
-    sendFmt("<div><span>scale</span><strong>%.3f</strong></div>", static_cast<double>(config.tdsScale));
-    sendFmt("<div><span>offset</span><strong>%d ppm</strong></div>", static_cast<int>(config.tdsOffsetPpm));
+    sendFmt("<div><span>比例</span><strong>%.3f</strong></div>", static_cast<double>(config.tdsScale));
+    sendFmt("<div><span>修正</span><strong>%d ppm</strong></div>", static_cast<int>(config.tdsOffsetPpm));
     Esp32BaseWeb::sendChunk("</div><p><a class='btn-link primary' href='/faucet/calibration?view=tds'>进入水质校准</a></p></section>");
 }
 
@@ -1071,7 +1084,11 @@ void handleInputVoltageCalibrationPage() {
         Esp32BaseWeb::sendChunk("<table><tr><th>#</th><th>ADC 原始值</th><th>ADC mV</th><th>理论电压</th><th>实际电压</th><th>操作</th></tr>");
         for (std::uint8_t i = 0; i < calibration.pointCount; ++i) {
             const InputVoltageCalibrationPoint& point = calibration.points[i];
-            sendFmt("<tr><td>%u</td><td>%d<br><small>%d~%d</small></td><td>%lu</td><td>%lu.%03lu V</td><td>%lu.%03lu V</td>"
+            sendFmt("<tr><td>%u</td><td>%d<br><small>%d~%d</small></td><td>%lu</td><td>%lu.%03lu V</td><td>"
+                    "<form method='post' action='/faucet/calibration' onsubmit='return once(this)'>"
+                    "<input type='hidden' name='action' value='voltage_update_point'><input type='hidden' name='index' value='%u'>"
+                    "<span class='estimator-input-row'><input name='actualVoltage' type='number' min='1' max='60' step='0.001' value='%lu.%03lu' required>"
+                    "<span class='unit-label'>V</span><input class='secondary' type='submit' value='修改'></span></form></td>"
                     "<td><form method='post' action='/faucet/calibration' onsubmit=\"return confirm('确认删除这个输入电压校准点？')&&once(this)\">"
                     "<input type='hidden' name='action' value='voltage_remove_point'><input type='hidden' name='index' value='%u'>"
                     "<input class='secondary' type='submit' value='删除'></form></td></tr>",
@@ -1082,6 +1099,7 @@ void handleInputVoltageCalibrationPage() {
                     static_cast<unsigned long>(point.adcMillivolts),
                     static_cast<unsigned long>(point.theoreticalInputMillivolts / 1000U),
                     static_cast<unsigned long>(point.theoreticalInputMillivolts % 1000U),
+                    static_cast<unsigned>(i),
                     static_cast<unsigned long>(point.actualInputMillivolts / 1000U),
                     static_cast<unsigned long>(point.actualInputMillivolts % 1000U),
                     static_cast<unsigned>(i));
@@ -1101,12 +1119,17 @@ void sendTdsCalibrationPointsTable(const TdsCalibrationSessionSnapshot& session)
     }
     for (std::uint8_t i = 0; i < session.pointCount && i < kTdsCalibrationMaxPoints; ++i) {
         const TdsCalibrationPointSnapshot& point = session.points[i];
-        sendFmt("<tr><td>%u</td><td>%u</td><td>%u</td><td>%u mV</td><td>"
-                "<form method='post' action='/faucet/calibration' onsubmit='return once(this)'>"
+        sendFmt("<tr><td>%u</td><td><form method='post' action='/faucet/calibration' onsubmit='return once(this)'>"
+                "<input type='hidden' name='action' value='tds_update_point'><input type='hidden' name='index' value='%u'>"
+                "<span class='estimator-input-row'><input name='referencePpm' type='number' min='0' max='2000' step='1' value='%u' required>"
+                "<span class='unit-label'>ppm</span><input class='secondary' type='submit' value='修改'></span></form></td>"
+                "<td>%u</td><td>%u mV</td><td>"
+                "<form method='post' action='/faucet/calibration' onsubmit=\"return confirm('确认删除这个 TDS 校准点？')&&once(this)\">"
                 "<input type='hidden' name='action' value='tds_remove_point'>"
                 "<input type='hidden' name='index' value='%u'>"
                 "<input class='secondary' type='submit' value='删除'></form></td></tr>",
                 static_cast<unsigned>(i + 1U),
+                static_cast<unsigned>(i),
                 static_cast<unsigned>(point.referencePpm),
                 static_cast<unsigned>(point.rawPpm),
                 static_cast<unsigned>(point.voltageMv),
@@ -1175,8 +1198,8 @@ void handleTdsCalibrationPage() {
     sendFmt("<div><span>采样电压</span><strong>%s</strong></div>", enabled ? voltageText : "-");
     sendFmt("<div><span>水温补偿</span><strong>%s</strong></div>",
             config.tdsTemperatureCompensationEnabled ? tempText : "关闭");
-    sendFmt("<div><span>scale</span><strong>%.3f</strong></div>", static_cast<double>(config.tdsScale));
-    sendFmt("<div><span>offset</span><strong>%d ppm</strong></div>", static_cast<int>(config.tdsOffsetPpm));
+    sendFmt("<div><span>比例</span><strong>%.3f</strong></div>", static_cast<double>(config.tdsScale));
+    sendFmt("<div><span>修正</span><strong>%d ppm</strong></div>", static_cast<int>(config.tdsOffsetPpm));
     Esp32BaseWeb::sendChunk("</div></section><section class='panel tds-point-session'");
     if (session.samplingActive && !session.readyToSave) {
         Esp32BaseWeb::sendChunk(" data-tds-calibration-refresh");
@@ -1230,7 +1253,7 @@ void handleTdsCalibrationPage() {
     sendTdsCalibrationPointsTable(session);
     Esp32BaseWeb::sendChunk("<div class='tds-workflow-card'><h4>自动生成结果</h4>");
     if (session.candidateReady) {
-        sendFmt("<p>点数 %u，参考跨度 %u ppm，原始跨度 %u ppm，scale %.3f，offset %d ppm。</p>",
+        sendFmt("<p>点数 %u，参考跨度 %u ppm，原始跨度 %u ppm，比例 %.3f，修正 %d ppm。</p>",
                 static_cast<unsigned>(session.pointCount),
                 static_cast<unsigned>(session.referenceSpanPpm),
                 static_cast<unsigned>(session.rawSpanPpm),

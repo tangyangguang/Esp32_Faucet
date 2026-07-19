@@ -760,6 +760,8 @@ void sendNoticeFromQuery() {
         const bool tdsPointStarted = std::strcmp(text, "tds_point_started") == 0;
         const bool tdsPointSaved = std::strcmp(text, "tds_point_saved") == 0;
         const bool tdsPointRemoved = std::strcmp(text, "tds_point_removed") == 0;
+        const bool tdsPointUpdated = std::strcmp(text, "tds_point_updated") == 0;
+        const bool voltagePointUpdated = std::strcmp(text, "voltage_point_updated") == 0;
         const bool tdsSaved = std::strcmp(text, "tds_saved") == 0;
         const bool tdsDiscarded = std::strcmp(text, "tds_discarded") == 0;
         Esp32BaseWeb::sendChunk("<p class='ok'>");
@@ -768,6 +770,8 @@ void sendNoticeFromQuery() {
                                 : tdsPointStarted    ? "校准点采集已开始，页面会自动刷新到可保存状态。"
                                 : tdsPointSaved      ? "校准点已保存。"
                                 : tdsPointRemoved    ? "校准点已删除。"
+                                : tdsPointUpdated    ? "TDS 校准点已修改并重新计算。"
+                                : voltagePointUpdated ? "输入电压校准点已修改并重新计算。"
                                 : tdsSaved           ? "水质校准参数已应用。"
                                 : tdsDiscarded       ? "本次水质校准已丢弃。"
                                                      : "已保存。");
@@ -798,6 +802,8 @@ void sendNoticeFromQuery() {
         message = "日期格式无效，请重新选择日期。";
     } else if (std::strcmp(text, "save_failed") == 0) {
         message = "保存失败，请稍后重试。";
+    } else if (std::strcmp(text, "invalid_fit") == 0) {
+        message = "修改后的校准点无法生成有效参数，原数据未改变。请检查输入值或校准点跨度。";
     } else if (std::strcmp(text, "metering_storage_unavailable") == 0) {
         message = "计量方案存储不可用；请检查存储状态，系统不会自动删除原文件。";
     } else if (std::strcmp(text, "no_generated_result") == 0) {

@@ -280,6 +280,98 @@ bool AppController::submitCalibrationActualForWeb(std::uint32_t actualMl, std::u
     return saveCalibrationSession();
 }
 
+bool AppController::updateCalibrationActualForWeb(std::uint8_t attemptIndex,
+                                                  std::uint32_t actualMl,
+                                                  std::uint32_t nowSeconds) {
+    if (actualMl < kCalibrationMinActualMl || actualMl > kMaxVolumePresetMl ||
+        calibrationSession_.sessionId == 0 ||
+        attemptIndex >= calibrationSession_.attemptCount ||
+        water_.snapshot().state != WaterState::Idle ||
+        !calibrationSessionTraces_ || !calibrationSessionTraces_->ready()) {
+        return false;
+    }
+    CalibrationAttempt& attempt = calibrationSession_.attempts[attemptIndex];
+    if (attempt.status != CalibrationAttemptStatus::Valid ||
+        attempt.sessionTraceSlot >= kCalibrationSessionTraceSlots) {
+        return false;
+    }
+    CalibrationStoredTrace stored{};
+    if (!calibrationSessionTraces_->load(attempt.sessionTraceSlot, stored) ||
+        !stored.valid ||
+        stored.sessionId != calibrationSession_.sessionId ||
+        stored.attemptIndex != attempt.attemptIndex ||
+        stored.trace.bucketCount == 0 ||
+        stored.trace.bucketCount > kPulseTraceMaxBucketsPerTrace ||
+        stored.trace.startupEdgeCount > kPulseTraceMaxStartupEdgesPerTrace) {
+        return false;
+    }
+
+    std::unique_ptr<WaterPulseTraceBucketSample[]> buckets(
+        new (std::nothrow) WaterPulseTraceBucketSample[stored.trace.bucketCount]{});
+    std::unique_ptr<WaterPulseTraceSample[]> startupEdges;
+    if (!buckets ||
+        calibrationSessionTraces_->readBuckets(
+            attempt.sessionTraceSlot, buckets.get(), stored.trace.bucketCount) !=
+            stored.trace.bucketCount) {
+        return false;
+    }
+    if (stored.trace.startupEdgeCount > 0) {
+        startupEdges.reset(
+            new (std::nothrow) WaterPulseTraceSample[stored.trace.startupEdgeCount]{});
+        if (!startupEdges ||
+            calibrationSessionTraces_->readStartupEdges(
+                attempt.sessionTraceSlot,
+                startupEdges.get(),
+                stored.trace.startupEdgeCount) != stored.trace.startupEdgeCount) {
+            return false;
+        }
+    }
+
+    const CalibrationSampleSummary summary =
+        makeCalibrationSummary(stored.trace,
+                               buckets.get(),
+                               stored.trace.bucketCount,
+                               actualMl,
+                               defaultSegmentedCalibrationOptions());
+    if (!calibrationSessionTraces_->saveValid(attempt.sessionTraceSlot,
+                                              stored,
+                                              buckets.get(),
+                                              stored.trace.bucketCount,
+                                              startupEdges.get(),
+                                              stored.trace.startupEdgeCount,
+                                              actualMl,
+                                              nowSeconds)) {
+        return false;
+    }
+
+    attempt.actualMl = actualMl;
+    attempt.summary = summary;
+    calibrationSession_.validSampleCount = countValidCalibrationSamples(calibrationSession_);
+    calibrationSession_.updatedAt = nowSeconds;
+    if (pulseTraces_) {
+        pulseTraces_->setActualMlByRecord(attempt.record, actualMl);
+    }
+    const bool wasApplied = calibrationSession_.status == CalibrationSessionStatus::Applied;
+    if (!saveCalibrationSession()) {
+        return false;
+    }
+    clearCalibrationCandidate();
+    if (wasApplied) {
+        // Editing a historical sample must never silently replace the active
+        // metering scheme; only prepare a newly reviewed candidate.
+        return regenerateCalibrationCandidateForWeb(nowSeconds);
+    }
+    if (calibrationCanQuickGenerate(calibrationSession_)) {
+        return refreshCalibrationCandidate(nowSeconds);
+    }
+    calibrationSession_.status =
+        calibrationCanStartAttempt(calibrationSession_)
+            ? CalibrationSessionStatus::WaitingLocalRun
+            : CalibrationSessionStatus::Failed;
+    pendingBeep_ = BeepPattern::Done;
+    return saveCalibrationSession();
+}
+
 bool AppController::skipCalibrationAttemptForWeb(std::uint32_t nowSeconds) {
     if (calibrationSession_.status != CalibrationSessionStatus::AwaitingActual ||
         calibrationSession_.attemptCount == 0) {
@@ -479,6 +571,13 @@ bool AppController::saveTdsCalibrationPointForWeb(std::uint32_t nowSeconds) {
     return canUseTdsCalibration() && waterSensors_->saveStableTdsCalibrationPoint(nowSeconds);
 }
 
+bool AppController::updateTdsCalibrationPointForWeb(std::uint8_t index,
+                                                    std::uint16_t referencePpm,
+                                                    std::uint32_t nowSeconds) {
+    return canUseTdsCalibration() &&
+           waterSensors_->updateTdsCalibrationPoint(index, referencePpm, nowSeconds);
+}
+
 bool AppController::removeTdsCalibrationPointForWeb(std::uint8_t index, std::uint32_t nowSeconds) {
     return canUseTdsCalibration() && waterSensors_->removeTdsCalibrationPoint(index, nowSeconds);
 }
@@ -546,6 +645,21 @@ bool AppController::removeInputVoltageCalibrationPointForWeb(std::uint8_t index)
     config_ = updated;
     water_.applyConfig(config_);
     pendingBeep_ = BeepPattern::Click;
+    return true;
+}
+
+bool AppController::updateInputVoltageCalibrationPointForWeb(std::uint8_t index,
+                                                             std::uint32_t actualMillivolts) {
+    if (!canApplyConfig() || !waterSensors_) {
+        return false;
+    }
+    SystemConfig updated = config_;
+    if (!waterSensors_->updateInputVoltageCalibrationPoint(updated, index, actualMillivolts)) {
+        return false;
+    }
+    config_ = updated;
+    water_.applyConfig(config_);
+    pendingBeep_ = BeepPattern::Done;
     return true;
 }
 

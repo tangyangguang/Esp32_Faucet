@@ -735,10 +735,39 @@ void test_input_voltage_calibration_page_shows_raw_and_correspondence_columns() 
     TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "理论输入"));
     TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "万用表实际电压"));
     TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "name='actualVoltage'"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "name='action' value='voltage_update_point'"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "value='12.100'"));
     TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "比例 1.0000，修正 0 mV"));
     TEST_ASSERT_NULL(std::strstr(body.c_str(), "gain "));
     TEST_ASSERT_NULL(std::strstr(body.c_str(), "offset "));
     TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "确认删除这个输入电压校准点"));
+}
+
+void test_input_voltage_calibration_point_post_updates_and_persists_actual_value() {
+    WebFixture fixture;
+    fixture.config.inputVoltageCalibration.calibrated = true;
+    fixture.config.inputVoltageCalibration.pointCount = 1;
+    fixture.config.inputVoltageCalibration.points[0] =
+        {8800, 8798, 8802, 3, 1100, 12100, 12100, testNowSeconds()};
+    TEST_ASSERT_TRUE(fixture.app.applyConfig(fixture.config));
+    registerRoutes();
+    beginWebPost("/faucet/calibration");
+    Esp32BaseWeb::nativeTestSetParam("action", "voltage_update_point");
+    Esp32BaseWeb::nativeTestSetParam("index", "0");
+    Esp32BaseWeb::nativeTestSetParam("actualVoltage", "12.250");
+
+    TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch(
+        "/faucet/calibration", Esp32BaseWeb::METHOD_POST));
+
+    TEST_ASSERT_EQUAL(303, Esp32BaseWeb::nativeTestResponse().code);
+    TEST_ASSERT_EQUAL_STRING(
+        "/faucet/calibration?view=voltage&saved=voltage_point_updated",
+        Esp32BaseWeb::nativeTestResponseHeader("Location"));
+    const SystemConfig persisted = fixture.configStore.loadSystemConfig();
+    TEST_ASSERT_EQUAL_UINT32(
+        12250, persisted.inputVoltageCalibration.points[0].actualInputMillivolts);
+    TEST_ASSERT_EQUAL_INT16(
+        8800, persisted.inputVoltageCalibration.points[0].adcRaw);
 }
 
 void test_flow_calibration_manual_post_creates_current_parameter() {
@@ -1341,6 +1370,7 @@ int main(int, char**) {
     RUN_TEST(test_flow_calibration_manual_page_prefills_current_parameters);
     RUN_TEST(test_temperature_calibration_post_accepts_celsius_decimal_input);
     RUN_TEST(test_input_voltage_calibration_page_shows_raw_and_correspondence_columns);
+    RUN_TEST(test_input_voltage_calibration_point_post_updates_and_persists_actual_value);
     RUN_TEST(test_flow_calibration_manual_post_creates_current_parameter);
     RUN_TEST(test_flow_calibration_manual_post_rejects_busy_without_changing_current);
     RUN_TEST(test_flow_calibration_rejects_unknown_write_action);

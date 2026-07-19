@@ -219,6 +219,23 @@ void handleCalibrationPost() {
             "invalid_state");
         return;
     }
+    if (std::strcmp(text, "voltage_update_point") == 0) {
+        std::uint32_t index = 0;
+        std::uint32_t actualMillivolts = 0;
+        if (!getParam("index", text, sizeof(text)) || !parseU32(text, index) ||
+            index >= kInputVoltageCalibrationMaxPoints ||
+            !readInputVoltageCalibrationInput(actualMillivolts)) {
+            redirectInputVoltageCalibrationResult(false, nullptr, "invalid_value");
+            return;
+        }
+        persistInputVoltageCalibrationResult(
+            g_context.app &&
+                g_context.app->updateInputVoltageCalibrationPointForWeb(
+                    static_cast<std::uint8_t>(index), actualMillivolts),
+            "voltage_point_updated",
+            "invalid_fit");
+        return;
+    }
     if (std::strcmp(text, "voltage_clear") == 0) {
         persistInputVoltageCalibrationResult(g_context.app && g_context.app->clearInputVoltageCalibrationForWeb(),
                                              "voltage_cleared",
@@ -270,6 +287,24 @@ void handleCalibrationPost() {
                                              g_context.nowSeconds ? g_context.nowSeconds() : 0),
                                      "tds_point_removed",
                                      "invalid_state");
+        return;
+    }
+    if (std::strcmp(text, "tds_update_point") == 0) {
+        std::uint32_t index = 0;
+        std::uint16_t referencePpm = 0;
+        if (!getParam("index", text, sizeof(text)) || !parseU32(text, index) ||
+            index >= kTdsCalibrationMaxPoints || !readTdsCalibrationInput(referencePpm)) {
+            redirectTdsCalibrationFailure("invalid_value");
+            return;
+        }
+        redirectTdsCalibrationResult(
+            g_context.app &&
+                g_context.app->updateTdsCalibrationPointForWeb(
+                    static_cast<std::uint8_t>(index),
+                    referencePpm,
+                    g_context.nowSeconds ? g_context.nowSeconds() : 0),
+            "tds_point_updated",
+            "invalid_fit");
         return;
     }
     if (std::strcmp(text, "tds_discard_session") == 0) {
@@ -335,6 +370,28 @@ void handleFlowCalibrationPost() {
                                       g_context.app && g_context.app->submitCalibrationActualForWeb(actualMl, now),
                                       "actual",
                                       "save_failed");
+        return;
+    }
+    if (std::strcmp(text, "update_actual") == 0) {
+        std::uint32_t attemptIndex = 0;
+        std::uint32_t actualMl = 0;
+        if (!getParam("attemptIndex", text, sizeof(text)) ||
+            !parseU32(text, attemptIndex) ||
+            attemptIndex >= kCalibrationMaxAttempts ||
+            !getParam("actualMl", text, sizeof(text)) ||
+            !parseU32(text, actualMl) ||
+            actualMl < kCalibrationMinActualMl ||
+            actualMl > kMaxVolumePresetMl) {
+            sendFlowCalibrationPostFailure(ajax, "invalid_value");
+            return;
+        }
+        sendFlowCalibrationPostResult(
+            ajax,
+            g_context.app &&
+                g_context.app->updateCalibrationActualForWeb(
+                    static_cast<std::uint8_t>(attemptIndex), actualMl, now),
+            "actual_updated",
+            "save_failed");
         return;
     }
     if (std::strcmp(text, "skip_attempt") == 0) {

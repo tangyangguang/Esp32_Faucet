@@ -104,6 +104,25 @@ void test_temperature_open_and_short_display_as_invalid_without_changing_tds_zer
     TEST_ASSERT_TRUE((snapshot.flags & kWaterSensorFlagTempShort) != 0);
 }
 
+void test_temperature_open_detection_allows_3v3_supply_tolerance_but_keeps_zero_c_valid() {
+    SensorManagerFixture fixture;
+    fixture.adc.values[0] = okMv(1091);
+    fixture.adc.values[1] = okMv(3150);
+    fixture.adc.values[2] = okMv(0);
+    std::uint32_t nowMs = 0;
+    advanceSample(fixture.manager, nowMs);
+
+    WaterSensorSnapshot snapshot = fixture.manager.snapshot();
+    TEST_ASSERT_FALSE(snapshot.temperatureCentiC.valid);
+    TEST_ASSERT_TRUE((snapshot.flags & kWaterSensorFlagTempOpen) != 0);
+
+    fixture.adc.values[1] = okMv(2535);
+    advanceSample(fixture.manager, nowMs);
+    snapshot = fixture.manager.snapshot();
+    TEST_ASSERT_TRUE(snapshot.temperatureCentiC.valid);
+    TEST_ASSERT_INT_WITHIN(150, 0, snapshot.temperatureCentiC.value);
+}
+
 void test_input_voltage_calibration_saves_raw_points_and_recomputes_fit() {
     SensorManagerFixture fixture;
     fixture.setDefaultReadings();
@@ -130,6 +149,30 @@ void test_input_voltage_calibration_saves_raw_points_and_recomputes_fit() {
     TEST_ASSERT_TRUE(fixture.manager.clearInputVoltageCalibration(fixture.config));
     TEST_ASSERT_EQUAL_UINT8(0, fixture.config.inputVoltageCalibration.pointCount);
     TEST_ASSERT_FALSE(fixture.config.inputVoltageCalibration.calibrated);
+}
+
+void test_input_voltage_calibration_point_edit_recomputes_without_changing_raw_capture() {
+    SensorManagerFixture fixture;
+    fixture.setDefaultReadings();
+    std::uint32_t nowMs = 0;
+    for (std::uint8_t i = 0; i < 5; ++i) {
+        advanceSample(fixture.manager, nowMs);
+    }
+    TEST_ASSERT_TRUE(fixture.manager.saveInputVoltageCalibrationPoint(
+        fixture.config, 12000, 1720000000));
+    const InputVoltageCalibrationPoint captured =
+        fixture.config.inputVoltageCalibration.points[0];
+
+    TEST_ASSERT_TRUE(fixture.manager.updateInputVoltageCalibrationPoint(
+        fixture.config, 0, 12100));
+
+    const InputVoltageCalibrationPoint& updated =
+        fixture.config.inputVoltageCalibration.points[0];
+    TEST_ASSERT_EQUAL_INT16(captured.adcRaw, updated.adcRaw);
+    TEST_ASSERT_EQUAL_UINT32(captured.theoreticalInputMillivolts,
+                             updated.theoreticalInputMillivolts);
+    TEST_ASSERT_EQUAL_UINT32(12100, updated.actualInputMillivolts);
+    TEST_ASSERT_EQUAL_INT32(12100, fixture.manager.snapshot().inputVoltageMv.value);
 }
 
 void test_input_voltage_uses_recent_raw_median_and_rejects_unstable_capture() {
@@ -471,6 +514,29 @@ void test_tds_calibration_point_removal_recomputes_candidate() {
     TEST_ASSERT_FALSE(session.candidateReady);
 }
 
+void test_tds_calibration_point_edit_recomputes_candidate_without_changing_capture() {
+    SensorManagerFixture fixture;
+
+    TEST_ASSERT_TRUE(fixture.manager.startTdsCalibrationSession(1720000000UL));
+    TEST_ASSERT_TRUE(fixture.manager.startTdsCalibrationPoint(160, 1720000001UL));
+    std::uint32_t nowMs = 0;
+    for (std::uint8_t i = 0; i < 16; ++i) {
+        fixture.adc.values[2] = okMv(420);
+        advanceSample(fixture.manager, nowMs);
+    }
+    TEST_ASSERT_TRUE(fixture.manager.saveStableTdsCalibrationPoint(1720000020UL));
+    const TdsCalibrationSessionSnapshot before = fixture.manager.calibrationSnapshot();
+
+    TEST_ASSERT_TRUE(fixture.manager.updateTdsCalibrationPoint(0, 170, 1720000030UL));
+
+    const TdsCalibrationSessionSnapshot after = fixture.manager.calibrationSnapshot();
+    TEST_ASSERT_TRUE(after.candidateReady);
+    TEST_ASSERT_EQUAL_UINT16(170, after.points[0].referencePpm);
+    TEST_ASSERT_EQUAL_UINT16(before.points[0].rawPpm, after.points[0].rawPpm);
+    TEST_ASSERT_EQUAL_UINT16(before.points[0].voltageMv, after.points[0].voltageMv);
+    TEST_ASSERT_TRUE(after.candidateScale > before.candidateScale);
+}
+
 int main(int argc, char** argv) {
     (void)argc;
     (void)argv;
@@ -479,7 +545,9 @@ int main(int argc, char** argv) {
     RUN_TEST(test_manager_samples_a0_input_voltage_a1_temp_a2_tds);
     RUN_TEST(test_manager_can_skip_input_voltage_when_only_water_sensors_are_wired);
     RUN_TEST(test_temperature_open_and_short_display_as_invalid_without_changing_tds_zero);
+    RUN_TEST(test_temperature_open_detection_allows_3v3_supply_tolerance_but_keeps_zero_c_valid);
     RUN_TEST(test_input_voltage_calibration_saves_raw_points_and_recomputes_fit);
+    RUN_TEST(test_input_voltage_calibration_point_edit_recomputes_without_changing_raw_capture);
     RUN_TEST(test_input_voltage_uses_recent_raw_median_and_rejects_unstable_capture);
     RUN_TEST(test_configured_input_voltage_divider_is_used_by_live_sampling);
     RUN_TEST(test_tds_hardware_change_discards_in_progress_calibration_points);
@@ -497,5 +565,6 @@ int main(int argc, char** argv) {
     RUN_TEST(test_tds_calibration_point_session_combines_saved_points_and_apply);
     RUN_TEST(test_tds_calibration_apply_is_order_independent);
     RUN_TEST(test_tds_calibration_point_removal_recomputes_candidate);
+    RUN_TEST(test_tds_calibration_point_edit_recomputes_candidate_without_changing_capture);
     return UNITY_END();
 }

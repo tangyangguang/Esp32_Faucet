@@ -99,6 +99,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_app_controller_pending_actual_sample_can_be_skipped);
     RUN_TEST(test_app_controller_applies_generated_session_scheme_and_keeps_old_scheme);
     RUN_TEST(test_app_controller_regenerates_applied_candidate_from_stored_traces);
+    RUN_TEST(test_app_controller_edits_flow_actual_sample_and_recomputes_candidate);
     RUN_TEST(test_app_controller_pause_timeout_trace_is_not_marked_error_and_can_calibrate);
     RUN_TEST(test_app_controller_result_display_exits_after_configured_timeout);
     RUN_TEST(test_app_controller_result_ok_hold_stays_on_result);

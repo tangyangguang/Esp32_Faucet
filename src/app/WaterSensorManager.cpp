@@ -12,7 +12,9 @@ constexpr std::uint8_t kTdsDownshiftWindows = 8;
 constexpr std::uint8_t kCalibrationMinSamples = 12;
 constexpr std::uint32_t kTdsCalibrationSessionTimeoutSec = 30UL * 60UL;
 constexpr std::uint16_t kTemperatureShortThresholdMv = 50;
-constexpr std::uint16_t kTemperatureOpenThresholdMv = 3250;
+// The divider is powered by the nominal 3.3 V rail. Keep enough margin for
+// regulator tolerance while remaining far above the valid liquid-water range.
+constexpr std::uint16_t kTemperatureOpenThresholdMv = 3000;
 constexpr std::uint32_t kInputVoltageCalibrationMinMv = 1000;
 constexpr std::uint32_t kInputVoltageCalibrationMaxMv = 60000;
 constexpr std::uint32_t kInputVoltageCalibrationMinSpanMv = 1000;
@@ -180,7 +182,7 @@ TdsCalibrationSessionSnapshot WaterSensorManager::calibrationSnapshot() const {
     session.tempFallback25C = calibrationTempFallback_;
     session.sampleCount = calibrationSampleCount_;
     session.referencePpm = calibrationReferencePpm_;
-    session.rawAvgPpm = calibrationRawAverage();
+    session.rawAvgPpm = calibrationRawMedian();
     session.flags = snapshot_.flags;
     session.readyToSave = calibrationReady();
     session.sessionActive = tdsCalibrationSessionActive_;
@@ -234,7 +236,7 @@ bool WaterSensorManager::saveStableTdsCalibrationPoint(std::uint32_t nowSeconds)
 
     TdsCalibrationPointSnapshot point{};
     point.referencePpm = calibrationReferencePpm_;
-    point.rawPpm = calibrationRawAverage();
+    point.rawPpm = calibrationRawMedian();
     point.voltageMv = snapshot_.tdsVoltageMv.valid ? toU16(snapshot_.tdsVoltageMv.value) : 0;
     tdsCalibrationPoints_[tdsCalibrationPointCount_++] = point;
 
@@ -259,6 +261,24 @@ bool WaterSensorManager::removeTdsCalibrationPoint(std::uint8_t index, std::uint
     tdsCalibrationPoints_[tdsCalibrationPointCount_] = {};
     tdsCalibrationUpdatedAt_ = nowSeconds;
     refreshTdsCalibrationCandidate();
+    return true;
+}
+
+bool WaterSensorManager::updateTdsCalibrationPoint(std::uint8_t index,
+                                                   std::uint16_t referencePpm,
+                                                   std::uint32_t nowSeconds) {
+    if (!tdsCalibrationSessionActive_ || calibrationKind_ != CalibrationKind::None ||
+        index >= tdsCalibrationPointCount_ || referencePpm > 2000) {
+        return false;
+    }
+    const std::uint16_t previous = tdsCalibrationPoints_[index].referencePpm;
+    tdsCalibrationPoints_[index].referencePpm = referencePpm;
+    if (!refreshTdsCalibrationCandidate()) {
+        tdsCalibrationPoints_[index].referencePpm = previous;
+        refreshTdsCalibrationCandidate();
+        return false;
+    }
+    tdsCalibrationUpdatedAt_ = nowSeconds;
     return true;
 }
 
@@ -497,6 +517,26 @@ bool WaterSensorManager::removeInputVoltageCalibrationPoint(SystemConfig& config
     return true;
 }
 
+bool WaterSensorManager::updateInputVoltageCalibrationPoint(SystemConfig& config,
+                                                            std::uint8_t index,
+                                                            std::uint32_t actualMillivolts) {
+    if (actualMillivolts < kInputVoltageCalibrationMinMv ||
+        actualMillivolts > kInputVoltageCalibrationMaxMv) {
+        return false;
+    }
+    InputVoltageCalibration candidate = config.inputVoltageCalibration;
+    if (index >= candidate.pointCount) {
+        return false;
+    }
+    candidate.points[index].actualInputMillivolts = actualMillivolts;
+    if (!refreshInputVoltageCalibration(candidate)) {
+        return false;
+    }
+    config.inputVoltageCalibration = candidate;
+    configure(config);
+    return true;
+}
+
 bool WaterSensorManager::clearInputVoltageCalibration(SystemConfig& config) {
     config.inputVoltageCalibration = {};
     configure(config);
@@ -685,15 +725,21 @@ bool WaterSensorManager::calibrationReady() const {
                              false);
 }
 
-std::uint16_t WaterSensorManager::calibrationRawAverage() const {
+std::uint16_t WaterSensorManager::calibrationRawMedian() const {
     if (calibrationSampleCount_ == 0) {
         return 0;
     }
-    std::uint32_t sum = 0;
+    std::uint16_t sorted[kCalibrationMaxSamples]{};
     for (std::uint8_t i = 0; i < calibrationSampleCount_; ++i) {
-        sum += calibrationReadings_[i];
+        sorted[i] = calibrationReadings_[i];
     }
-    return static_cast<std::uint16_t>(sum / calibrationSampleCount_);
+    std::sort(sorted, sorted + calibrationSampleCount_);
+    const std::uint8_t middle = calibrationSampleCount_ / 2U;
+    if ((calibrationSampleCount_ & 1U) != 0) {
+        return sorted[middle];
+    }
+    return static_cast<std::uint16_t>(
+        (static_cast<std::uint32_t>(sorted[middle - 1U]) + sorted[middle]) / 2U);
 }
 
 bool WaterSensorManager::refreshTdsCalibrationCandidate() {

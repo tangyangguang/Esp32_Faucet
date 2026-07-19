@@ -59,6 +59,9 @@ public:
     bool startTdsCalibrationSession(std::uint32_t nowSeconds);
     bool startTdsCalibrationPoint(std::uint16_t referencePpm, std::uint32_t nowSeconds);
     bool saveStableTdsCalibrationPoint(std::uint32_t nowSeconds);
+    bool updateTdsCalibrationPoint(std::uint8_t index,
+                                   std::uint16_t referencePpm,
+                                   std::uint32_t nowSeconds);
     bool removeTdsCalibrationPoint(std::uint8_t index, std::uint32_t nowSeconds);
     bool discardTdsCalibrationSession();
     bool expireTdsCalibrationSession(std::uint32_t nowSeconds);
@@ -66,6 +69,9 @@ public:
     bool saveInputVoltageCalibrationPoint(SystemConfig& config,
                                           std::uint32_t actualMillivolts,
                                           std::uint32_t nowSeconds);
+    bool updateInputVoltageCalibrationPoint(SystemConfig& config,
+                                            std::uint8_t index,
+                                            std::uint32_t actualMillivolts);
     bool removeInputVoltageCalibrationPoint(SystemConfig& config, std::uint8_t index);
     bool clearInputVoltageCalibration(SystemConfig& config);
 
@@ -127,7 +133,7 @@ private:
     void updateTdsRange(std::uint16_t tdsVoltageMv);
     void accumulateCalibration(const TdsComputationResult& result);
     bool calibrationReady() const;
-    std::uint16_t calibrationRawAverage() const;
+    std::uint16_t calibrationRawMedian() const;
     bool refreshTdsCalibrationCandidate();
     bool refreshInputVoltageCalibration(InputVoltageCalibration& calibration) const;
     void addInputVoltageSample(const AdcReadResult& input);

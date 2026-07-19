@@ -131,6 +131,13 @@ private:
     bool refreshTdsCalibrationCandidate();
     bool refreshInputVoltageCalibration(InputVoltageCalibration& calibration) const;
     void addInputVoltageSample(const AdcReadResult& input);
+    bool summarizeInputVoltageWindow(std::uint32_t dividerHighOhm,
+                                     std::uint32_t dividerLowOhm,
+                                     std::int16_t& rawMedian,
+                                     std::uint16_t& adcMvMedian,
+                                     std::uint32_t& theoreticalMedianMv,
+                                     std::uint32_t& theoreticalSpanMv) const;
+    void refreshInputVoltageSnapshotCalibration();
     void accumulateRunSample(const WaterSensorSnapshot& current);
 };
 

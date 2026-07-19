@@ -26,6 +26,9 @@ struct WaterSensorSnapshot {
     SensorValue inputVoltageTheoreticalMv;
     SensorValue inputVoltageAdcMv;
     SensorValue inputVoltageAdcRaw;
+    std::uint32_t inputVoltageWindowSpanMv = 0;
+    std::uint8_t inputVoltageSampleCount = 0;
+    bool inputVoltageStable = false;
     SensorValue temperatureRawCentiC;
     SensorValue temperatureCentiC;
     SensorValue tdsPpm;
@@ -82,6 +85,10 @@ std::int16_t ntcCentiCFromDividerMv(std::uint16_t adcMv,
                                     std::uint32_t beta);
 
 std::uint32_t inputVoltageMvFromDivider(std::uint16_t adcMv, std::uint32_t highOhm, std::uint32_t lowOhm);
+std::uint32_t inputVoltageMvFromAdcRaw(std::int16_t raw,
+                                      std::uint16_t fullScaleMv,
+                                      std::uint32_t highOhm,
+                                      std::uint32_t lowOhm);
 
 TdsComputationResult computeTdsPpm(const TdsComputationInput& input);
 

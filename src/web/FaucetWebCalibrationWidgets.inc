@@ -1000,7 +1000,7 @@ void sendCalibrationCenterInputVoltageCard(const AppSnapshot& snapshot, const Sy
     Esp32BaseWeb::sendChunk("<section class='panel calibration-center-card'><div class='panel-head'><h3>输入电压校准</h3>");
     sendFmt("<span class='status-pill %s'>%s</span></div>",
             calibration.calibrated ? "status-ok" : "status-warn",
-            calibration.calibrated ? "已校准" : "参考值");
+            calibration.calibrated ? "已校准" : "未校准");
     Esp32BaseWeb::sendChunk("<div class='tds-calibration-summary'>");
     if (snapshot.sensors.inputVoltageMv.valid) {
         sendFmt("<div><span>当前输入</span><strong>%ld.%03ld V</strong></div>",
@@ -1019,12 +1019,17 @@ void handleInputVoltageCalibrationPage() {
     const AppSnapshot snapshot = g_context.app->snapshot();
     const SystemConfig& config = *g_context.config;
     const InputVoltageCalibration& calibration = config.inputVoltageCalibration;
-    const bool canCapture = !waterTaskActive() && snapshot.sensors.inputVoltageAdcRaw.valid &&
+    const bool canCapture = !waterTaskActive() && snapshot.sensors.inputVoltageStable &&
                             calibration.pointCount < kInputVoltageCalibrationMaxPoints;
     Esp32BaseWeb::sendHeader("输入电压校准");
     Esp32BaseWeb::sendChunk("<h2>输入电压校准</h2><p><a class='btn-link' href='/faucet/calibration'>返回校准中心</a></p>");
     sendNoticeFromQuery();
-    Esp32BaseWeb::sendChunk("<section class='panel'><div class='panel-head'><h3>当前读数</h3>");
+    Esp32BaseWeb::sendChunk("<section class='panel'");
+    if (!snapshot.sensors.inputVoltageStable &&
+        calibration.pointCount < kInputVoltageCalibrationMaxPoints) {
+        Esp32BaseWeb::sendChunk(" data-voltage-calibration-refresh");
+    }
+    Esp32BaseWeb::sendChunk("><div class='panel-head'><h3>当前读数</h3>");
     sendFmt("<span class='status-pill %s'>%s</span></div><div class='tds-calibration-summary'>",
             calibration.calibrated ? "status-ok" : "status-warn",
             calibration.calibrated ? "已校准" : "未校准");
@@ -1042,10 +1047,14 @@ void handleInputVoltageCalibrationPage() {
     } else {
         Esp32BaseWeb::sendChunk("<div><span>ADC 原始值</span><strong>--</strong></div><div><span>当前输入</span><strong>-- V</strong></div>");
     }
-    sendFmt("<div><span>换算参数</span><strong>gain %.6f，offset %ld mV</strong></div>",
+    sendFmt("<div><span>采样状态</span><strong>%s（%u 次，波动 %lu mV）</strong></div>",
+            snapshot.sensors.inputVoltageStable ? "稳定" : "等待稳定",
+            static_cast<unsigned>(snapshot.sensors.inputVoltageSampleCount),
+            static_cast<unsigned long>(snapshot.sensors.inputVoltageWindowSpanMv));
+    sendFmt("<div><span>换算参数</span><strong>比例 %.4f，修正 %ld mV</strong></div>",
             static_cast<double>(calibration.gainPpm) / 1000000.0,
             static_cast<long>(calibration.offsetMillivolts));
-    Esp32BaseWeb::sendChunk("</div><p class='hint'>保持供电稳定，用万用表测量输入端实际电压后录入。系统自动按已有点数计算，无需选择一点或多点模式。</p>"
+    Esp32BaseWeb::sendChunk("</div><p class='hint'>系统使用最近 5 次（约 5 秒）ADC 原始值的中位数；波动超限时等待稳定，不允许保存。用万用表测量输入端实际电压后录入即可。</p>"
                             "<form method='post' action='/faucet/calibration' onsubmit='return once(this)'>"
                             "<input type='hidden' name='action' value='voltage_save_point'>"
                             "<label class='compact-field'><span>万用表实际电压</span><span class='estimator-input-row'>"
@@ -1063,7 +1072,7 @@ void handleInputVoltageCalibrationPage() {
         for (std::uint8_t i = 0; i < calibration.pointCount; ++i) {
             const InputVoltageCalibrationPoint& point = calibration.points[i];
             sendFmt("<tr><td>%u</td><td>%d<br><small>%d~%d</small></td><td>%lu</td><td>%lu.%03lu V</td><td>%lu.%03lu V</td>"
-                    "<td><form method='post' action='/faucet/calibration' onsubmit='return once(this)'>"
+                    "<td><form method='post' action='/faucet/calibration' onsubmit=\"return confirm('确认删除这个输入电压校准点？')&&once(this)\">"
                     "<input type='hidden' name='action' value='voltage_remove_point'><input type='hidden' name='index' value='%u'>"
                     "<input class='secondary' type='submit' value='删除'></form></td></tr>",
                     static_cast<unsigned>(i + 1U),

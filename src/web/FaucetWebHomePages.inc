@@ -83,6 +83,13 @@ void sendMachineStatusSensorItem(const char* valueId, const char* label, const c
             unit);
 }
 
+void sendMachineStatusSecondaryItem(const char* valueId, const char* label, const char* value) {
+    sendFmt("<span class='machine-status-item'><span>%s</span><small id='%s' class='machine-status-note'>%s</small></span>",
+            label,
+            valueId,
+            value);
+}
+
 void formatPresetTarget(const PresetConfig& preset, char* out, std::size_t len) {
     if (preset.type == PresetType::Time) {
         formatSecondsValue(preset.value, out, len);
@@ -358,11 +365,12 @@ void sendMachineStatusCard(const AppSnapshot& snapshot, bool screenOn) {
     }
     char inputVoltage[24]{};
     if (snapshot.sensors.inputVoltageMv.valid) {
+        const std::int32_t centivolts = (snapshot.sensors.inputVoltageMv.value + 5) / 10;
         std::snprintf(inputVoltage,
                       sizeof(inputVoltage),
-                      "%ld.%03ld V",
-                      static_cast<long>(snapshot.sensors.inputVoltageMv.value / 1000),
-                      static_cast<long>(snapshot.sensors.inputVoltageMv.value % 1000));
+                      "%ld.%02ld V",
+                      static_cast<long>(centivolts / 100),
+                      static_cast<long>(centivolts % 100));
     } else {
         std::snprintf(inputVoltage, sizeof(inputVoltage), "-- V");
     }
@@ -397,11 +405,7 @@ void sendMachineStatusCard(const AppSnapshot& snapshot, bool screenOn) {
     sendMachineStatusItem("valveStatus", "阀门", snapshot.water.valveOpen ? "开" : "关");
     sendMachineStatusSensorItem("temperatureStatus", "水温", currentTemperature, "C");
     sendMachineStatusSensorItem("tdsStatus", "TDS", currentTds, "ppm");
-    sendMachineStatusItemNote("inputVoltageStatus",
-                              "inputVoltageNote",
-                              "输入",
-                              inputVoltage,
-                              snapshot.sensors.inputVoltageCalibrated ? "已校准" : "参考");
+    sendMachineStatusSecondaryItem("inputVoltageStatus", "电压", inputVoltage);
     sendMachineStatusItemNote("valvePwmDuty", "valvePwmNote", "PWM", valvePwmDuty, valvePwmNote);
     sendMachineStatusItem("resultStatus", "结果", resultText(snapshot.water.lastResult), "resultItem", !showResult);
     sendMachineStatusItem("droppedPulses", "丢弃脉冲", droppedPulses, "droppedPulsesItem", snapshot.flowDroppedPulses == 0);

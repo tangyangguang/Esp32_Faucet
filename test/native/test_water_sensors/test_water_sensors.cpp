@@ -13,6 +13,7 @@ void test_ntc_51k_pullup_50k_b3950_key_points() {
 void test_input_voltage_11_to_1_divider() {
     TEST_ASSERT_EQUAL_UINT32(12001, inputVoltageMvFromDivider(1091, 100000, 10000));
     TEST_ASSERT_EQUAL_UINT32(24002, inputVoltageMvFromDivider(2182, 100000, 10000));
+    TEST_ASSERT_EQUAL_UINT32(2720, inputVoltageMvFromAdcRaw(1978, 4096, 100000, 10000));
 }
 
 void test_tds_board_voltage_restores_10k_15k_input_divider() {

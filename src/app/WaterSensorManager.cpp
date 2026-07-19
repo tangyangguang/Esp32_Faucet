@@ -16,6 +16,7 @@ constexpr std::uint16_t kTemperatureOpenThresholdMv = 3250;
 constexpr std::uint32_t kInputVoltageCalibrationMinMv = 1000;
 constexpr std::uint32_t kInputVoltageCalibrationMaxMv = 60000;
 constexpr std::uint32_t kInputVoltageCalibrationMinSpanMv = 1000;
+constexpr std::uint32_t kInputVoltageStableMinimumToleranceMv = 10;
 
 std::uint16_t toU16(std::int32_t value) {
     if (value <= 0) {
@@ -40,6 +41,15 @@ bool enabledTemperature(const SystemConfig& config) {
 
 bool enabledTds(const SystemConfig& config) {
     return config.tdsKind == TdsKind::AnalogTdsAo;
+}
+
+std::int32_t applyInputVoltageCalibration(std::int32_t theoreticalMv,
+                                          const InputVoltageCalibration& calibration) {
+    const std::int64_t scaled =
+        (static_cast<std::int64_t>(theoreticalMv) * calibration.gainPpm + 500000LL) / 1000000LL;
+    const std::int64_t calibrated = scaled + calibration.offsetMillivolts;
+    return static_cast<std::int32_t>(
+        std::max<std::int64_t>(0, std::min<std::int64_t>(INT32_MAX, calibrated)));
 }
 
 }  // namespace
@@ -72,12 +82,26 @@ WaterSensorManager::WaterSensorManager(AdcReader& adc, bool sampleInputVoltage)
 void WaterSensorManager::configure(const SystemConfig& config) {
     const bool dividerChanged = config_.inputVoltageDividerHighOhm != config.inputVoltageDividerHighOhm ||
                                 config_.inputVoltageDividerLowOhm != config.inputVoltageDividerLowOhm;
+    const bool tdsHardwareChanged = config_.tdsKind != config.tdsKind ||
+                                    config_.tdsDividerHighOhm != config.tdsDividerHighOhm ||
+                                    config_.tdsDividerLowOhm != config.tdsDividerLowOhm;
     config_ = config;
     sanitizeConfig(config_);
     if (dividerChanged) {
         inputVoltageWindowNext_ = 0;
         inputVoltageWindowCount_ = 0;
+        snapshot_.inputVoltageMv = {};
+        snapshot_.inputVoltageTheoreticalMv = {};
+        snapshot_.inputVoltageAdcMv = {};
+        snapshot_.inputVoltageAdcRaw = {};
+        snapshot_.inputVoltageWindowSpanMv = 0;
+        snapshot_.inputVoltageSampleCount = 0;
+        snapshot_.inputVoltageStable = false;
     }
+    if (tdsHardwareChanged) {
+        discardTdsCalibrationSession();
+    }
+    refreshInputVoltageSnapshotCalibration();
 }
 
 bool WaterSensorManager::begin() {
@@ -284,6 +308,54 @@ void WaterSensorManager::addInputVoltageSample(const AdcReadResult& input) {
     }
 }
 
+bool WaterSensorManager::summarizeInputVoltageWindow(std::uint32_t dividerHighOhm,
+                                                     std::uint32_t dividerLowOhm,
+                                                     std::int16_t& rawMedian,
+                                                     std::uint16_t& adcMvMedian,
+                                                     std::uint32_t& theoreticalMedianMv,
+                                                     std::uint32_t& theoreticalSpanMv) const {
+    if (inputVoltageWindowCount_ == 0) {
+        return false;
+    }
+    std::int16_t raw[kInputVoltageWindowSamples]{};
+    std::uint16_t adcMv[kInputVoltageWindowSamples]{};
+    std::copy(inputVoltageRawWindow_, inputVoltageRawWindow_ + inputVoltageWindowCount_, raw);
+    std::copy(inputVoltageAdcMvWindow_, inputVoltageAdcMvWindow_ + inputVoltageWindowCount_, adcMv);
+    std::sort(raw, raw + inputVoltageWindowCount_);
+    std::sort(adcMv, adcMv + inputVoltageWindowCount_);
+    const std::uint8_t middle = inputVoltageWindowCount_ / 2U;
+    rawMedian = raw[middle];
+    adcMvMedian = adcMv[middle];
+    theoreticalMedianMv =
+        inputVoltageMvFromAdcRaw(rawMedian,
+                                 adcRangeFullScaleMv(AdcRange::P4096),
+                                 dividerHighOhm,
+                                 dividerLowOhm);
+    const std::uint32_t low =
+        inputVoltageMvFromAdcRaw(raw[0],
+                                 adcRangeFullScaleMv(AdcRange::P4096),
+                                 dividerHighOhm,
+                                 dividerLowOhm);
+    const std::uint32_t high =
+        inputVoltageMvFromAdcRaw(raw[inputVoltageWindowCount_ - 1U],
+                                 adcRangeFullScaleMv(AdcRange::P4096),
+                                 dividerHighOhm,
+                                 dividerLowOhm);
+    theoreticalSpanMv = high >= low ? high - low : 0;
+    return true;
+}
+
+void WaterSensorManager::refreshInputVoltageSnapshotCalibration() {
+    if (!snapshot_.inputVoltageTheoreticalMv.valid) {
+        return;
+    }
+    snapshot_.inputVoltageMv.valid = true;
+    snapshot_.inputVoltageMv.value =
+        applyInputVoltageCalibration(snapshot_.inputVoltageTheoreticalMv.value,
+                                     config_.inputVoltageCalibration);
+    snapshot_.inputVoltageCalibrated = config_.inputVoltageCalibration.calibrated;
+}
+
 bool WaterSensorManager::refreshInputVoltageCalibration(InputVoltageCalibration& calibration) const {
     if (calibration.pointCount == 0) {
         calibration = {};
@@ -362,32 +434,31 @@ bool WaterSensorManager::saveInputVoltageCalibrationPoint(SystemConfig& config,
         config.inputVoltageCalibration.pointCount >= kInputVoltageCalibrationMaxPoints) {
         return false;
     }
-    std::int16_t raw[kInputVoltageWindowSamples]{};
-    std::uint16_t adcMv[kInputVoltageWindowSamples]{};
-    std::copy(inputVoltageRawWindow_, inputVoltageRawWindow_ + kInputVoltageWindowSamples, raw);
-    std::copy(inputVoltageAdcMvWindow_, inputVoltageAdcMvWindow_ + kInputVoltageWindowSamples, adcMv);
-    std::sort(raw, raw + kInputVoltageWindowSamples);
-    std::sort(adcMv, adcMv + kInputVoltageWindowSamples);
-    const std::uint32_t lowInput =
-        inputVoltageMvFromDivider(adcMv[0], config.inputVoltageDividerHighOhm, config.inputVoltageDividerLowOhm);
-    const std::uint32_t highInput =
-        inputVoltageMvFromDivider(adcMv[kInputVoltageWindowSamples - 1U],
-                                  config.inputVoltageDividerHighOhm,
-                                  config.inputVoltageDividerLowOhm);
-    if (highInput - lowInput > std::max<std::uint32_t>(50, highInput / 500U)) {
+    std::int16_t rawMedian = 0;
+    std::uint16_t adcMvMedian = 0;
+    std::uint32_t theoreticalMedianMv = 0;
+    std::uint32_t theoreticalSpanMv = 0;
+    if (!summarizeInputVoltageWindow(config.inputVoltageDividerHighOhm,
+                                     config.inputVoltageDividerLowOhm,
+                                     rawMedian,
+                                     adcMvMedian,
+                                     theoreticalMedianMv,
+                                     theoreticalSpanMv) ||
+        theoreticalSpanMv >
+            std::max<std::uint32_t>(kInputVoltageStableMinimumToleranceMv, theoreticalMedianMv / 1000U)) {
         return false;
     }
     InputVoltageCalibration candidate = config.inputVoltageCalibration;
     InputVoltageCalibrationPoint& point = candidate.points[candidate.pointCount];
-    point.adcRaw = raw[kInputVoltageWindowSamples / 2U];
-    point.adcRawMin = raw[0];
-    point.adcRawMax = raw[kInputVoltageWindowSamples - 1U];
+    std::int16_t sortedRaw[kInputVoltageWindowSamples]{};
+    std::copy(inputVoltageRawWindow_, inputVoltageRawWindow_ + kInputVoltageWindowSamples, sortedRaw);
+    std::sort(sortedRaw, sortedRaw + kInputVoltageWindowSamples);
+    point.adcRaw = rawMedian;
+    point.adcRawMin = sortedRaw[0];
+    point.adcRawMax = sortedRaw[kInputVoltageWindowSamples - 1U];
     point.adcRange = static_cast<std::uint8_t>(AdcRange::P4096);
-    point.adcMillivolts = adcMv[kInputVoltageWindowSamples / 2U];
-    point.theoreticalInputMillivolts =
-        inputVoltageMvFromDivider(static_cast<std::uint16_t>(point.adcMillivolts),
-                                  config.inputVoltageDividerHighOhm,
-                                  config.inputVoltageDividerLowOhm);
+    point.adcMillivolts = adcMvMedian;
+    point.theoreticalInputMillivolts = theoreticalMedianMv;
     point.actualInputMillivolts = actualMillivolts;
     point.capturedAt = nowSeconds;
     for (std::uint8_t i = 0; i < candidate.pointCount; ++i) {
@@ -440,22 +511,32 @@ void WaterSensorManager::sampleOnce() {
         const AdcReadResult input = adc_.readSingleEnded(AdcChannel::A0);
         if (input.ok) {
             addInputVoltageSample(input);
+            std::int16_t rawMedian = input.raw;
+            std::uint16_t adcMvMedian = static_cast<std::uint16_t>(std::max<std::int16_t>(0, input.millivolts));
+            std::uint32_t theoretical = 0;
+            std::uint32_t theoreticalSpan = 0;
+            summarizeInputVoltageWindow(config_.inputVoltageDividerHighOhm,
+                                        config_.inputVoltageDividerLowOhm,
+                                        rawMedian,
+                                        adcMvMedian,
+                                        theoretical,
+                                        theoreticalSpan);
             next.inputVoltageAdcRaw.valid = true;
-            next.inputVoltageAdcRaw.value = input.raw;
+            next.inputVoltageAdcRaw.value = rawMedian;
             next.inputVoltageAdcMv.valid = true;
-            next.inputVoltageAdcMv.value = input.millivolts;
-            const std::int32_t theoretical = static_cast<std::int32_t>(
-                inputVoltageMvFromDivider(input.millivolts,
-                                          config_.inputVoltageDividerHighOhm,
-                                          config_.inputVoltageDividerLowOhm));
+            next.inputVoltageAdcMv.value = adcMvMedian;
             next.inputVoltageTheoreticalMv.valid = true;
-            next.inputVoltageTheoreticalMv.value = theoretical;
-            const std::int64_t calibrated =
-                static_cast<std::int64_t>(theoretical) * config_.inputVoltageCalibration.gainPpm / 1000000LL +
-                config_.inputVoltageCalibration.offsetMillivolts;
+            next.inputVoltageTheoreticalMv.value = static_cast<std::int32_t>(theoretical);
+            next.inputVoltageWindowSpanMv = theoreticalSpan;
+            next.inputVoltageSampleCount = inputVoltageWindowCount_;
+            next.inputVoltageStable =
+                inputVoltageWindowCount_ >= kInputVoltageWindowSamples &&
+                theoreticalSpan <=
+                    std::max<std::uint32_t>(kInputVoltageStableMinimumToleranceMv, theoretical / 1000U);
             next.inputVoltageMv.valid = true;
             next.inputVoltageMv.value =
-                static_cast<std::int32_t>(std::max<std::int64_t>(0, std::min<std::int64_t>(INT32_MAX, calibrated)));
+                applyInputVoltageCalibration(static_cast<std::int32_t>(theoretical),
+                                             config_.inputVoltageCalibration);
             next.inputVoltageCalibrated = config_.inputVoltageCalibration.calibrated;
         } else {
             ++failures;

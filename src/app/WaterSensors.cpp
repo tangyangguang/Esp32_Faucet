@@ -86,6 +86,18 @@ std::uint32_t inputVoltageMvFromDivider(std::uint16_t adcMv, std::uint32_t highO
     return static_cast<std::uint32_t>(numerator / lowOhm);
 }
 
+std::uint32_t inputVoltageMvFromAdcRaw(std::int16_t raw,
+                                      std::uint16_t fullScaleMv,
+                                      std::uint32_t highOhm,
+                                      std::uint32_t lowOhm) {
+    if (raw < 0 || fullScaleMv == 0 || lowOhm == 0) {
+        return 0;
+    }
+    const std::uint64_t numerator = static_cast<std::uint64_t>(raw) * fullScaleMv * (highOhm + lowOhm);
+    const std::uint64_t denominator = 32768ULL * lowOhm;
+    return static_cast<std::uint32_t>((numerator + denominator / 2ULL) / denominator);
+}
+
 TdsComputationResult computeTdsPpm(const TdsComputationInput& input) {
     TdsComputationResult result{};
     if (input.voltageMv > kTdsMaxVoltageMv) {

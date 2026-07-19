@@ -343,6 +343,7 @@ void enableTdsForFixture(WebFixture& fixture) {
 
 void test_home_page_initial_render_does_not_read_record_pages() {
     WebFixture fixture;
+    fixture.app.tick(appInput({false, false, false, false}, 1000, 1000000));
     CountingWaterRecordReader reader;
     fillCountingRecords(reader);
     fixture.installContext(reader);
@@ -354,7 +355,9 @@ void test_home_page_initial_render_does_not_read_record_pages() {
     TEST_ASSERT_EQUAL(200, Esp32BaseWeb::nativeTestResponse().code);
     TEST_ASSERT_EQUAL_UINT32(0, reader.readPageCalls);
     TEST_ASSERT_NOT_NULL(std::strstr(Esp32BaseWeb::nativeTestResponse().body.c_str(), "id='inputVoltageStatus'"));
-    TEST_ASSERT_NOT_NULL(std::strstr(Esp32BaseWeb::nativeTestResponse().body.c_str(), "id='inputVoltageNote'"));
+    TEST_ASSERT_NOT_NULL(std::strstr(Esp32BaseWeb::nativeTestResponse().body.c_str(), ">电压</span><small id='inputVoltageStatus'"));
+    TEST_ASSERT_NOT_NULL(std::strstr(Esp32BaseWeb::nativeTestResponse().body.c_str(), "12.10 V"));
+    TEST_ASSERT_NULL(std::strstr(Esp32BaseWeb::nativeTestResponse().body.c_str(), "inputVoltageNote"));
 }
 
 void test_app_css_covers_current_page_layout_classes() {
@@ -714,6 +717,10 @@ void test_temperature_calibration_post_accepts_celsius_decimal_input() {
 
 void test_input_voltage_calibration_page_shows_raw_and_correspondence_columns() {
     WebFixture fixture;
+    fixture.config.inputVoltageCalibration.calibrated = true;
+    fixture.config.inputVoltageCalibration.pointCount = 1;
+    fixture.config.inputVoltageCalibration.points[0] = {8800, 8798, 8802, 3, 1100, 12100, 12100, testNowSeconds()};
+    TEST_ASSERT_TRUE(fixture.app.applyConfig(fixture.config));
     fixture.app.tick(appInput({false, false, false, false}, 1000, 1000000));
     registerRoutes();
     beginWebGet("/faucet/calibration");
@@ -728,6 +735,10 @@ void test_input_voltage_calibration_page_shows_raw_and_correspondence_columns() 
     TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "理论输入"));
     TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "万用表实际电压"));
     TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "name='actualVoltage'"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "比例 1.0000，修正 0 mV"));
+    TEST_ASSERT_NULL(std::strstr(body.c_str(), "gain "));
+    TEST_ASSERT_NULL(std::strstr(body.c_str(), "offset "));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "确认删除这个输入电压校准点"));
 }
 
 void test_flow_calibration_manual_post_creates_current_parameter() {

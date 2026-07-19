@@ -116,6 +116,7 @@ void test_input_voltage_calibration_saves_raw_points_and_recomputes_fit() {
     TEST_ASSERT_TRUE(fixture.config.inputVoltageCalibration.calibrated);
     TEST_ASSERT_INT_WITHIN(5, 8728, fixture.config.inputVoltageCalibration.points[0].adcRaw);
     TEST_ASSERT_EQUAL_UINT32(12001, fixture.config.inputVoltageCalibration.points[0].theoreticalInputMillivolts);
+    TEST_ASSERT_EQUAL_INT32(12000, fixture.manager.snapshot().inputVoltageMv.value);
 
     fixture.adc.values[0] = okMv(1500);
     for (std::uint8_t i = 0; i < 5; ++i) {
@@ -129,6 +130,69 @@ void test_input_voltage_calibration_saves_raw_points_and_recomputes_fit() {
     TEST_ASSERT_TRUE(fixture.manager.clearInputVoltageCalibration(fixture.config));
     TEST_ASSERT_EQUAL_UINT8(0, fixture.config.inputVoltageCalibration.pointCount);
     TEST_ASSERT_FALSE(fixture.config.inputVoltageCalibration.calibrated);
+}
+
+void test_input_voltage_uses_recent_raw_median_and_rejects_unstable_capture() {
+    SensorManagerFixture fixture;
+    fixture.adc.values[1] = okMv(1650);
+    fixture.adc.values[2] = okMv(24);
+    const std::int16_t readings[5] = {247, 248, 280, 249, 250};
+    std::uint32_t nowMs = 0;
+    for (std::uint8_t i = 0; i < 5; ++i) {
+        fixture.adc.values[0] = okMv(readings[i]);
+        advanceSample(fixture.manager, nowMs);
+    }
+
+    const WaterSensorSnapshot snapshot = fixture.manager.snapshot();
+    TEST_ASSERT_EQUAL_INT32(okMv(249).raw, snapshot.inputVoltageAdcRaw.value);
+    TEST_ASSERT_FALSE(snapshot.inputVoltageStable);
+    TEST_ASSERT_TRUE(snapshot.inputVoltageWindowSpanMv > 10);
+    TEST_ASSERT_FALSE(fixture.manager.saveInputVoltageCalibrationPoint(fixture.config, 2740, 1720000000));
+}
+
+void test_configured_input_voltage_divider_is_used_by_live_sampling() {
+    SystemConfig config = enabledSensorConfig();
+    config.inputVoltageDividerHighOhm = 50000;
+    config.inputVoltageDividerLowOhm = 10000;
+    SensorManagerFixture fixture(config);
+    fixture.setDefaultReadings();
+    std::uint32_t nowMs = 0;
+    advanceSample(fixture.manager, nowMs);
+
+    TEST_ASSERT_EQUAL_INT32(6546, fixture.manager.snapshot().inputVoltageMv.value);
+}
+
+void test_tds_hardware_change_discards_in_progress_calibration_points() {
+    SensorManagerFixture fixture;
+    TEST_ASSERT_TRUE(fixture.manager.startTdsCalibrationSession(1720000000));
+    TEST_ASSERT_TRUE(fixture.manager.startTdsCalibrationPoint(160, 1720000001));
+
+    fixture.config.tdsDividerHighOhm = 12000;
+    fixture.manager.configure(fixture.config);
+
+    const TdsCalibrationSessionSnapshot session = fixture.manager.calibrationSnapshot();
+    TEST_ASSERT_FALSE(session.sessionActive);
+    TEST_ASSERT_FALSE(session.samplingActive);
+    TEST_ASSERT_EQUAL_UINT8(0, session.pointCount);
+}
+
+void test_configured_temperature_and_tds_hardware_parameters_are_used() {
+    SystemConfig config = enabledSensorConfig();
+    config.temperatureNominalOhm = 10000;
+    config.temperatureBeta = 3435;
+    config.temperaturePullupOhm = 10000;
+    config.tdsDividerHighOhm = 15000;
+    config.tdsDividerLowOhm = 15000;
+    SensorManagerFixture fixture(config);
+    fixture.adc.values[0] = okMv(1091);
+    fixture.adc.values[1] = okMv(1650);
+    fixture.adc.values[2] = okMv(24);
+    std::uint32_t nowMs = 0;
+    advanceSample(fixture.manager, nowMs);
+
+    const WaterSensorSnapshot snapshot = fixture.manager.snapshot();
+    TEST_ASSERT_INT_WITHIN(2, 2500, snapshot.temperatureRawCentiC.value);
+    TEST_ASSERT_EQUAL_INT32(48, snapshot.tdsVoltageMv.value);
 }
 
 void test_manager_marks_adc_offline_after_three_failures() {
@@ -416,6 +480,10 @@ int main(int argc, char** argv) {
     RUN_TEST(test_manager_can_skip_input_voltage_when_only_water_sensors_are_wired);
     RUN_TEST(test_temperature_open_and_short_display_as_invalid_without_changing_tds_zero);
     RUN_TEST(test_input_voltage_calibration_saves_raw_points_and_recomputes_fit);
+    RUN_TEST(test_input_voltage_uses_recent_raw_median_and_rejects_unstable_capture);
+    RUN_TEST(test_configured_input_voltage_divider_is_used_by_live_sampling);
+    RUN_TEST(test_tds_hardware_change_discards_in_progress_calibration_points);
+    RUN_TEST(test_configured_temperature_and_tds_hardware_parameters_are_used);
     RUN_TEST(test_manager_marks_adc_offline_after_three_failures);
     RUN_TEST(test_manager_recovers_after_three_successes);
     RUN_TEST(test_tds_range_switches_up_at_85_percent);

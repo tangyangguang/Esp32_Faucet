@@ -436,25 +436,12 @@ void sendCalibrationSessionAttemptRow(const CalibrationSessionRecord& session,
         attempt.summary.stable &&
         attempt.summary.stablePulseCount > 0 &&
         !attempt.summary.truncated;
-    sendFmt("<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>",
+    sendFmt("<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td class='calibration-value-cell'>%s</td><td>%luP</td><td>",
             timeText,
             durationText,
             attempt.targetHintMl > 0 ? targetText : "-",
-            attempt.record.volumeMl > 0 ? estimateText : "-");
-    if (attempt.status == CalibrationAttemptStatus::Valid && attempt.actualMl > 0) {
-        sendFmt("<form method='post' action='/faucet/calibration/flow' onsubmit='return once(this)'>"
-                "<input type='hidden' name='action' value='update_actual'>"
-                "<input type='hidden' name='attemptIndex' value='%u'>"
-                "<span class='estimator-input-row'><input name='actualMl' type='number' min='%lu' max='%lu' step='1' value='%lu' required>"
-                "<span class='unit-label'>mL</span><input class='secondary' type='submit' value='修改'></span></form>",
-                static_cast<unsigned>(attempt.attemptIndex),
-                static_cast<unsigned long>(kCalibrationMinActualMl),
-                static_cast<unsigned long>(kMaxVolumePresetMl),
-                static_cast<unsigned long>(attempt.actualMl));
-    } else {
-        Esp32BaseWeb::sendChunk(actualText);
-    }
-    sendFmt("</td><td>%luP</td><td>",
+            attempt.record.volumeMl > 0 ? estimateText : "-",
+            actualText,
             static_cast<unsigned long>(attempt.record.pulseCount));
     if (firstWindowReady) {
         sendFmt("%luP", static_cast<unsigned long>(firstWindowPulses));
@@ -464,32 +451,43 @@ void sendCalibrationSessionAttemptRow(const CalibrationSessionRecord& session,
     Esp32BaseWeb::sendChunk("</td><td>");
     sendCalibrationAttemptTraceLink(attempt);
     const bool savedOnly = attempt.status == CalibrationAttemptStatus::Valid && !stableReady;
-    sendFmt("</td><td><span class='status-pill %s'>%s</span></td><td>本次会话 #%u</td><td><span class='status-pill %s'>%s</span>",
+    sendFmt("</td><td><span class='status-pill %s'>%s</span></td><td>本次会话 #%u</td><td><span class='status-pill %s'>%s</span></td><td>",
             stableReady ? "status-ok" : (attempt.status == CalibrationAttemptStatus::Invalid ? "status-warn" : "status-muted"),
             stableReady ? "稳态可用" : (attempt.status == CalibrationAttemptStatus::Invalid ? calibrationInvalidReasonText(attempt.invalidReason) : (savedOnly ? "仅记录" : "-")),
             static_cast<unsigned>(attempt.attemptIndex + 1),
             attempt.status == CalibrationAttemptStatus::Valid ? "status-ok" :
                 (attempt.status == CalibrationAttemptStatus::Invalid ? "status-warn" : "status-muted"),
             calibrationAttemptStatusText(attempt.status));
+    if (attempt.status == CalibrationAttemptStatus::Valid && attempt.actualMl > 0) {
+        sendFmt("<input class='secondary' type='button' value='修改' data-edit-modal='flowActualEditModal' "
+                "data-edit-index='%u' data-edit-value='%lu' data-edit-context='样本 #%u，当前实测 %s' "
+                "onclick='return faucetOpenCalibrationEdit(this)'>",
+                static_cast<unsigned>(attempt.attemptIndex),
+                static_cast<unsigned long>(attempt.actualMl),
+                static_cast<unsigned>(attempt.attemptIndex + 1U),
+                actualText);
+    } else {
+        Esp32BaseWeb::sendChunk("-");
+    }
     Esp32BaseWeb::sendChunk("</td></tr>");
 }
 
 void sendCalibrationSamplesPanel(std::uint32_t samplePulseWindowSec) {
     Esp32BaseWeb::sendChunk("<section id='calibration-samples' class='panel'><div class='panel-head'><h3>本次校准样本</h3></div>"
                             "<p class='hint'>这里记录当前校准会话的接水记录；有效样本会自动刷新推荐参数，放弃的样本只作为本次会话记录保留。</p>");
-    sendFmt("<table class='calibration-sample-table'><tr><th>时间</th><th>时长</th><th>目标容量</th><th>估算出水</th><th>量杯实测</th><th>总脉冲</th><th>前 %u 秒脉冲</th><th>脉冲明细</th><th>稳态识别</th><th>样本来源</th><th>校准用途</th></tr>",
+    sendFmt("<table class='calibration-sample-table'><tr><th>时间</th><th>时长</th><th>目标容量</th><th>估算出水</th><th>量杯实测</th><th>总脉冲</th><th>前 %u 秒脉冲</th><th>脉冲明细</th><th>稳态识别</th><th>样本来源</th><th>校准用途</th><th>操作</th></tr>",
             static_cast<unsigned>(samplePulseWindowSec));
     if (!g_context.calibrationSessions || !g_context.calibrationSessions->ready()) {
-        Esp32BaseWeb::sendChunk("<tr><td colspan='11'>校准会话存储未就绪，暂时不能读取本次接水记录。</td></tr></table></section>");
+        Esp32BaseWeb::sendChunk("<tr><td colspan='12'>校准会话存储未就绪，暂时不能读取本次接水记录。</td></tr></table></section>");
         return;
     }
     std::unique_ptr<CalibrationSessionRecord> session(new (std::nothrow) CalibrationSessionRecord);
     if (!session) {
-        Esp32BaseWeb::sendChunk("<tr><td colspan='11'>内存不足，暂时不能读取本次校准样本。</td></tr></table></section>");
+        Esp32BaseWeb::sendChunk("<tr><td colspan='12'>内存不足，暂时不能读取本次校准样本。</td></tr></table></section>");
         return;
     }
     if (!g_context.calibrationSessions->load(*session) || session->attemptCount == 0) {
-        Esp32BaseWeb::sendChunk("<tr><td colspan='11'>还没有本次校准样本。进入校准模式后，每次本地出水都会记录到这里。</td></tr></table></section>");
+        Esp32BaseWeb::sendChunk("<tr><td colspan='12'>还没有本次校准样本。进入校准模式后，每次本地出水都会记录到这里。</td></tr></table></section>");
         return;
     }
     bool rendered = false;
@@ -502,9 +500,20 @@ void sendCalibrationSamplesPanel(std::uint32_t samplePulseWindowSec) {
         rendered = true;
     }
     if (!rendered) {
-        Esp32BaseWeb::sendChunk("<tr><td colspan='11'>还没有本次校准样本。进入校准模式后，每次本地出水都会记录到这里。</td></tr>");
+        Esp32BaseWeb::sendChunk("<tr><td colspan='12'>还没有本次校准样本。进入校准模式后，每次本地出水都会记录到这里。</td></tr>");
     }
-    Esp32BaseWeb::sendChunk("</table></section>");
+    Esp32BaseWeb::sendChunk("</table>"
+                            "<div id='flowActualEditModal' class='calibration-edit-modal' role='dialog' aria-modal='true' aria-hidden='true' onclick='faucetCalibrationEditBackdrop(event)'>"
+                            "<div class='calibration-edit-card'><div class='panel-head'><h3>修改量杯实测容量</h3></div>"
+                            "<p class='calibration-edit-context' data-edit-context></p>"
+                            "<form class='calibration-edit-form' method='post' action='/faucet/calibration/flow' onsubmit='return faucetSubmitFlowCalibrationAction(this)'>"
+                            "<input type='hidden' name='action' value='update_actual'><input type='hidden' name='attemptIndex' data-edit-index>"
+                            "<label class='compact-field'><span>实际容量</span><span class='estimator-input-row'>");
+    sendFmt("<input name='actualMl' data-edit-value type='number' min='%lu' max='%lu' step='1' required><span class='unit-label'>mL</span></span></label>",
+            static_cast<unsigned long>(kCalibrationMinActualMl),
+            static_cast<unsigned long>(kMaxVolumePresetMl));
+    Esp32BaseWeb::sendChunk("<div class='form-actions'><input class='secondary' type='button' value='取消' onclick=\"return faucetCloseCalibrationEdit('flowActualEditModal')\">"
+                            "<input class='primary' type='submit' value='确定'></div></form></div></div></section>");
 }
 
 const char* calibrationSessionStatusCode(CalibrationSessionStatus status) {
@@ -1084,14 +1093,14 @@ void handleInputVoltageCalibrationPage() {
         Esp32BaseWeb::sendChunk("<table><tr><th>#</th><th>ADC 原始值</th><th>ADC mV</th><th>理论电压</th><th>实际电压</th><th>操作</th></tr>");
         for (std::uint8_t i = 0; i < calibration.pointCount; ++i) {
             const InputVoltageCalibrationPoint& point = calibration.points[i];
-            sendFmt("<tr><td>%u</td><td>%d<br><small>%d~%d</small></td><td>%lu</td><td>%lu.%03lu V</td><td>"
-                    "<form method='post' action='/faucet/calibration' onsubmit='return once(this)'>"
-                    "<input type='hidden' name='action' value='voltage_update_point'><input type='hidden' name='index' value='%u'>"
-                    "<span class='estimator-input-row'><input name='actualVoltage' type='number' min='1' max='60' step='0.001' value='%lu.%03lu' required>"
-                    "<span class='unit-label'>V</span><input class='secondary' type='submit' value='修改'></span></form></td>"
-                    "<td><form method='post' action='/faucet/calibration' onsubmit=\"return confirm('确认删除这个输入电压校准点？')&&once(this)\">"
+            sendFmt("<tr><td>%u</td><td>%d<br><small>%d~%d</small></td><td>%lu</td><td>%lu.%03lu V</td>"
+                    "<td class='calibration-value-cell'>%lu.%03lu V</td><td><div class='row-actions'>"
+                    "<input class='secondary' type='button' value='修改' data-edit-modal='voltagePointEditModal' "
+                    "data-edit-index='%u' data-edit-value='%lu.%03lu' data-edit-context='当前实际电压 %lu.%03lu V，理论电压 %lu.%03lu V' "
+                    "onclick='return faucetOpenCalibrationEdit(this)'>"
+                    "<form method='post' action='/faucet/calibration' onsubmit=\"return confirm('确认删除这个输入电压校准点？')&&once(this)\">"
                     "<input type='hidden' name='action' value='voltage_remove_point'><input type='hidden' name='index' value='%u'>"
-                    "<input class='secondary' type='submit' value='删除'></form></td></tr>",
+                    "<input class='secondary' type='submit' value='删除'></form></div></td></tr>",
                     static_cast<unsigned>(i + 1U),
                     static_cast<int>(point.adcRaw),
                     static_cast<int>(point.adcRawMin),
@@ -1099,15 +1108,29 @@ void handleInputVoltageCalibrationPage() {
                     static_cast<unsigned long>(point.adcMillivolts),
                     static_cast<unsigned long>(point.theoreticalInputMillivolts / 1000U),
                     static_cast<unsigned long>(point.theoreticalInputMillivolts % 1000U),
+                    static_cast<unsigned long>(point.actualInputMillivolts / 1000U),
+                    static_cast<unsigned long>(point.actualInputMillivolts % 1000U),
                     static_cast<unsigned>(i),
                     static_cast<unsigned long>(point.actualInputMillivolts / 1000U),
                     static_cast<unsigned long>(point.actualInputMillivolts % 1000U),
+                    static_cast<unsigned long>(point.actualInputMillivolts / 1000U),
+                    static_cast<unsigned long>(point.actualInputMillivolts % 1000U),
+                    static_cast<unsigned long>(point.theoreticalInputMillivolts / 1000U),
+                    static_cast<unsigned long>(point.theoreticalInputMillivolts % 1000U),
                     static_cast<unsigned>(i));
         }
         Esp32BaseWeb::sendChunk("</table><form method='post' action='/faucet/calibration' onsubmit=\"return confirm('确认清空全部输入电压校准点？')&&once(this)\">"
                                 "<input type='hidden' name='action' value='voltage_clear'><div class='form-actions'><input class='secondary' type='submit' value='清空全部'></div></form>");
     }
-    Esp32BaseWeb::sendChunk("</section>");
+    Esp32BaseWeb::sendChunk("<div id='voltagePointEditModal' class='calibration-edit-modal' role='dialog' aria-modal='true' aria-hidden='true' onclick='faucetCalibrationEditBackdrop(event)'>"
+                            "<div class='calibration-edit-card'><div class='panel-head'><h3>修改实际电压</h3></div>"
+                            "<p class='calibration-edit-context' data-edit-context></p>"
+                            "<form class='calibration-edit-form' method='post' action='/faucet/calibration' onsubmit='return once(this)'>"
+                            "<input type='hidden' name='action' value='voltage_update_point'><input type='hidden' name='index' data-edit-index>"
+                            "<label class='compact-field'><span>万用表实际电压</span><span class='estimator-input-row'>"
+                            "<input name='actualVoltage' data-edit-value type='number' min='1' max='60' step='0.001' required><span class='unit-label'>V</span></span></label>"
+                            "<div class='form-actions'><input class='secondary' type='button' value='取消' onclick=\"return faucetCloseCalibrationEdit('voltagePointEditModal')\">"
+                            "<input class='primary' type='submit' value='确定'></div></form></div></div></section>");
     sendCalibrationPageScript();
     sendPageEnd();
 }
@@ -1119,23 +1142,34 @@ void sendTdsCalibrationPointsTable(const TdsCalibrationSessionSnapshot& session)
     }
     for (std::uint8_t i = 0; i < session.pointCount && i < kTdsCalibrationMaxPoints; ++i) {
         const TdsCalibrationPointSnapshot& point = session.points[i];
-        sendFmt("<tr><td>%u</td><td><form method='post' action='/faucet/calibration' onsubmit='return once(this)'>"
-                "<input type='hidden' name='action' value='tds_update_point'><input type='hidden' name='index' value='%u'>"
-                "<span class='estimator-input-row'><input name='referencePpm' type='number' min='0' max='2000' step='1' value='%u' required>"
-                "<span class='unit-label'>ppm</span><input class='secondary' type='submit' value='修改'></span></form></td>"
-                "<td>%u</td><td>%u mV</td><td>"
+        sendFmt("<tr><td>%u</td><td class='calibration-value-cell'>%u ppm</td><td>%u</td><td>%u mV</td><td><div class='row-actions'>"
+                "<input class='secondary' type='button' value='修改' data-edit-modal='tdsPointEditModal' "
+                "data-edit-index='%u' data-edit-value='%u' data-edit-context='当前参考值 %u ppm，原始读数 %u ppm' "
+                "onclick='return faucetOpenCalibrationEdit(this)'>"
                 "<form method='post' action='/faucet/calibration' onsubmit=\"return confirm('确认删除这个 TDS 校准点？')&&once(this)\">"
                 "<input type='hidden' name='action' value='tds_remove_point'>"
                 "<input type='hidden' name='index' value='%u'>"
-                "<input class='secondary' type='submit' value='删除'></form></td></tr>",
+                "<input class='secondary' type='submit' value='删除'></form></div></td></tr>",
                 static_cast<unsigned>(i + 1U),
-                static_cast<unsigned>(i),
                 static_cast<unsigned>(point.referencePpm),
                 static_cast<unsigned>(point.rawPpm),
                 static_cast<unsigned>(point.voltageMv),
+                static_cast<unsigned>(i),
+                static_cast<unsigned>(point.referencePpm),
+                static_cast<unsigned>(point.referencePpm),
+                static_cast<unsigned>(point.rawPpm),
                 static_cast<unsigned>(i));
     }
-    Esp32BaseWeb::sendChunk("</table>");
+    Esp32BaseWeb::sendChunk("</table>"
+                            "<div id='tdsPointEditModal' class='calibration-edit-modal' role='dialog' aria-modal='true' aria-hidden='true' onclick='faucetCalibrationEditBackdrop(event)'>"
+                            "<div class='calibration-edit-card'><div class='panel-head'><h3>修改参考 TDS</h3></div>"
+                            "<p class='calibration-edit-context' data-edit-context></p>"
+                            "<form class='calibration-edit-form' method='post' action='/faucet/calibration' onsubmit='return once(this)'>"
+                            "<input type='hidden' name='action' value='tds_update_point'><input type='hidden' name='index' data-edit-index>"
+                            "<label class='compact-field'><span>参考 TDS</span><span class='estimator-input-row'>"
+                            "<input name='referencePpm' data-edit-value type='number' min='0' max='2000' step='1' required><span class='unit-label'>ppm</span></span></label>"
+                            "<div class='form-actions'><input class='secondary' type='button' value='取消' onclick=\"return faucetCloseCalibrationEdit('tdsPointEditModal')\">"
+                            "<input class='primary' type='submit' value='确定'></div></form></div></div>");
 }
 
 void handleTemperatureCalibrationPage() {

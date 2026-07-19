@@ -379,6 +379,9 @@ void test_app_css_covers_current_page_layout_classes() {
     TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), ".calibration-session-badges"));
     TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), ".machine-task-card{display:flex"));
     TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), ".tds-calibration-summary>div"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), ".calibration-edit-modal{display:none"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), ".calibration-edit-modal.is-open{display:flex}"));
+    TEST_ASSERT_NULL(std::strstr(body.c_str(), ".sample-calibration-edit-row"));
     TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), ".temperature-calibration-summary>div"));
     TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), ".active-metering-metrics"));
     TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), ".metering-metric{min-width:0"));
@@ -736,11 +739,44 @@ void test_input_voltage_calibration_page_shows_raw_and_correspondence_columns() 
     TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "万用表实际电压"));
     TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "name='actualVoltage'"));
     TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "name='action' value='voltage_update_point'"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "data-edit-modal='voltagePointEditModal'"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "id='voltagePointEditModal'"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "value='修改'"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "value='确定'"));
     TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "value='12.100'"));
     TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "比例 1.0000，修正 0 mV"));
     TEST_ASSERT_NULL(std::strstr(body.c_str(), "gain "));
     TEST_ASSERT_NULL(std::strstr(body.c_str(), "offset "));
     TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "确认删除这个输入电压校准点"));
+    const std::size_t savedPointsTableEnd = body.find("</table>");
+    const std::size_t voltageUpdateForm = body.find(
+        "name='action' value='voltage_update_point'");
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, savedPointsTableEnd);
+    TEST_ASSERT_GREATER_THAN_size_t(savedPointsTableEnd, voltageUpdateForm);
+}
+
+void test_flow_calibration_saved_sample_uses_edit_button_and_modal() {
+    WebFixture fixture;
+    CalibrationSessionRecord session = makeCalibrationSession(88, testNowSeconds());
+    saveWebSessionAttempt(
+        fixture.traceStore, session, 0, CalibrationAttemptStatus::Valid, 1500);
+    session.status = CalibrationSessionStatus::Generated;
+    TEST_ASSERT_TRUE(fixture.sessionStore.save(session));
+    registerRoutes();
+    beginWebGet("/faucet/calibration/flow");
+
+    TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch(
+        "/faucet/calibration/flow", Esp32BaseWeb::METHOD_GET));
+
+    const std::string& body = Esp32BaseWeb::nativeTestResponse().body;
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "<th>操作</th>"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "data-edit-modal='flowActualEditModal'"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "id='flowActualEditModal'"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "name='actualMl' data-edit-value"));
+    const std::size_t samplesTableEnd = body.find("</table>");
+    const std::size_t flowUpdateForm = body.find("name='action' value='update_actual'");
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, samplesTableEnd);
+    TEST_ASSERT_GREATER_THAN_size_t(samplesTableEnd, flowUpdateForm);
 }
 
 void test_input_voltage_calibration_point_post_updates_and_persists_actual_value() {
@@ -1208,6 +1244,20 @@ void test_tds_calibration_save_persists_config_after_stable_samples() {
     TEST_ASSERT_TRUE(fixture.app.saveTdsCalibrationPointForWeb(testNowSeconds()));
     TEST_ASSERT_TRUE(fixture.app.tdsCalibrationSnapshot().candidateReady);
     registerRoutes();
+    beginWebGet("/faucet/calibration");
+    Esp32BaseWeb::nativeTestSetParam("view", "tds");
+    TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch(
+        "/faucet/calibration", Esp32BaseWeb::METHOD_GET));
+    const std::string tdsPage = Esp32BaseWeb::nativeTestResponse().body;
+    TEST_ASSERT_NOT_NULL(std::strstr(
+        tdsPage.c_str(), "data-edit-modal='tdsPointEditModal'"));
+    TEST_ASSERT_NOT_NULL(std::strstr(tdsPage.c_str(), "id='tdsPointEditModal'"));
+    const std::size_t tdsTableEnd = tdsPage.find("</table>");
+    const std::size_t tdsUpdateForm =
+        tdsPage.find("name='action' value='tds_update_point'");
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, tdsTableEnd);
+    TEST_ASSERT_GREATER_THAN_size_t(tdsTableEnd, tdsUpdateForm);
+
     beginWebPost("/faucet/calibration");
     Esp32BaseWeb::nativeTestSetParam("action", "tds_apply_session");
 
@@ -1371,6 +1421,7 @@ int main(int, char**) {
     RUN_TEST(test_temperature_calibration_post_accepts_celsius_decimal_input);
     RUN_TEST(test_input_voltage_calibration_page_shows_raw_and_correspondence_columns);
     RUN_TEST(test_input_voltage_calibration_point_post_updates_and_persists_actual_value);
+    RUN_TEST(test_flow_calibration_saved_sample_uses_edit_button_and_modal);
     RUN_TEST(test_flow_calibration_manual_post_creates_current_parameter);
     RUN_TEST(test_flow_calibration_manual_post_rejects_busy_without_changing_current);
     RUN_TEST(test_flow_calibration_rejects_unknown_write_action);

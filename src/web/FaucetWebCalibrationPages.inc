@@ -5,6 +5,23 @@ void handleCalibrationPage() {
     if (!requireContext()) {
         return;
     }
+    char partial[32]{};
+    if (getParam("partial", partial, sizeof(partial))) {
+        if (!Esp32BaseWeb::beginResponse(200, "text/html; charset=utf-8", nullptr)) {
+            return;
+        }
+        if (std::strcmp(partial, "voltage-reading") == 0) {
+            sendInputVoltageCurrentPanel(g_context.app->snapshot(), *g_context.config);
+        } else if (std::strcmp(partial, "tds-live") == 0) {
+            const SystemConfig& config = *g_context.config;
+            sendTdsCalibrationLivePanel(
+                g_context.app->tdsCalibrationSnapshot(),
+                config.tdsKind == TdsKind::AnalogTdsAo,
+                config.tdsKind == TdsKind::AnalogTdsAo && !waterTaskActive());
+        }
+        Esp32BaseWeb::endResponse();
+        return;
+    }
     char view[24]{};
     if (getParam("view", view, sizeof(view))) {
         if (std::strcmp(view, "temperature") == 0) {

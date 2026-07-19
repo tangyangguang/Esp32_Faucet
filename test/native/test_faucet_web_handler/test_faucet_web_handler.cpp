@@ -744,6 +744,11 @@ void test_input_voltage_calibration_page_shows_raw_and_correspondence_columns() 
     TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "value='修改'"));
     TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "value='确定'"));
     TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "value='12.100'"));
+    TEST_ASSERT_NOT_NULL(std::strstr(
+        body.c_str(),
+        "data-sensor-calibration-refresh='/faucet/calibration?partial=voltage-reading'"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "faucetStartSensorCalibrationRefresh"));
+    TEST_ASSERT_NULL(std::strstr(body.c_str(), "window.location.assign"));
     TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "比例 1.0000，修正 0 mV"));
     TEST_ASSERT_NULL(std::strstr(body.c_str(), "gain "));
     TEST_ASSERT_NULL(std::strstr(body.c_str(), "offset "));
@@ -753,6 +758,45 @@ void test_input_voltage_calibration_page_shows_raw_and_correspondence_columns() 
         "name='action' value='voltage_update_point'");
     TEST_ASSERT_NOT_EQUAL(std::string::npos, savedPointsTableEnd);
     TEST_ASSERT_GREATER_THAN_size_t(savedPointsTableEnd, voltageUpdateForm);
+}
+
+void test_sensor_calibration_refresh_returns_only_live_sections() {
+    WebFixture fixture;
+    enableTdsForFixture(fixture);
+    registerRoutes();
+
+    beginWebGet("/faucet/calibration");
+    Esp32BaseWeb::nativeTestSetParam("partial", "voltage-reading");
+    TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch(
+        "/faucet/calibration", Esp32BaseWeb::METHOD_GET));
+    const std::string voltagePartial = Esp32BaseWeb::nativeTestResponse().body;
+    TEST_ASSERT_NOT_NULL(std::strstr(
+        voltagePartial.c_str(), "id='voltage-calibration-reading'"));
+    TEST_ASSERT_NULL(std::strstr(voltagePartial.c_str(), "id='voltagePointEditModal'"));
+    TEST_ASSERT_NULL(std::strstr(voltagePartial.c_str(), "<h2>输入电压校准</h2>"));
+
+    TEST_ASSERT_TRUE(fixture.app.startTdsCalibrationSessionForWeb(testNowSeconds()));
+    TEST_ASSERT_TRUE(fixture.app.startTdsCalibrationPointForWeb(100, testNowSeconds()));
+    beginWebGet("/faucet/calibration");
+    Esp32BaseWeb::nativeTestSetParam("view", "tds");
+    TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch(
+        "/faucet/calibration", Esp32BaseWeb::METHOD_GET));
+    const std::string tdsPage = Esp32BaseWeb::nativeTestResponse().body;
+    TEST_ASSERT_NOT_NULL(std::strstr(
+        tdsPage.c_str(),
+        "data-sensor-calibration-refresh='/faucet/calibration?partial=tds-live'"));
+    TEST_ASSERT_NOT_NULL(std::strstr(tdsPage.c_str(), "id='tdsPointEditModal'"));
+    TEST_ASSERT_NULL(std::strstr(tdsPage.c_str(), "window.location.assign"));
+
+    beginWebGet("/faucet/calibration");
+    Esp32BaseWeb::nativeTestSetParam("partial", "tds-live");
+    TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch(
+        "/faucet/calibration", Esp32BaseWeb::METHOD_GET));
+    const std::string tdsPartial = Esp32BaseWeb::nativeTestResponse().body;
+    TEST_ASSERT_NOT_NULL(std::strstr(tdsPartial.c_str(), "id='tds-calibration-live'"));
+    TEST_ASSERT_NOT_NULL(std::strstr(tdsPartial.c_str(), "采样中"));
+    TEST_ASSERT_NULL(std::strstr(tdsPartial.c_str(), "id='tdsPointEditModal'"));
+    TEST_ASSERT_NULL(std::strstr(tdsPartial.c_str(), "<h2>水质校准</h2>"));
 }
 
 void test_flow_calibration_saved_sample_uses_edit_button_and_modal() {
@@ -1420,6 +1464,7 @@ int main(int, char**) {
     RUN_TEST(test_flow_calibration_manual_page_prefills_current_parameters);
     RUN_TEST(test_temperature_calibration_post_accepts_celsius_decimal_input);
     RUN_TEST(test_input_voltage_calibration_page_shows_raw_and_correspondence_columns);
+    RUN_TEST(test_sensor_calibration_refresh_returns_only_live_sections);
     RUN_TEST(test_input_voltage_calibration_point_post_updates_and_persists_actual_value);
     RUN_TEST(test_flow_calibration_saved_sample_uses_edit_button_and_modal);
     RUN_TEST(test_flow_calibration_manual_post_creates_current_parameter);

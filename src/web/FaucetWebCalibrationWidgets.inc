@@ -1037,19 +1037,15 @@ void sendCalibrationCenterInputVoltageCard(const AppSnapshot& snapshot, const Sy
     Esp32BaseWeb::sendChunk("</div><p><a class='btn-link primary' href='/faucet/calibration?view=voltage'>进入输入电压校准</a></p></section>");
 }
 
-void handleInputVoltageCalibrationPage() {
-    const AppSnapshot snapshot = g_context.app->snapshot();
-    const SystemConfig& config = *g_context.config;
+void sendInputVoltageCurrentPanel(const AppSnapshot& snapshot, const SystemConfig& config) {
     const InputVoltageCalibration& calibration = config.inputVoltageCalibration;
     const bool canCapture = !waterTaskActive() && snapshot.sensors.inputVoltageStable &&
                             calibration.pointCount < kInputVoltageCalibrationMaxPoints;
-    Esp32BaseWeb::sendHeader("输入电压校准");
-    Esp32BaseWeb::sendChunk("<h2>输入电压校准</h2><p><a class='btn-link' href='/faucet/calibration'>返回校准中心</a></p>");
-    sendNoticeFromQuery();
-    Esp32BaseWeb::sendChunk("<section class='panel'");
+    Esp32BaseWeb::sendChunk("<section id='voltage-calibration-reading' class='panel'");
     if (!snapshot.sensors.inputVoltageStable &&
         calibration.pointCount < kInputVoltageCalibrationMaxPoints) {
-        Esp32BaseWeb::sendChunk(" data-voltage-calibration-refresh");
+        Esp32BaseWeb::sendChunk(
+            " data-sensor-calibration-refresh='/faucet/calibration?partial=voltage-reading'");
     }
     Esp32BaseWeb::sendChunk("><div class='panel-head'><h3>当前读数</h3>");
     sendFmt("<span class='status-pill %s'>%s</span></div><div class='tds-calibration-summary'>",
@@ -1083,7 +1079,18 @@ void handleInputVoltageCalibrationPage() {
                             "<input name='actualVoltage' type='number' min='1' max='60' step='0.001' required><span class='unit-label'>V</span></span></label><div class='form-actions'>");
     sendFmt("<input class='primary' type='submit' value='保存当前校准点'%s>",
             canCapture ? "" : " disabled");
-    Esp32BaseWeb::sendChunk("</div></form></section><section class='panel'><div class='panel-head'><h3>已保存校准点</h3>");
+    Esp32BaseWeb::sendChunk("</div></form></section>");
+}
+
+void handleInputVoltageCalibrationPage() {
+    const AppSnapshot snapshot = g_context.app->snapshot();
+    const SystemConfig& config = *g_context.config;
+    const InputVoltageCalibration& calibration = config.inputVoltageCalibration;
+    Esp32BaseWeb::sendHeader("输入电压校准");
+    Esp32BaseWeb::sendChunk("<h2>输入电压校准</h2><p><a class='btn-link' href='/faucet/calibration'>返回校准中心</a></p>");
+    sendNoticeFromQuery();
+    sendInputVoltageCurrentPanel(snapshot, config);
+    Esp32BaseWeb::sendChunk("<section class='panel'><div class='panel-head'><h3>已保存校准点</h3>");
     sendFmt("<span class='status-pill status-muted'>%u / %u</span></div>",
             static_cast<unsigned>(calibration.pointCount),
             static_cast<unsigned>(kInputVoltageCalibrationMaxPoints));
@@ -1172,6 +1179,69 @@ void sendTdsCalibrationPointsTable(const TdsCalibrationSessionSnapshot& session)
                             "<input class='primary' type='submit' value='确定'></div></form></div></div>");
 }
 
+void sendTdsCalibrationStep(const TdsCalibrationSessionSnapshot& session,
+                            bool enabled,
+                            bool canWrite) {
+    Esp32BaseWeb::sendChunk("<div class='tds-step-card'>");
+    if (!enabled) {
+        Esp32BaseWeb::sendChunk("<p class='hint'>TDS 模拟传感器未启用，不能进行水质校准。</p>");
+    } else if (!session.sessionActive) {
+        Esp32BaseWeb::sendChunk("<form method='post' action='/faucet/calibration' onsubmit='return once(this)'>"
+                                "<input type='hidden' name='action' value='tds_start_session'>"
+                                "<div class='form-actions'>");
+        sendFmt("<input class='primary' type='submit' value='开始校准'%s>",
+                canWrite ? "" : " disabled");
+        Esp32BaseWeb::sendChunk("</div></form>");
+    } else if (session.samplingActive && !session.readyToSave) {
+        sendFmt("<p><strong>参考 %u ppm</strong>，已采样 %u 次，原始均值 %u ppm。</p>",
+                static_cast<unsigned>(session.referencePpm),
+                static_cast<unsigned>(session.sampleCount),
+                static_cast<unsigned>(session.rawAvgPpm));
+        Esp32BaseWeb::sendChunk("<p class='hint'>正在等待读数稳定，稳定后页面会显示保存按钮。</p>"
+                                "<div class='form-actions'><input class='secondary' type='submit' value='正在采集' disabled></div>");
+    } else if (session.readyToSave) {
+        sendFmt("<p><strong>参考 %u ppm</strong>，已采样 %u 次，原始均值 %u ppm。</p>",
+                static_cast<unsigned>(session.referencePpm),
+                static_cast<unsigned>(session.sampleCount),
+                static_cast<unsigned>(session.rawAvgPpm));
+        Esp32BaseWeb::sendChunk("<form method='post' action='/faucet/calibration' onsubmit='return once(this)'>"
+                                "<input type='hidden' name='action' value='tds_save_point'>"
+                                "<div class='form-actions'>");
+        sendFmt("<input class='primary' type='submit' value='保存这个校准点'%s>",
+                canWrite ? "" : " disabled");
+        Esp32BaseWeb::sendChunk("</div></form>");
+    } else if (session.full) {
+        Esp32BaseWeb::sendChunk("<p class='hint'>本次校准点已满，可以使用当前结果或删除一个校准点后重采。</p>");
+    } else {
+        Esp32BaseWeb::sendChunk("<form class='tds-capture-form' method='post' action='/faucet/calibration' onsubmit='return once(this)'>"
+                                "<input type='hidden' name='action' value='tds_start_point'>"
+                                "<label class='compact-field'><span>参考 TDS(ppm)</span><span class='estimator-input-row'>"
+                                "<input name='referencePpm' type='number' min='0' max='2000' step='1' required>"
+                                "<span class='unit-label'>ppm</span></span></label>"
+                                "<div class='form-actions'>");
+        sendFmt("<input class='primary' type='submit' value='开始采集校准点'%s>",
+                canWrite ? "" : " disabled");
+        Esp32BaseWeb::sendChunk("</div></form>");
+    }
+    Esp32BaseWeb::sendChunk("</div>");
+}
+
+void sendTdsCalibrationLivePanel(const TdsCalibrationSessionSnapshot& session,
+                                 bool enabled,
+                                 bool canWrite) {
+    Esp32BaseWeb::sendChunk("<div id='tds-calibration-live'");
+    if (session.samplingActive && !session.readyToSave) {
+        Esp32BaseWeb::sendChunk(
+            " data-sensor-calibration-refresh='/faucet/calibration?partial=tds-live'");
+    }
+    Esp32BaseWeb::sendChunk("><div class='panel-head'><h3>本次校准</h3>");
+    sendFmt("<span class='status-pill %s'>%s</span></div>",
+            session.samplingActive ? "status-warn" : (session.sessionActive ? "status-ok" : "status-muted"),
+            session.samplingActive ? "采样中" : (session.sessionActive ? "已开始" : "未开始"));
+    sendTdsCalibrationStep(session, enabled, canWrite);
+    Esp32BaseWeb::sendChunk("</div>");
+}
+
 void handleTemperatureCalibrationPage() {
     const AppSnapshot snapshot = g_context.app->snapshot();
     const SystemConfig& config = *g_context.config;
@@ -1234,56 +1304,8 @@ void handleTdsCalibrationPage() {
             config.tdsTemperatureCompensationEnabled ? tempText : "关闭");
     sendFmt("<div><span>比例</span><strong>%.3f</strong></div>", static_cast<double>(config.tdsScale));
     sendFmt("<div><span>修正</span><strong>%d ppm</strong></div>", static_cast<int>(config.tdsOffsetPpm));
-    Esp32BaseWeb::sendChunk("</div></section><section class='panel tds-point-session'");
-    if (session.samplingActive && !session.readyToSave) {
-        Esp32BaseWeb::sendChunk(" data-tds-calibration-refresh");
-    }
-    Esp32BaseWeb::sendChunk("><div class='panel-head'><h3>本次校准</h3>");
-    sendFmt("<span class='status-pill %s'>%s</span></div>",
-            session.samplingActive ? "status-warn" : (session.sessionActive ? "status-ok" : "status-muted"),
-            session.samplingActive ? "采样中" : (session.sessionActive ? "已开始" : "未开始"));
-    Esp32BaseWeb::sendChunk("<div class='tds-step-card'>");
-    if (!enabled) {
-        Esp32BaseWeb::sendChunk("<p class='hint'>TDS 模拟传感器未启用，不能进行水质校准。</p>");
-    } else if (!session.sessionActive) {
-        Esp32BaseWeb::sendChunk("<form method='post' action='/faucet/calibration' onsubmit='return once(this)'>"
-                                "<input type='hidden' name='action' value='tds_start_session'>"
-                                "<div class='form-actions'>");
-        sendFmt("<input class='primary' type='submit' value='开始校准'%s>",
-                canWrite ? "" : " disabled");
-        Esp32BaseWeb::sendChunk("</div></form>");
-    } else if (session.samplingActive && !session.readyToSave) {
-        sendFmt("<p><strong>参考 %u ppm</strong>，已采样 %u 次，原始均值 %u ppm。</p>",
-                static_cast<unsigned>(session.referencePpm),
-                static_cast<unsigned>(session.sampleCount),
-                static_cast<unsigned>(session.rawAvgPpm));
-        Esp32BaseWeb::sendChunk("<p class='hint'>正在等待读数稳定，稳定后页面会显示保存按钮。</p>"
-                                "<div class='form-actions'><input class='secondary' type='submit' value='正在采集' disabled></div>");
-    } else if (session.readyToSave) {
-        sendFmt("<p><strong>参考 %u ppm</strong>，已采样 %u 次，原始均值 %u ppm。</p>",
-                static_cast<unsigned>(session.referencePpm),
-                static_cast<unsigned>(session.sampleCount),
-                static_cast<unsigned>(session.rawAvgPpm));
-        Esp32BaseWeb::sendChunk("<form method='post' action='/faucet/calibration' onsubmit='return once(this)'>"
-                                "<input type='hidden' name='action' value='tds_save_point'>"
-                                "<div class='form-actions'>");
-        sendFmt("<input class='primary' type='submit' value='保存这个校准点'%s>",
-                canWrite ? "" : " disabled");
-        Esp32BaseWeb::sendChunk("</div></form>");
-    } else if (session.full) {
-        Esp32BaseWeb::sendChunk("<p class='hint'>本次校准点已满，可以使用当前结果或删除一个校准点后重采。</p>");
-    } else {
-        Esp32BaseWeb::sendChunk("<form class='tds-capture-form' method='post' action='/faucet/calibration' onsubmit='return once(this)'>"
-                                "<input type='hidden' name='action' value='tds_start_point'>"
-                                "<label class='compact-field'><span>参考 TDS(ppm)</span><span class='estimator-input-row'>"
-                                "<input name='referencePpm' type='number' min='0' max='2000' step='1' required>"
-                                "<span class='unit-label'>ppm</span></span></label>"
-                                "<div class='form-actions'>");
-        sendFmt("<input class='primary' type='submit' value='开始采集校准点'%s>",
-                canWrite ? "" : " disabled");
-        Esp32BaseWeb::sendChunk("</div></form>");
-    }
-    Esp32BaseWeb::sendChunk("</div>");
+    Esp32BaseWeb::sendChunk("</div></section><section class='panel tds-point-session'>");
+    sendTdsCalibrationLivePanel(session, enabled, canWrite);
     sendTdsCalibrationPointsTable(session);
     Esp32BaseWeb::sendChunk("<div class='tds-workflow-card'><h4>自动生成结果</h4>");
     if (session.candidateReady) {

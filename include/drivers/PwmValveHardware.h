@@ -22,6 +22,7 @@ private:
     std::uint8_t channel_;
     std::uint32_t frequencyHz_;
     bool begun_;
+    bool outputEnabled_;
 };
 
 }  // namespace faucet

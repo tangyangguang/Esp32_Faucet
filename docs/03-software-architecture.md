@@ -38,7 +38,7 @@
 | `ValveDriver` | 电磁阀开关、全压吸合、PWM 保持 |
 | `PwmValveHardware` | GPIO26/LEDC 输出、GPIO32 安全关断和 100-30000Hz 频率重配置 |
 | `ButtonInput` | 四键消抖、短按/长按 |
-| `ColorDisplayPresenter` | 240x240 TFT 页面模型、状态摘要和刷新节流 |
+| `ColorDisplayPresenter` | 240x240 TFT 页面模型、状态摘要和刷新节流；驱动使用固定帧缓冲和脏矩形推送，运行期不切换大块缓冲 |
 | `BeepDriver` | 操作、完成、异常提示 |
 | `WaterRecordFileStore` / `WaterRecordStore` | 文件记录写入、滚动、分页；记录查询和统计聚合 |
 | `StatisticsStore` | 今日、本周、本月、总累计 |

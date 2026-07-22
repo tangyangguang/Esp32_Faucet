@@ -84,7 +84,7 @@ void test_color_display_covers_idle_confirm_running_pause_result_alert_calibrati
     TEST_ASSERT_NOT_NULL(std::strstr(frame.subtitle, "预计"));
 
     frame = presenter.render(makeSnapshot(WaterState::Idle, WaterMode::Volume, 1500), 1400, false);
-    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(ColorDisplayPage::StandbyOffline),
+    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(ColorDisplayPage::StandbyVolume),
                             static_cast<std::uint8_t>(frame.page));
     assertTextEquals("离线", frame.tag);
     TEST_ASSERT_NOT_NULL(std::strstr(frame.subtitle, "本地可用"));
@@ -146,6 +146,9 @@ void test_color_display_covers_idle_confirm_running_pause_result_alert_calibrati
     assertTextEquals("已暂停", frame.title);
     assertTextEquals("阀门已关闭", frame.status);
     assertTextEquals("剩余", frame.metrics[1].label);
+    TEST_ASSERT_EQUAL_UINT8(2, frame.hintCount);
+    assertTextEquals("确认 继续", frame.hints[0]);
+    assertTextEquals("取消 结束", frame.hints[1]);
 
     AppSnapshot pausedTime = runningTime;
     pausedTime.water.state = WaterState::Paused;
@@ -167,6 +170,8 @@ void test_color_display_covers_idle_confirm_running_pause_result_alert_calibrati
     assertTextEquals("已完成", frame.state);
     assertTextEquals("本次出水", frame.title);
     assertTextEquals("1.50", frame.mainValue);
+    TEST_ASSERT_EQUAL_UINT8(1, frame.hintCount);
+    assertTextEquals("取消 返回", frame.hints[0]);
 
     completed.water.lastResult = WaterResult::StoppedByUser;
     completed.water.volumeMl = 920;
@@ -184,6 +189,8 @@ void test_color_display_covers_idle_confirm_running_pause_result_alert_calibrati
     assertTextEquals("已关阀", frame.title);
     assertTextEquals("流量异常", frame.status);
     assertTextEquals("阀关", frame.tag);
+    TEST_ASSERT_EQUAL_UINT8(1, frame.hintCount);
+    assertTextEquals("取消 返回", frame.hints[0]);
 
     AppSnapshot calReady = makeSnapshot(WaterState::Idle, WaterMode::Volume, 1500, 0);
     calReady.localMode = LocalUiMode::Calibration;
@@ -193,6 +200,10 @@ void test_color_display_covers_idle_confirm_running_pause_result_alert_calibrati
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(ColorDisplayPage::CalibrationReady),
                             static_cast<std::uint8_t>(frame.page));
     assertTextEquals("等待本地出水", frame.title);
+    assertTextEquals("TDS", frame.metrics[2].label);
+    TEST_ASSERT_EQUAL_UINT8(2, frame.hintCount);
+    assertTextEquals("确认 开始", frame.hints[0]);
+    assertTextEquals("取消 退出", frame.hints[1]);
 
     AppSnapshot calRunning = makeSnapshot(WaterState::Running, WaterMode::Volume, 1500, 920);
     calRunning.localMode = LocalUiMode::Calibration;
@@ -207,7 +218,16 @@ void test_color_display_covers_idle_confirm_running_pause_result_alert_calibrati
     assertTextEquals("0.92", frame.mainValue);
     assertTextEquals("已用", frame.metrics[0].label);
     assertTextEquals("实时流速", frame.metrics[2].label);
-    assertTextEquals("停止", frame.hints[0]);
+    TEST_ASSERT_EQUAL_UINT8(1, frame.hintCount);
+    assertTextEquals("取消 停止", frame.hints[0]);
+
+    AppSnapshot calAwaiting = calRunning;
+    calAwaiting.water.state = WaterState::Idle;
+    calAwaiting.calibrationStatus = CalibrationSessionStatus::AwaitingActual;
+    frame = presenter.render(calAwaiting, 2500, true);
+    assertTextEquals("等待网页录入", frame.title);
+    TEST_ASSERT_EQUAL_UINT8(1, frame.hintCount);
+    assertTextEquals("取消 放弃", frame.hints[0]);
 
     ColorDisplayPresenter sleepy(1);
     sleepy.wake(1000);
@@ -335,7 +355,7 @@ void test_color_display_trends_only_use_real_running_sensor_samples() {
     TEST_ASSERT_EQUAL_UINT8(0, frame.sensors[1].sampleCount);
 }
 
-void test_color_display_sensor_trends_are_independent_and_mark_uncalibrated_tds() {
+void test_color_display_sensor_trends_are_independent_and_keep_local_tds_label_short() {
     ColorDisplayPresenter presenter(60);
     presenter.wake(0);
     AppSnapshot snapshot = makeSnapshot(WaterState::Running, WaterMode::Volume, 1500, 100);
@@ -353,9 +373,15 @@ void test_color_display_sensor_trends_are_independent_and_mark_uncalibrated_tds(
     snapshot.sensors.tdsPpm = SensorValue{true, 12};
     snapshot.sensors.temperatureCentiC = {};
     frame = presenter.render(snapshot, 4000, true);
-    assertTextEquals("TDS参考", frame.sensors[0].label);
+    assertTextEquals("TDS", frame.sensors[0].label);
     TEST_ASSERT_EQUAL_UINT8(1, frame.sensors[0].sampleCount);
     TEST_ASSERT_EQUAL_UINT8(3, frame.sensors[1].sampleCount);
+
+    AppSnapshot idle = makeSnapshot(WaterState::Idle, WaterMode::Volume, 1500);
+    idle.sensors.tdsCalibrated = false;
+    idle.sensors.tdsPpm = SensorValue{true, 12};
+    frame = presenter.render(idle, 5000, true);
+    assertTextEquals("TDS", frame.metrics[2].label);
 }
 
 int main(int argc, char** argv) {
@@ -368,6 +394,6 @@ int main(int argc, char** argv) {
     RUN_TEST(test_color_display_confirm_page_hides_unavailable_estimates_and_uses_short_hints);
     RUN_TEST(test_color_display_confirm_volume_estimates_duration_from_metering_params_when_snapshot_omits_it);
     RUN_TEST(test_color_display_trends_only_use_real_running_sensor_samples);
-    RUN_TEST(test_color_display_sensor_trends_are_independent_and_mark_uncalibrated_tds);
+    RUN_TEST(test_color_display_sensor_trends_are_independent_and_keep_local_tds_label_short);
     return UNITY_END();
 }

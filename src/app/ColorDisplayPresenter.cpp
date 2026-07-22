@@ -140,10 +140,12 @@ ColorDisplaySensor& addSensor(ColorDisplayFrame& frame, const char* label, const
     return sensor;
 }
 
-void setHints(ColorDisplayFrame& frame, const char* h0, const char* h1, const char* h2 = nullptr) {
-    frame.hintCount = h2 ? 3 : 2;
+void setHints(ColorDisplayFrame& frame, const char* h0, const char* h1 = nullptr, const char* h2 = nullptr) {
+    frame.hintCount = h2 ? 3 : (h1 ? 2 : 1);
     copyText(frame.hints[0], h0);
-    copyText(frame.hints[1], h1);
+    if (h1) {
+        copyText(frame.hints[1], h1);
+    }
     if (h2) {
         copyText(frame.hints[2], h2);
     }
@@ -158,9 +160,7 @@ void addIdleMetrics(ColorDisplayFrame& frame, const AppSnapshot& snapshot) {
     formatTds(tds, sizeof(tds), snapshot.sensors.tdsPpm);
     addMetric(frame, "今日累计", today);
     addMetric(frame, "水温", temp, "°C");
-    addMetric(frame,
-              snapshot.sensors.tdsPpm.valid && !snapshot.sensors.tdsCalibrated ? "TDS参考" : "TDS",
-              tds);
+    addMetric(frame, "TDS", tds);
 }
 
 const char* resultState(WaterResult result) {
@@ -303,7 +303,7 @@ ColorDisplayFrame ColorDisplayPresenter::render(const AppSnapshot& snapshot,
             addMetric(frame, "已用", elapsed);
             addMetric(frame, "最长剩余", remaining);
             addMetric(frame, "实时流速", flow, "L/min");
-            setHints(frame, "停止", "网页录入");
+            setHints(frame, "取消 停止");
             return frame;
         }
         if (snapshot.calibrationStatus == CalibrationSessionStatus::AwaitingActual) {
@@ -316,7 +316,7 @@ ColorDisplayFrame ColorDisplayPresenter::render(const AppSnapshot& snapshot,
             addMetric(frame, "本次用时", elapsed);
             addMetric(frame, "有效样本", tag);
             addMetric(frame, "下一步", "网页");
-            setHints(frame, "网页录入", "勿重启");
+            setHints(frame, "取消 放弃");
             return frame;
         }
         copyText(frame.title, "等待本地出水");
@@ -330,11 +330,9 @@ ColorDisplayFrame ColorDisplayPresenter::render(const AppSnapshot& snapshot,
         char temp[12]{};
         formatTds(tds, sizeof(tds), snapshot.sensors.tdsPpm);
         formatTemperature(temp, sizeof(temp), snapshot.sensors.temperatureCentiC);
-        addMetric(frame,
-                  snapshot.sensors.tdsPpm.valid && !snapshot.sensors.tdsCalibrated ? "TDS参考" : "TDS",
-                  tds);
+        addMetric(frame, "TDS", tds);
         addMetric(frame, "水温", temp, "°C");
-        setHints(frame, "开始", "网页", "退出");
+        setHints(frame, "确认 开始", "取消 退出");
         return frame;
     }
 
@@ -378,14 +376,9 @@ ColorDisplayFrame ColorDisplayPresenter::render(const AppSnapshot& snapshot,
         resultTemp.value = static_cast<std::int32_t>(snapshot.lastResultRecord.temperatureCentiC);
         formatTds(tds, sizeof(tds), hasRecordSensors ? resultTds : snapshot.sensors.tdsPpm);
         formatTemperature(temp, sizeof(temp), hasRecordSensors ? resultTemp : snapshot.sensors.temperatureCentiC);
-        const bool resultTdsUncalibrated =
-            hasRecordSensors
-                ? resultTds.valid &&
-                      (snapshot.lastResultRecord.sensorFlags & kWaterSensorFlagTdsUncalibrated) != 0
-                : snapshot.sensors.tdsPpm.valid && !snapshot.sensors.tdsCalibrated;
-        addMetric(frame, resultTdsUncalibrated ? "TDS参考" : "TDS", tds);
+        addMetric(frame, "TDS", tds);
         addMetric(frame, "水温", temp, "°C");
-        setHints(frame, "返回", "网页", "30s");
+        setHints(frame, "取消 返回");
         return frame;
     }
 
@@ -399,9 +392,8 @@ ColorDisplayFrame ColorDisplayPresenter::render(const AppSnapshot& snapshot,
 
     switch (snapshot.water.state) {
         case WaterState::Idle: {
-            frame.page = networkOnline ? (snapshot.water.mode == WaterMode::Volume ? ColorDisplayPage::StandbyVolume
-                                                                                   : ColorDisplayPage::StandbyTime)
-                                       : ColorDisplayPage::StandbyOffline;
+            frame.page = snapshot.water.mode == WaterMode::Volume ? ColorDisplayPage::StandbyVolume
+                                                                  : ColorDisplayPage::StandbyTime;
             copyText(frame.state, "待机");
             char presetTitle[32]{};
             char presetTag[8]{};
@@ -527,11 +519,7 @@ ColorDisplayFrame ColorDisplayPresenter::render(const AppSnapshot& snapshot,
             char temp[12]{};
             formatTds(tds, sizeof(tds), snapshot.sensors.tdsPpm);
             formatTemperature(temp, sizeof(temp), snapshot.sensors.temperatureCentiC);
-            ColorDisplaySensor& tdsSensor =
-                addSensor(frame,
-                          snapshot.sensors.tdsPpm.valid && !snapshot.sensors.tdsCalibrated ? "TDS参考" : "TDS",
-                          tds,
-                          "ppm");
+            ColorDisplaySensor& tdsSensor = addSensor(frame, "TDS", tds, "ppm");
             ColorDisplaySensor& tempSensor = addSensor(frame, "水温", temp, "°C");
             tdsSensor.sampleCount = tdsTrendCount_;
             tempSensor.sampleCount = tempTrendCount_;
@@ -555,13 +543,7 @@ ColorDisplayFrame ColorDisplayPresenter::render(const AppSnapshot& snapshot,
             char temp[12]{};
             formatTds(tds, sizeof(tds), snapshot.sensors.tdsPpm);
             formatTemperature(temp, sizeof(temp), snapshot.sensors.temperatureCentiC);
-            std::snprintf(frame.subtitle,
-                          sizeof(frame.subtitle),
-                          snapshot.sensors.tdsPpm.valid && !snapshot.sensors.tdsCalibrated
-                              ? "TDS参考 %s · %s°C"
-                              : "TDS %s · %s°C",
-                          tds,
-                          temp);
+            std::snprintf(frame.subtitle, sizeof(frame.subtitle), "TDS %s · %s°C", tds, temp);
             char out[12]{};
             char remain[12]{};
             char elapsed[12]{};
@@ -595,7 +577,7 @@ ColorDisplayFrame ColorDisplayPresenter::render(const AppSnapshot& snapshot,
                 formatLitersWithUnit(total, sizeof(total), snapshot.targetEstimatedVolumeMl);
                 addMetric(frame, "预计总量", total);
             }
-            setHints(frame, "继续", "结束");
+            setHints(frame, "确认 继续", "取消 结束");
             return frame;
         }
 
@@ -612,7 +594,7 @@ ColorDisplayFrame ColorDisplayPresenter::render(const AppSnapshot& snapshot,
             formatLitersWithUnit(target, sizeof(target), snapshot.water.targetValue);
             addMetric(frame, "本次出水", out);
             addMetric(frame, "目标", target);
-            setHints(frame, "返回", "待机", "排查");
+            setHints(frame, "取消 返回");
             return frame;
     }
 }

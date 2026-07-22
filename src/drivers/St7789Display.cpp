@@ -38,36 +38,35 @@ constexpr std::int16_t kTagHeight = 22;
 
 TFT_eSPI g_tft;
 TFT_eSprite g_frameSprite(&g_tft);
-TFT_eSprite g_topRegionSprite(&g_tft);
-TFT_eSprite g_leftRegionSprite(&g_tft);
-TFT_eSprite g_metricRegionSprite(&g_tft);
-TFT_eSprite g_sensorRegionSprite(&g_tft);
-TFT_eSprite* g_activeSprite = &g_frameSprite;
 bool g_frameSpriteReady = false;
-bool g_topRegionSpriteReady = false;
-bool g_leftRegionSpriteReady = false;
-bool g_metricRegionSpriteReady = false;
-bool g_sensorRegionSpriteReady = false;
 bool g_drawToSprite = false;
-std::int16_t g_frameSpriteWidth = 0;
-std::int16_t g_frameSpriteHeight = 0;
-std::int16_t g_topRegionSpriteWidth = 0;
-std::int16_t g_topRegionSpriteHeight = 0;
-std::int16_t g_leftRegionSpriteWidth = 0;
-std::int16_t g_leftRegionSpriteHeight = 0;
-std::int16_t g_metricRegionSpriteWidth = 0;
-std::int16_t g_metricRegionSpriteHeight = 0;
-std::int16_t g_sensorRegionSpriteWidth = 0;
-std::int16_t g_sensorRegionSpriteHeight = 0;
-std::int16_t g_spriteOffsetX = 0;
-std::int16_t g_spriteOffsetY = 0;
 
 bool sameFrame(const ColorDisplayFrame& a, const ColorDisplayFrame& b) {
     return std::memcmp(&a, &b, sizeof(ColorDisplayFrame)) == 0;
 }
 
-bool isRunningPage(ColorDisplayPage page) {
-    return page == ColorDisplayPage::RunningVolume || page == ColorDisplayPage::RunningTime;
+bool textChanged(const char* a, const char* b) {
+    return std::strcmp(a ? a : "", b ? b : "") != 0;
+}
+
+bool metricChanged(const ColorDisplayMetric& a, const ColorDisplayMetric& b) {
+    return std::memcmp(&a, &b, sizeof(ColorDisplayMetric)) != 0;
+}
+
+bool sensorChanged(const ColorDisplaySensor& a, const ColorDisplaySensor& b) {
+    return std::memcmp(&a, &b, sizeof(ColorDisplaySensor)) != 0;
+}
+
+bool hintsChanged(const ColorDisplayFrame& a, const ColorDisplayFrame& b) {
+    if (a.hintCount != b.hintCount) {
+        return true;
+    }
+    for (std::uint8_t i = 0; i < a.hintCount && i < kColorDisplayHintCount; ++i) {
+        if (textChanged(a.hints[i], b.hints[i])) {
+            return true;
+        }
+    }
+    return false;
 }
 
 std::uint16_t accentForPage(ColorDisplayPage page) {
@@ -78,7 +77,6 @@ std::uint16_t accentForPage(ColorDisplayPage page) {
         case ColorDisplayPage::RunningTime:
         case ColorDisplayPage::PausedVolume:
         case ColorDisplayPage::PausedTime:
-        case ColorDisplayPage::StandbyOffline:
             return kAmber;
         case ColorDisplayPage::Alert:
             return kRed;
@@ -119,121 +117,13 @@ std::uint32_t decodeUtf8(const char*& text) {
     return '?';
 }
 
-std::int16_t spriteX(std::int16_t x) {
-    return static_cast<std::int16_t>(x - g_spriteOffsetX);
-}
-
-std::int16_t spriteY(std::int16_t y) {
-    return static_cast<std::int16_t>(y - g_spriteOffsetY);
-}
-
-bool ensureSprite(TFT_eSprite& sprite,
-                  bool& ready,
-                  std::int16_t& currentWidth,
-                  std::int16_t& currentHeight,
-                  std::int16_t w,
-                  std::int16_t h) {
-    if (ready && currentWidth == w && currentHeight == h) {
+bool ensureFrameSprite() {
+    if (g_frameSpriteReady) {
         return true;
     }
-    if (ready) {
-        sprite.deleteSprite();
-        ready = false;
-        currentWidth = 0;
-        currentHeight = 0;
-    }
-    sprite.setColorDepth(16);
-    ready = sprite.createSprite(w, h) != nullptr;
-    if (ready) {
-        currentWidth = w;
-        currentHeight = h;
-    }
-    return ready;
-}
-
-void releaseSprite(TFT_eSprite& sprite, bool& ready, std::int16_t& currentWidth, std::int16_t& currentHeight) {
-    if (!ready) {
-        return;
-    }
-    sprite.deleteSprite();
-    ready = false;
-    currentWidth = 0;
-    currentHeight = 0;
-}
-
-void releaseFullFrameSprite() {
-    releaseSprite(g_frameSprite, g_frameSpriteReady, g_frameSpriteWidth, g_frameSpriteHeight);
-    if (g_activeSprite == &g_frameSprite) {
-        g_activeSprite = nullptr;
-    }
-}
-
-void releaseRegionSprites() {
-    releaseSprite(g_topRegionSprite, g_topRegionSpriteReady, g_topRegionSpriteWidth, g_topRegionSpriteHeight);
-    releaseSprite(g_leftRegionSprite, g_leftRegionSpriteReady, g_leftRegionSpriteWidth, g_leftRegionSpriteHeight);
-    releaseSprite(g_metricRegionSprite, g_metricRegionSpriteReady, g_metricRegionSpriteWidth, g_metricRegionSpriteHeight);
-    releaseSprite(g_sensorRegionSprite, g_sensorRegionSpriteReady, g_sensorRegionSpriteWidth, g_sensorRegionSpriteHeight);
-    if (g_activeSprite == &g_topRegionSprite || g_activeSprite == &g_leftRegionSprite ||
-        g_activeSprite == &g_metricRegionSprite || g_activeSprite == &g_sensorRegionSprite) {
-        g_activeSprite = nullptr;
-    }
-}
-
-bool ensureFrameSprite(std::int16_t w, std::int16_t h) {
-    releaseRegionSprites();
-    const bool ok = ensureSprite(g_frameSprite, g_frameSpriteReady, g_frameSpriteWidth, g_frameSpriteHeight, w, h);
-    if (ok) {
-        g_activeSprite = &g_frameSprite;
-    }
-    return ok;
-}
-
-bool selectRegionSprite(std::int16_t x, std::int16_t y, std::int16_t w, std::int16_t h) {
-    releaseFullFrameSprite();
-    if (x == 0 && y == 0) {
-        const bool ok = ensureSprite(
-            g_topRegionSprite, g_topRegionSpriteReady, g_topRegionSpriteWidth, g_topRegionSpriteHeight, w, h);
-        if (ok) {
-            g_activeSprite = &g_topRegionSprite;
-        }
-        return ok;
-    }
-    if (x == 10 && y == 42) {
-        const bool ok = ensureSprite(
-            g_leftRegionSprite, g_leftRegionSpriteReady, g_leftRegionSpriteWidth, g_leftRegionSpriteHeight, w, h);
-        if (ok) {
-            g_activeSprite = &g_leftRegionSprite;
-        }
-        return ok;
-    }
-    if (x == 128 && y == 44) {
-        const bool ok = ensureSprite(
-            g_metricRegionSprite, g_metricRegionSpriteReady, g_metricRegionSpriteWidth, g_metricRegionSpriteHeight, w, h);
-        if (ok) {
-            g_activeSprite = &g_metricRegionSprite;
-        }
-        return ok;
-    }
-    if (x == 10 && y == 166) {
-        const bool ok = ensureSprite(
-            g_sensorRegionSprite, g_sensorRegionSpriteReady, g_sensorRegionSpriteWidth, g_sensorRegionSpriteHeight, w, h);
-        if (ok) {
-            g_activeSprite = &g_sensorRegionSprite;
-        }
-        return ok;
-    }
-    const bool ok = ensureFrameSprite(w, h);
-    if (ok) {
-        g_activeSprite = &g_frameSprite;
-    }
-    return ok;
-}
-
-TFT_eSprite& activeSprite() {
-    if (!g_activeSprite) {
-        g_activeSprite = &g_frameSprite;
-    }
-    return *g_activeSprite;
+    g_frameSprite.setColorDepth(8);
+    g_frameSpriteReady = g_frameSprite.createSprite(kWidth, kHeight) != nullptr;
+    return g_frameSpriteReady;
 }
 
 std::uint8_t asciiFontForScale(std::uint8_t scale) {
@@ -330,13 +220,33 @@ const char* compactHintLabel(const char* label) {
     if (!label) {
         return "";
     }
-    if (std::strcmp(label, "确认 开始") == 0 || std::strcmp(label, "确认 返回") == 0 ||
-        std::strcmp(label, "确认 继续") == 0) {
+    if (std::strcmp(label, "确认 开始") == 0) {
+        return "开始";
+    }
+    if (std::strcmp(label, "确认 继续") == 0) {
+        return "继续";
+    }
+    if (std::strcmp(label, "确认 返回") == 0) {
         return "确认";
     }
     if (std::strcmp(label, "取消 返回") == 0 || std::strcmp(label, "取消 待机") == 0 ||
         std::strcmp(label, "取消 结束") == 0 || std::strcmp(label, "取消 退出") == 0 ||
-        std::strcmp(label, "取消 放弃") == 0) {
+        std::strcmp(label, "取消 放弃") == 0 || std::strcmp(label, "取消 停止") == 0) {
+        if (std::strcmp(label, "取消 结束") == 0) {
+            return "结束";
+        }
+        if (std::strcmp(label, "取消 退出") == 0) {
+            return "退出";
+        }
+        if (std::strcmp(label, "取消 放弃") == 0) {
+            return "放弃";
+        }
+        if (std::strcmp(label, "取消 停止") == 0) {
+            return "停止";
+        }
+        if (std::strcmp(label, "取消 返回") == 0) {
+            return "返回";
+        }
         return "取消";
     }
     if (std::strcmp(label, "加/减 调整") == 0) {
@@ -347,12 +257,6 @@ const char* compactHintLabel(const char* label) {
     }
     if (std::strcmp(label, "长按校准") == 0) {
         return "校准";
-    }
-    if (std::strcmp(label, "30s 后返回") == 0) {
-        return "30s";
-    }
-    if (std::strcmp(label, "先排查水路") == 0) {
-        return "排查";
     }
     return label;
 }
@@ -374,6 +278,9 @@ bool St7789Display::begin() {
     g_tft.setRotation(0);
     g_tft.setTextWrap(false, false);
     g_tft.setTextPadding(0);
+    if (!ensureFrameSprite()) {
+        log_e("ST7789 frame buffer allocation failed; direct redraw fallback enabled");
+    }
     present_ = true;
     lastFrameValid_ = false;
     fillScreen(kBlack);
@@ -392,16 +299,24 @@ void St7789Display::apply(const ColorDisplayFrame& frame) {
         return;
     }
     if (!frame.on) {
-        fillScreen(kBlack);
         setBacklight(false);
+        if (g_frameSpriteReady) {
+            g_frameSprite.fillSprite(kBlack);
+        } else {
+            fillScreen(kBlack);
+        }
         lastFrame_ = frame;
         lastFrameValid_ = true;
         return;
     }
-    setBacklight(true);
-    const bool runningFrame =
-        frame.on && lastFrameValid_ && lastFrame_.on && isRunningPage(frame.page) && frame.page == lastFrame_.page;
-    renderFrame(frame, !runningFrame);
+    const bool wakeAfterRender = !backlight_;
+    const bool samePage = lastFrameValid_ && lastFrame_.on && frame.page == lastFrame_.page;
+    if (!samePage || !renderPartialFrame(frame, lastFrame_)) {
+        renderFrame(frame, true);
+    }
+    if (wakeAfterRender) {
+        setBacklight(true);
+    }
     lastFrame_ = frame;
     lastFrameValid_ = true;
 }
@@ -437,7 +352,7 @@ void St7789Display::fillRect(std::int16_t x, std::int16_t y, std::int16_t w, std
         return;
     }
     if (g_drawToSprite) {
-        activeSprite().fillRect(spriteX(x), spriteY(y), w, h, color);
+        g_frameSprite.fillRect(x, y, w, h, color);
     } else {
         g_tft.fillRect(x, y, w, h, color);
     }
@@ -447,13 +362,11 @@ bool St7789Display::beginBufferedFrame(bool fullRedraw) {
     if (!fullRedraw) {
         return false;
     }
-    if (!ensureFrameSprite(kWidth, kHeight)) {
+    if (!ensureFrameSprite()) {
         return false;
     }
     g_drawToSprite = true;
-    g_spriteOffsetX = 0;
-    g_spriteOffsetY = 0;
-    activeSprite().fillSprite(kBg);
+    g_frameSprite.fillSprite(kBg);
     return true;
 }
 
@@ -462,9 +375,7 @@ void St7789Display::endBufferedFrame(bool buffered) {
         return;
     }
     g_drawToSprite = false;
-    activeSprite().pushSprite(0, 0);
-    g_spriteOffsetX = 0;
-    g_spriteOffsetY = 0;
+    g_frameSprite.pushSprite(0, 0);
 }
 
 bool St7789Display::beginBufferedRegion(std::int16_t x,
@@ -475,24 +386,24 @@ bool St7789Display::beginBufferedRegion(std::int16_t x,
     if (w <= 0 || h <= 0) {
         return false;
     }
-    if (!selectRegionSprite(x, y, w, h)) {
+    if (!ensureFrameSprite()) {
         return false;
     }
     g_drawToSprite = true;
-    g_spriteOffsetX = x;
-    g_spriteOffsetY = y;
-    activeSprite().fillSprite(background);
+    g_frameSprite.fillRect(x, y, w, h, background);
     return true;
 }
 
-void St7789Display::endBufferedRegion(bool buffered, std::int16_t x, std::int16_t y) {
+void St7789Display::endBufferedRegion(bool buffered,
+                                      std::int16_t x,
+                                      std::int16_t y,
+                                      std::int16_t w,
+                                      std::int16_t h) {
     if (!buffered) {
         return;
     }
     g_drawToSprite = false;
-    activeSprite().pushSprite(x, y);
-    g_spriteOffsetX = 0;
-    g_spriteOffsetY = 0;
+    g_frameSprite.pushSprite(x, y, x, y, w, h);
 }
 
 void St7789Display::fillRoundRect(std::int16_t x,
@@ -506,7 +417,7 @@ void St7789Display::fillRoundRect(std::int16_t x,
         return;
     }
     if (g_drawToSprite) {
-        activeSprite().fillSmoothRoundRect(spriteX(x), spriteY(y), w, h, radius, color, background);
+        g_frameSprite.fillSmoothRoundRect(x, y, w, h, radius, color, background);
     } else {
         g_tft.fillSmoothRoundRect(x, y, w, h, radius, color, background);
     }
@@ -523,8 +434,8 @@ void St7789Display::drawRoundRect(std::int16_t x,
         return;
     }
     if (g_drawToSprite) {
-        activeSprite().drawSmoothRoundRect(spriteX(x),
-                                          spriteY(y),
+        g_frameSprite.drawSmoothRoundRect(x,
+                                          y,
                                           radius,
                                           static_cast<std::int16_t>(radius - 1),
                                           w,
@@ -541,7 +452,7 @@ void St7789Display::drawPixel(std::int16_t x, std::int16_t y, std::uint16_t colo
         return;
     }
     if (g_drawToSprite) {
-        activeSprite().drawPixel(spriteX(x), spriteY(y), color);
+        g_frameSprite.drawPixel(x, y, color);
     } else {
         g_tft.drawPixel(x, y, color);
     }
@@ -592,8 +503,8 @@ void St7789Display::drawRing(std::int16_t cx,
                              std::uint16_t color) {
     auto drawArcOnTarget = [&](std::uint16_t start, std::uint16_t end, std::uint16_t fg, std::uint16_t bg) {
         if (g_drawToSprite) {
-            activeSprite().drawSmoothArc(spriteX(cx),
-                                        spriteY(cy),
+            g_frameSprite.drawSmoothArc(cx,
+                                        cy,
                                         radius,
                                         static_cast<std::int16_t>(radius - 8),
                                         start,
@@ -650,12 +561,10 @@ void St7789Display::drawGlyphBlock(std::int16_t x,
         return;
     }
     if (g_drawToSprite) {
-        const std::int16_t localX = spriteX(x);
-        const std::int16_t localY = spriteY(y);
-        activeSprite().setWindow(localX,
-                                localY,
-                                static_cast<std::int16_t>(localX + w - 1),
-                                static_cast<std::int16_t>(localY + h - 1));
+        g_frameSprite.setWindow(x,
+                                y,
+                                static_cast<std::int16_t>(x + w - 1),
+                                static_cast<std::int16_t>(y + h - 1));
         for (std::uint8_t gy = 0; gy < kSt7789GlyphHeight; ++gy) {
             const std::uint8_t b0 = glyph.bitmap[gy * 2U];
             const std::uint8_t b1 = glyph.bitmap[gy * 2U + 1U];
@@ -670,7 +579,7 @@ void St7789Display::drawGlyphBlock(std::int16_t x,
                                           : false;
                     const std::uint16_t pixel = (lit0 || lit1) ? color : background;
                     for (std::uint8_t sx = 0; sx < scale; ++sx) {
-                        activeSprite().pushColor(pixel);
+                        g_frameSprite.pushColor(pixel);
                     }
                 }
             }
@@ -752,10 +661,10 @@ void St7789Display::drawAsciiText(std::int16_t x,
         return;
     }
     if (g_drawToSprite) {
-        activeSprite().setTextDatum(TL_DATUM);
-        activeSprite().setTextSize(1);
-        activeSprite().setTextColor(color, background);
-        activeSprite().drawString(text, spriteX(x), spriteY(y), font);
+        g_frameSprite.setTextDatum(TL_DATUM);
+        g_frameSprite.setTextSize(1);
+        g_frameSprite.setTextColor(color, background);
+        g_frameSprite.drawString(text, x, y, font);
     } else {
         g_tft.setTextDatum(TL_DATUM);
         g_tft.setTextSize(1);
@@ -1050,51 +959,219 @@ void St7789Display::drawHints(const ColorDisplayFrame& frame) {
     }
 }
 
-void St7789Display::drawRunningFrameDynamicRegions(const ColorDisplayFrame& frame, std::uint16_t accent) {
-    bool buffered = beginBufferedRegion(0, 0, kWidth, 40, kBg);
-    if (!buffered) {
-        fillRect(0, 0, kWidth, 40, kBg);
-    }
-    drawTopBar(frame, accent);
-    endBufferedRegion(buffered, 0, 0);
+bool St7789Display::renderPartialFrame(const ColorDisplayFrame& frame, const ColorDisplayFrame& previous) {
+    const std::uint16_t accent = accentForPage(frame.page);
+#define REDRAW_REGION(X, Y, W, H, ...)                                                                      \
+    do {                                                                                                    \
+        const std::int16_t regionX = (X);                                                                   \
+        const std::int16_t regionY = (Y);                                                                   \
+        const std::int16_t regionW = (W);                                                                   \
+        const std::int16_t regionH = (H);                                                                   \
+        const bool buffered = beginBufferedRegion(regionX, regionY, regionW, regionH, kBg);                 \
+        if (!buffered) {                                                                                    \
+            fillRect(regionX, regionY, regionW, regionH, kBg);                                              \
+        }                                                                                                   \
+        __VA_ARGS__;                                                                                        \
+        endBufferedRegion(buffered, regionX, regionY, regionW, regionH);                                   \
+    } while (false)
+    auto redrawTop = [&]() {
+        if (textChanged(frame.state, previous.state) || textChanged(frame.tag, previous.tag)) {
+            REDRAW_REGION(0, 0, kWidth, 40, drawTopBar(frame, accent));
+        }
+    };
+    auto redrawHints = [&]() {
+        if (hintsChanged(frame, previous)) {
+            REDRAW_REGION(10, 216, 220, 24, drawHints(frame));
+        }
+    };
 
-    buffered = beginBufferedRegion(10, 42, 118, 120, kBg);
-    if (!buffered) {
-        fillRect(10, 42, 118, 120, kBg);
-    }
-    drawRing(69, 92, 50, frame.progressPermille, accent);
-    drawBoxCenteredText(18, 62, 102, frame.title, kMuted, kBg, 1);
-    drawMainValue(69, 82, frame.mainValue, frame.mainUnit, 4, 2, kInk, accent, kBg);
-    endBufferedRegion(buffered, 10, 42);
+    redrawTop();
+    switch (frame.page) {
+        case ColorDisplayPage::StandbyVolume:
+        case ColorDisplayPage::StandbyTime: {
+            if (textChanged(frame.title, previous.title)) {
+                REDRAW_REGION(0, 45, kWidth, 22, drawCenteredText(49, frame.title, kMuted, kBg, 1));
+            }
+            if (textChanged(frame.mainValue, previous.mainValue) || textChanged(frame.mainUnit, previous.mainUnit)) {
+                REDRAW_REGION(20,
+                              64,
+                              200,
+                              64,
+                              drawMainValue(120, 70, frame.mainValue, frame.mainUnit, 7, 4, kInk, accent, kBg));
+            }
+            if (textChanged(frame.subtitle, previous.subtitle)) {
+                REDRAW_REGION(0, 132, kWidth, 22, drawCenteredText(136, frame.subtitle, kCyan, kBg, 1));
+            }
+            constexpr std::int16_t cardX[] = {14, 99, 173};
+            constexpr std::int16_t cardW[] = {78, 66, 53};
+            for (std::uint8_t i = 0; i < 3; ++i) {
+                const bool hasCurrent = i < frame.metricCount;
+                const bool hadPrevious = i < previous.metricCount;
+                if (hasCurrent != hadPrevious ||
+                    (hasCurrent && hadPrevious && metricChanged(frame.metrics[i], previous.metrics[i]))) {
+                    REDRAW_REGION(cardX[i], 184, cardW[i], 40, {
+                        if (hasCurrent) {
+                            drawMetricCard(cardX[i], 184, cardW[i], frame.metrics[i], 40);
+                        }
+                    });
+                }
+            }
+            return true;
+        }
 
-    buffered = beginBufferedRegion(128, 44, 102, 120, kBg);
-    if (!buffered) {
-        fillRect(128, 44, 102, 120, kBg);
-    }
-    for (std::uint8_t i = 0; i < frame.metricCount && i < 3; ++i) {
-        drawMetricCard(132, static_cast<std::int16_t>(48 + i * 38), 94, frame.metrics[i], 36);
-    }
-    endBufferedRegion(buffered, 128, 44);
+        case ColorDisplayPage::ConfirmVolume:
+        case ColorDisplayPage::ConfirmTime:
+            if (textChanged(frame.title, previous.title) || textChanged(frame.mainValue, previous.mainValue) ||
+                textChanged(frame.mainUnit, previous.mainUnit)) {
+                REDRAW_REGION(18, 58, 204, 112, {
+                    fillRoundRect(18, 58, 204, 112, 7, kPanel2, kBg);
+                    drawRoundRect(18, 58, 204, 112, 7, accent, kBg);
+                    drawCenteredTextFit(72, 184, frame.title, kMuted, kPanel2, 1);
+                    drawMainValue(120,
+                                  94,
+                                  frame.mainValue,
+                                  frame.mainUnit,
+                                  frame.page == ColorDisplayPage::ConfirmTime ? 4 : 7,
+                                  4,
+                                  kInk,
+                                  accent,
+                                  kPanel2);
+                    drawCenteredTextFit(151, 184, "确认后开始出水", kGreen, kPanel2, 1);
+                });
+            }
+            if (textChanged(frame.subtitle, previous.subtitle)) {
+                REDRAW_REGION(14, 176, 212, 22, drawCenteredTextFit(180, 212, frame.subtitle, kMuted, kBg, 1));
+            }
+            redrawHints();
+            return true;
 
-    buffered = beginBufferedRegion(10, 166, 220, 62, kBg);
-    if (!buffered) {
-        fillRect(10, 166, 220, 62, kBg);
+        case ColorDisplayPage::RunningVolume:
+        case ColorDisplayPage::RunningTime: {
+            if (textChanged(frame.title, previous.title) || textChanged(frame.mainValue, previous.mainValue) ||
+                textChanged(frame.mainUnit, previous.mainUnit) || frame.progressPermille != previous.progressPermille) {
+                REDRAW_REGION(10, 42, 118, 120, {
+                    drawRing(69, 92, 50, frame.progressPermille, accent);
+                    drawBoxCenteredText(18, 62, 102, frame.title, kMuted, kBg, 1);
+                    drawMainValue(69, 82, frame.mainValue, frame.mainUnit, 4, 2, kInk, accent, kBg);
+                });
+            }
+            bool metricsChanged = frame.metricCount != previous.metricCount;
+            for (std::uint8_t i = 0; !metricsChanged && i < frame.metricCount && i < 3; ++i) {
+                metricsChanged = metricChanged(frame.metrics[i], previous.metrics[i]);
+            }
+            if (metricsChanged) {
+                REDRAW_REGION(128, 44, 102, 120, {
+                    for (std::uint8_t i = 0; i < frame.metricCount && i < 3; ++i) {
+                        drawMetricCard(132, static_cast<std::int16_t>(48 + i * 38), 94, frame.metrics[i], 36);
+                    }
+                });
+            }
+            bool sensorsChanged = frame.sensorCount != previous.sensorCount;
+            for (std::uint8_t i = 0; !sensorsChanged && i < frame.sensorCount && i < 2; ++i) {
+                sensorsChanged = sensorChanged(frame.sensors[i], previous.sensors[i]);
+            }
+            if (sensorsChanged) {
+                REDRAW_REGION(10, 166, 220, 62, {
+                    if (frame.sensorCount > 0) {
+                        drawSensorCard(14, 170, 102, frame.sensors[0]);
+                    }
+                    if (frame.sensorCount > 1) {
+                        drawSensorCard(124, 170, 102, frame.sensors[1]);
+                    }
+                });
+            }
+            return true;
+        }
+
+        case ColorDisplayPage::PausedVolume:
+        case ColorDisplayPage::PausedTime: {
+            if (textChanged(frame.title, previous.title) || textChanged(frame.status, previous.status)) {
+                REDRAW_REGION(0, 45, kWidth, 77, {
+                    drawCenteredText(49, frame.title, kInk, kBg, 2);
+                    drawStatusPill(48, 90, 144, 30, frame.status, kAmber, kPanel2, kLine, kBg);
+                });
+            }
+            if (textChanged(frame.subtitle, previous.subtitle)) {
+                REDRAW_REGION(0, 122, kWidth, 20, drawCenteredText(124, frame.subtitle, kMuted, kBg, 1));
+            }
+            for (std::uint8_t i = 0; i < 4; ++i) {
+                const bool hasCurrent = i < frame.metricCount;
+                const bool hadPrevious = i < previous.metricCount;
+                if (hasCurrent != hadPrevious ||
+                    (hasCurrent && hadPrevious && metricChanged(frame.metrics[i], previous.metrics[i]))) {
+                    const std::int16_t x = static_cast<std::int16_t>(16 + (i % 2) * 106);
+                    const std::int16_t y = static_cast<std::int16_t>(142 + (i / 2) * 39);
+                    REDRAW_REGION(x, y, 98, 36, {
+                        if (hasCurrent) {
+                            drawMetricCard(x, y, 98, frame.metrics[i], 36);
+                        }
+                    });
+                }
+            }
+            redrawHints();
+            return true;
+        }
+
+        case ColorDisplayPage::ResultCompleted:
+        case ColorDisplayPage::ResultStopped:
+        case ColorDisplayPage::CalibrationReady: {
+            if (textChanged(frame.title, previous.title) || textChanged(frame.mainValue, previous.mainValue) ||
+                textChanged(frame.mainUnit, previous.mainUnit)) {
+                REDRAW_REGION(0, 44, kWidth, 88, {
+                    drawCenteredText(52, frame.title, kMuted, kBg, 1);
+                    drawMainValue(120, 73, frame.mainValue, frame.mainUnit, 7, 4, kInk, accent, kBg);
+                });
+            }
+            for (std::uint8_t i = 0; i < 4; ++i) {
+                const bool hasCurrent = i < frame.metricCount;
+                const bool hadPrevious = i < previous.metricCount;
+                if (hasCurrent != hadPrevious ||
+                    (hasCurrent && hadPrevious && metricChanged(frame.metrics[i], previous.metrics[i]))) {
+                    const std::int16_t x = static_cast<std::int16_t>(16 + (i % 2) * 106);
+                    const std::int16_t y = static_cast<std::int16_t>(140 + (i / 2) * 39);
+                    REDRAW_REGION(x, y, 98, 36, {
+                        if (hasCurrent) {
+                            drawMetricCard(x, y, 98, frame.metrics[i], 36);
+                        }
+                    });
+                }
+            }
+            redrawHints();
+            return true;
+        }
+
+        case ColorDisplayPage::Alert:
+            if (textChanged(frame.title, previous.title) || textChanged(frame.status, previous.status)) {
+                REDRAW_REGION(0, 48, kWidth, 86, {
+                    drawCenteredText(54, frame.title, kInk, kBg, 2);
+                    drawStatusPill(48, 100, 144, 30, frame.status, kRed, rgb565(0x32, 0x05, 0x12), kRed, kBg);
+                });
+            }
+            for (std::uint8_t i = 0; i < 2; ++i) {
+                const bool hasCurrent = i < frame.metricCount;
+                const bool hadPrevious = i < previous.metricCount;
+                if (hasCurrent != hadPrevious ||
+                    (hasCurrent && hadPrevious && metricChanged(frame.metrics[i], previous.metrics[i]))) {
+                    const std::int16_t x = static_cast<std::int16_t>(28 + i * 96);
+                    REDRAW_REGION(x, 153, 88, 36, {
+                        if (hasCurrent) {
+                            drawMetricCard(x, 153, 88, frame.metrics[i], 36);
+                        }
+                    });
+                }
+            }
+            redrawHints();
+            return true;
+
+        case ColorDisplayPage::Sleep:
+        default:
+            return false;
     }
-    if (frame.sensorCount > 0) {
-        drawSensorCard(14, 170, 102, frame.sensors[0]);
-    }
-    if (frame.sensorCount > 1) {
-        drawSensorCard(124, 170, 102, frame.sensors[1]);
-    }
-    endBufferedRegion(buffered, 10, 166);
+#undef REDRAW_REGION
 }
 
 void St7789Display::renderFrame(const ColorDisplayFrame& frame, bool fullRedraw) {
     const std::uint16_t accent = accentForPage(frame.page);
-    if (!fullRedraw && isRunningPage(frame.page)) {
-        drawRunningFrameDynamicRegions(frame, accent);
-        return;
-    }
     const bool buffered = beginBufferedFrame(fullRedraw);
     if (fullRedraw && !buffered) {
         fillScreen(kBg);
@@ -1107,7 +1184,6 @@ void St7789Display::renderFrame(const ColorDisplayFrame& frame, bool fullRedraw)
     switch (frame.page) {
         case ColorDisplayPage::StandbyVolume:
         case ColorDisplayPage::StandbyTime:
-        case ColorDisplayPage::StandbyOffline:
             drawCenteredText(49, frame.title, kMuted, kBg, 1);
             drawMainValue(120, 70, frame.mainValue, frame.mainUnit, 7, 4, kInk, accent, kBg);
             drawCenteredText(136, frame.subtitle, kCyan, kBg, 1);

@@ -384,7 +384,7 @@ void sendMachineStatusCard(const AppSnapshot& snapshot, bool screenOn) {
     const bool showResult = snapshot.water.state == WaterState::Error || snapshot.localMode == LocalUiMode::Result;
     const bool showRunningNote = snapshot.water.state == WaterState::Running;
     const char* machineLayoutClass = shouldShowProgress ? "machine-main" : "machine-main compact";
-    sendFmt("<h2>机器状态</h2><section class='panel machine-status'><div class='%s'><div class='machine-hero'>"
+    sendFmt("<h2 class='home-section-title'>机器状态</h2><section class='panel machine-status'><div class='%s'><div class='machine-hero'>"
             "<div class='machine-hero-head'><strong>",
             machineLayoutClass);
     Esp32BaseWeb::sendChunk("<span id='machineState'>");
@@ -473,7 +473,7 @@ void sendTodayOverview(const TodayOverview& overview) {
         std::snprintf(totalDuration, sizeof(totalDuration), "--");
     }
 
-    Esp32BaseWeb::sendChunk("<section id='todayOverview' class='today-overview'><h2>今日概览</h2><div class='today-layout'><section class='panel today-summary-card'><span class='today-summary-label'>今日总量</span><strong class='today-total-main'>");
+    Esp32BaseWeb::sendChunk("<section id='todayOverview' class='today-overview'><h2 class='home-section-title'>今日概览</h2><div class='today-layout'><section class='panel today-summary-card'><span class='today-summary-label'>今日总量</span><strong class='today-total-main'>");
     Esp32BaseWeb::sendChunk(today);
     Esp32BaseWeb::sendChunk("</strong><span class='today-total-meta today-meta-line'><span class='today-meta-item'>接水 <span class='today-meta-value'>");
     Esp32BaseWeb::sendChunk(countText);
@@ -518,7 +518,7 @@ void sendTodayOverview(const TodayOverview& overview) {
 void sendTodayOverviewPlaceholder(std::uint32_t fallbackTodayMl) {
     char today[24]{};
     formatLiters(fallbackTodayMl, today, sizeof(today));
-    Esp32BaseWeb::sendChunk("<section id='todayOverview' class='today-overview'><h2>今日概览</h2>"
+    Esp32BaseWeb::sendChunk("<section id='todayOverview' class='today-overview'><h2 class='home-section-title'>今日概览</h2>"
                             "<div class='today-layout'><section class='panel today-summary-card'>"
                             "<span class='today-summary-label'>今日总量</span><strong class='today-total-main'>");
     Esp32BaseWeb::sendChunk(today);
@@ -530,7 +530,7 @@ void sendTodayOverviewPlaceholder(std::uint32_t fallbackTodayMl) {
 }
 
 void sendFilterCards(std::uint32_t now) {
-    Esp32BaseWeb::sendChunk("<h2>滤芯</h2><div class='filter-cards'>");
+    Esp32BaseWeb::sendChunk("<h2 class='home-section-title'>滤芯</h2><div class='filter-cards'>");
     std::uint32_t usedDaysByIndex[kFilterCount]{};
     std::size_t enabledCount = 0;
     for (std::size_t i = 0; i < kFilterCount; ++i) {

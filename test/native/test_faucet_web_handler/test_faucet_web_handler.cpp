@@ -385,7 +385,13 @@ void test_app_css_covers_current_page_layout_classes() {
     TEST_ASSERT_EQUAL(200, Esp32BaseWeb::nativeTestResponse().code);
     TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "--bg:#fbfcfb"));
     TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "body{max-width:1120px"));
-    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), ".machine-status-strip{display:flex;align-items:center;gap:7px;flex-wrap:wrap}"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), ".machine-status-strip{display:flex;align-items:center;gap:9px;flex-wrap:wrap}"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), ".home-section-title{margin:26px 0 12px;font-weight:600}"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), ".machine-status-item strong{color:#35424c;font-size:13px;font-weight:500;"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), ".today-total-main{display:block;color:var(--text);font-size:26px;line-height:1.05;font-weight:600}"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), ".filter-head strong{font-size:16px;line-height:1.25;font-weight:500}"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "td{font-weight:400}"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "th{background:#f8faf9;color:var(--muted);font-weight:500}"));
     TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), ".next-preset-control"));
     TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), ".machine-status-strip"));
     TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), ".today-total-meta"));

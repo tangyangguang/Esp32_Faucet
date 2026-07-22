@@ -348,7 +348,7 @@ void sendMachineStatusCard(const AppSnapshot& snapshot, bool screenOn) {
     char valvePwmNote[32]{};
     std::snprintf(valvePwmNote,
                   sizeof(valvePwmNote),
-                  "%lus全功率→%u%%保持",
+                  "%lus→%u%%",
                   static_cast<unsigned long>(g_context.config->valveFullPowerSec),
                   static_cast<unsigned>(g_context.config->valveHoldDutyPercent));
     char currentTemperature[24]{};
@@ -359,13 +359,7 @@ void sendMachineStatusCard(const AppSnapshot& snapshot, bool screenOn) {
     }
     char currentTds[24]{};
     if (snapshot.tdsSensorEnabled && snapshot.sensors.tdsPpm.valid) {
-        char tdsValue[12]{};
-        formatSensorIntegerNumber(snapshot.sensors.tdsPpm, tdsValue, sizeof(tdsValue));
-        std::snprintf(currentTds,
-                      sizeof(currentTds),
-                      "%s%s",
-                      tdsValue,
-                      snapshot.sensors.tdsCalibrated ? "" : "（未校准）");
+        formatSensorIntegerNumber(snapshot.sensors.tdsPpm, currentTds, sizeof(currentTds));
     } else {
         std::snprintf(currentTds, sizeof(currentTds), "--");
     }

@@ -360,7 +360,7 @@ void test_home_page_initial_render_does_not_read_record_pages() {
     TEST_ASSERT_NULL(std::strstr(Esp32BaseWeb::nativeTestResponse().body.c_str(), "inputVoltageNote"));
 }
 
-void test_home_page_marks_live_tds_as_uncalibrated_reference() {
+void test_home_page_hides_sensor_calibration_state() {
     WebFixture fixture;
     enableTdsForFixture(fixture);
     fixture.app.tick(appInput({false, false, false, false}, 1000, 1000000));
@@ -370,7 +370,8 @@ void test_home_page_marks_live_tds_as_uncalibrated_reference() {
     TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch("/index", Esp32BaseWeb::METHOD_GET));
 
     const std::string& body = Esp32BaseWeb::nativeTestResponse().body;
-    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "17（未校准）"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), ">TDS</span><strong id='tdsStatus'>17</strong><small class='sensor-unit'>ppm"));
+    TEST_ASSERT_NULL(std::strstr(body.c_str(), "未校准"));
     TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "function faucetSensorTds"));
 }
 
@@ -385,11 +386,12 @@ void test_app_css_covers_current_page_layout_classes() {
     TEST_ASSERT_EQUAL(200, Esp32BaseWeb::nativeTestResponse().code);
     TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "--bg:#fbfcfb"));
     TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "body{max-width:1120px"));
-    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), ".machine-status-strip{display:flex;align-items:center;gap:9px;flex-wrap:wrap}"));
-    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), ".home-section-title{margin:26px 0 12px;font-weight:600}"));
-    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), ".machine-status-item strong{color:#35424c;font-size:13px;font-weight:500;"));
-    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), ".today-total-main{display:block;color:var(--text);font-size:26px;line-height:1.05;font-weight:600}"));
-    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), ".filter-head strong{font-size:16px;line-height:1.25;font-weight:500}"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), ".machine-status-strip{display:flex;align-items:center;gap:6px;flex-wrap:nowrap}"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), ".home-section-title{margin:20px 0 10px;font-weight:600}"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), ".machine-status-item strong{color:#455159;font-size:12px;font-weight:500;"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), ".today-total-main{display:block;color:var(--text);font-size:24px;line-height:1.05;font-weight:600}"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), ".filter-cards{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), ".filter-head strong{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:15px;"));
     TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "td{font-weight:400}"));
     TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "th{background:#f8faf9;color:var(--muted);font-weight:500}"));
     TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), ".next-preset-control"));
@@ -1469,7 +1471,7 @@ void test_presets_handler_running_select_next_only_changes_next_preset() {
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_home_page_initial_render_does_not_read_record_pages);
-    RUN_TEST(test_home_page_marks_live_tds_as_uncalibrated_reference);
+    RUN_TEST(test_home_page_hides_sensor_calibration_state);
     RUN_TEST(test_app_css_covers_current_page_layout_classes);
     RUN_TEST(test_filter_page_renders_replacement_date_and_life_details);
     RUN_TEST(test_stats_page_renders_daily_charts_and_usage_panels);

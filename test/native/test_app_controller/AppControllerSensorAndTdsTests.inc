@@ -96,7 +96,7 @@ void test_app_tds_point_calibration_apply_persists_to_config() {
     TEST_ASSERT_TRUE(fixture.app.startTdsCalibrationPointForWeb(160, 1714502401));
     std::uint32_t nowMs = 0;
     for (std::uint8_t i = 0; i < 16; ++i) {
-        fixture.adc.values[2] = okMv(420);
+        fixture.adc.setAnalogMillivolts(AdcChannel::A2, 420);
         nowMs += 1000;
         fixture.app.tick(input({false, false, false, false}, nowMs, nowMs * 1000UL, 1714502401));
     }

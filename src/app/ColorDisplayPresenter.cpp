@@ -68,9 +68,9 @@ std::uint32_t estimatedDurationSecForVolumeTarget(const AppSnapshot& snapshot) {
 }
 
 void formatFlowLpm(char* out, std::size_t len, std::uint32_t mlPerMin) {
-    const std::uint32_t tenths = (mlPerMin + 50UL) / 100UL;
-    std::snprintf(out, len, "%lu.%lu", static_cast<unsigned long>(tenths / 10UL),
-                  static_cast<unsigned long>(tenths % 10UL));
+    const std::uint32_t hundredths = (mlPerMin + 5UL) / 10UL;
+    std::snprintf(out, len, "%lu.%02lu", static_cast<unsigned long>(hundredths / 100UL),
+                  static_cast<unsigned long>(hundredths % 100UL));
 }
 
 void formatPresetTag(char* out, std::size_t len, std::size_t presetIndex) {
@@ -94,9 +94,15 @@ void formatTemperature(char* out, std::size_t len, const SensorValue& value) {
         std::snprintf(out, len, "--");
         return;
     }
-    const std::int32_t tenths = value.value >= 0 ? (value.value + 5) / 10 : (value.value - 5) / 10;
-    const std::int32_t decimal = tenths % 10 < 0 ? -(tenths % 10) : tenths % 10;
-    std::snprintf(out, len, "%ld.%ld", static_cast<long>(tenths / 10), static_cast<long>(decimal));
+    const bool negative = value.value < 0;
+    const std::int32_t absolute = negative ? -value.value : value.value;
+    const std::int32_t tenths = (absolute + 5) / 10;
+    std::snprintf(out,
+                  len,
+                  "%s%ld.%ld",
+                  negative ? "-" : "",
+                  static_cast<long>(tenths / 10),
+                  static_cast<long>(tenths % 10));
 }
 
 void formatTds(char* out, std::size_t len, const SensorValue& value) {
@@ -152,7 +158,9 @@ void addIdleMetrics(ColorDisplayFrame& frame, const AppSnapshot& snapshot) {
     formatTds(tds, sizeof(tds), snapshot.sensors.tdsPpm);
     addMetric(frame, "今日累计", today);
     addMetric(frame, "水温", temp, "°C");
-    addMetric(frame, "TDS", tds);
+    addMetric(frame,
+              snapshot.sensors.tdsPpm.valid && !snapshot.sensors.tdsCalibrated ? "TDS参考" : "TDS",
+              tds);
 }
 
 const char* resultState(WaterResult result) {
@@ -189,10 +197,12 @@ ColorDisplayPresenter::ColorDisplayPresenter(std::uint32_t sleepTimeoutSec)
     : sleepTimeoutMs_(secondsToMillis(sleepTimeoutSec)),
       lastWakeMs_(0),
       lastWaterState_(WaterState::Idle),
-      lastTrendSampleMs_(0),
+      lastTdsTrendSampleMs_(0),
+      lastTempTrendSampleMs_(0),
       tdsTrend_{},
       tempTrend_{},
-      trendCount_(0) {}
+      tdsTrendCount_(0),
+      tempTrendCount_(0) {}
 
 void ColorDisplayPresenter::configure(std::uint32_t sleepTimeoutSec) {
     sleepTimeoutMs_ = secondsToMillis(sleepTimeoutSec);
@@ -204,8 +214,10 @@ void ColorDisplayPresenter::wake(std::uint32_t nowMs) {
 }
 
 void ColorDisplayPresenter::resetTrends() {
-    lastTrendSampleMs_ = 0;
-    trendCount_ = 0;
+    lastTdsTrendSampleMs_ = 0;
+    lastTempTrendSampleMs_ = 0;
+    tdsTrendCount_ = 0;
+    tempTrendCount_ = 0;
     std::memset(tdsTrend_, 0, sizeof(tdsTrend_));
     std::memset(tempTrend_, 0, sizeof(tempTrend_));
 }
@@ -215,27 +227,39 @@ void ColorDisplayPresenter::sampleTrends(const AppSnapshot& snapshot, std::uint3
         resetTrends();
         return;
     }
-    if (!snapshot.sensors.tdsPpm.valid || !snapshot.sensors.temperatureCentiC.valid) {
-        return;
-    }
-    if (trendCount_ > 0 && !elapsedAtLeast(nowMs, lastTrendSampleMs_, 1000UL)) {
-        return;
-    }
-    if (trendCount_ == kColorDisplayTrendSamples) {
-        for (std::uint8_t i = 1; i < kColorDisplayTrendSamples; ++i) {
-            tdsTrend_[i - 1] = tdsTrend_[i];
-            tempTrend_[i - 1] = tempTrend_[i];
+    auto appendTrend = [nowMs](std::uint16_t* values,
+                               std::uint8_t& count,
+                               std::uint32_t& lastSampleMs,
+                               std::uint16_t value) {
+        if (count > 0 && !elapsedAtLeast(nowMs, lastSampleMs, 1000UL)) {
+            return;
         }
-        trendCount_ = kColorDisplayTrendSamples - 1;
+        if (count == kColorDisplayTrendSamples) {
+            for (std::uint8_t i = 1; i < kColorDisplayTrendSamples; ++i) {
+                values[i - 1] = values[i];
+            }
+            count = kColorDisplayTrendSamples - 1;
+        }
+        values[count++] = value;
+        lastSampleMs = nowMs;
+    };
+    if (snapshot.sensors.tdsPpm.valid) {
+        appendTrend(tdsTrend_,
+                    tdsTrendCount_,
+                    lastTdsTrendSampleMs_,
+                    static_cast<std::uint16_t>(snapshot.sensors.tdsPpm.value < 0
+                                                   ? 0
+                                                   : std::min<std::int32_t>(65535, snapshot.sensors.tdsPpm.value)));
     }
-    tdsTrend_[trendCount_] = static_cast<std::uint16_t>(
-        snapshot.sensors.tdsPpm.value < 0 ? 0 : std::min<std::int32_t>(65535, snapshot.sensors.tdsPpm.value));
-    const std::int32_t tempTenths = snapshot.sensors.temperatureCentiC.value >= 0
-                                        ? (snapshot.sensors.temperatureCentiC.value + 5) / 10
-                                        : 0;
-    tempTrend_[trendCount_] = static_cast<std::uint16_t>(std::min<std::int32_t>(65535, tempTenths));
-    ++trendCount_;
-    lastTrendSampleMs_ = nowMs;
+    if (snapshot.sensors.temperatureCentiC.valid) {
+        const std::int32_t tempTenths = snapshot.sensors.temperatureCentiC.value >= 0
+                                            ? (snapshot.sensors.temperatureCentiC.value + 5) / 10
+                                            : 0;
+        appendTrend(tempTrend_,
+                    tempTrendCount_,
+                    lastTempTrendSampleMs_,
+                    static_cast<std::uint16_t>(std::min<std::int32_t>(65535, tempTenths)));
+    }
 }
 
 ColorDisplayFrame ColorDisplayPresenter::render(const AppSnapshot& snapshot,
@@ -306,7 +330,9 @@ ColorDisplayFrame ColorDisplayPresenter::render(const AppSnapshot& snapshot,
         char temp[12]{};
         formatTds(tds, sizeof(tds), snapshot.sensors.tdsPpm);
         formatTemperature(temp, sizeof(temp), snapshot.sensors.temperatureCentiC);
-        addMetric(frame, "TDS", tds);
+        addMetric(frame,
+                  snapshot.sensors.tdsPpm.valid && !snapshot.sensors.tdsCalibrated ? "TDS参考" : "TDS",
+                  tds);
         addMetric(frame, "水温", temp, "°C");
         setHints(frame, "开始", "网页", "退出");
         return frame;
@@ -352,7 +378,12 @@ ColorDisplayFrame ColorDisplayPresenter::render(const AppSnapshot& snapshot,
         resultTemp.value = static_cast<std::int32_t>(snapshot.lastResultRecord.temperatureCentiC);
         formatTds(tds, sizeof(tds), hasRecordSensors ? resultTds : snapshot.sensors.tdsPpm);
         formatTemperature(temp, sizeof(temp), hasRecordSensors ? resultTemp : snapshot.sensors.temperatureCentiC);
-        addMetric(frame, "TDS", tds);
+        const bool resultTdsUncalibrated =
+            hasRecordSensors
+                ? resultTds.valid &&
+                      (snapshot.lastResultRecord.sensorFlags & kWaterSensorFlagTdsUncalibrated) != 0
+                : snapshot.sensors.tdsPpm.valid && !snapshot.sensors.tdsCalibrated;
+        addMetric(frame, resultTdsUncalibrated ? "TDS参考" : "TDS", tds);
         addMetric(frame, "水温", temp, "°C");
         setHints(frame, "返回", "网页", "30s");
         return frame;
@@ -496,12 +527,18 @@ ColorDisplayFrame ColorDisplayPresenter::render(const AppSnapshot& snapshot,
             char temp[12]{};
             formatTds(tds, sizeof(tds), snapshot.sensors.tdsPpm);
             formatTemperature(temp, sizeof(temp), snapshot.sensors.temperatureCentiC);
-            ColorDisplaySensor& tdsSensor = addSensor(frame, "TDS · 近30秒", tds, "ppm");
+            ColorDisplaySensor& tdsSensor =
+                addSensor(frame,
+                          snapshot.sensors.tdsPpm.valid && !snapshot.sensors.tdsCalibrated ? "TDS参考" : "TDS",
+                          tds,
+                          "ppm");
             ColorDisplaySensor& tempSensor = addSensor(frame, "水温", temp, "°C");
-            tdsSensor.sampleCount = trendCount_;
-            tempSensor.sampleCount = trendCount_;
-            for (std::uint8_t i = 0; i < trendCount_; ++i) {
+            tdsSensor.sampleCount = tdsTrendCount_;
+            tempSensor.sampleCount = tempTrendCount_;
+            for (std::uint8_t i = 0; i < tdsTrendCount_; ++i) {
                 tdsSensor.samples[i] = tdsTrend_[i];
+            }
+            for (std::uint8_t i = 0; i < tempTrendCount_; ++i) {
                 tempSensor.samples[i] = tempTrend_[i];
             }
             return frame;
@@ -518,7 +555,13 @@ ColorDisplayFrame ColorDisplayPresenter::render(const AppSnapshot& snapshot,
             char temp[12]{};
             formatTds(tds, sizeof(tds), snapshot.sensors.tdsPpm);
             formatTemperature(temp, sizeof(temp), snapshot.sensors.temperatureCentiC);
-            std::snprintf(frame.subtitle, sizeof(frame.subtitle), "TDS %s · %s°C", tds, temp);
+            std::snprintf(frame.subtitle,
+                          sizeof(frame.subtitle),
+                          snapshot.sensors.tdsPpm.valid && !snapshot.sensors.tdsCalibrated
+                              ? "TDS参考 %s · %s°C"
+                              : "TDS %s · %s°C",
+                          tds,
+                          temp);
             char out[12]{};
             char remain[12]{};
             char elapsed[12]{};

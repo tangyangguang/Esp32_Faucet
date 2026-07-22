@@ -98,6 +98,20 @@ std::uint32_t inputVoltageMvFromAdcRaw(std::int16_t raw,
     return static_cast<std::uint32_t>((numerator + denominator / 2ULL) / denominator);
 }
 
+std::uint16_t tdsModuleVoltageMvFromAdcRaw(std::int16_t raw,
+                                          std::uint16_t fullScaleMv,
+                                          std::uint32_t highOhm,
+                                          std::uint32_t lowOhm) {
+    if (raw < 0 || fullScaleMv == 0 || lowOhm == 0) {
+        return 0;
+    }
+    const std::uint64_t numerator =
+        static_cast<std::uint64_t>(raw) * fullScaleMv * (highOhm + lowOhm);
+    const std::uint64_t denominator = 32768ULL * lowOhm;
+    const std::uint64_t millivolts = (numerator + denominator / 2ULL) / denominator;
+    return millivolts > 65535ULL ? 65535U : static_cast<std::uint16_t>(millivolts);
+}
+
 TdsComputationResult computeTdsPpm(const TdsComputationInput& input) {
     TdsComputationResult result{};
     if (input.voltageMv > kTdsMaxVoltageMv) {

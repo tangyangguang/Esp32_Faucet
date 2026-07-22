@@ -73,7 +73,7 @@ SensorAppFixture::SensorAppFixture(const SystemConfig& initialConfig)
 void SensorAppFixture::setDefaultSensorReadings() {
     adc.values[0] = okMv(1091);
     adc.values[1] = okMv(1650);
-    adc.values[2] = okMv(24);
+    adc.setAnalogMillivolts(AdcChannel::A2, 24);
 }
 
 AppTickInput input(ButtonLevels levels, std::uint32_t nowMs, std::uint32_t nowUs, std::uint32_t nowSeconds) {

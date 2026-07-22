@@ -69,6 +69,8 @@ WaterSensorManager::WaterSensorManager(AdcReader& adc, bool sampleInputVoltage)
       tdsLowRangeWindows_(0),
       discardNextTdsSample_(false),
       run_{},
+      sampleSequence_(0),
+      lastRunSampleSequence_(0),
       calibrationKind_(CalibrationKind::None),
       calibrationReferencePpm_(0),
       calibrationReadings_{},
@@ -101,6 +103,7 @@ void WaterSensorManager::configure(const SystemConfig& config) {
         snapshot_.inputVoltageStable = false;
     }
     if (tdsHardwareChanged) {
+        resetTdsRawWindow();
         discardTdsCalibrationSession();
     }
     refreshInputVoltageSnapshotCalibration();
@@ -131,10 +134,15 @@ WaterSensorSnapshot WaterSensorManager::snapshot() const {
 
 void WaterSensorManager::beginRun() {
     run_ = {};
+    lastRunSampleSequence_ = sampleSequence_;
 }
 
 void WaterSensorManager::sampleRun() {
+    if (lastRunSampleSequence_ == sampleSequence_) {
+        return;
+    }
     accumulateRunSample(snapshot_);
+    lastRunSampleSequence_ = sampleSequence_;
 }
 
 WaterSensorRunSummary WaterSensorManager::finishRun() const {
@@ -543,6 +551,35 @@ bool WaterSensorManager::clearInputVoltageCalibration(SystemConfig& config) {
     return true;
 }
 
+void WaterSensorManager::resetTdsRawWindow() {
+    std::fill(tdsRawWindow_, tdsRawWindow_ + kTdsRawWindowSamples, 0);
+    tdsRawWindowNext_ = 0;
+    tdsRawWindowCount_ = 0;
+}
+
+void WaterSensorManager::addTdsRawSample(std::int16_t raw) {
+    tdsRawWindow_[tdsRawWindowNext_] = raw;
+    tdsRawWindowNext_ = static_cast<std::uint8_t>((tdsRawWindowNext_ + 1U) % kTdsRawWindowSamples);
+    if (tdsRawWindowCount_ < kTdsRawWindowSamples) {
+        ++tdsRawWindowCount_;
+    }
+}
+
+std::int16_t WaterSensorManager::medianTdsRaw() const {
+    if (tdsRawWindowCount_ == 0) {
+        return 0;
+    }
+    std::int16_t sorted[kTdsRawWindowSamples]{};
+    std::copy(tdsRawWindow_, tdsRawWindow_ + tdsRawWindowCount_, sorted);
+    std::sort(sorted, sorted + tdsRawWindowCount_);
+    const std::uint8_t middle = tdsRawWindowCount_ / 2U;
+    if ((tdsRawWindowCount_ & 1U) != 0) {
+        return sorted[middle];
+    }
+    return static_cast<std::int16_t>(
+        (static_cast<std::int32_t>(sorted[middle - 1U]) + sorted[middle] + 1) / 2);
+}
+
 void WaterSensorManager::sampleOnce() {
     WaterSensorSnapshot next{};
     std::uint8_t failures = 0;
@@ -612,6 +649,7 @@ void WaterSensorManager::sampleOnce() {
     if (enabledTds(config_)) {
         const AdcReadResult tds = adc_.readSingleEnded(AdcChannel::A2);
         if (!tds.ok) {
+            resetTdsRawWindow();
             ++failures;
             next.flags |= kWaterSensorFlagTdsInvalid;
         } else if (tds.overflow) {
@@ -624,8 +662,12 @@ void WaterSensorManager::sampleOnce() {
             if (discardNextTdsSample_) {
                 discardNextTdsSample_ = false;
             } else {
-                const std::uint16_t moduleVoltageMv = static_cast<std::uint16_t>(
-                inputVoltageMvFromDivider(adcVoltageMv, config_.tdsDividerHighOhm, config_.tdsDividerLowOhm));
+                addTdsRawSample(tds.raw);
+                const std::uint16_t moduleVoltageMv =
+                    tdsModuleVoltageMvFromAdcRaw(medianTdsRaw(),
+                                                adcRangeFullScaleMv(tdsRange_),
+                                                config_.tdsDividerHighOhm,
+                                                config_.tdsDividerLowOhm);
                 next.tdsVoltageMv.valid = true;
                 next.tdsVoltageMv.value = moduleVoltageMv;
                 TdsComputationInput input{};
@@ -651,6 +693,7 @@ void WaterSensorManager::sampleOnce() {
     updateOfflineState(failures);
     next.flags |= (snapshot_.flags & kWaterSensorFlagAdcOffline);
     snapshot_ = next;
+    ++sampleSequence_;
 }
 
 void WaterSensorManager::updateOfflineState(std::uint8_t failureCount) {
@@ -676,6 +719,7 @@ void WaterSensorManager::updateTdsRange(std::uint16_t tdsVoltageMv) {
         if (next != tdsRange_) {
             tdsRange_ = next;
             adc_.setRange(AdcChannel::A2, tdsRange_);
+            resetTdsRawWindow();
             tdsLowRangeWindows_ = 0;
             discardNextTdsSample_ = true;
         }
@@ -690,6 +734,7 @@ void WaterSensorManager::updateTdsRange(std::uint16_t tdsVoltageMv) {
             if (next != tdsRange_) {
                 tdsRange_ = next;
                 adc_.setRange(AdcChannel::A2, tdsRange_);
+                resetTdsRawWindow();
                 discardNextTdsSample_ = true;
             }
             tdsLowRangeWindows_ = 0;

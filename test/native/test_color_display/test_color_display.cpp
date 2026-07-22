@@ -36,6 +36,7 @@ AppSnapshot makeSnapshot(WaterState state, WaterMode mode, std::uint32_t target,
     snapshot.tdsSensorEnabled = true;
     snapshot.sensors.temperatureCentiC = SensorValue{true, 2460};
     snapshot.sensors.tdsPpm = SensorValue{true, 36};
+    snapshot.sensors.tdsCalibrated = true;
     return snapshot;
 }
 
@@ -118,9 +119,9 @@ void test_color_display_covers_idle_confirm_running_pause_result_alert_calibrati
     assertTextEquals("已出水", frame.title);
     assertTextEquals("0.92", frame.mainValue);
     assertTextEquals("实时流速", frame.metrics[1].label);
-    assertTextEquals("12.8", frame.metrics[1].value);
+    assertTextEquals("12.80", frame.metrics[1].value);
     assertTextEquals("L/min", frame.metrics[1].unit);
-    assertTextEquals("TDS · 近30秒", frame.sensors[0].label);
+    assertTextEquals("TDS", frame.sensors[0].label);
     assertTextEquals("386", frame.sensors[0].value);
     assertTextEquals("水温", frame.sensors[1].label);
     assertTextEquals("24.7", frame.sensors[1].value);
@@ -334,6 +335,29 @@ void test_color_display_trends_only_use_real_running_sensor_samples() {
     TEST_ASSERT_EQUAL_UINT8(0, frame.sensors[1].sampleCount);
 }
 
+void test_color_display_sensor_trends_are_independent_and_mark_uncalibrated_tds() {
+    ColorDisplayPresenter presenter(60);
+    presenter.wake(0);
+    AppSnapshot snapshot = makeSnapshot(WaterState::Running, WaterMode::Volume, 1500, 100);
+    snapshot.sensors.tdsCalibrated = false;
+    snapshot.sensors.tdsPpm = {};
+
+    presenter.render(snapshot, 1000, true);
+    snapshot.sensors.temperatureCentiC = SensorValue{true, 2470};
+    presenter.render(snapshot, 2000, true);
+    snapshot.sensors.temperatureCentiC = SensorValue{true, 2480};
+    ColorDisplayFrame frame = presenter.render(snapshot, 3000, true);
+    TEST_ASSERT_EQUAL_UINT8(0, frame.sensors[0].sampleCount);
+    TEST_ASSERT_EQUAL_UINT8(3, frame.sensors[1].sampleCount);
+
+    snapshot.sensors.tdsPpm = SensorValue{true, 12};
+    snapshot.sensors.temperatureCentiC = {};
+    frame = presenter.render(snapshot, 4000, true);
+    assertTextEquals("TDS参考", frame.sensors[0].label);
+    TEST_ASSERT_EQUAL_UINT8(1, frame.sensors[0].sampleCount);
+    TEST_ASSERT_EQUAL_UINT8(3, frame.sensors[1].sampleCount);
+}
+
 int main(int argc, char** argv) {
     (void)argc;
     (void)argv;
@@ -344,5 +368,6 @@ int main(int argc, char** argv) {
     RUN_TEST(test_color_display_confirm_page_hides_unavailable_estimates_and_uses_short_hints);
     RUN_TEST(test_color_display_confirm_volume_estimates_duration_from_metering_params_when_snapshot_omits_it);
     RUN_TEST(test_color_display_trends_only_use_real_running_sensor_samples);
+    RUN_TEST(test_color_display_sensor_trends_are_independent_and_mark_uncalibrated_tds);
     return UNITY_END();
 }

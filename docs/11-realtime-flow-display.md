@@ -59,6 +59,7 @@ display = previousDisplay * 0.7 + windowFlow * 0.3
 首页“机器状态”流速卡片：
 
 - 主值显示 `currentFlowMlPerMin`。
+- Web 和本地屏统一保留两位小数，避免 1.95-2.04L/min 等正常变化在本地全部显示为 2.0L/min。
 - 小字显示“本次平均 x.xx”，对应 `runAverageFlowMlPerMin`。
 - 不再把历史近期平均放在本次流速卡片里。
 

@@ -75,10 +75,12 @@ private:
     std::uint32_t sleepTimeoutMs_;
     std::uint32_t lastWakeMs_;
     WaterState lastWaterState_;
-    std::uint32_t lastTrendSampleMs_;
+    std::uint32_t lastTdsTrendSampleMs_;
+    std::uint32_t lastTempTrendSampleMs_;
     std::uint16_t tdsTrend_[kColorDisplayTrendSamples];
     std::uint16_t tempTrend_[kColorDisplayTrendSamples];
-    std::uint8_t trendCount_;
+    std::uint8_t tdsTrendCount_;
+    std::uint8_t tempTrendCount_;
 
     void resetTrends();
     void sampleTrends(const AppSnapshot& snapshot, std::uint32_t nowMs);

@@ -837,14 +837,15 @@ void formatSensorTemperatureNumber(const SensorValue& value, char* out, std::siz
         std::snprintf(out, len, "--");
         return;
     }
-    const std::int32_t centi = value.value;
-    const std::int32_t absCenti = centi < 0 ? -centi : centi;
+    const bool negative = value.value < 0;
+    const std::int32_t absCenti = negative ? -value.value : value.value;
+    const std::int32_t tenths = (absCenti + 5) / 10;
     std::snprintf(out,
                   len,
-                  "%s%ld.%02ld",
-                  centi < 0 ? "-" : "",
-                  static_cast<long>(absCenti / 100),
-                  static_cast<long>(absCenti % 100));
+                  "%s%ld.%ld",
+                  negative ? "-" : "",
+                  static_cast<long>(tenths / 10),
+                  static_cast<long>(tenths % 10));
 }
 
 void formatWaterRecordTemperature(const WaterRecord& record, char* out, std::size_t len) {

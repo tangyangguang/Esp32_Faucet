@@ -79,6 +79,7 @@ private:
     static constexpr std::size_t kCalibrationMaxSamples = 32;
     static constexpr std::size_t kRunWindowSamples = 5;
     static constexpr std::size_t kInputVoltageWindowSamples = 5;
+    static constexpr std::size_t kTdsRawWindowSamples = 5;
 
     struct RunWindowSample {
         bool temperatureValid = false;
@@ -111,6 +112,8 @@ private:
     std::uint8_t tdsLowRangeWindows_;
     bool discardNextTdsSample_;
     RunWindow run_;
+    std::uint32_t sampleSequence_;
+    std::uint32_t lastRunSampleSequence_;
 
     CalibrationKind calibrationKind_;
     std::uint16_t calibrationReferencePpm_;
@@ -127,6 +130,9 @@ private:
     std::uint16_t inputVoltageAdcMvWindow_[kInputVoltageWindowSamples]{};
     std::uint8_t inputVoltageWindowNext_ = 0;
     std::uint8_t inputVoltageWindowCount_ = 0;
+    std::int16_t tdsRawWindow_[kTdsRawWindowSamples]{};
+    std::uint8_t tdsRawWindowNext_ = 0;
+    std::uint8_t tdsRawWindowCount_ = 0;
 
     void sampleOnce();
     void updateOfflineState(std::uint8_t failureCount);
@@ -137,6 +143,9 @@ private:
     bool refreshTdsCalibrationCandidate();
     bool refreshInputVoltageCalibration(InputVoltageCalibration& calibration) const;
     void addInputVoltageSample(const AdcReadResult& input);
+    void resetTdsRawWindow();
+    void addTdsRawSample(std::int16_t raw);
+    std::int16_t medianTdsRaw() const;
     bool summarizeInputVoltageWindow(std::uint32_t dividerHighOhm,
                                      std::uint32_t dividerLowOhm,
                                      std::int16_t& rawMedian,

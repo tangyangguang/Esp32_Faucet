@@ -90,6 +90,11 @@ std::uint32_t inputVoltageMvFromAdcRaw(std::int16_t raw,
                                       std::uint32_t highOhm,
                                       std::uint32_t lowOhm);
 
+std::uint16_t tdsModuleVoltageMvFromAdcRaw(std::int16_t raw,
+                                          std::uint16_t fullScaleMv,
+                                          std::uint32_t highOhm,
+                                          std::uint32_t lowOhm);
+
 TdsComputationResult computeTdsPpm(const TdsComputationInput& input);
 
 bool computeTdsCalibrationFit(const TdsCalibrationPointInput* points,

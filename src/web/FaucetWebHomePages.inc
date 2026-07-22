@@ -359,7 +359,13 @@ void sendMachineStatusCard(const AppSnapshot& snapshot, bool screenOn) {
     }
     char currentTds[24]{};
     if (snapshot.tdsSensorEnabled && snapshot.sensors.tdsPpm.valid) {
-        formatSensorIntegerNumber(snapshot.sensors.tdsPpm, currentTds, sizeof(currentTds));
+        char tdsValue[12]{};
+        formatSensorIntegerNumber(snapshot.sensors.tdsPpm, tdsValue, sizeof(tdsValue));
+        std::snprintf(currentTds,
+                      sizeof(currentTds),
+                      "%s%s",
+                      tdsValue,
+                      snapshot.sensors.tdsCalibrated ? "" : "（未校准）");
     } else {
         std::snprintf(currentTds, sizeof(currentTds), "--");
     }

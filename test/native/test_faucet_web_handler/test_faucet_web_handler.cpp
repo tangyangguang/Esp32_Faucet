@@ -256,7 +256,7 @@ struct WebFixture {
     WebFixture() {
         adc.values[0] = okMv(1100);
         adc.values[1] = okMv(1634);
-        adc.values[2] = okMv(24);
+        adc.setAnalogMillivolts(AdcChannel::A2, 24);
         waterSensors.configure(config);
         waterSensors.begin();
         TEST_ASSERT_TRUE(sessionStore.begin());
@@ -358,6 +358,20 @@ void test_home_page_initial_render_does_not_read_record_pages() {
     TEST_ASSERT_NOT_NULL(std::strstr(Esp32BaseWeb::nativeTestResponse().body.c_str(), ">电压</span><small id='inputVoltageStatus'"));
     TEST_ASSERT_NOT_NULL(std::strstr(Esp32BaseWeb::nativeTestResponse().body.c_str(), "12.10 V"));
     TEST_ASSERT_NULL(std::strstr(Esp32BaseWeb::nativeTestResponse().body.c_str(), "inputVoltageNote"));
+}
+
+void test_home_page_marks_live_tds_as_uncalibrated_reference() {
+    WebFixture fixture;
+    enableTdsForFixture(fixture);
+    fixture.app.tick(appInput({false, false, false, false}, 1000, 1000000));
+    registerRoutes();
+    beginWebGet("/index");
+
+    TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch("/index", Esp32BaseWeb::METHOD_GET));
+
+    const std::string& body = Esp32BaseWeb::nativeTestResponse().body;
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "17（未校准）"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "function faucetSensorTds"));
 }
 
 void test_app_css_covers_current_page_layout_classes() {
@@ -1449,6 +1463,7 @@ void test_presets_handler_running_select_next_only_changes_next_preset() {
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_home_page_initial_render_does_not_read_record_pages);
+    RUN_TEST(test_home_page_marks_live_tds_as_uncalibrated_reference);
     RUN_TEST(test_app_css_covers_current_page_layout_classes);
     RUN_TEST(test_filter_page_renders_replacement_date_and_life_details);
     RUN_TEST(test_stats_page_renders_daily_charts_and_usage_panels);

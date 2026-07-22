@@ -38,7 +38,7 @@ struct SensorManagerFixture {
     void setDefaultReadings() {
         adc.values[0] = okMv(1091);
         adc.values[1] = okMv(1650);
-        adc.values[2] = okMv(24);
+        adc.setAnalogMillivolts(AdcChannel::A2, 24);
     }
 };
 
@@ -67,7 +67,7 @@ void test_manager_samples_a0_input_voltage_a1_temp_a2_tds() {
 void test_manager_can_skip_input_voltage_when_only_water_sensors_are_wired() {
     SensorManagerFixture fixture(enabledSensorConfig(), false);
     fixture.adc.values[1] = okMv(1650);
-    fixture.adc.values[2] = okMv(24);
+    fixture.adc.setAnalogMillivolts(AdcChannel::A2, 24);
     std::uint32_t nowMs = 0;
     advanceSample(fixture.manager, nowMs);
     advanceSample(fixture.manager, nowMs);
@@ -87,7 +87,7 @@ void test_temperature_open_and_short_display_as_invalid_without_changing_tds_zer
     SensorManagerFixture fixture;
     fixture.adc.values[0] = okMv(1091);
     fixture.adc.values[1] = okMv(3290);
-    fixture.adc.values[2] = okMv(0);
+    fixture.adc.setAnalogMillivolts(AdcChannel::A2, 0);
     std::uint32_t nowMs = 0;
     advanceSample(fixture.manager, nowMs);
 
@@ -108,7 +108,7 @@ void test_temperature_open_detection_allows_3v3_supply_tolerance_but_keeps_zero_
     SensorManagerFixture fixture;
     fixture.adc.values[0] = okMv(1091);
     fixture.adc.values[1] = okMv(3150);
-    fixture.adc.values[2] = okMv(0);
+    fixture.adc.setAnalogMillivolts(AdcChannel::A2, 0);
     std::uint32_t nowMs = 0;
     advanceSample(fixture.manager, nowMs);
 
@@ -178,7 +178,7 @@ void test_input_voltage_calibration_point_edit_recomputes_without_changing_raw_c
 void test_input_voltage_uses_recent_raw_median_and_rejects_unstable_capture() {
     SensorManagerFixture fixture;
     fixture.adc.values[1] = okMv(1650);
-    fixture.adc.values[2] = okMv(24);
+    fixture.adc.setAnalogMillivolts(AdcChannel::A2, 24);
     const std::int16_t readings[5] = {247, 248, 280, 249, 250};
     std::uint32_t nowMs = 0;
     for (std::uint8_t i = 0; i < 5; ++i) {
@@ -229,7 +229,7 @@ void test_configured_temperature_and_tds_hardware_parameters_are_used() {
     SensorManagerFixture fixture(config);
     fixture.adc.values[0] = okMv(1091);
     fixture.adc.values[1] = okMv(1650);
-    fixture.adc.values[2] = okMv(24);
+    fixture.adc.setAnalogMillivolts(AdcChannel::A2, 24);
     std::uint32_t nowMs = 0;
     advanceSample(fixture.manager, nowMs);
 
@@ -272,7 +272,7 @@ void test_tds_range_switches_up_at_85_percent() {
     SensorManagerFixture fixture;
     fixture.adc.values[0] = okMv(1091);
     fixture.adc.values[1] = okMv(1650);
-    fixture.adc.values[2] = okMv(230);
+    fixture.adc.setAnalogMillivolts(AdcChannel::A2, 230);
 
     std::uint32_t nowMs = 0;
     advanceSample(fixture.manager, nowMs);
@@ -286,19 +286,51 @@ void test_tds_range_switches_down_after_eight_low_windows() {
     SensorManagerFixture fixture;
     fixture.adc.values[0] = okMv(1091);
     fixture.adc.values[1] = okMv(1650);
-    fixture.adc.values[2] = okMv(230);
+    fixture.adc.setAnalogMillivolts(AdcChannel::A2, 230);
     std::uint32_t nowMs = 0;
     advanceSample(fixture.manager, nowMs);
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(AdcRange::P512),
                             static_cast<std::uint8_t>(fixture.adc.ranges[2]));
 
-    fixture.adc.values[2] = okMv(100);
+    fixture.adc.setAnalogMillivolts(AdcChannel::A2, 100);
     for (std::uint8_t i = 0; i < 9; ++i) {
         advanceSample(fixture.manager, nowMs);
     }
 
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(AdcRange::P256),
                             static_cast<std::uint8_t>(fixture.adc.ranges[2]));
+}
+
+void test_tds_live_value_uses_recent_raw_median() {
+    SensorManagerFixture fixture;
+    fixture.adc.values[0] = okMv(1091);
+    fixture.adc.values[1] = okMv(1650);
+    const std::int16_t readings[5] = {10, 12, 200, 11, 13};
+    std::uint32_t nowMs = 0;
+    for (std::int16_t reading : readings) {
+        fixture.adc.setAnalogMillivolts(AdcChannel::A2, reading);
+        advanceSample(fixture.manager, nowMs);
+    }
+
+    const WaterSensorSnapshot snapshot = fixture.manager.snapshot();
+    TEST_ASSERT_TRUE(snapshot.tdsVoltageMv.valid);
+    TEST_ASSERT_EQUAL_INT32(20, snapshot.tdsVoltageMv.value);
+}
+
+void test_run_summary_ignores_duplicate_loop_samples() {
+    SensorManagerFixture fixture;
+    fixture.setDefaultReadings();
+    fixture.manager.beginRun();
+    std::uint32_t nowMs = 0;
+
+    advanceSample(fixture.manager, nowMs);
+    for (std::uint8_t i = 0; i < 10; ++i) {
+        fixture.manager.sampleRun();
+    }
+
+    const WaterSensorRunSummary summary = fixture.manager.finishRun();
+    TEST_ASSERT_EQUAL_UINT8(1, summary.sensorSampleCount);
+    TEST_ASSERT_EQUAL_UINT16(17, summary.tdsPpm);
 }
 
 void test_run_summary_aggregates_valid_samples_only() {
@@ -310,9 +342,10 @@ void test_run_summary_aggregates_valid_samples_only() {
     advanceSample(fixture.manager, nowMs);
     fixture.manager.sampleRun();
     fixture.adc.values[1] = okMv(1840);
-    fixture.adc.values[2] = okMv(48);
+    fixture.adc.setAnalogMillivolts(AdcChannel::A2, 48);
     advanceSample(fixture.manager, nowMs);
     fixture.manager.sampleRun();
+    fixture.adc.clearAnalogMillivolts(AdcChannel::A2);
     fixture.adc.values[2] = {};
     advanceSample(fixture.manager, nowMs);
     fixture.manager.sampleRun();
@@ -330,7 +363,7 @@ void test_run_summary_records_tds_when_temperature_sensor_is_disabled() {
     SensorManagerFixture fixture(config);
     fixture.adc.values[0] = okMv(1091);
     fixture.adc.values[1] = {};
-    fixture.adc.values[2] = okMv(24);
+    fixture.adc.setAnalogMillivolts(AdcChannel::A2, 24);
     fixture.manager.beginRun();
     std::uint32_t nowMs = 0;
 
@@ -353,7 +386,7 @@ void test_calibration_uses_25c_fallback_without_failing() {
     SensorManagerFixture fixture(config);
     fixture.adc.values[0] = okMv(1091);
     fixture.adc.values[1] = {};
-    fixture.adc.values[2] = okMv(24);
+    fixture.adc.setAnalogMillivolts(AdcChannel::A2, 24);
 
     TEST_ASSERT_TRUE(fixture.manager.startTdsCalibrationSession(1720000000UL));
     TEST_ASSERT_TRUE(fixture.manager.startTdsCalibrationPoint(10, 1720000001UL));
@@ -378,7 +411,7 @@ void test_tds_calibration_saves_two_points_without_flash_progress_dependency() {
     SensorManagerFixture fixture(config);
     fixture.adc.values[0] = okMv(1091);
     fixture.adc.values[1] = okMv(1650);
-    fixture.adc.values[2] = okMv(12);
+    fixture.adc.setAnalogMillivolts(AdcChannel::A2, 12);
 
     TEST_ASSERT_TRUE(fixture.manager.startTdsCalibrationSession(1720000000UL));
     TEST_ASSERT_TRUE(fixture.manager.startTdsCalibrationPoint(0, 1720000001UL));
@@ -390,7 +423,7 @@ void test_tds_calibration_saves_two_points_without_flash_progress_dependency() {
     TEST_ASSERT_TRUE(fixture.manager.saveStableTdsCalibrationPoint(1720000020UL));
     TEST_ASSERT_FALSE(config.tdsCalibrated);
 
-    fixture.adc.values[2] = okMv(380);
+    fixture.adc.setAnalogMillivolts(AdcChannel::A2, 380);
     TEST_ASSERT_TRUE(fixture.manager.startTdsCalibrationPoint(160, 1720000030UL));
     for (std::uint8_t i = 0; i < 20; ++i) {
         advanceSample(fixture.manager, nowMs);
@@ -411,7 +444,7 @@ void test_tds_calibration_point_session_generates_after_one_point() {
     TEST_ASSERT_TRUE(fixture.manager.startTdsCalibrationPoint(160, 1720000001UL));
     std::uint32_t nowMs = 0;
     for (std::uint8_t i = 0; i < 16; ++i) {
-        fixture.adc.values[2] = okMv(380);
+        fixture.adc.setAnalogMillivolts(AdcChannel::A2, 380);
         advanceSample(fixture.manager, nowMs);
     }
     TEST_ASSERT_TRUE(fixture.manager.saveStableTdsCalibrationPoint(1720000020UL));
@@ -430,7 +463,7 @@ void test_tds_calibration_session_rejects_duplicate_start_without_clearing_point
     TEST_ASSERT_TRUE(fixture.manager.startTdsCalibrationPoint(160, 1720000001UL));
     std::uint32_t nowMs = 0;
     for (std::uint8_t i = 0; i < 16; ++i) {
-        fixture.adc.values[2] = okMv(420);
+        fixture.adc.setAnalogMillivolts(AdcChannel::A2, 420);
         advanceSample(fixture.manager, nowMs);
     }
     TEST_ASSERT_TRUE(fixture.manager.saveStableTdsCalibrationPoint(1720000020UL));
@@ -453,14 +486,14 @@ void test_tds_calibration_point_session_combines_saved_points_and_apply() {
 
     TEST_ASSERT_TRUE(fixture.manager.startTdsCalibrationPoint(20, 1720000001UL));
     for (std::uint8_t i = 0; i < 16; ++i) {
-        fixture.adc.values[2] = okMv(160);
+        fixture.adc.setAnalogMillivolts(AdcChannel::A2, 160);
         advanceSample(fixture.manager, nowMs);
     }
     TEST_ASSERT_TRUE(fixture.manager.saveStableTdsCalibrationPoint(1720000020UL));
 
     TEST_ASSERT_TRUE(fixture.manager.startTdsCalibrationPoint(160, 1720000030UL));
     for (std::uint8_t i = 0; i < 16; ++i) {
-        fixture.adc.values[2] = okMv(420);
+        fixture.adc.setAnalogMillivolts(AdcChannel::A2, 420);
         advanceSample(fixture.manager, nowMs);
     }
     TEST_ASSERT_TRUE(fixture.manager.saveStableTdsCalibrationPoint(1720000040UL));
@@ -479,14 +512,14 @@ void test_tds_calibration_apply_is_order_independent() {
 
     TEST_ASSERT_TRUE(fixture.manager.startTdsCalibrationPoint(160, 1720000001UL));
     for (std::uint8_t i = 0; i < 16; ++i) {
-        fixture.adc.values[2] = okMv(420);
+        fixture.adc.setAnalogMillivolts(AdcChannel::A2, 420);
         advanceSample(fixture.manager, nowMs);
     }
     TEST_ASSERT_TRUE(fixture.manager.saveStableTdsCalibrationPoint(1720000020UL));
 
     TEST_ASSERT_TRUE(fixture.manager.startTdsCalibrationPoint(20, 1720000030UL));
     for (std::uint8_t i = 0; i < 16; ++i) {
-        fixture.adc.values[2] = okMv(160);
+        fixture.adc.setAnalogMillivolts(AdcChannel::A2, 160);
         advanceSample(fixture.manager, nowMs);
     }
     TEST_ASSERT_TRUE(fixture.manager.saveStableTdsCalibrationPoint(1720000040UL));
@@ -503,7 +536,7 @@ void test_tds_calibration_point_removal_recomputes_candidate() {
     TEST_ASSERT_TRUE(fixture.manager.startTdsCalibrationPoint(160, 1720000001UL));
     std::uint32_t nowMs = 0;
     for (std::uint8_t i = 0; i < 16; ++i) {
-        fixture.adc.values[2] = okMv(420);
+        fixture.adc.setAnalogMillivolts(AdcChannel::A2, 420);
         advanceSample(fixture.manager, nowMs);
     }
     TEST_ASSERT_TRUE(fixture.manager.saveStableTdsCalibrationPoint(1720000020UL));
@@ -521,7 +554,7 @@ void test_tds_calibration_point_edit_recomputes_candidate_without_changing_captu
     TEST_ASSERT_TRUE(fixture.manager.startTdsCalibrationPoint(160, 1720000001UL));
     std::uint32_t nowMs = 0;
     for (std::uint8_t i = 0; i < 16; ++i) {
-        fixture.adc.values[2] = okMv(420);
+        fixture.adc.setAnalogMillivolts(AdcChannel::A2, 420);
         advanceSample(fixture.manager, nowMs);
     }
     TEST_ASSERT_TRUE(fixture.manager.saveStableTdsCalibrationPoint(1720000020UL));
@@ -556,6 +589,8 @@ int main(int argc, char** argv) {
     RUN_TEST(test_manager_recovers_after_three_successes);
     RUN_TEST(test_tds_range_switches_up_at_85_percent);
     RUN_TEST(test_tds_range_switches_down_after_eight_low_windows);
+    RUN_TEST(test_tds_live_value_uses_recent_raw_median);
+    RUN_TEST(test_run_summary_ignores_duplicate_loop_samples);
     RUN_TEST(test_run_summary_aggregates_valid_samples_only);
     RUN_TEST(test_run_summary_records_tds_when_temperature_sensor_is_disabled);
     RUN_TEST(test_calibration_uses_25c_fallback_without_failing);

@@ -370,7 +370,7 @@ void test_home_page_hides_sensor_calibration_state() {
     TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch("/index", Esp32BaseWeb::METHOD_GET));
 
     const std::string& body = Esp32BaseWeb::nativeTestResponse().body;
-    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), ">TDS</span><strong id='tdsStatus'>17</strong><small class='sensor-unit'>ppm"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), ">TDS</span><small id='tdsStatus' class='machine-status-note'>17</small><small class='sensor-unit'>ppm"));
     TEST_ASSERT_NULL(std::strstr(body.c_str(), "未校准"));
     TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "function faucetSensorTds"));
 }
@@ -388,7 +388,7 @@ void test_app_css_covers_current_page_layout_classes() {
     TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "body{max-width:1120px"));
     TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), ".machine-status-strip{display:flex;align-items:center;gap:6px;flex-wrap:nowrap}"));
     TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), ".home-section-title{margin:20px 0 10px;font-weight:600}"));
-    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), ".machine-status-item strong{color:#455159;font-size:12px;font-weight:500;"));
+    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), ".machine-status-note{color:#879198;font-size:10px;font-weight:400;line-height:1;white-space:nowrap}"));
     TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), ".today-total-main{display:block;color:var(--text);font-size:24px;line-height:1.05;font-weight:600}"));
     TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), ".filter-cards{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px"));
     TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), ".filter-head strong{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:15px;"));

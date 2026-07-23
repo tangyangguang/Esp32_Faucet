@@ -52,7 +52,7 @@ void sendMachineStatusItem(const char* valueId,
                            const char* wrapperId = nullptr,
                            bool hidden = false) {
     if (wrapperId != nullptr) {
-        sendFmt("<span id='%s' class='machine-status-item'%s><span>%s</span><strong id='%s'>%s</strong></span>",
+        sendFmt("<span id='%s' class='machine-status-item'%s><span>%s</span><small id='%s' class='machine-status-note'>%s</small></span>",
                 wrapperId,
                 hidden ? " style='display:none'" : "",
                 label,
@@ -60,14 +60,14 @@ void sendMachineStatusItem(const char* valueId,
                 value);
         return;
     }
-    sendFmt("<span class='machine-status-item'><span>%s</span><strong id='%s'>%s</strong></span>",
+    sendFmt("<span class='machine-status-item'><span>%s</span><small id='%s' class='machine-status-note'>%s</small></span>",
             label,
             valueId,
             value);
 }
 
 void sendMachineStatusItemNote(const char* valueId, const char* noteId, const char* label, const char* value, const char* note) {
-    sendFmt("<span class='machine-status-item'><span>%s</span><strong id='%s'>%s</strong><small id='%s' class='machine-status-note'>%s</small></span>",
+    sendFmt("<span class='machine-status-item'><span>%s</span><small id='%s' class='machine-status-note'>%s</small><small id='%s' class='machine-status-note'>%s</small></span>",
             label,
             valueId,
             value,
@@ -76,7 +76,7 @@ void sendMachineStatusItemNote(const char* valueId, const char* noteId, const ch
 }
 
 void sendMachineStatusSensorItem(const char* valueId, const char* label, const char* value, const char* unit) {
-    sendFmt("<span class='machine-status-item'><span>%s</span><strong id='%s'>%s</strong><small class='sensor-unit'>%s</small></span>",
+    sendFmt("<span class='machine-status-item'><span>%s</span><small id='%s' class='machine-status-note'>%s</small><small class='sensor-unit'>%s</small></span>",
             label,
             valueId,
             value,

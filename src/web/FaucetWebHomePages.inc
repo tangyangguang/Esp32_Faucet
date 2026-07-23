@@ -565,8 +565,8 @@ void sendFilterCards(std::uint32_t now) {
         }
         Esp32BaseWeb::sendChunk("</div>");
         Esp32BaseWeb::sendChunk("<div class='filter-meta'>");
-        if (filter.recommendDays > 0 && filter.maxDays > 0) {
-            sendFmt("<span>天数：已用 %lu 天 / 建议 %lu 天 / 最长 %lu 天</span>",
+        if (filter.recommendDays > 0 && filter.maxDays > 0 && filter.recommendDays != filter.maxDays) {
+            sendFmt("<span>天数：已用 %lu 天 / 建议 %lu~%lu 天</span>",
                     static_cast<unsigned long>(usedDays),
                     static_cast<unsigned long>(filter.recommendDays),
                     static_cast<unsigned long>(filter.maxDays));

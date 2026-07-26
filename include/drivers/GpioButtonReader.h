@@ -12,18 +12,12 @@ public:
 
     void begin();
     ButtonLevels read() const;
-    bool consumeCancelInterrupt();
 
 private:
-    static void isrCancel();
-
-    static GpioButtonReader* instance_;
-
     std::uint8_t cancelPin_;
     std::uint8_t okPin_;
     std::uint8_t plusPin_;
     std::uint8_t minusPin_;
-    volatile bool cancelInterruptPending_;
 };
 
 }  // namespace faucet

@@ -33,11 +33,6 @@ WaterPulseTraceState traceStateForResult(WaterResult result) {
     }
 }
 
-bool isCancelButtonEvent(ButtonEventType type) {
-    return type == ButtonEventType::CancelDown || type == ButtonEventType::CancelShort ||
-           type == ButtonEventType::CancelLong;
-}
-
 MeteringSchemeRecord defaultRuntimeMeteringScheme() {
     MeteringSchemeRecord scheme{};
     scheme.id = 1;
@@ -166,9 +161,6 @@ void AppController::tick(const AppTickInput& input) {
         waterSensors_->tick(input.nowMs);
     }
     ButtonEvent event = buttons_.update(input.buttons, input.nowMs);
-    if (input.buttons.cancelPressed && event.type != ButtonEventType::None && !isCancelButtonEvent(event.type)) {
-        event = {ButtonEventType::CancelDown, ButtonId::Cancel};
-    }
     if (input.timeSynced && waterSensors_) {
         waterSensors_->expireTdsCalibrationSession(input.nowSeconds);
     }
@@ -307,7 +299,7 @@ BeepPattern AppController::consumeBeepPattern() {
     return pattern;
 }
 
-bool AppController::emergencyStop(std::uint32_t nowMs) {
+bool AppController::stopActiveWatering(std::uint32_t nowMs) {
     const WaterState state = water_.snapshot().state;
     if (state == WaterState::Running || state == WaterState::Paused) {
         water_.stop(nowMs);
@@ -424,7 +416,7 @@ void AppController::handleButtonEvent(ButtonEvent event,
         if (calibrationSession_.status == CalibrationSessionStatus::Running) {
             if (event.type == ButtonEventType::CancelDown || event.type == ButtonEventType::CancelShort ||
                 event.type == ButtonEventType::CancelLong) {
-                emergencyStop(nowMs);
+                stopActiveWatering(nowMs);
                 return;
             }
             if (event.type == ButtonEventType::OkShort) {
@@ -492,7 +484,7 @@ void AppController::handleButtonEvent(ButtonEvent event,
         case ButtonEventType::CancelDown:
         case ButtonEventType::CancelShort:
         case ButtonEventType::CancelLong:
-            emergencyStop(nowMs);
+            stopActiveWatering(nowMs);
             if (water.state == WaterState::Confirm || water.state == WaterState::Error) {
                 water_.cancel(nowMs);
                 pendingBeep_ = BeepPattern::Click;

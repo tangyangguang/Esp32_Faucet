@@ -155,7 +155,7 @@ void test_app_controller_normal_output_does_not_collect_ram_pulse_trace() {
     }
     app.tick(input({false, false, false, false}, 1500, 1500000, 1714502400));
 
-    TEST_ASSERT_TRUE(app.emergencyStop(1600));
+    TEST_ASSERT_TRUE(app.stopActiveWatering(1600));
     app.tick(input({true, false, false, false}, 1600, 1600000, 1714502401));
 
     TEST_ASSERT_EQUAL_size_t(1, records.records.size());
@@ -165,7 +165,7 @@ void test_app_controller_normal_output_does_not_collect_ram_pulse_trace() {
     TEST_ASSERT_NULL(pulseTraces.findByRecord(records.records[0]));
 }
 
-void test_app_controller_emergency_stop_closes_valve_without_debounce() {
+void test_app_controller_stop_active_watering_closes_valve() {
     SystemConfig config = makeDefaultConfig();
     StatisticsStore statistics;
     statistics.reset({20260506, 202619, 202605});
@@ -179,7 +179,7 @@ void test_app_controller_emergency_stop_closes_valve_without_debounce() {
     pressAndReleaseOk(app, 300);
     TEST_ASSERT_TRUE(app.snapshot().valve.enabled);
 
-    TEST_ASSERT_TRUE(app.emergencyStop(1000));
+    TEST_ASSERT_TRUE(app.stopActiveWatering(1000));
     TEST_ASSERT_FALSE(app.snapshot().valve.enabled);
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(WaterState::Idle),
                             static_cast<std::uint8_t>(app.snapshot().water.state));
@@ -213,7 +213,7 @@ void test_app_controller_saves_active_task_config_for_next_task() {
     TEST_ASSERT_EQUAL_UINT32(2000, app.snapshot().water.targetValue);
     TEST_ASSERT_FALSE(app.applyPendingSystemConfigIfSafe());
 
-    TEST_ASSERT_TRUE(app.emergencyStop(1000));
+    TEST_ASSERT_TRUE(app.stopActiveWatering(1000));
     app.tick(input({false, false, false, false}, 1001, 1001000, 1714502401));
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(LocalUiMode::Result),
                             static_cast<std::uint8_t>(app.snapshot().localMode));
@@ -243,7 +243,7 @@ void test_app_controller_latest_pending_system_config_wins() {
     latest.maxOutTimeSec = 120;
     TEST_ASSERT_TRUE(app.submitSystemConfig(latest));
 
-    TEST_ASSERT_TRUE(app.emergencyStop(1000));
+    TEST_ASSERT_TRUE(app.stopActiveWatering(1000));
     app.tick(input({false, false, false, false}, 1001, 1001000, 1714502401));
     TEST_ASSERT_TRUE(app.applyPendingSystemConfigIfSafe());
     TEST_ASSERT_EQUAL_UINT32(120, app.config().maxOutTimeSec);
@@ -264,7 +264,7 @@ void test_app_controller_idle_save_supersedes_pending_system_config() {
     pending.maxOutTimeSec = 120;
     TEST_ASSERT_TRUE(app.submitSystemConfig(pending));
 
-    TEST_ASSERT_TRUE(app.emergencyStop(1000));
+    TEST_ASSERT_TRUE(app.stopActiveWatering(1000));
     app.tick(input({false, false, false, false}, 1001, 1001000, 1714502401));
     SystemConfig idleSave = config;
     idleSave.maxOutTimeSec = 180;
@@ -285,7 +285,7 @@ void test_app_controller_result_display_zero_exits_result_page_on_config_apply()
     app.resetInputs({false, false, false, false}, 0);
     pressAndReleaseOk(app, 100);
     pressAndReleaseOk(app, 300);
-    TEST_ASSERT_TRUE(app.emergencyStop(1000));
+    TEST_ASSERT_TRUE(app.stopActiveWatering(1000));
     app.tick(input({false, false, false, false}, 1001, 1001000, 1714502401));
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(LocalUiMode::Result),
                             static_cast<std::uint8_t>(app.snapshot().localMode));

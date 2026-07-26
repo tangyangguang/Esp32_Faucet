@@ -38,7 +38,7 @@ void test_app_controller_starts_after_double_ok_and_opens_valve() {
     TEST_ASSERT_EQUAL_UINT8(100, app.snapshot().valve.dutyPercent);
 }
 
-void test_app_controller_stale_cancel_fast_path_does_not_block_confirm_ok_start() {
+void test_app_controller_cancel_requires_normal_button_debounce() {
     SystemConfig config = makeDefaultConfig();
     StatisticsStore statistics;
     statistics.reset({20260506, 202619, 202605});
@@ -49,37 +49,19 @@ void test_app_controller_stale_cancel_fast_path_does_not_block_confirm_ok_start(
 
     app.resetInputs({false, false, false, false}, 0);
     pressAndReleaseOk(app, 100);
-    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(WaterState::Confirm),
-                            static_cast<std::uint8_t>(app.snapshot().water.state));
-
-    TEST_ASSERT_FALSE(app.emergencyStop(250));
     pressAndReleaseOk(app, 300);
+    TEST_ASSERT_TRUE(app.snapshot().valve.enabled);
 
+    app.tick(input({true, false, false, false}, 500, 500000, 1714502400));
+    app.tick(input({false, false, false, false}, 500 + kButtonDebounceMs - 1,
+                   (500 + kButtonDebounceMs - 1) * 1000UL, 1714502400));
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(WaterState::Running),
                             static_cast<std::uint8_t>(app.snapshot().water.state));
     TEST_ASSERT_TRUE(app.snapshot().valve.enabled);
-}
 
-void test_app_controller_cancel_raw_dominates_pending_ok_release() {
-    SystemConfig config = makeDefaultConfig();
-    StatisticsStore statistics;
-    statistics.reset({20260506, 202619, 202605});
-    FilterStore filters(config.filters);
-    MemoryRecordWriter records;
-    AppController app(config, statistics, filters, records);
-    applyTestMeteringScheme(app);
-
-    app.resetInputs({false, false, false, false}, 0);
-    pressAndReleaseOk(app, 100);
-    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(WaterState::Confirm),
-                            static_cast<std::uint8_t>(app.snapshot().water.state));
-
-    app.tick(input({false, true, false, false}, 300, 300000, 1714502400));
-    app.tick(input({false, true, false, false}, 300 + kButtonDebounceMs, 330000, 1714502400));
-    app.tick(input({false, false, false, false}, 360, 360000, 1714502400));
-    app.tick(input({true, false, false, false}, 380, 380000, 1714502400));
-    app.tick(input({true, false, false, false}, 390, 390000, 1714502400));
-
+    app.tick(input({true, false, false, false}, 600, 600000, 1714502400));
+    app.tick(input({true, false, false, false}, 600 + kButtonDebounceMs,
+                   (600 + kButtonDebounceMs) * 1000UL, 1714502400));
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(WaterState::Idle),
                             static_cast<std::uint8_t>(app.snapshot().water.state));
     TEST_ASSERT_FALSE(app.snapshot().valve.enabled);

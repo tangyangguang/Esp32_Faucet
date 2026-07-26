@@ -21,7 +21,6 @@
 #include "app/WaterPulseTraceStore.h"
 #include "drivers/BoardPins.h"
 #include "drivers/Ads1115AdcReader.h"
-#include "drivers/CancelInterruptFilter.h"
 #include "drivers/FlowPulseReader.h"
 #include "drivers/GpioButtonReader.h"
 #include "drivers/PwmBeepHardware.h"
@@ -84,7 +83,6 @@ faucet::GpioButtonReader g_buttons(faucet::kPinButtonCancel,
                                    faucet::kPinButtonOk,
                                    faucet::kPinButtonPlus,
                                    faucet::kPinButtonMinus);
-faucet::CancelInterruptFilter g_cancelInterruptFilter;
 faucet::FlowPulseReader g_flowPulses(faucet::kPinFlowPrimary);
 faucet::Ads1115AdcReader g_waterSensorAdc;
 faucet::WaterSensorManager g_waterSensors(g_waterSensorAdc, true);
@@ -403,8 +401,6 @@ void initializeApplication() {
     logStartupPhase("context_ready");
 
     g_buttons.begin();
-    const faucet::ButtonLevels initialButtonLevels = g_buttons.read();
-    g_cancelInterruptFilter.reset(initialButtonLevels.cancelPressed, micros());
     g_flowPulses.begin();
     if (!g_valveHardware.begin(g_config.valvePwmFrequencyHz)) {
         ESP32BASE_LOG_E("app", "valve PWM initialization failed hz=%lu",
@@ -420,7 +416,7 @@ void initializeApplication() {
     g_st7789.begin();
     logStartupPhase("hardware_ready");
 
-    g_app->resetInputs(initialButtonLevels, millis());
+    g_app->resetInputs(g_buttons.read(), millis());
     if (g_colorDisplay) {
         g_colorDisplay->wake(millis());
         g_lastColorDisplayFrame = g_colorDisplay->render(g_app->snapshot(), millis(), Esp32BaseWiFi::isConnected());
@@ -494,16 +490,9 @@ void runApplicationTick() {
         }
     }
 
-    const bool cancelInterruptPending = g_buttons.consumeCancelInterrupt();
     const std::uint32_t nowMs = millis();
     const std::uint32_t nowUs = micros();
-    faucet::ButtonLevels levels = g_buttons.read();
-    const faucet::CancelInterruptFilterResult cancel =
-        g_cancelInterruptFilter.update(levels.cancelPressed, cancelInterruptPending, nowUs);
-    levels.cancelPressed = cancel.pressed;
-    if (cancel.emergencyStop) {
-        g_app->emergencyStop(nowMs);
-    }
+    const faucet::ButtonLevels levels = g_buttons.read();
 
     std::uint32_t pulseUs = 0;
     std::size_t processedPulses = 0;

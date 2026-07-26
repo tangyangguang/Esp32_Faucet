@@ -55,8 +55,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_app_expires_idle_tds_calibration_session_from_tick);
     RUN_TEST(test_app_controller_successful_record_writes_scheme_id);
     RUN_TEST(test_app_controller_starts_after_double_ok_and_opens_valve);
-    RUN_TEST(test_app_controller_stale_cancel_fast_path_does_not_block_confirm_ok_start);
-    RUN_TEST(test_app_controller_cancel_raw_dominates_pending_ok_release);
+    RUN_TEST(test_app_controller_cancel_requires_normal_button_debounce);
     RUN_TEST(test_app_controller_confirm_and_running_start_volume_stays_zero_until_first_pulse);
     RUN_TEST(test_app_controller_completion_writes_record_statistics_and_filters);
     RUN_TEST(test_app_controller_pushes_closed_valve_output_before_record_persistence);
@@ -67,7 +66,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_app_controller_pause_resume_then_completion_updates_persistence_once);
     RUN_TEST(test_app_controller_stop_down_closes_valve_and_records_user_stop);
     RUN_TEST(test_app_controller_normal_output_does_not_collect_ram_pulse_trace);
-    RUN_TEST(test_app_controller_emergency_stop_closes_valve_without_debounce);
+    RUN_TEST(test_app_controller_stop_active_watering_closes_valve);
     RUN_TEST(test_app_controller_saves_active_task_config_for_next_task);
     RUN_TEST(test_app_controller_latest_pending_system_config_wins);
     RUN_TEST(test_app_controller_idle_save_supersedes_pending_system_config);

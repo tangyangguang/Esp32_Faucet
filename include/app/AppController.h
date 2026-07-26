@@ -117,7 +117,7 @@ public:
     void markPersistenceDirtyForRetry();
     bool consumeConfigDirty();
     BeepPattern consumeBeepPattern();
-    bool emergencyStop(std::uint32_t nowMs);
+    bool stopActiveWatering(std::uint32_t nowMs);
     void setValveOutputSink(ValveOutputSink sink);
     void setFlowDroppedPulses(std::uint32_t droppedPulses);
     bool selectNextPresetForWeb();

@@ -14,7 +14,6 @@
 - Esp32Base 正常启动。
 - LittleFS 正常挂载。
 - Web、WiFi、OTA 基础能力正常。
-- Esp32Base 启动后 WiFi power save 为开启状态；首次 Web 请求允许有短暂额外延迟。
 - 当前 PCB 不使用 RTC；NTP 未同步时使用 uptime 相对时间和 boot id。
 - TFT 未连接或初始化失败时不影响主循环和本地控水。
 - 流量计无脉冲时 GPIO33 不误计数。
@@ -132,6 +131,14 @@ pio device monitor -e esp32dev --port <端口> --baud 115200
 - TFT 页面肉眼确认。
 - 蜂鸣器提示音。
 - 72 小时连续运行。
+
+## 2026-07-26 WiFi modem sleep 实板回滚
+
+主固件曾在 `Esp32Base::begin()` 成功后固定调用 `Esp32BaseWiFi::setPowerSave(true)`。实板接水回归中，按正常流程启动后电磁阀和水路只动作一瞬间便立即停止，出水记录为 `0s`、`StoppedByUser`，用户没有按下 `CANCEL`。
+
+代码链路确认 `CANCEL=GPIO39` 的下降沿 ISR 会设置紧急停止标志，下一轮主循环在按键消抖之前直接调用 `AppController::emergencyStop()`；该结果与记录现象一致。当前没有 GPIO39、电源轨、WiFi 射频电流脉冲和阀门启动瞬态的同步波形，不能断言具体耦合路径，但 modem sleep 是故障出现前唯一运行逻辑变化，具有明确时间关联。
+
+为保持 `CANCEL` 最高优先级和既有安全停止语义，本轮不增加延迟、去抖或忽略中断补丁，直接撤销 WiFi power save。后续如重新评估，必须先测量 GPIO39 和电源轨波形，再执行多次阀门启动、真实 `CANCEL`、Web、NTP 和 OTA 联合回归。
 
 ## 2026-06-02 裸板复测
 

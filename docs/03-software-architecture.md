@@ -22,7 +22,7 @@
 - 流量计和 `CANCEL` 使用 ISR 采集最小事件，ISR 内不做复杂计算和日志。
 - Web 请求只允许查询状态、读取日志、保存配置或保存校准参数，不投递任何出水控制命令。
 - 不主动创建多个 FreeRTOS 业务任务；只有验证发现 loop tick 无法满足实时性时，再提出明确设计变更。
-- `Esp32Base::begin()` 成功后固定调用 `Esp32BaseWiFi::setPowerSave(true)`，只启用 WiFi modem sleep。该策略保持 STA 关联、Web、NTP、OTA、按键、流量脉冲和业务循环在线；首次 Web 请求允许增加一个 DTIM 周期内的短暂延迟。当前不使用 Light-sleep 或 Deep-sleep，不降低 CPU 频率，也不改变出水控制和保护时序；OTA 期间由 Esp32Base 临时关闭并在完成后恢复 WiFi power save。
+- 当前保持 Esp32Base 默认关闭 WiFi power save，不使用 Light-sleep 或 Deep-sleep，也不降低 CPU 频率。WiFi modem sleep 曾在实板阀门启动回归中与 GPIO39 `CANCEL` 下降沿触发的非预期软件停止存在明确时间关联；在完成 GPIO39、电源和阀门启动瞬态波形验证前，不得为了降低功耗重新启用。`CANCEL` 仍保持最高优先级软件停止，不以延迟或过滤补丁掩盖未经确认的电气问题。
 
 ## 核心模块
 

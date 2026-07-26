@@ -14,6 +14,7 @@
 - Esp32Base 正常启动。
 - LittleFS 正常挂载。
 - Web、WiFi、OTA 基础能力正常。
+- Esp32Base 启动后 WiFi power save 为开启状态；首次 Web 请求允许有短暂额外延迟。
 - 当前 PCB 不使用 RTC；NTP 未同步时使用 uptime 相对时间和 boot id。
 - TFT 未连接或初始化失败时不影响主循环和本地控水。
 - 流量计无脉冲时 GPIO33 不误计数。

@@ -628,6 +628,8 @@ void setup() {
     g_baseBeginComplete = Esp32Base::begin();
     if (!g_baseBeginComplete) {
         ESP32BASE_LOG_E("app", "Esp32Base begin failed: %s", Esp32Base::lastError());
+    } else {
+        Esp32BaseWiFi::setPowerSave(true);
     }
 #if ESP32BASE_ENABLE_FS
     g_littleFsInitComplete = Esp32BaseFs::isReady();

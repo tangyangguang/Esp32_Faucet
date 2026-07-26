@@ -6,6 +6,7 @@
 
 - 使用同级目录 `../Esp32Base` 作为 ESP32 基础库。
 - 主固件已接入 Esp32Base FULL profile、四键业务核心、流量计、电磁阀 PWM/SD、ADS1115、水温/TDS、240x240 ST7789 TFT 本地屏、蜂鸣器、LittleFS 记录/日志、统计、滤芯和 Web 查看/配置页面；真实水路仍需按上板文档逐项闭环验证。
+- 主固件固定启用 WiFi modem sleep；GPIO39 `CANCEL` 下降沿经 1ms 非阻塞连续低电平确认后执行紧急关阀，兼顾在线节能和阀门/射频瞬态抗扰。
 - Web 不提供任何远程出水控制能力。
 - 旧核心板裸板验证已通过；新版 PCB 仍需按上板文档完成 ADS1115、按键、TFT、流量计和阀门安全闭环。
 - 当前代码侧基线：`pio test -e native` 和 `pio run -e esp32dev` 应保持通过；Flash 仍需控制在当前 4MB 双 OTA 分区预算内。

@@ -40,22 +40,6 @@ AppSnapshot makeSnapshot(WaterState state, WaterMode mode, std::uint32_t target,
     return snapshot;
 }
 
-WaterRecord makeLastRecord(std::uint32_t volumeMl,
-                           std::uint32_t target,
-                           std::uint16_t durationSec,
-                           WaterResult result) {
-    WaterRecord record{};
-    record.volumeMl = volumeMl;
-    record.targetValue = target;
-    record.durationSec = durationSec;
-    record.result = result;
-    record.mode = WaterMode::Volume;
-    record.temperatureCentiC = 2470;
-    record.tdsPpm = 386;
-    record.sensorSampleCount = 3;
-    return record;
-}
-
 void assertTextEquals(const char* expected, const char* actual) {
     TEST_ASSERT_EQUAL_STRING(expected, actual);
 }
@@ -112,19 +96,22 @@ void test_color_display_covers_idle_confirm_running_pause_result_alert_calibrati
     runningVolume.instantFlowMlPerMin = 99999;
     runningVolume.sensors.temperatureCentiC = SensorValue{true, 2470};
     runningVolume.sensors.tdsPpm = SensorValue{true, 386};
+    presenter.observe(runningVolume);
+    runningVolume.sensors.sampleSequence = 1;
+    presenter.observe(runningVolume);
     frame = presenter.render(runningVolume, 1700, true);
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(ColorDisplayPage::RunningVolume),
                             static_cast<std::uint8_t>(frame.page));
     TEST_ASSERT_EQUAL_UINT16(613, frame.progressPermille);
     assertTextEquals("已出水", frame.title);
     assertTextEquals("0.92", frame.mainValue);
-    assertTextEquals("实时流速", frame.metrics[1].label);
-    assertTextEquals("12.80", frame.metrics[1].value);
-    assertTextEquals("L/min", frame.metrics[1].unit);
-    assertTextEquals("TDS", frame.sensors[0].label);
-    assertTextEquals("386", frame.sensors[0].value);
-    assertTextEquals("水温", frame.sensors[1].label);
-    assertTextEquals("24.7", frame.sensors[1].value);
+    assertTextEquals("定量 1.50 L", frame.tag);
+    assertTextEquals("00:03", frame.timer);
+    assertTextEquals("总计约 03:45", frame.subtitle);
+    assertTextEquals("水温", frame.sensors[0].label);
+    assertTextEquals("24.7", frame.sensors[0].value);
+    assertTextEquals("TDS", frame.sensors[1].label);
+    assertTextEquals("386", frame.sensors[1].value);
 
     AppSnapshot runningTime = makeSnapshot(WaterState::Running, WaterMode::Time, 360, 2360);
     runningTime.water.elapsedSec = 138;
@@ -133,8 +120,11 @@ void test_color_display_covers_idle_confirm_running_pause_result_alert_calibrati
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(ColorDisplayPage::RunningTime),
                             static_cast<std::uint8_t>(frame.page));
     TEST_ASSERT_EQUAL_UINT16(383, frame.progressPermille);
-    assertTextEquals("剩余时间", frame.title);
-    assertTextEquals("03:42", frame.mainValue);
+    assertTextEquals("已出水", frame.title);
+    assertTextEquals("2.36", frame.mainValue);
+    assertTextEquals("定时 06:00", frame.tag);
+    assertTextEquals("03:42", frame.timer);
+    assertTextEquals("", frame.subtitle);
 
     AppSnapshot pausedVolume = runningVolume;
     pausedVolume.water.state = WaterState::Paused;
@@ -142,24 +132,24 @@ void test_color_display_covers_idle_confirm_running_pause_result_alert_calibrati
     frame = presenter.render(pausedVolume, 1900, true);
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(ColorDisplayPage::PausedVolume),
                             static_cast<std::uint8_t>(frame.page));
-    assertTextEquals("阀关", frame.tag);
-    assertTextEquals("已暂停", frame.title);
-    assertTextEquals("阀门已关闭", frame.status);
-    assertTextEquals("剩余", frame.metrics[1].label);
+    assertTextEquals("定量 1.50 L", frame.tag);
+    assertTextEquals("已暂停", frame.state);
+    assertTextEquals("阀关", frame.status);
+    assertTextEquals("0.92", frame.mainValue);
     TEST_ASSERT_EQUAL_UINT8(2, frame.hintCount);
     assertTextEquals("确认 继续", frame.hints[0]);
-    assertTextEquals("取消 结束", frame.hints[1]);
+    assertTextEquals("取消 停止", frame.hints[1]);
 
     AppSnapshot pausedTime = runningTime;
     pausedTime.water.state = WaterState::Paused;
     frame = presenter.render(pausedTime, 2000, true);
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(ColorDisplayPage::PausedTime),
                             static_cast<std::uint8_t>(frame.page));
-    assertTextEquals("剩余时间", frame.metrics[0].label);
+    assertTextEquals("定时 06:00", frame.tag);
 
     AppSnapshot completed = makeSnapshot(WaterState::Idle, WaterMode::Volume, 1500, 1500);
     completed.localMode = LocalUiMode::Result;
-    completed.water.elapsedSec = 46;
+    completed.lastDisplayResult = {true, WaterMode::Volume, WaterResult::Completed, 1500, 1500, 46, 0};
     completed.water.lastResult = WaterResult::Completed;
     completed.runAverageFlowMlPerMin = 1960;
     completed.sensors.temperatureCentiC = SensorValue{true, 2470};
@@ -173,13 +163,14 @@ void test_color_display_covers_idle_confirm_running_pause_result_alert_calibrati
     TEST_ASSERT_EQUAL_UINT8(1, frame.hintCount);
     assertTextEquals("取消 返回", frame.hints[0]);
 
-    completed.water.lastResult = WaterResult::StoppedByUser;
-    completed.water.volumeMl = 920;
+    completed.lastDisplayResult.result = WaterResult::StoppedByUser;
+    completed.lastDisplayResult.volumeMl = 920;
     frame = presenter.render(completed, 2200, true);
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(ColorDisplayPage::ResultStopped),
                             static_cast<std::uint8_t>(frame.page));
     assertTextEquals("已停止", frame.state);
-    assertTextEquals("目标", frame.metrics[0].label);
+    assertTextEquals("定量 1.50 L", frame.tag);
+    TEST_ASSERT_EQUAL_UINT16(613, frame.progressPermille);
 
     AppSnapshot error = makeSnapshot(WaterState::Error, WaterMode::Volume, 1500, 120);
     error.water.lastResult = WaterResult::FlowError;
@@ -237,7 +228,7 @@ void test_color_display_covers_idle_confirm_running_pause_result_alert_calibrati
                             static_cast<std::uint8_t>(frame.page));
 }
 
-void test_color_display_uses_active_preset_and_record_summary_values() {
+void test_color_display_uses_confirmed_target_and_frozen_result() {
     ColorDisplayPresenter presenter(60);
     presenter.wake(0);
 
@@ -252,34 +243,40 @@ void test_color_display_uses_active_preset_and_record_summary_values() {
     frame = presenter.render(confirm, 200, true);
     TEST_ASSERT_NOT_NULL(std::strstr(frame.subtitle, "预设5"));
 
-    AppSnapshot running = makeSnapshot(WaterState::Running, WaterMode::Volume, 1500, 920);
+    AppSnapshot running = makeSnapshot(WaterState::Running, WaterMode::Time, 360, 920);
     running.water.activePreset = 1;
     running.water.elapsedSec = 222;
     frame = presenter.render(running, 300, true);
-    assertTextEquals("P2 · 03:42", frame.tag);
+    assertTextEquals("定时 06:00", frame.tag);
 
-    AppSnapshot paused = running;
-    paused.water.state = WaterState::Paused;
-    paused.displayFlowMlPerMin = 0;
-    paused.meteringParams.stableFlowMlPerMin = 1950;
-    frame = presenter.render(paused, 400, true);
-    assertTextEquals("还需约", frame.metrics[3].label);
-    assertTextEquals("00:18", frame.metrics[3].value);
+    AppSnapshot volume = running;
+    volume.water.mode = WaterMode::Volume;
+    volume.water.targetValue = 1500;
+    frame = presenter.render(volume, 350, true);
+    assertTextEquals("--", frame.timer);
+    assertTextEquals("", frame.subtitle);
+    volume.displayFlowMlPerMin = 60;
+    volume.maxOutTimeSec = 240;
+    frame = presenter.render(volume, 400, true);
+    assertTextEquals("--", frame.timer);
+    assertTextEquals("", frame.subtitle);
 
-    AppSnapshot result = makeSnapshot(WaterState::Idle, WaterMode::Volume, 1500, 1500);
+    AppSnapshot result = makeSnapshot(WaterState::Idle, WaterMode::Volume, 9000);
     result.localMode = LocalUiMode::Result;
-    result.water.lastResult = WaterResult::Completed;
-    result.water.elapsedSec = 46;
-    result.runAverageFlowMlPerMin = 1960;
-    result.lastResultRecordAvailable = true;
-    result.lastResultRecord = makeLastRecord(1500, 1500, 46, WaterResult::Completed);
-    result.sensors.tdsPpm = SensorValue{true, 12};
-    result.sensors.temperatureCentiC = SensorValue{true, 3000};
+    result.lastDisplayResult = {true, WaterMode::Time, WaterResult::Completed, 1470, 360, 360, 1};
     frame = presenter.render(result, 500, true);
-    assertTextEquals("TDS", frame.metrics[2].label);
-    assertTextEquals("386", frame.metrics[2].value);
-    assertTextEquals("水温", frame.metrics[3].label);
-    assertTextEquals("24.7", frame.metrics[3].value);
+    assertTextEquals("定时 06:00", frame.tag);
+    assertTextEquals("1.47", frame.mainValue);
+    assertTextEquals("06:00", frame.timer);
+    TEST_ASSERT_EQUAL_UINT16(1000, frame.progressPermille);
+
+    result.lastDisplayResult.result = WaterResult::FlowError;
+    frame = presenter.render(result, 550, true);
+    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(ColorDisplayPage::ResultAlert),
+                            static_cast<std::uint8_t>(frame.page));
+    assertTextEquals("流量异常", frame.state);
+    assertTextEquals("阀关", frame.status);
+    TEST_ASSERT_EQUAL_UINT16(990, frame.progressPermille);
 }
 
 void test_color_display_confirm_page_hides_unavailable_estimates_and_uses_short_hints() {
@@ -321,67 +318,95 @@ void test_color_display_confirm_volume_estimates_duration_from_metering_params_w
     TEST_ASSERT_NULL(std::strstr(frame.subtitle, "0秒"));
 }
 
-void test_color_display_trends_only_use_real_running_sensor_samples() {
+void test_color_display_trends_preserve_full_run_with_gaps_and_freeze_at_result() {
     ColorDisplayPresenter presenter(60);
-    presenter.wake(0);
-    AppSnapshot snapshot = makeSnapshot(WaterState::Running, WaterMode::Volume, 1500, 100);
-    snapshot.water.elapsedSec = 1;
-    snapshot.sensors.tdsPpm = SensorValue{true, 380};
-    snapshot.sensors.temperatureCentiC = SensorValue{true, 2460};
-    presenter.render(snapshot, 1000, true);
+    AppSnapshot running = makeSnapshot(WaterState::Running, WaterMode::Time, 600, 1500);
+    presenter.observe(running);
+    for (std::uint32_t sec = 0; sec < 600; ++sec) {
+        running.water.elapsedSec = sec;
+        running.sensors.sampleSequence = sec + 1U;
+        running.sensors.temperatureCentiC = {true, sec == 2 ? -140 : sec == 18 ? 3110 : 2450};
+        running.sensors.tdsPpm = {sec < 250 || sec > 290, sec == 0 ? 22 : sec == 37 ? 65000 : 47};
+        presenter.observe(running);
+        // Re-rendering an old sensor sequence must never invent another sample.
+        AppSnapshot duplicate = running;
+        duplicate.sensors.temperatureCentiC.value = 5000;
+        presenter.observe(duplicate);
+    }
+    running.water.elapsedSec = 600;
+    ColorDisplayFrame frame = presenter.render(running, 600000, true);
+    assertTextEquals("10:00", frame.trendTime);
+    assertTextEquals("-1.4", frame.sensors[0].low);
+    assertTextEquals("31.1", frame.sensors[0].high);
+    assertTextEquals("24.5", frame.sensors[0].value);
+    assertTextEquals("22", frame.sensors[1].low);
+    assertTextEquals("65000", frame.sensors[1].high);
+    assertTextEquals("47", frame.sensors[1].value);
+    TEST_ASSERT_NOT_EQUAL(0, frame.sensors[1].columns[0].bottom);
+    TEST_ASSERT_NOT_EQUAL(0, frame.sensors[1].latestY);
+    TEST_ASSERT_NOT_EQUAL(0, frame.sensors[1].columns[42].top & kColorDisplayTrendGap);
+    TEST_ASSERT_EQUAL_UINT8(0, frame.sensors[0].columns[42].top & kColorDisplayTrendGap);
 
-    snapshot.water.volumeMl = 200;
-    snapshot.sensors.tdsPpm = SensorValue{true, 386};
-    snapshot.sensors.temperatureCentiC = SensorValue{true, 2470};
-    presenter.render(snapshot, 2000, true);
-
-    snapshot.water.volumeMl = 300;
-    snapshot.sensors.tdsPpm = SensorValue{true, 390};
-    snapshot.sensors.temperatureCentiC = SensorValue{true, 2480};
-    ColorDisplayFrame frame = presenter.render(snapshot, 3000, true);
-
-    TEST_ASSERT_EQUAL_UINT8(3, frame.sensors[0].sampleCount);
-    TEST_ASSERT_EQUAL_UINT16(380, frame.sensors[0].samples[0]);
-    TEST_ASSERT_EQUAL_UINT16(386, frame.sensors[0].samples[1]);
-    TEST_ASSERT_EQUAL_UINT16(390, frame.sensors[0].samples[2]);
-    TEST_ASSERT_EQUAL_UINT8(3, frame.sensors[1].sampleCount);
-    TEST_ASSERT_EQUAL_UINT16(246, frame.sensors[1].samples[0]);
-    TEST_ASSERT_EQUAL_UINT16(247, frame.sensors[1].samples[1]);
-    TEST_ASSERT_EQUAL_UINT16(248, frame.sensors[1].samples[2]);
-
-    snapshot.water.state = WaterState::Idle;
-    frame = presenter.render(snapshot, 4000, true);
-    TEST_ASSERT_EQUAL_UINT8(0, frame.sensors[0].sampleCount);
-    TEST_ASSERT_EQUAL_UINT8(0, frame.sensors[1].sampleCount);
+    AppSnapshot result = makeSnapshot(WaterState::Idle, WaterMode::Volume, 3000);
+    result.localMode = LocalUiMode::Result;
+    result.lastDisplayResult = {true, WaterMode::Time, WaterResult::Completed, 1500, 600, 600, 0};
+    result.sensors.sampleSequence = 601;
+    result.sensors.tdsPpm = {true, 99};
+    presenter.observe(result);
+    const ColorDisplayFrame frozen = presenter.render(result, 601000, true);
+    assertTextEquals("10:00", frozen.trendTime);
+    assertTextEquals("47", frozen.sensors[1].value);
+    TEST_ASSERT_EQUAL_MEMORY(frame.sensors, frozen.sensors, sizeof(frame.sensors));
 }
 
-void test_color_display_sensor_trends_are_independent_and_keep_local_tds_label_short() {
+void test_color_display_trends_skip_idle_and_pause_samples_and_reset_at_next_run() {
     ColorDisplayPresenter presenter(60);
-    presenter.wake(0);
-    AppSnapshot snapshot = makeSnapshot(WaterState::Running, WaterMode::Volume, 1500, 100);
-    snapshot.sensors.tdsCalibrated = false;
+    AppSnapshot snapshot = makeSnapshot(WaterState::Running, WaterMode::Volume, 1500);
+    snapshot.sensors.sampleSequence = 1;  // Read before the start of this run.
+    presenter.observe(snapshot);
+    ColorDisplayFrame frame = presenter.render(snapshot, 0, true);
+    assertTextEquals("---", frame.sensors[1].value);
+
+    snapshot.water.elapsedSec = 1;
+    snapshot.sensors.sampleSequence = 2;
+    snapshot.sensors.tdsPpm = {true, 30};
+    presenter.observe(snapshot);
+    snapshot.water.state = WaterState::Paused;
+    snapshot.sensors.sampleSequence = 3;
+    snapshot.sensors.tdsPpm = {true, 90};
+    presenter.observe(snapshot);
+    presenter.configure(60);
+    frame = presenter.render(snapshot, 35000, true);
+    assertTextEquals("00:01", frame.trendTime);
+    assertTextEquals("30", frame.sensors[1].value);
+
+    snapshot.water.state = WaterState::Running;
+    presenter.observe(snapshot);
+    snapshot.sensors.sampleSequence = 4;
+    snapshot.sensors.tdsPpm = {true, 0};
+    snapshot.water.elapsedSec = 2;
+    presenter.observe(snapshot);
+    frame = presenter.render(snapshot, 36000, true);
+    assertTextEquals("0", frame.sensors[1].low);
+    assertTextEquals("30", frame.sensors[1].high);
+    assertTextEquals("0", frame.sensors[1].value);
+
+    snapshot.sensors.sampleSequence = 5;
     snapshot.sensors.tdsPpm = {};
+    snapshot.water.elapsedSec = 3;
+    presenter.observe(snapshot);
+    frame = presenter.render(snapshot, 37000, true);
+    assertTextEquals("---", frame.sensors[1].value);
+    assertTextEquals("30", frame.sensors[1].high);
+    TEST_ASSERT_EQUAL_UINT8(0, frame.sensors[1].latestY);
 
-    presenter.render(snapshot, 1000, true);
-    snapshot.sensors.temperatureCentiC = SensorValue{true, 2470};
-    presenter.render(snapshot, 2000, true);
-    snapshot.sensors.temperatureCentiC = SensorValue{true, 2480};
-    ColorDisplayFrame frame = presenter.render(snapshot, 3000, true);
-    TEST_ASSERT_EQUAL_UINT8(0, frame.sensors[0].sampleCount);
-    TEST_ASSERT_EQUAL_UINT8(3, frame.sensors[1].sampleCount);
-
-    snapshot.sensors.tdsPpm = SensorValue{true, 12};
-    snapshot.sensors.temperatureCentiC = {};
-    frame = presenter.render(snapshot, 4000, true);
-    assertTextEquals("TDS", frame.sensors[0].label);
-    TEST_ASSERT_EQUAL_UINT8(1, frame.sensors[0].sampleCount);
-    TEST_ASSERT_EQUAL_UINT8(3, frame.sensors[1].sampleCount);
-
-    AppSnapshot idle = makeSnapshot(WaterState::Idle, WaterMode::Volume, 1500);
-    idle.sensors.tdsCalibrated = false;
-    idle.sensors.tdsPpm = SensorValue{true, 12};
-    frame = presenter.render(idle, 5000, true);
-    assertTextEquals("TDS", frame.metrics[2].label);
+    snapshot.water.state = WaterState::Idle;
+    presenter.observe(snapshot);
+    snapshot.water.state = WaterState::Running;
+    snapshot.water.elapsedSec = 0;
+    presenter.observe(snapshot);
+    frame = presenter.render(snapshot, 38000, true);
+    assertTextEquals("---", frame.sensors[1].high);
 }
 
 int main(int argc, char** argv) {
@@ -390,10 +415,10 @@ int main(int argc, char** argv) {
 
     UNITY_BEGIN();
     RUN_TEST(test_color_display_covers_idle_confirm_running_pause_result_alert_calibration_offline_and_sleep_pages);
-    RUN_TEST(test_color_display_uses_active_preset_and_record_summary_values);
+    RUN_TEST(test_color_display_uses_confirmed_target_and_frozen_result);
     RUN_TEST(test_color_display_confirm_page_hides_unavailable_estimates_and_uses_short_hints);
     RUN_TEST(test_color_display_confirm_volume_estimates_duration_from_metering_params_when_snapshot_omits_it);
-    RUN_TEST(test_color_display_trends_only_use_real_running_sensor_samples);
-    RUN_TEST(test_color_display_sensor_trends_are_independent_and_keep_local_tds_label_short);
+    RUN_TEST(test_color_display_trends_preserve_full_run_with_gaps_and_freeze_at_result);
+    RUN_TEST(test_color_display_trends_skip_idle_and_pause_samples_and_reset_at_next_run);
     return UNITY_END();
 }

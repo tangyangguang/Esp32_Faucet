@@ -260,10 +260,11 @@ AppSnapshot AppController::snapshot() const {
     snapshot.timeAdjustmentStepSec = timeAdjustmentStepSec_;
     snapshot.lastResultRecordAvailable = lastResultRecordValid_;
     snapshot.lastResultRecord = lastResultRecord_;
+    snapshot.lastDisplayResult = lastDisplayResult_;
     snapshot.calibrationStatus = calibrationSession_.status;
     snapshot.calibrationAttemptCount = calibrationSession_.attemptCount;
     snapshot.calibrationValidSampleCount = calibrationSession_.validSampleCount;
-    snapshot.calibrationMaxRunSec = config_.maxOutTimeSec;
+    snapshot.maxOutTimeSec = config_.maxOutTimeSec;
     snapshot.calibrationCanQuickGenerate = calibrationCanQuickGenerate(calibrationSession_);
     snapshot.calibrationRecommended = calibrationIsRecommended(calibrationSession_);
     snapshot.calibrationCandidate = calibrationCandidate_;
@@ -645,6 +646,7 @@ void AppController::processResult(std::uint32_t startTime,
     if (!result.valid) {
         return;
     }
+    lastDisplayResult_ = result;
 
     WaterRecord record{};
     record.startTime = startTime;

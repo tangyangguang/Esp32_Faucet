@@ -47,7 +47,6 @@ private:
                        std::int16_t radius,
                        std::uint16_t color,
                        std::uint16_t background);
-    void drawPixel(std::int16_t x, std::int16_t y, std::uint16_t color);
     void drawLine(std::int16_t x0, std::int16_t y0, std::int16_t x1, std::int16_t y1, std::uint16_t color);
     void fillCircle(std::int16_t x0, std::int16_t y0, std::int16_t r, std::uint16_t color);
     void drawRing(std::int16_t cx, std::int16_t cy, std::int16_t radius, std::uint16_t progressPermille, std::uint16_t color);
@@ -136,7 +135,10 @@ private:
                         std::int16_t w,
                         const ColorDisplayMetric& metric,
                         std::int16_t h);
-    void drawSensorCard(std::int16_t x, std::int16_t y, std::int16_t w, const ColorDisplaySensor& sensor);
+    void drawWaterProgress(const ColorDisplayFrame& frame, std::uint16_t accent);
+    void drawWaterTiming(const ColorDisplayFrame& frame, std::uint16_t accent);
+    void drawTrendSensor(std::uint8_t index, const ColorDisplaySensor& sensor);
+    void drawTrendTime(const ColorDisplayFrame& frame);
     void drawTopBar(const ColorDisplayFrame& frame, std::uint16_t accent);
     void drawHintSlot(std::int16_t x, std::int16_t y, std::int16_t w, const char* text);
     void drawHints(const ColorDisplayFrame& frame);

@@ -112,7 +112,6 @@ private:
     std::uint8_t tdsLowRangeWindows_;
     bool discardNextTdsSample_;
     RunWindow run_;
-    std::uint32_t sampleSequence_;
     std::uint32_t lastRunSampleSequence_;
 
     CalibrationKind calibrationKind_;

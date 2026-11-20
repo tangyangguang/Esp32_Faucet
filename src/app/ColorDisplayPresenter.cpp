@@ -136,8 +136,15 @@ ColorDisplaySensor& addSensor(ColorDisplayFrame& frame, const char* label, const
     copyText(sensor.label, label);
     copyText(sensor.value, value);
     copyText(sensor.unit, unit);
-    sensor.sampleCount = 0;
     return sensor;
+}
+
+std::uint16_t encodeTrendValue(std::int32_t value, bool temperature) {
+    if (!temperature) {
+        return static_cast<std::uint16_t>(value);
+    }
+    const auto tenths = (value + (value < 0 ? -5 : 5)) / 10;
+    return static_cast<std::uint16_t>(tenths + 32768);
 }
 
 void setHints(ColorDisplayFrame& frame, const char* h0, const char* h1 = nullptr, const char* h2 = nullptr) {
@@ -195,88 +202,220 @@ const char* alertReason(WaterResult result) {
 
 ColorDisplayPresenter::ColorDisplayPresenter(std::uint32_t sleepTimeoutSec)
     : sleepTimeoutMs_(secondsToMillis(sleepTimeoutSec)),
-      lastWakeMs_(0),
-      lastWaterState_(WaterState::Idle),
-      lastTdsTrendSampleMs_(0),
-      lastTempTrendSampleMs_(0),
-      tdsTrend_{},
-      tempTrend_{},
-      tdsTrendCount_(0),
-      tempTrendCount_(0) {}
+      lastWakeMs_(0) {}
 
 void ColorDisplayPresenter::configure(std::uint32_t sleepTimeoutSec) {
     sleepTimeoutMs_ = secondsToMillis(sleepTimeoutSec);
-    resetTrends();
 }
 
 void ColorDisplayPresenter::wake(std::uint32_t nowMs) {
     lastWakeMs_ = nowMs;
 }
 
-void ColorDisplayPresenter::resetTrends() {
-    lastTdsTrendSampleMs_ = 0;
-    lastTempTrendSampleMs_ = 0;
-    tdsTrendCount_ = 0;
-    tempTrendCount_ = 0;
-    std::memset(tdsTrend_, 0, sizeof(tdsTrend_));
-    std::memset(tempTrend_, 0, sizeof(tempTrend_));
+void ColorDisplayPresenter::Range::include(const Range& other) {
+    if (other.valid()) {
+        low = std::min(low, other.low);
+        high = std::max(high, other.high);
+    }
 }
 
-void ColorDisplayPresenter::sampleTrends(const AppSnapshot& snapshot, std::uint32_t nowMs) {
-    if (snapshot.water.state != WaterState::Running) {
+void ColorDisplayPresenter::resetTrends() {
+    secondsPerBucket_ = 1;
+    lastSampleSec_ = 0;
+    bucketCount_ = 0;
+    for (std::size_t i = 0; i < kColorDisplaySensorCount; ++i) {
+        extrema_[i] = {};
+        latest_[i] = {};
+    }
+}
+
+void ColorDisplayPresenter::observe(const AppSnapshot& snapshot) {
+    const WaterState state = snapshot.localMode == LocalUiMode::Calibration ? WaterState::Idle : snapshot.water.state;
+    const bool newRun = state == WaterState::Running &&
+                        lastWaterState_ != WaterState::Running && lastWaterState_ != WaterState::Paused;
+    if (newRun) {
         resetTrends();
-        return;
+    } else if (state == WaterState::Running && snapshot.sensors.sampleSequence != observedSequence_) {
+        appendTrend(snapshot.water.elapsedSec, snapshot.sensors);
     }
-    auto appendTrend = [nowMs](std::uint16_t* values,
-                               std::uint8_t& count,
-                               std::uint32_t& lastSampleMs,
-                               std::uint16_t value) {
-        if (count > 0 && !elapsedAtLeast(nowMs, lastSampleMs, 1000UL)) {
-            return;
-        }
-        if (count == kColorDisplayTrendSamples) {
-            for (std::uint8_t i = 1; i < kColorDisplayTrendSamples; ++i) {
-                values[i - 1] = values[i];
+    lastWaterState_ = state;
+    observedSequence_ = snapshot.sensors.sampleSequence;
+}
+
+void ColorDisplayPresenter::mergeTrendBuckets() {
+    for (std::size_t read = 0, write = 0; read < bucketCount_; read += 2U, ++write) {
+        Bucket merged = buckets_[read];
+        if (read + 1U < bucketCount_) {
+            const Bucket& next = buckets_[read + 1U];
+            merged.gaps |= next.gaps;
+            for (std::size_t i = 0; i < kColorDisplaySensorCount; ++i) {
+                merged.values[i].include(next.values[i]);
             }
-            count = kColorDisplayTrendSamples - 1;
         }
-        values[count++] = value;
-        lastSampleMs = nowMs;
+        buckets_[write] = merged;
+    }
+    bucketCount_ = (bucketCount_ + 1U) / 2U;
+    secondsPerBucket_ *= 2U;
+}
+
+void ColorDisplayPresenter::appendTrend(std::uint32_t elapsedSec, const WaterSensorSnapshot& sensors) {
+    while (elapsedSec / secondsPerBucket_ >= kTrendBuckets) {
+        mergeTrendBuckets();
+    }
+    const std::size_t index = elapsedSec / secondsPerBucket_;
+    // Unobserved seconds stay empty and force a break when compressed.
+    const bool missingSeconds = (bucketCount_ > 0 && elapsedSec > lastSampleSec_ + 1U) ||
+                                (bucketCount_ == 0 && elapsedSec > 1U);
+    constexpr std::uint8_t kBothChannels = (1U << kColorDisplaySensorCount) - 1U;
+    while (bucketCount_ <= index) {
+        Bucket& bucket = buckets_[bucketCount_++];
+        bucket = {};
+        if (bucketCount_ - 1U < index) {
+            bucket.gaps = kBothChannels;
+        }
+    }
+    Bucket& bucket = buckets_[index];
+    if (missingSeconds) {
+        bucket.gaps |= kBothChannels;
+    }
+    latest_[0] = sensors.temperatureCentiC;
+    latest_[1] = sensors.tdsPpm;
+    for (std::size_t i = 0; i < kColorDisplaySensorCount; ++i) {
+        if (!latest_[i].valid) {
+            bucket.gaps |= 1U << i;
+            continue;
+        }
+        const auto encoded = encodeTrendValue(latest_[i].value, i == 0);
+        Range point;
+        point.low = point.high = encoded;
+        bucket.values[i].include(point);
+        extrema_[i].include(point);
+    }
+    lastSampleSec_ = elapsedSec;
+}
+
+void ColorDisplayPresenter::renderTrends(ColorDisplayFrame& frame, std::uint32_t elapsedSec) const {
+    formatElapsed(frame.trendTime, sizeof(frame.trendTime), elapsedSec);
+    const std::uint32_t axisEnd = std::max(elapsedSec, std::max(lastSampleSec_, 1U));
+    const auto columnAt = [axisEnd](std::uint32_t sec) {
+        return static_cast<std::uint8_t>(sec * (kColorDisplayTrendColumns - 1U) / axisEnd);
     };
-    if (snapshot.sensors.tdsPpm.valid) {
-        appendTrend(tdsTrend_,
-                    tdsTrendCount_,
-                    lastTdsTrendSampleMs_,
-                    static_cast<std::uint16_t>(snapshot.sensors.tdsPpm.value < 0
-                                                   ? 0
-                                                   : std::min<std::int32_t>(65535, snapshot.sensors.tdsPpm.value)));
+    for (std::size_t channel = 0; channel < kColorDisplaySensorCount; ++channel) {
+        const bool temperature = channel == 0;
+        const auto format = temperature ? formatTemperature : formatTds;
+        ColorDisplaySensor& sensor = addSensor(frame, temperature ? "水温" : "TDS", "", temperature ? "°C" : "ppm");
+        format(sensor.value, sizeof(sensor.value), latest_[channel]);
+        const Range& range = extrema_[channel];
+        const std::int32_t offset = temperature ? 32768 : 0;
+        const std::int32_t scale = temperature ? 10 : 1;
+        SensorValue extreme;
+        extreme.valid = range.valid();
+        extreme.value = (range.low - offset) * scale;
+        format(sensor.low, sizeof(sensor.low), extreme);
+        extreme.value = (range.high - offset) * scale;
+        format(sensor.high, sizeof(sensor.high), extreme);
+        if (!range.valid()) {
+            continue;
+        }
+        // A stable sensor gets a flat line. Small changes use a minimum
+        // vertical scale so quantization noise does not fill the whole chart.
+        const auto span = std::max<int>(range.high - range.low, 10);
+        const auto plotTop = (range.high + range.low + span) / 2;
+        const auto yAt = [plotTop, span](std::int32_t value) {
+            return static_cast<std::uint8_t>(1 + (plotTop - value) * (kColorDisplayTrendHeight - 1) / span);
+        };
+        const std::uint8_t gapMask = 1U << channel;
+        for (std::size_t index = 0; index < bucketCount_; ++index) {
+            const Bucket& bucket = buckets_[index];
+            const auto bucketEnd = static_cast<std::uint32_t>((index + 1U) * secondsPerBucket_ - 1U);
+            auto& column = sensor.columns[columnAt(std::min(bucketEnd, lastSampleSec_))];
+            const Range& values = bucket.values[channel];
+            std::uint8_t top = column.top & ~kColorDisplayTrendGap;
+            const std::uint8_t gap = (bucket.gaps & gapMask) ? kColorDisplayTrendGap : 0U;
+            if (values.valid()) {
+                const std::uint8_t y = yAt(values.high);
+                top = top == kColorDisplayTrendEmpty ? y : std::min(top, y);
+                column.bottom = std::max(column.bottom, yAt(values.low));
+            }
+            column.top = top | gap | (column.top & kColorDisplayTrendGap);
+        }
+        if (latest_[channel].valid) {
+            sensor.latestColumn = columnAt(lastSampleSec_);
+            sensor.latestY = yAt(encodeTrendValue(latest_[channel].value, temperature));
+        }
     }
-    if (snapshot.sensors.temperatureCentiC.valid) {
-        const std::int32_t tempTenths = snapshot.sensors.temperatureCentiC.value >= 0
-                                            ? (snapshot.sensors.temperatureCentiC.value + 5) / 10
-                                            : 0;
-        appendTrend(tempTrend_,
-                    tempTrendCount_,
-                    lastTempTrendSampleMs_,
-                    static_cast<std::uint16_t>(std::min<std::int32_t>(65535, tempTenths)));
+}
+
+void ColorDisplayPresenter::renderWaterPage(ColorDisplayFrame& frame, const AppSnapshot& snapshot) const {
+    const bool result = snapshot.localMode == LocalUiMode::Result;
+    const bool paused = snapshot.water.state == WaterState::Paused;
+    const auto& finished = snapshot.lastDisplayResult;
+    const WaterMode mode = result ? finished.mode : snapshot.water.mode;
+    const bool byVolume = mode == WaterMode::Volume;
+    const auto target = result ? finished.targetValue : snapshot.water.targetValue;
+    const auto volume = result ? finished.volumeMl : snapshot.water.volumeMl;
+    const auto elapsed = result ? finished.durationSec : snapshot.water.elapsedSec;
+    const bool completed = result && finished.result == WaterResult::Completed;
+    const bool abnormal = result && !completed && finished.result != WaterResult::StoppedByUser;
+
+    frame.progressPermille = completed ? 1000U : std::min<std::uint16_t>(
+        990U, progressPermille(byVolume ? volume : elapsed, target));
+    copyText(frame.title, result ? "本次出水" : "已出水");
+    formatLiters(frame.mainValue, sizeof(frame.mainValue), volume);
+    copyText(frame.mainUnit, "L");
+    char goal[12]{};
+    if (byVolume) {
+        formatLiters(goal, sizeof(goal), target);
+        std::snprintf(frame.tag, sizeof(frame.tag), "定量 %s L", goal);
+    } else {
+        formatElapsed(goal, sizeof(goal), target);
+        std::snprintf(frame.tag, sizeof(frame.tag), "定时 %s", goal);
     }
+
+    if (result) {
+        frame.page = completed ? ColorDisplayPage::ResultCompleted : abnormal ? ColorDisplayPage::ResultAlert
+                                                                              : ColorDisplayPage::ResultStopped;
+        copyText(frame.state, abnormal ? alertReason(finished.result) : resultState(finished.result));
+        copyText(frame.status, abnormal ? "阀关" : "用时");
+        formatElapsed(frame.timer, sizeof(frame.timer), elapsed);
+        setHints(frame, "取消 返回");
+    } else if (paused) {
+        frame.page = byVolume ? ColorDisplayPage::PausedVolume : ColorDisplayPage::PausedTime;
+        copyText(frame.state, "已暂停");
+        copyText(frame.status, "阀关");
+        formatElapsed(frame.timer, sizeof(frame.timer), elapsed);
+        setHints(frame, "确认 继续", "取消 停止");
+    } else {
+        frame.page = byVolume ? ColorDisplayPage::RunningVolume : ColorDisplayPage::RunningTime;
+        copyText(frame.state, "出水中");
+        copyText(frame.status, byVolume ? "约剩" : "剩余");
+        if (!byVolume) {
+            formatElapsed(frame.timer, sizeof(frame.timer), target > elapsed ? target - elapsed : 0U);
+        } else if (snapshot.displayFlowMlPerMin > 0) {
+            const auto remainingMl = target > volume ? target - volume : 0U;
+            const auto remainingSec =
+                (static_cast<std::uint64_t>(remainingMl) * 60U + snapshot.displayFlowMlPerMin - 1U) /
+                snapshot.displayFlowMlPerMin;
+            if (elapsed + remainingSec <= snapshot.maxOutTimeSec) {
+                formatElapsed(frame.timer, sizeof(frame.timer), static_cast<std::uint32_t>(remainingSec));
+                formatElapsed(goal, sizeof(goal), static_cast<std::uint32_t>(elapsed + remainingSec));
+                std::snprintf(frame.subtitle, sizeof(frame.subtitle), "总计约 %s", goal);
+            }
+        }
+        if (!frame.timer[0]) {
+            copyText(frame.timer, "--");
+        }
+    }
+    renderTrends(frame, elapsed);
 }
 
 ColorDisplayFrame ColorDisplayPresenter::render(const AppSnapshot& snapshot,
                                                 std::uint32_t nowMs,
-                                                bool networkOnline) {
+                                                bool networkOnline) const {
     ColorDisplayFrame frame{};
     clearFrame(frame);
     frame.page = ColorDisplayPage::StandbyVolume;
     frame.on = true;
-
-    if (snapshot.water.state != WaterState::Running || lastWaterState_ != WaterState::Running) {
-        if (snapshot.water.state != WaterState::Running) {
-            resetTrends();
-        }
-    }
-    lastWaterState_ = snapshot.water.state;
-    sampleTrends(snapshot, nowMs);
 
     if (snapshot.localMode == LocalUiMode::Calibration) {
         frame.page = ColorDisplayPage::CalibrationReady;
@@ -295,8 +434,8 @@ ColorDisplayFrame ColorDisplayPresenter::render(const AppSnapshot& snapshot,
             char flow[12]{};
             formatElapsed(elapsed, sizeof(elapsed), snapshot.water.elapsedSec);
             const std::uint32_t remainingSec =
-                snapshot.calibrationMaxRunSec > snapshot.water.elapsedSec
-                    ? snapshot.calibrationMaxRunSec - snapshot.water.elapsedSec
+                snapshot.maxOutTimeSec > snapshot.water.elapsedSec
+                    ? snapshot.maxOutTimeSec - snapshot.water.elapsedSec
                     : 0;
             formatElapsed(remaining, sizeof(remaining), remainingSec);
             formatFlowLpm(flow, sizeof(flow), snapshot.displayFlowMlPerMin);
@@ -336,49 +475,9 @@ ColorDisplayFrame ColorDisplayPresenter::render(const AppSnapshot& snapshot,
         return frame;
     }
 
-    if (snapshot.localMode == LocalUiMode::Result) {
-        frame.page = snapshot.water.lastResult == WaterResult::Completed ? ColorDisplayPage::ResultCompleted
-                                                                         : ColorDisplayPage::ResultStopped;
-        copyText(frame.state, resultState(snapshot.water.lastResult));
-        copyText(frame.tag, "结果");
-        copyText(frame.title, "本次出水");
-        formatLiters(frame.mainValue, sizeof(frame.mainValue), snapshot.water.volumeMl);
-        copyText(frame.mainUnit, "L");
-        char value[16]{};
-        if (snapshot.water.lastResult == WaterResult::Completed) {
-            char elapsed[12]{};
-            char flow[12]{};
-            formatElapsed(elapsed, sizeof(elapsed), snapshot.water.elapsedSec);
-            formatFlowLpm(flow, sizeof(flow), snapshot.runAverageFlowMlPerMin);
-            addMetric(frame, "用时", elapsed);
-            addMetric(frame, "均流速", flow, "L/min");
-        } else {
-            formatLitersWithUnit(value, sizeof(value), snapshot.water.targetValue);
-            addMetric(frame, "目标", value);
-            char elapsed[12]{};
-            formatElapsed(elapsed, sizeof(elapsed), snapshot.water.elapsedSec);
-            addMetric(frame, "用时", elapsed);
-        }
-        char tds[12]{};
-        char temp[12]{};
-        const bool hasRecordSensors = snapshot.lastResultRecordAvailable && snapshot.lastResultRecord.sensorSampleCount > 0;
-        SensorValue resultTds{};
-        resultTds.valid = hasRecordSensors &&
-                          (snapshot.lastResultRecord.sensorFlags &
-                           (kWaterSensorFlagAdcOffline | kWaterSensorFlagTdsAdcOverflow |
-                            kWaterSensorFlagTdsInvalid | kWaterSensorFlagTdsUnavailable)) == 0;
-        resultTds.value = static_cast<std::int32_t>(snapshot.lastResultRecord.tdsPpm);
-        SensorValue resultTemp{};
-        resultTemp.valid = hasRecordSensors &&
-                           (snapshot.lastResultRecord.sensorFlags &
-                            (kWaterSensorFlagAdcOffline | kWaterSensorFlagTempInvalid |
-                             kWaterSensorFlagTempUnavailable)) == 0;
-        resultTemp.value = static_cast<std::int32_t>(snapshot.lastResultRecord.temperatureCentiC);
-        formatTds(tds, sizeof(tds), hasRecordSensors ? resultTds : snapshot.sensors.tdsPpm);
-        formatTemperature(temp, sizeof(temp), hasRecordSensors ? resultTemp : snapshot.sensors.temperatureCentiC);
-        addMetric(frame, "TDS", tds);
-        addMetric(frame, "水温", temp, "°C");
-        setHints(frame, "取消 返回");
+    if (snapshot.localMode == LocalUiMode::Result ||
+        snapshot.water.state == WaterState::Running || snapshot.water.state == WaterState::Paused) {
+        renderWaterPage(frame, snapshot);
         return frame;
     }
 
@@ -461,125 +560,6 @@ ColorDisplayFrame ColorDisplayPresenter::render(const AppSnapshot& snapshot,
                 setHints(frame, "确认", "加减", "取消");
             }
             return frame;
-
-        case WaterState::Running: {
-            frame.page = snapshot.water.mode == WaterMode::Volume ? ColorDisplayPage::RunningVolume
-                                                                  : ColorDisplayPage::RunningTime;
-            copyText(frame.state, snapshot.water.mode == WaterMode::Volume ? "出水中" : "定时出水");
-            char tag[16]{};
-            char elapsed[12]{};
-            formatElapsed(elapsed, sizeof(elapsed), snapshot.water.elapsedSec);
-            std::snprintf(tag,
-                          sizeof(tag),
-                          "P%u · %s",
-                          static_cast<unsigned>(snapshot.water.activePreset + 1),
-                          elapsed);
-            copyText(frame.tag, tag);
-            const std::uint32_t remainVolume =
-                snapshot.water.targetValue > snapshot.water.volumeMl ? snapshot.water.targetValue - snapshot.water.volumeMl : 0;
-            const std::uint32_t remainSec =
-                snapshot.water.targetValue > snapshot.water.elapsedSec ? snapshot.water.targetValue - snapshot.water.elapsedSec : 0;
-            if (snapshot.water.mode == WaterMode::Volume) {
-                copyText(frame.title, "已出水");
-                formatLiters(frame.mainValue, sizeof(frame.mainValue), snapshot.water.volumeMl);
-                copyText(frame.mainUnit, "L");
-                frame.progressPermille = progressPermille(snapshot.water.volumeMl, snapshot.water.targetValue);
-                char remain[12]{};
-                formatLiters(remain, sizeof(remain), remainVolume);
-                addMetric(frame, "剩余水量", remain, "L");
-            } else {
-                copyText(frame.title, "剩余时间");
-                formatElapsed(frame.mainValue, sizeof(frame.mainValue), remainSec);
-                frame.progressPermille = progressPermille(snapshot.water.elapsedSec, snapshot.water.targetValue);
-                char out[12]{};
-                formatLiters(out, sizeof(out), snapshot.water.volumeMl);
-                addMetric(frame, "已出水", out, "L");
-            }
-            char flow[12]{};
-            formatFlowLpm(flow, sizeof(flow), snapshot.displayFlowMlPerMin);
-            addMetric(frame, "实时流速", flow, "L/min");
-            if (snapshot.water.mode == WaterMode::Volume) {
-                char eta[12]{};
-                const std::uint32_t etaSec =
-                    snapshot.displayFlowMlPerMin == 0
-                        ? 0
-                        : static_cast<std::uint32_t>(
-                              (static_cast<std::uint64_t>(remainVolume) * 60ULL + snapshot.displayFlowMlPerMin / 2ULL) /
-                              snapshot.displayFlowMlPerMin);
-                formatElapsed(eta, sizeof(eta), etaSec);
-                addMetric(frame, "预计完成", eta);
-            } else {
-                char total[12]{};
-                const std::uint32_t estimatedTotal =
-                    snapshot.targetEstimatedVolumeMl > 0 ? snapshot.targetEstimatedVolumeMl : snapshot.water.volumeMl;
-                formatLiters(total, sizeof(total), estimatedTotal);
-                addMetric(frame, "预计总量", total, "L");
-            }
-            char tds[12]{};
-            char temp[12]{};
-            formatTds(tds, sizeof(tds), snapshot.sensors.tdsPpm);
-            formatTemperature(temp, sizeof(temp), snapshot.sensors.temperatureCentiC);
-            ColorDisplaySensor& tdsSensor = addSensor(frame, "TDS", tds, "ppm");
-            ColorDisplaySensor& tempSensor = addSensor(frame, "水温", temp, "°C");
-            tdsSensor.sampleCount = tdsTrendCount_;
-            tempSensor.sampleCount = tempTrendCount_;
-            for (std::uint8_t i = 0; i < tdsTrendCount_; ++i) {
-                tdsSensor.samples[i] = tdsTrend_[i];
-            }
-            for (std::uint8_t i = 0; i < tempTrendCount_; ++i) {
-                tempSensor.samples[i] = tempTrend_[i];
-            }
-            return frame;
-        }
-
-        case WaterState::Paused: {
-            frame.page = snapshot.water.mode == WaterMode::Volume ? ColorDisplayPage::PausedVolume
-                                                                  : ColorDisplayPage::PausedTime;
-            copyText(frame.state, "暂停");
-            copyText(frame.tag, "阀关");
-            copyText(frame.title, "已暂停");
-            copyText(frame.status, "阀门已关闭");
-            char tds[12]{};
-            char temp[12]{};
-            formatTds(tds, sizeof(tds), snapshot.sensors.tdsPpm);
-            formatTemperature(temp, sizeof(temp), snapshot.sensors.temperatureCentiC);
-            std::snprintf(frame.subtitle, sizeof(frame.subtitle), "TDS %s · %s°C", tds, temp);
-            char out[12]{};
-            char remain[12]{};
-            char elapsed[12]{};
-            formatLitersWithUnit(out, sizeof(out), snapshot.water.volumeMl);
-            formatElapsed(elapsed, sizeof(elapsed), snapshot.water.elapsedSec);
-            if (snapshot.water.mode == WaterMode::Volume) {
-                const std::uint32_t remainVolume =
-                    snapshot.water.targetValue > snapshot.water.volumeMl ? snapshot.water.targetValue - snapshot.water.volumeMl : 0;
-                formatLitersWithUnit(remain, sizeof(remain), remainVolume);
-                addMetric(frame, "已出水", out);
-                addMetric(frame, "剩余", remain);
-                addMetric(frame, "已用", elapsed);
-                char eta[12]{};
-                const std::uint32_t etaFlow =
-                    snapshot.displayFlowMlPerMin > 0 ? snapshot.displayFlowMlPerMin : snapshot.meteringParams.stableFlowMlPerMin;
-                const std::uint32_t etaSec =
-                    etaFlow == 0
-                        ? 0
-                        : static_cast<std::uint32_t>((static_cast<std::uint64_t>(remainVolume) * 60ULL + etaFlow / 2ULL) /
-                                                     etaFlow);
-                formatElapsed(eta, sizeof(eta), etaSec);
-                addMetric(frame, "还需约", eta);
-            } else {
-                const std::uint32_t remainSec =
-                    snapshot.water.targetValue > snapshot.water.elapsedSec ? snapshot.water.targetValue - snapshot.water.elapsedSec : 0;
-                formatElapsed(remain, sizeof(remain), remainSec);
-                addMetric(frame, "剩余时间", remain);
-                addMetric(frame, "已出水", out);
-                addMetric(frame, "已用", elapsed);
-                char total[12]{};
-                formatLitersWithUnit(total, sizeof(total), snapshot.targetEstimatedVolumeMl);
-                addMetric(frame, "预计总量", total);
-            }
-            setHints(frame, "确认 继续", "取消 结束");
-            return frame;
-        }
 
         case WaterState::Error:
         default:

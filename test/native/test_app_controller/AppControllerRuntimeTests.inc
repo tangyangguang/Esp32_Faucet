@@ -494,10 +494,20 @@ void test_app_controller_result_display_exits_after_configured_timeout() {
     app.tick(input({false, false, false, false}, 5000, 5000000, 1714502400));
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(LocalUiMode::Result),
                             static_cast<std::uint8_t>(app.snapshot().localMode));
+    const auto finished = app.snapshot().lastDisplayResult;
+    TEST_ASSERT_TRUE(finished.valid);
+    TEST_ASSERT_EQUAL_UINT32(config.presets[0].value, finished.targetValue);
 
     app.tick(input({false, false, false, false}, 7000, 7000000, 1714502402));
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(LocalUiMode::Normal),
                             static_cast<std::uint8_t>(app.snapshot().localMode));
+    pressAndReleaseOk(app, 8000);
+    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(WaterState::Confirm),
+                            static_cast<std::uint8_t>(app.snapshot().water.state));
+    TEST_ASSERT_FALSE(app.snapshot().water.valveOpen);
+    pressAndReleaseOk(app, 8200);
+    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(WaterState::Running),
+                            static_cast<std::uint8_t>(app.snapshot().water.state));
 }
 
 void test_app_controller_result_ok_hold_stays_on_result() {

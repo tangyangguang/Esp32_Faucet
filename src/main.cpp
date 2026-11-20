@@ -564,6 +564,9 @@ void runApplicationTick() {
     }
 
     const faucet::AppSnapshot snapshot = g_app->snapshot();
+    if (g_colorDisplay) {
+        g_colorDisplay->observe(snapshot);
+    }
 
     const bool userActivity =
         levels.cancelPressed || levels.okPressed || levels.plusPressed || levels.minusPressed;

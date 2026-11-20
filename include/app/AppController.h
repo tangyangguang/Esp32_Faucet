@@ -49,12 +49,13 @@ struct AppSnapshot {
     std::uint32_t timeAdjustmentStepSec = kDefaultTimeAdjustStepSec;
     bool lastResultRecordAvailable = false;
     WaterRecord lastResultRecord{};
+    WaterTaskResult lastDisplayResult{};
     CalibrationSessionStatus calibrationStatus = CalibrationSessionStatus::Idle;
     std::uint8_t calibrationAttemptCount = 0;
     std::uint8_t calibrationValidSampleCount = 0;
     std::uint32_t calibrationMinActualMl = 0;
     std::uint32_t calibrationMaxActualMl = 0;
-    std::uint32_t calibrationMaxRunSec = 0;
+    std::uint32_t maxOutTimeSec = kDefaultMaxOutTimeSec;
     bool calibrationCanQuickGenerate = false;
     bool calibrationRecommended = false;
     MeteringSchemeCandidate calibrationCandidate{};
@@ -256,6 +257,7 @@ private:
     std::uint32_t timeAdjustmentStepSec_;
     bool lastResultRecordValid_;
     WaterRecord lastResultRecord_;
+    WaterTaskResult lastDisplayResult_{};
 };
 
 }  // namespace faucet

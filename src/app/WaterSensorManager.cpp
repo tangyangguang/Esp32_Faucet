@@ -69,7 +69,6 @@ WaterSensorManager::WaterSensorManager(AdcReader& adc, bool sampleInputVoltage)
       tdsLowRangeWindows_(0),
       discardNextTdsSample_(false),
       run_{},
-      sampleSequence_(0),
       lastRunSampleSequence_(0),
       calibrationKind_(CalibrationKind::None),
       calibrationReferencePpm_(0),
@@ -134,15 +133,15 @@ WaterSensorSnapshot WaterSensorManager::snapshot() const {
 
 void WaterSensorManager::beginRun() {
     run_ = {};
-    lastRunSampleSequence_ = sampleSequence_;
+    lastRunSampleSequence_ = snapshot_.sampleSequence;
 }
 
 void WaterSensorManager::sampleRun() {
-    if (lastRunSampleSequence_ == sampleSequence_) {
+    if (lastRunSampleSequence_ == snapshot_.sampleSequence) {
         return;
     }
     accumulateRunSample(snapshot_);
-    lastRunSampleSequence_ = sampleSequence_;
+    lastRunSampleSequence_ = snapshot_.sampleSequence;
 }
 
 WaterSensorRunSummary WaterSensorManager::finishRun() const {
@@ -692,8 +691,8 @@ void WaterSensorManager::sampleOnce() {
 
     updateOfflineState(failures);
     next.flags |= (snapshot_.flags & kWaterSensorFlagAdcOffline);
+    next.sampleSequence = snapshot_.sampleSequence + 1U;
     snapshot_ = next;
-    ++sampleSequence_;
 }
 
 void WaterSensorManager::updateOfflineState(std::uint8_t failureCount) {

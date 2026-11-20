@@ -38,6 +38,7 @@ struct WaterSensorSnapshot {
     bool tdsTemperatureCompensated = false;
     bool tdsTempFallback25C = false;
     bool inputVoltageCalibrated = false;
+    std::uint32_t sampleSequence = 0;
 };
 
 struct TdsComputationInput {

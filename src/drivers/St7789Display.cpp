@@ -35,6 +35,12 @@ constexpr std::uint16_t kAmber = rgb565(0xFF, 0xD1, 0x5A);
 constexpr std::uint16_t kRed = rgb565(0xFF, 0x5F, 0x7A);
 constexpr std::int16_t kTextLineHeight = 16;
 constexpr std::int16_t kTagHeight = 22;
+constexpr std::int16_t kWaterTimingX = 127;
+constexpr std::int16_t kWaterRight = 227;
+constexpr std::int16_t kTrendX[] = {12, 123};
+constexpr std::int16_t kTrendY = 123;
+constexpr std::int16_t kTrendWidth = 105;
+constexpr std::int16_t kTrendCardHeight = 98;
 
 TFT_eSPI g_tft;
 TFT_eSprite g_frameSprite(&g_tft);
@@ -74,11 +80,11 @@ std::uint16_t accentForPage(ColorDisplayPage page) {
         case ColorDisplayPage::StandbyTime:
         case ColorDisplayPage::ConfirmVolume:
         case ColorDisplayPage::ConfirmTime:
-        case ColorDisplayPage::RunningTime:
         case ColorDisplayPage::PausedVolume:
         case ColorDisplayPage::PausedTime:
             return kAmber;
         case ColorDisplayPage::Alert:
+        case ColorDisplayPage::ResultAlert:
             return kRed;
         case ColorDisplayPage::CalibrationReady:
             return kCyan;
@@ -88,6 +94,7 @@ std::uint16_t accentForPage(ColorDisplayPage page) {
             return kAmber;
         case ColorDisplayPage::StandbyVolume:
         case ColorDisplayPage::RunningVolume:
+        case ColorDisplayPage::RunningTime:
         default:
             return kCyan;
     }
@@ -447,41 +454,15 @@ void St7789Display::drawRoundRect(std::int16_t x,
     }
 }
 
-void St7789Display::drawPixel(std::int16_t x, std::int16_t y, std::uint16_t color) {
-    if (x < 0 || y < 0 || x >= static_cast<std::int16_t>(kWidth) || y >= static_cast<std::int16_t>(kHeight)) {
-        return;
-    }
-    if (g_drawToSprite) {
-        g_frameSprite.drawPixel(x, y, color);
-    } else {
-        g_tft.drawPixel(x, y, color);
-    }
-}
-
 void St7789Display::drawLine(std::int16_t x0,
                              std::int16_t y0,
                              std::int16_t x1,
                              std::int16_t y1,
                              std::uint16_t color) {
-    const std::int16_t dx = std::abs(x1 - x0);
-    const std::int16_t sx = x0 < x1 ? 1 : -1;
-    const std::int16_t dy = -std::abs(y1 - y0);
-    const std::int16_t sy = y0 < y1 ? 1 : -1;
-    std::int16_t error = dx + dy;
-    while (true) {
-        drawPixel(x0, y0, color);
-        if (x0 == x1 && y0 == y1) {
-            break;
-        }
-        const std::int16_t e2 = static_cast<std::int16_t>(2 * error);
-        if (e2 >= dy) {
-            error = static_cast<std::int16_t>(error + dy);
-            x0 = static_cast<std::int16_t>(x0 + sx);
-        }
-        if (e2 <= dx) {
-            error = static_cast<std::int16_t>(error + dx);
-            y0 = static_cast<std::int16_t>(y0 + sy);
-        }
+    if (g_drawToSprite) {
+        g_frameSprite.drawLine(x0, y0, x1, y1, color);
+    } else {
+        g_tft.drawLine(x0, y0, x1, y1, color);
     }
 }
 
@@ -884,48 +865,105 @@ void St7789Display::drawMetricCard(std::int16_t x,
                 1);
 }
 
-void St7789Display::drawSensorCard(std::int16_t x, std::int16_t y, std::int16_t w, const ColorDisplaySensor& sensor) {
-    const std::int16_t contentW = static_cast<std::int16_t>(w - 12);
-    fillRoundRect(x, y, w, 54, 6, kPanel, kBg);
-    drawRoundRect(x, y, w, 54, 6, kLine, kBg);
-    drawTextFit(static_cast<std::int16_t>(x + 6),
-                static_cast<std::int16_t>(y + 4),
-                contentW,
-                sensor.label,
-                kMuted,
-                kPanel,
-                1);
-    char value[40]{};
-    std::snprintf(value, sizeof(value), "%s%s", sensor.value, sensor.unit);
-    drawTextFit(static_cast<std::int16_t>(x + 6),
-                static_cast<std::int16_t>(y + 20),
-                contentW,
-                value,
-                sensor.unit[0] == 'p' ? kCyan : kGreen,
-                kPanel,
-                1);
-    if (sensor.sampleCount < 2) {
+void St7789Display::drawWaterProgress(const ColorDisplayFrame& frame, std::uint16_t accent) {
+    constexpr std::int16_t kCenterX = 64;
+    drawRing(kCenterX, 62, 52, frame.progressPermille, accent);
+    drawBoxCenteredText(20, 32, 88, frame.title, kMuted, kBg, 1);
+    const std::uint8_t font = asciiTextWidth(frame.mainValue, 4) + 4 + asciiTextWidth(frame.mainUnit, 2) <= 90
+                                 ? 4 : 2;
+    drawMainValue(kCenterX, 49, frame.mainValue, frame.mainUnit, font, 2, kInk, kMuted, kBg);
+    char percent[8]{};
+    std::snprintf(percent, sizeof(percent), "%u%%", (frame.progressPermille + 5U) / 10U);
+    drawBoxCenteredText(28, 77, 72, percent, accent, kBg, 1);
+}
+
+void St7789Display::drawWaterTiming(const ColorDisplayFrame& frame, std::uint16_t accent) {
+    constexpr std::int16_t kTimingWidth = kWaterRight - kWaterTimingX;
+    drawText(kWaterRight - textWidth(frame.tag, 1), 13, frame.tag, kInk, kBg, 1);
+    fillRect(kWaterTimingX, 36, kTimingWidth, 1, kLine);
+    drawText(kWaterTimingX, 43, frame.state, accent, kBg, 1);
+    drawText(kWaterRight - textWidth(frame.status, 1), 43, frame.status, kMuted, kBg, 1);
+    if (frame.hintCount == 2) {
+        drawText(kWaterTimingX, 66, frame.hints[0], kInk, kBg, 1);
+        drawText(kWaterTimingX, 87, frame.hints[1], kMuted, kBg, 1);
         return;
     }
-    std::uint16_t minValue = sensor.samples[0];
-    std::uint16_t maxValue = sensor.samples[0];
-    for (std::uint8_t i = 1; i < sensor.sampleCount; ++i) {
-        minValue = std::min(minValue, sensor.samples[i]);
-        maxValue = std::max(maxValue, sensor.samples[i]);
+    const std::uint8_t font = asciiTextWidth(frame.timer, 4) <= kTimingWidth ? 4 : 2;
+    drawAsciiText(kWaterTimingX, 62, frame.timer, kInk, kBg, font);
+    drawTextFit(kWaterTimingX, 94, kTimingWidth, frame.hintCount == 1 ? frame.hints[0] : frame.subtitle,
+                kMuted, kBg, 1);
+}
+
+void St7789Display::drawTrendSensor(std::uint8_t index, const ColorDisplaySensor& sensor) {
+    const auto x = kTrendX[index];
+    const std::int16_t right = x + kTrendWidth - 3;
+    const std::int16_t contentLeft = x + 3;
+    const std::int16_t plotLeft = x + 4;
+    constexpr std::int16_t kPlotY = 151;
+    const std::uint16_t ink = index == 0 ? kGreen : kCyan;
+    const std::uint16_t envelope = index == 0 ? rgb565(0x2E, 0xA8, 0x6D) : rgb565(0x27, 0xA7, 0xBB);
+    fillRoundRect(x, kTrendY, kTrendWidth, kTrendCardHeight, 5, kPanel, kBg);
+
+    // Font 2 uses the backtick slot for the degree symbol.
+    const char* unit = index == 0 ? "`C" : sensor.unit;
+    const std::int16_t unitWidth = asciiTextWidth(unit, 2);
+    const std::int16_t valueRight = right - unitWidth - 2;
+    const std::int16_t valueSpace = valueRight - (contentLeft + textWidth(sensor.label, 1) + 2);
+    const std::uint8_t numberFont = asciiTextWidth(sensor.value, 4) <= valueSpace ? 4 : 2;
+    drawText(contentLeft, 132, sensor.label, kMuted, kPanel, 1);
+    drawAsciiText(valueRight - asciiTextWidth(sensor.value, numberFont), numberFont == 4 ? 123 : 132,
+                  sensor.value, ink, kPanel, numberFont);
+    drawAsciiText(right - unitWidth, 132, unit, kMuted, kPanel, 2);
+
+    for (std::int16_t step = 0; step < 3; ++step) {
+        fillRect(plotLeft, kPlotY + step * (kColorDisplayTrendHeight - 1) / 2,
+                 kColorDisplayTrendColumns, 1, kLine);
     }
-    if (minValue == maxValue) {
-        maxValue = static_cast<std::uint16_t>(minValue + 1);
+    std::int16_t previousX = -1;
+    std::int16_t previousY = 0;
+    for (std::size_t column = 0; column < kColorDisplayTrendColumns; ++column) {
+        const auto& point = sensor.columns[column];
+        const bool gap = (point.top & kColorDisplayTrendGap) != 0;
+        const std::uint8_t top = point.top & ~kColorDisplayTrendGap;
+        if (gap) {
+            previousX = -1;
+        }
+        if (top == kColorDisplayTrendEmpty) {
+            continue;
+        }
+        const std::int16_t xx = plotLeft + column;
+        const std::int16_t yy = kPlotY + (top + point.bottom) / 2 - 1;
+        fillRect(xx, kPlotY + top - 1, 1, point.bottom - top + 1, envelope);
+        if (previousX >= 0) {
+            drawLine(previousX, previousY, xx, yy, ink);
+        }
+        if (!gap) {
+            previousX = xx;
+            previousY = yy;
+        }
     }
-    std::int16_t lastX = x + 5;
-    std::int16_t lastY = static_cast<std::int16_t>(y + 46 - (sensor.samples[0] - minValue) * 12 / (maxValue - minValue));
-    for (std::uint8_t i = 1; i < sensor.sampleCount; ++i) {
-        const std::int16_t px = static_cast<std::int16_t>(x + 5 + i * (w - 10) / (sensor.sampleCount - 1));
-        const std::int16_t py =
-            static_cast<std::int16_t>(y + 46 - (sensor.samples[i] - minValue) * 12 / (maxValue - minValue));
-        drawLine(lastX, lastY, px, py, sensor.unit[0] == 'p' ? kCyan : kGreen);
-        lastX = px;
-        lastY = py;
+    if (sensor.latestY != kColorDisplayTrendEmpty) {
+        fillCircle(plotLeft + sensor.latestColumn, kPlotY + sensor.latestY - 1, 2, ink);
     }
+
+    const auto drawExtreme = [&](std::int16_t left, const char* label, const char* value) {
+        drawText(left, 202, label, kMuted, kPanel, 1);
+        constexpr std::int16_t kDigitsWidth = 31;
+        if (asciiTextWidth(value, 2) <= kDigitsWidth) {
+            drawAsciiText(left + 17, 202, value, kInk, kPanel, 2);
+        } else {
+            const std::int16_t tracking = asciiTextWidth(value, 1) <= kDigitsWidth ? 0 : -1;
+            drawAsciiTrackedText(left + 17, 206, value, kInk, kPanel, 1, tracking);
+        }
+    };
+    drawExtreme(contentLeft, "低", sensor.low);
+    drawExtreme(contentLeft + 50, "高", sensor.high);
+}
+
+void St7789Display::drawTrendTime(const ColorDisplayFrame& frame) {
+    drawText(14, 222, "00:00", kMuted, kBg, 1);
+    drawCenteredText(222, "出水用时", kMuted, kBg, 1);
+    drawText(226 - textWidth(frame.trendTime, 1), 222, frame.trendTime, kMuted, kBg, 1);
 }
 
 void St7789Display::drawTopBar(const ColorDisplayFrame& frame, std::uint16_t accent) {
@@ -985,7 +1023,9 @@ bool St7789Display::renderPartialFrame(const ColorDisplayFrame& frame, const Col
         }
     };
 
-    redrawTop();
+    if (!frame.trendTime[0]) {
+        redrawTop();
+    }
     switch (frame.page) {
         case ColorDisplayPage::StandbyVolume:
         case ColorDisplayPage::StandbyTime: {
@@ -1046,74 +1086,31 @@ bool St7789Display::renderPartialFrame(const ColorDisplayFrame& frame, const Col
             return true;
 
         case ColorDisplayPage::RunningVolume:
-        case ColorDisplayPage::RunningTime: {
-            if (textChanged(frame.title, previous.title) || textChanged(frame.mainValue, previous.mainValue) ||
-                textChanged(frame.mainUnit, previous.mainUnit) || frame.progressPermille != previous.progressPermille) {
-                REDRAW_REGION(10, 42, 118, 120, {
-                    drawRing(69, 92, 50, frame.progressPermille, accent);
-                    drawBoxCenteredText(18, 62, 102, frame.title, kMuted, kBg, 1);
-                    drawMainValue(69, 82, frame.mainValue, frame.mainUnit, 4, 2, kInk, accent, kBg);
-                });
-            }
-            bool metricsChanged = frame.metricCount != previous.metricCount;
-            for (std::uint8_t i = 0; !metricsChanged && i < frame.metricCount && i < 3; ++i) {
-                metricsChanged = metricChanged(frame.metrics[i], previous.metrics[i]);
-            }
-            if (metricsChanged) {
-                REDRAW_REGION(128, 44, 102, 120, {
-                    for (std::uint8_t i = 0; i < frame.metricCount && i < 3; ++i) {
-                        drawMetricCard(132, static_cast<std::int16_t>(48 + i * 38), 94, frame.metrics[i], 36);
-                    }
-                });
-            }
-            bool sensorsChanged = frame.sensorCount != previous.sensorCount;
-            for (std::uint8_t i = 0; !sensorsChanged && i < frame.sensorCount && i < 2; ++i) {
-                sensorsChanged = sensorChanged(frame.sensors[i], previous.sensors[i]);
-            }
-            if (sensorsChanged) {
-                REDRAW_REGION(10, 166, 220, 62, {
-                    if (frame.sensorCount > 0) {
-                        drawSensorCard(14, 170, 102, frame.sensors[0]);
-                    }
-                    if (frame.sensorCount > 1) {
-                        drawSensorCard(124, 170, 102, frame.sensors[1]);
-                    }
-                });
-            }
-            return true;
-        }
-
+        case ColorDisplayPage::RunningTime:
         case ColorDisplayPage::PausedVolume:
-        case ColorDisplayPage::PausedTime: {
-            if (textChanged(frame.title, previous.title) || textChanged(frame.status, previous.status)) {
-                REDRAW_REGION(0, 45, kWidth, 77, {
-                    drawCenteredText(49, frame.title, kInk, kBg, 2);
-                    drawStatusPill(48, 90, 144, 30, frame.status, kAmber, kPanel2, kLine, kBg);
-                });
-            }
-            if (textChanged(frame.subtitle, previous.subtitle)) {
-                REDRAW_REGION(0, 122, kWidth, 20, drawCenteredText(124, frame.subtitle, kMuted, kBg, 1));
-            }
-            for (std::uint8_t i = 0; i < 4; ++i) {
-                const bool hasCurrent = i < frame.metricCount;
-                const bool hadPrevious = i < previous.metricCount;
-                if (hasCurrent != hadPrevious ||
-                    (hasCurrent && hadPrevious && metricChanged(frame.metrics[i], previous.metrics[i]))) {
-                    const std::int16_t x = static_cast<std::int16_t>(16 + (i % 2) * 106);
-                    const std::int16_t y = static_cast<std::int16_t>(142 + (i / 2) * 39);
-                    REDRAW_REGION(x, y, 98, 36, {
-                        if (hasCurrent) {
-                            drawMetricCard(x, y, 98, frame.metrics[i], 36);
-                        }
-                    });
-                }
-            }
-            redrawHints();
-            return true;
-        }
-
+        case ColorDisplayPage::PausedTime:
         case ColorDisplayPage::ResultCompleted:
         case ColorDisplayPage::ResultStopped:
+        case ColorDisplayPage::ResultAlert:
+            if (textChanged(frame.title, previous.title) || textChanged(frame.mainValue, previous.mainValue) ||
+                textChanged(frame.mainUnit, previous.mainUnit) || frame.progressPermille != previous.progressPermille) {
+                REDRAW_REGION(10, 9, 110, 108, drawWaterProgress(frame, accent));
+            }
+            if (textChanged(frame.state, previous.state) || textChanged(frame.tag, previous.tag) ||
+                textChanged(frame.status, previous.status) || textChanged(frame.timer, previous.timer) ||
+                textChanged(frame.subtitle, previous.subtitle) || hintsChanged(frame, previous)) {
+                REDRAW_REGION(kWaterTimingX, 12, kWaterRight - kWaterTimingX, 99, drawWaterTiming(frame, accent));
+            }
+            for (std::uint8_t i = 0; i < frame.sensorCount; ++i) {
+                if (sensorChanged(frame.sensors[i], previous.sensors[i])) {
+                    REDRAW_REGION(kTrendX[i], kTrendY, kTrendWidth, kTrendCardHeight, drawTrendSensor(i, frame.sensors[i]));
+                }
+            }
+            if (textChanged(frame.trendTime, previous.trendTime)) {
+                REDRAW_REGION(12, 222, 216, 16, drawTrendTime(frame));
+            }
+            return true;
+
         case ColorDisplayPage::CalibrationReady: {
             if (textChanged(frame.title, previous.title) || textChanged(frame.mainValue, previous.mainValue) ||
                 textChanged(frame.mainUnit, previous.mainUnit)) {
@@ -1179,7 +1176,9 @@ void St7789Display::renderFrame(const ColorDisplayFrame& frame, bool fullRedraw)
     if (fullRedraw) {
         fillRect(0, 0, kWidth, 40, kBg);
     }
-    drawTopBar(frame, accent);
+    if (!frame.trendTime[0]) {
+        drawTopBar(frame, accent);
+    }
 
     switch (frame.page) {
         case ColorDisplayPage::StandbyVolume:
@@ -1219,37 +1218,19 @@ void St7789Display::renderFrame(const ColorDisplayFrame& frame, bool fullRedraw)
 
         case ColorDisplayPage::RunningVolume:
         case ColorDisplayPage::RunningTime:
-            drawRing(69, 92, 50, frame.progressPermille, accent);
-            drawBoxCenteredText(18, 62, 102, frame.title, kMuted, kBg, 1);
-            drawMainValue(69, 82, frame.mainValue, frame.mainUnit, 4, 2, kInk, accent, kBg);
-            for (std::uint8_t i = 0; i < frame.metricCount && i < 3; ++i) {
-                drawMetricCard(132, static_cast<std::int16_t>(48 + i * 38), 94, frame.metrics[i], 36);
-            }
-            if (frame.sensorCount > 0) {
-                drawSensorCard(14, 170, 102, frame.sensors[0]);
-            }
-            if (frame.sensorCount > 1) {
-                drawSensorCard(124, 170, 102, frame.sensors[1]);
-            }
-            break;
-
         case ColorDisplayPage::PausedVolume:
         case ColorDisplayPage::PausedTime:
-            drawCenteredText(49, frame.title, kInk, kBg, 2);
-            drawStatusPill(48, 90, 144, 30, frame.status, kAmber, kPanel2, kLine, kBg);
-            drawCenteredText(124, frame.subtitle, kMuted, kBg, 1);
-            for (std::uint8_t i = 0; i < frame.metricCount && i < 4; ++i) {
-                drawMetricCard(static_cast<std::int16_t>(16 + (i % 2) * 106),
-                               static_cast<std::int16_t>(142 + (i / 2) * 39),
-                               98,
-                               frame.metrics[i],
-                               36);
-            }
-            drawHints(frame);
-            break;
-
         case ColorDisplayPage::ResultCompleted:
         case ColorDisplayPage::ResultStopped:
+        case ColorDisplayPage::ResultAlert:
+            drawWaterProgress(frame, accent);
+            drawWaterTiming(frame, accent);
+            for (std::uint8_t i = 0; i < frame.sensorCount; ++i) {
+                drawTrendSensor(i, frame.sensors[i]);
+            }
+            drawTrendTime(frame);
+            break;
+
         case ColorDisplayPage::CalibrationReady:
             drawCenteredText(52, frame.title, kMuted, kBg, 1);
             drawMainValue(120, 73, frame.mainValue, frame.mainUnit, 7, 4, kInk, accent, kBg);

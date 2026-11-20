@@ -20,14 +20,11 @@ public:
     virtual bool readAt(const char* path, std::size_t offset, std::uint8_t* out, std::size_t len) = 0;
     virtual bool writeAt(const char* path, std::size_t offset, const std::uint8_t* data, std::size_t len) = 0;
     virtual bool removeFile(const char* path) = 0;
-    virtual bool replaceBytes(const char* path, const std::uint8_t* data, std::size_t len) = 0;
-    virtual bool rename(const char* from, const char* to) = 0;
-    virtual bool truncate(const char* path, std::size_t size) = 0;
 };
 
 class WaterRecordFileStore : public WaterRecordReader {
 public:
-    enum class StartupMode { CreateIfMissing, ProbeOnly, MigrateLegacy };
+    enum class StartupMode { CreateIfMissing, ProbeOnly };
 
     WaterRecordFileStore(WaterRecordFileBackend& backend, const char* path, std::size_t capacity);
 
@@ -47,7 +44,6 @@ public:
     WaterRecordFileStatus status() const override;
 
 private:
-    bool migrateLegacyFile(const char* legacyPath, bool alreadyMoved, bool allowMigration);
     bool initializeNewFile(std::size_t existingBytes);
     bool loadHeader();
     bool saveHeader();

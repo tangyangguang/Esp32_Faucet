@@ -4,18 +4,19 @@
 
 ## 当前状态
 
-- 使用同级目录 `../Esp32Base` 作为 ESP32 基础库。
-- 主固件已接入 Esp32Base FULL profile、四键业务核心、流量计、电磁阀 PWM/SD、ADS1115、水温/TDS、240x240 ST7789 TFT 本地屏、蜂鸣器、LittleFS 记录/日志、统计、滤芯和 Web 查看/配置页面；真实水路仍需按上板文档逐项闭环验证。
+- 使用工作区的 `../../foundation/Esp32Base` 作为 ESP32 基础库。
+- 主固件已接入 Esp32Base LOCAL profile、四键业务核心、流量计、电磁阀 PWM/SD、ADS1115、水温/TDS、240x240 ST7789 TFT 本地屏、蜂鸣器、LittleFS 记录/日志、统计、滤芯和 Web 查看/配置页面；真实水路仍需按上板文档逐项闭环验证。
 - 主固件固定启用 WiFi modem sleep；四个按键统一使用主循环轮询和 10ms 消抖，`CANCEL` 不设置专用 ISR 或快速通道。
 - Web 不提供任何远程出水控制能力。
 - 旧核心板裸板验证已通过；新版 PCB 仍需按上板文档完成 ADS1115、按键、TFT、流量计和阀门安全闭环。
-- 当前代码侧基线：`pio test -e native` 和 `pio run -e esp32dev` 应保持通过；Flash 仍需控制在当前 4MB 双 OTA 分区预算内。
+- 正式设备已由用户完成升级，并核对过 Web 记录页中的原有出水记录。当前固件直接使用 V5 分段环形存储。
+- 移除一次性转换代码后，`pio test -e native` 的 381 项测试和 `pio run -e esp32dev` 均通过。主固件占应用分区 94.9%，OTA 镜像距单槽上限约 65 KiB。
 
 ## 环境
 
 - PlatformIO
 - ESP32 Arduino framework
-- 本地基础库：`../Esp32Base`
+- 本地基础库为 `../../foundation/Esp32Base`
 - WebOTA 本地配置：复制 `platformio.example.ini` 为 `platformio.local.ini` 后填写设备地址和认证信息。
 
 ## 常用命令

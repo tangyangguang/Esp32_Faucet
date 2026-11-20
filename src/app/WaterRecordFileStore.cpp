@@ -3,15 +3,12 @@
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
-#include <memory>
-#include <new>
 
 namespace faucet {
 namespace {
 
 constexpr std::uint32_t kRecordMagic = 0x46575244UL;  // FWRD
 constexpr std::uint16_t kRecordVersion = 5;
-constexpr std::uint16_t kLegacyRecordVersion = 4;
 constexpr std::size_t kRecordsPerSegment = 200;
 constexpr std::size_t kBackupSpareSlots = 2;
 constexpr std::size_t kSegmentPathSize = 96;
@@ -36,11 +33,6 @@ bool validPath(const char* path) {
 bool segmentPath(const char* path, std::size_t index, char (&output)[kSegmentPathSize]) {
     const int length = std::snprintf(output, sizeof(output), "%s.%lu", path,
                                      static_cast<unsigned long>(index / kRecordsPerSegment));
-    return length > 0 && static_cast<std::size_t>(length) < sizeof(output);
-}
-
-bool suffixedPath(const char* path, const char* suffix, char (&output)[kSegmentPathSize]) {
-    const int length = std::snprintf(output, sizeof(output), "%s%s", path, suffix);
     return length > 0 && static_cast<std::size_t>(length) < sizeof(output);
 }
 
@@ -93,28 +85,6 @@ bool newerHeader(const RecordHeader& candidate, const RecordHeader& previous) {
     return delta != 0 && delta < 0x80000000UL;
 }
 
-bool validLegacyHeader(const RecordHeader& header, std::size_t capacity) {
-    return header.magic == kRecordMagic && header.version == kLegacyRecordVersion &&
-           header.recordSize == sizeof(WaterRecord) && header.capacity == capacity && header.count <= capacity &&
-           header.oldestIndex < capacity && (header.count == capacity || header.oldestIndex == 0) &&
-           header.commitSeq != 0 && header.checksum == headerChecksum(header);
-}
-
-bool replaceAndVerify(WaterRecordFileBackend& backend, const char* path, const std::uint8_t* bytes, std::size_t size) {
-    if (!backend.replaceBytes(path, bytes, size) || backend.fileSize(path) != static_cast<std::int64_t>(size)) {
-        return false;
-    }
-    std::uint8_t check[512];
-    for (std::size_t offset = 0; offset < size;) {
-        const std::size_t length = std::min(size - offset, sizeof(check));
-        if (!backend.readAt(path, offset, check, length) || std::memcmp(check, bytes + offset, length) != 0) {
-            return false;
-        }
-        offset += length;
-    }
-    return true;
-}
-
 }  // namespace
 
 WaterRecordFileStore::WaterRecordFileStore(WaterRecordFileBackend& backend, const char* path, std::size_t capacity)
@@ -145,25 +115,12 @@ bool WaterRecordFileStore::begin(StartupMode mode) {
         status_ = WaterRecordFileStatus::BackendFailure;
         return false;
     }
-    if (metadataSize >= static_cast<std::int64_t>(kHeaderBytes) && loadHeader()) {
-        ready_ = true;
-        return true;
-    }
-    char legacyPath[kSegmentPathSize];
-    if (!suffixedPath(path_, ".v4", legacyPath)) {
-        status_ = WaterRecordFileStatus::InvalidPath;
+    if (metadataSize > static_cast<std::int64_t>(kHeaderBytes)) {
+        status_ = WaterRecordFileStatus::IncompatibleFormat;
         return false;
     }
-    const bool alreadyMoved = backend_.exists(legacyPath);
-    if (alreadyMoved) {
-        status_ = WaterRecordFileStatus::MigrationPending;
-    }
-    if (alreadyMoved || metadataSize >= static_cast<std::int64_t>(kHeaderBytes)) {
-        const bool allowLegacyMigration = mode == StartupMode::MigrateLegacy;
-        if (mode == StartupMode::CreateIfMissing || (alreadyMoved && (!allowLegacyMigration || metadataSize >= 0))) {
-            return false;
-        }
-        ready_ = migrateLegacyFile(legacyPath, alreadyMoved, allowLegacyMigration);
+    if (metadataSize == static_cast<std::int64_t>(kHeaderBytes)) {
+        ready_ = loadHeader();
         return ready_;
     }
     if (mode == StartupMode::ProbeOnly) {
@@ -171,96 +128,6 @@ bool WaterRecordFileStore::begin(StartupMode mode) {
         return false;
     }
     return initializeNewFile(static_cast<std::size_t>(std::max<std::int64_t>(0, metadataSize)));
-}
-
-bool WaterRecordFileStore::migrateLegacyFile(const char* legacyPath, bool alreadyMoved, bool allowMigration) {
-    const char* sourcePath = alreadyMoved ? legacyPath : path_;
-    const std::int64_t size = backend_.fileSize(sourcePath);
-    RecordHeader headers[2]{};
-    if (size < static_cast<std::int64_t>(kHeaderBytes) ||
-        size > static_cast<std::int64_t>(kHeaderBytes + capacity_ * sizeof(WaterRecord)) ||
-        !backend_.readAt(sourcePath, 0, reinterpret_cast<std::uint8_t*>(headers), sizeof(headers))) {
-        return false;
-    }
-    const bool firstValid = validLegacyHeader(headers[0], capacity_);
-    const bool secondValid = validLegacyHeader(headers[1], capacity_);
-    if (!firstValid && !secondValid) {
-        return false;
-    }
-    const RecordHeader& old = firstValid && (!secondValid || newerHeader(headers[0], headers[1])) ? headers[0] : headers[1];
-    const std::size_t committedSize = kHeaderBytes + old.count * sizeof(WaterRecord);
-    if ((!alreadyMoved && size < static_cast<std::int64_t>(committedSize)) ||
-        (size <= static_cast<std::int64_t>(committedSize) && (size - kHeaderBytes) % sizeof(WaterRecord) != 0)) {
-        return false;
-    }
-
-    if (!allowMigration) {
-        // Rollback remains possible until the OTA image is confirmed. Inspect the source only.
-        WaterRecord last{};
-        if (old.count != 0 && !backend_.readAt(sourcePath, committedSize - sizeof(last),
-                                               reinterpret_cast<std::uint8_t*>(&last), sizeof(last))) {
-            status_ = WaterRecordFileStatus::BackendFailure;
-            return false;
-        }
-        status_ = WaterRecordFileStatus::LegacyMigrationRequired;
-        return false;
-    }
-
-    char tempPath[kSegmentPathSize];
-    if (!suffixedPath(path_, ".v5.tmp", tempPath)) {
-        return false;
-    }
-    constexpr std::size_t kSegmentBytes = kRecordsPerSegment * sizeof(WaterRecord);
-    std::unique_ptr<std::uint8_t[]> segment(new (std::nothrow) std::uint8_t[kSegmentBytes]);
-    status_ = WaterRecordFileStatus::MigrationPending;
-    if (!segment || (!alreadyMoved && !backend_.rename(path_, legacyPath)) ||
-        (size > static_cast<std::int64_t>(committedSize) && !backend_.truncate(legacyPath, committedSize))) {
-        return false;
-    }
-
-    const bool full = old.count == capacity_;
-    const std::size_t gap = full ? old.oldestIndex : old.count;
-    std::size_t remaining = (std::min(static_cast<std::size_t>(size), committedSize) - kHeaderBytes) / sizeof(WaterRecord);
-    while (remaining > 0) {
-        // Insert the two v5 spare slots immediately before the oldest live record.
-        // Physical order is otherwise preserved, so it is safe to consume the source from its tail.
-        const std::size_t end = remaining > gap ? remaining + kBackupSpareSlots : remaining;
-        const std::size_t first = (end - 1) / kRecordsPerSegment * kRecordsPerSegment;
-        const std::size_t shiftedFirst = std::max(first, gap + kBackupSpareSlots);
-        const std::size_t lowerEnd = std::min(end, gap);
-        const std::size_t bytes = (end - first) * sizeof(WaterRecord);
-        std::memset(segment.get(), 0, bytes);
-        if (first < lowerEnd &&
-            !backend_.readAt(legacyPath, kHeaderBytes + first * sizeof(WaterRecord), segment.get(),
-                             (lowerEnd - first) * sizeof(WaterRecord))) {
-            return false;
-        }
-        if (shiftedFirst < end &&
-            !backend_.readAt(legacyPath, kHeaderBytes + (shiftedFirst - kBackupSpareSlots) * sizeof(WaterRecord),
-                             segment.get() + (shiftedFirst - first) * sizeof(WaterRecord),
-                             (end - shiftedFirst) * sizeof(WaterRecord))) {
-            return false;
-        }
-        const std::size_t nextRemaining = first < lowerEnd ? first : shiftedFirst - kBackupSpareSlots;
-        char destination[kSegmentPathSize];
-        if (!segmentPath(path_, first, destination) ||
-            !replaceAndVerify(backend_, destination, segment.get(), bytes) ||
-            !backend_.truncate(legacyPath, kHeaderBytes + nextRemaining * sizeof(WaterRecord))) {
-            return false;
-        }
-        remaining = nextRemaining;
-    }
-
-    const std::size_t oldest = full ? old.oldestIndex + kBackupSpareSlots : 0;
-    const RecordHeader migrated[] = {makeHeader(capacity_, old.count, oldest, 1),
-                                      makeHeader(capacity_, old.count, oldest, 2)};
-    if (!hasRecords(oldest, old.count) ||
-        !replaceAndVerify(backend_, tempPath, reinterpret_cast<const std::uint8_t*>(migrated), sizeof(migrated)) ||
-        !backend_.rename(tempPath, path_) || !loadHeader()) {
-        return false;
-    }
-    backend_.removeFile(legacyPath);
-    return true;
 }
 
 bool WaterRecordFileStore::append(const WaterRecord& record) {
@@ -390,7 +257,7 @@ const char* WaterRecordFileStore::storageName() const {
 }
 
 WaterRecordFileStatus WaterRecordFileStore::status() const {
-    if (status_ == WaterRecordFileStatus::MigrationPending || status_ == WaterRecordFileStatus::InitializationRequired) {
+    if (status_ == WaterRecordFileStatus::InitializationRequired) {
         return status_;
     }
     if (validPath(path_) && !backend_.exists(path_)) {
@@ -423,16 +290,6 @@ bool WaterRecordFileStore::initializeNewFile(std::size_t existingBytes) {
 }
 
 bool WaterRecordFileStore::loadHeader() {
-    const std::int64_t fileSize = backend_.fileSize(path_);
-    if (fileSize < static_cast<std::int64_t>(2 * sizeof(RecordHeader))) {
-        status_ = WaterRecordFileStatus::Corrupt;
-        return false;
-    }
-    if (fileSize > static_cast<std::int64_t>(2 * sizeof(RecordHeader))) {
-        status_ = WaterRecordFileStatus::IncompatibleFormat;
-        return false;
-    }
-
     RecordHeader header{};
     if (!backend_.readAt(path_, 0, reinterpret_cast<std::uint8_t*>(&header), sizeof(header))) {
         status_ = WaterRecordFileStatus::BackendFailure;

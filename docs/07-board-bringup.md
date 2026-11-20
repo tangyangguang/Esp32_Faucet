@@ -63,14 +63,14 @@ pio run -e esp32dev -t upload --upload-port <端口>
 厨房设备 Web OTA 后无法启动、串口显示仍在运行 `ota_1` 时，推荐使用 Esp32Base 串口恢复脚本。脚本会读取本项目分区表，同时写入 `ota_0` 和 `ota_1`，并在同一次写 flash 流程中清除真实 `otadata`：
 
 ```sh
-python3 ../Esp32Base/scripts/esp32base_serial_recover_ota.py -d . -e esp32dev --port <端口> --baud 115200
+python3 ../../foundation/Esp32Base/scripts/esp32base_serial_recover_ota.py -d . -e esp32dev --port <端口> --baud 115200
 ```
 
 执行前关闭 `pio device monitor` 或其他串口监视器；如设备无法自动进入下载模式，按住 `BOOT` 开始命令后松开，必要时再按一次 `EN/RST`。
 
-### 保留旧设备历史和 Wi-Fi 的首次 v5 升级
+### 保留出水历史与 Wi-Fi 的应用固件升级
 
-正式设备可走原 Web OTA。新版首次启动会使用现有 Wi-Fi 配置重连。在健康检查通过且 LittleFS 至少有 48 KiB 空闲空间后，固件先确认 OTA，再自动重启一次转换 v4 历史。重连或预检失败时保留旧记录，让 OTA 回滚继续使用旧固件。OTA 和记录迁移均保留 Wi-Fi、Web 认证和设备设置。
+使用原 Web OTA 升级应用固件。新版使用现有 Wi-Fi 配置重连，在启动健康检查通过后确认 OTA，并直接打开现有 V5 出水记录。Web 认证和设备设置由原 NVS 保留。
 
 串口恢复时，可以给两个应用槽刷入同一份新固件并重置 OTA 选择记录。以下命令保留原分区表、LittleFS 和 NVS。
 
@@ -78,7 +78,7 @@ python3 ../Esp32Base/scripts/esp32base_serial_recover_ota.py -d . -e esp32dev --
 python3 ../../foundation/Esp32Base/scripts/esp32base_serial_recover_ota.py -d . -e esp32dev --port <端口> --no-bootloader --no-partitions --no-boot-app0
 ```
 
-升级时跳过 `uploadfs`、整片擦除和 LittleFS 格式化。启动后，在 Web 记录页确认最近一笔旧记录，再接一次水并确认新记录。若转换中断，保留文件系统并重新启动新版固件。
+升级时跳过 `uploadfs`、整片擦除和 LittleFS 格式化。启动后，在 Web 记录页确认升级前的最近一笔记录，再接一次水并确认新记录。
 
 用户日常调试可使用 Esp32Base 快速 Web OTA：
 

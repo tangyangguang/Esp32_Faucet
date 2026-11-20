@@ -123,7 +123,6 @@ bool g_valveClosedApplied = false;
 bool g_otaConfirmationFinished = false;
 bool g_otaStartupPending = false;
 faucet::WaterRecordFileStatus g_recordStoreStartupStatus = faucet::WaterRecordFileStatus::Unavailable;
-bool g_recordMigrationBlocked = false;
 
 void configureBase() {
     Esp32Base::setFirmwareInfo(kFirmwareName, kFirmwareVersion, __DATE__ " " __TIME__);
@@ -298,10 +297,7 @@ void initializeWaterRecordStore(faucet::WaterRecordFileStore::StartupMode mode) 
     const bool ready = g_waterRecordFile.begin(mode);
     const auto status = ready ? faucet::WaterRecordFileStatus::Ready : g_waterRecordFile.status();
     g_recordStoreStartupStatus = status;
-    g_recordMigrationBlocked = status == faucet::WaterRecordFileStatus::MigrationPending;
-    if (status == faucet::WaterRecordFileStatus::LegacyMigrationRequired) {
-        ESP32BASE_LOG_I("app", "legacy water records verified; waiting for OTA confirmation");
-    } else if (!ready && status != faucet::WaterRecordFileStatus::InitializationRequired) {
+    if (!ready && status != faucet::WaterRecordFileStatus::InitializationRequired) {
         ESP32BASE_LOG_E("app", "water record store unavailable status=%u", static_cast<unsigned>(status));
     }
 }
@@ -322,7 +318,7 @@ void initializeApplication() {
     g_configInitComplete = true;
     const std::uint32_t nowSeconds = currentSeconds();
     using RecordStartup = faucet::WaterRecordFileStore::StartupMode;
-    initializeWaterRecordStore(g_otaStartupPending ? RecordStartup::ProbeOnly : RecordStartup::MigrateLegacy);
+    initializeWaterRecordStore(g_otaStartupPending ? RecordStartup::ProbeOnly : RecordStartup::CreateIfMissing);
     const bool meteringSchemesReady = g_meteringSchemes.begin();
     if (!meteringSchemesReady) {
         ESP32BASE_LOG_W("app", "metering scheme store unavailable, using config fallback");
@@ -515,9 +511,6 @@ void runApplicationTick() {
         g_rebuildRecordStoreAfterFormatFs = false;
         initializeWaterRecordStore(faucet::WaterRecordFileStore::StartupMode::CreateIfMissing);
     }
-    if (g_recordMigrationBlocked) {
-        return;
-    }
 
     const std::uint32_t nowMs = millis();
     const faucet::ButtonLevels levels = g_buttons.read();
@@ -631,19 +624,8 @@ void maybeMarkOtaValidAfterHealthCheck() {
     if (!g_otaStartupPending || g_otaConfirmationFinished || !startupHealthReadyForOtaMarkValid()) {
         return;
     }
-    constexpr std::size_t kLegacyMigrationFreeBytes = 48U * 1024U;
-    const bool legacyMigrationNeeded = g_recordStoreStartupStatus == faucet::WaterRecordFileStatus::LegacyMigrationRequired;
     const bool initializationNeeded = g_recordStoreStartupStatus == faucet::WaterRecordFileStatus::InitializationRequired;
-    if (legacyMigrationNeeded) {
-        if (!Esp32BaseWiFi::isConnected()) {
-            return;
-        }
-        if (Esp32BaseFs::freeBytes() < kLegacyMigrationFreeBytes) {
-            ESP32BASE_LOG_E("app", "OTA confirmation deferred: insufficient LittleFS space for record migration");
-            g_otaConfirmationFinished = true;
-            return;
-        }
-    } else if (!initializationNeeded && !g_waterRecordFile.ready()) {
+    if (!initializationNeeded && !g_waterRecordFile.ready()) {
         return;
     }
     ESP32BASE_LOG_I("app", "ota_health_check begin");
@@ -653,9 +635,8 @@ void maybeMarkOtaValidAfterHealthCheck() {
         return;
     }
     ESP32BASE_LOG_I("app", "ota_mark_valid ok");
-    if (legacyMigrationNeeded || initializationNeeded) {
-        // Finish this boot before touching the old file. A rollback timer already running
-        // during confirmation must not race the first write of the migration.
+    if (initializationNeeded) {
+        // Create the empty store after booting the confirmed image.
         ESP32BASE_LOG_I("app", "restarting confirmed OTA image to prepare record storage");
         ESP.restart();
         return;
@@ -705,7 +686,7 @@ void loop() {
     g_maxBaseHandleUs = std::max(g_maxBaseHandleUs, faucet::elapsedSince(micros(), baseHandleStartUs));
     if (g_otaStartupPending) {
         maybeMarkOtaValidAfterHealthCheck();
-    } else if (!g_recordMigrationBlocked) {
+    } else {
         rewriteBootRelativeTimesWhenIdle();
     }
     delay(1);

@@ -571,10 +571,6 @@ const char* waterRecordFileStatusCode(WaterRecordFileStatus status) {
             return "corrupt";
         case WaterRecordFileStatus::IncompatibleFormat:
             return "incompatible_format";
-        case WaterRecordFileStatus::MigrationPending:
-            return "migration_pending";
-        case WaterRecordFileStatus::LegacyMigrationRequired:
-            return "legacy_migration_required";
         case WaterRecordFileStatus::InitializationRequired:
             return "initialization_required";
     }
@@ -597,10 +593,6 @@ const char* waterRecordFileStatusMessage(WaterRecordFileStatus status) {
             return "记录文件损坏或不完整；为保护数据，系统不会自动删除。";
         case WaterRecordFileStatus::IncompatibleFormat:
             return "记录文件格式不兼容；为保护数据，系统不会自动删除。";
-        case WaterRecordFileStatus::MigrationPending:
-            return "历史出水记录转换尚未完成，请保留文件系统并重启后再查。";
-        case WaterRecordFileStatus::LegacyMigrationRequired:
-            return "已检测到旧版出水记录，等待固件完成启动检查后转换。";
         case WaterRecordFileStatus::InitializationRequired:
             return "等待固件完成启动检查后建立记录文件。";
         case WaterRecordFileStatus::Unavailable:

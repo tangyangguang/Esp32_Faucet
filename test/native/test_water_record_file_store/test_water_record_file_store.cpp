@@ -61,71 +61,6 @@ struct InterruptedFileBackend : MemoryFileBackend {
     }
 };
 
-void writeV4Fixture(MemoryFileBackend& backend, std::uint32_t capacity, std::uint32_t count, std::uint32_t oldest) {
-    // The previous firmware's headers have a 32-bit FNV-1a over all 28 bytes.
-    for (std::uint32_t seq : {1U, 2U}) {
-        std::uint32_t words[] = {0x46575244U, (40U << 16U) | 4U, capacity, count, oldest, seq, 0};
-        const auto* bytes = reinterpret_cast<const std::uint8_t*>(words);
-        std::uint32_t checksum = 2166136261U;
-        for (std::size_t i = 0; i < sizeof(words); ++i) {
-            checksum = (checksum ^ bytes[i]) * 16777619U;
-        }
-        words[6] = checksum == 0 ? 1 : checksum;
-        TEST_ASSERT_TRUE(backend.appendBytes("/water.bin", bytes, sizeof(words)));
-    }
-    for (std::uint32_t i = 0; i < count; ++i) {
-        WaterRecord record = makeRecord(1 + i, 100 + i);
-        markWaterRecordBootId(record, 42);
-        record.temperatureCentiC = 2345;
-        record.tdsPpm = 12;
-        TEST_ASSERT_TRUE(backend.appendBytes("/water.bin", reinterpret_cast<const std::uint8_t*>(&record), sizeof(record)));
-    }
-}
-
-struct MigrationFileBackend : MemoryFileBackend {
-    std::size_t replacements = 0;
-    std::size_t maxUsage = 0;
-    std::size_t capacityBytes = SIZE_MAX;
-    bool failNextTruncateAfterCommit = false;
-    bool failPublicationAfterCommit = false;
-    bool damageNextSegment = false;
-
-    bool replaceBytes(const char* path, const std::uint8_t* bytes, std::size_t size) override {
-        std::size_t used = 0;
-        for (const auto& file : files) {
-            used += file.second.size();
-        }
-        maxUsage = std::max(maxUsage, used + size);
-        if (used + size > capacityBytes || !MemoryFileBackend::replaceBytes(path, bytes, size)) {
-            return false;
-        }
-        ++replacements;
-        if (damageNextSegment) {
-            files[path][0] ^= 0x80;
-            damageNextSegment = false;
-        }
-        return true;
-    }
-
-    bool truncate(const char* path, std::size_t size) override {
-        const bool ok = MemoryFileBackend::truncate(path, size);
-        if (failNextTruncateAfterCommit) {
-            failNextTruncateAfterCommit = false;
-            return false;
-        }
-        return ok;
-    }
-
-    bool rename(const char* from, const char* to) override {
-        const bool ok = MemoryFileBackend::rename(from, to);
-        if (failPublicationAfterCommit && std::strcmp(to, "/water.bin") == 0) {
-            failPublicationAfterCommit = false;
-            return false;
-        }
-        return ok;
-    }
-};
-
 }  // namespace
 
 void test_file_record_initializes_empty_file() {
@@ -544,88 +479,6 @@ void test_file_record_rewrites_current_boot_relative_times() {
     TEST_ASSERT_EQUAL_UINT32(0, waterRecordBootId(page[1]));
 }
 
-void test_v4_migration_preserves_full_ring_with_limited_space_and_only_runs_once() {
-    constexpr std::uint32_t kCapacity = 15000;
-    constexpr std::uint32_t kOldest = 199;
-    MigrationFileBackend backend;
-    writeV4Fixture(backend, kCapacity, kCapacity, kOldest);
-    backend.capacityBytes = kWaterRecordHeaderBytes + kCapacity * sizeof(WaterRecord) + 8000;
-    WaterRecordFileStore store(backend, "/water.bin", kCapacity);
-    TEST_ASSERT_FALSE(store.begin());
-    TEST_ASSERT_TRUE(backend.exists("/water.bin"));
-    TEST_ASSERT_FALSE(backend.exists("/water.bin.v4"));
-    const auto v4Bytes = backend.files.at("/water.bin");
-    TEST_ASSERT_FALSE(store.begin(RecordStartup::ProbeOnly));
-    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(WaterRecordFileStatus::LegacyMigrationRequired),
-                            static_cast<std::uint8_t>(store.status()));
-    TEST_ASSERT_EQUAL_size_t(1, backend.files.size());
-    TEST_ASSERT_TRUE(v4Bytes == backend.files.at("/water.bin"));
-
-    TEST_ASSERT_TRUE(store.begin(RecordStartup::MigrateLegacy));
-    TEST_ASSERT_EQUAL_size_t(kCapacity, store.count());
-    TEST_ASSERT_LESS_OR_EQUAL_size_t(backend.capacityBytes, backend.maxUsage);
-    TEST_ASSERT_FALSE(backend.exists("/water.bin.v4"));
-    WaterRecord page[50]{};
-    for (std::uint32_t offset = 0; offset < kCapacity; offset += 50) {
-        TEST_ASSERT_EQUAL_size_t(50, store.readPage(offset / 50, 50, page, 50));
-        for (std::uint32_t i = 0; i < 50; ++i) {
-            const std::uint32_t index = (kOldest + kCapacity - 1 - offset - i) % kCapacity;
-            TEST_ASSERT_EQUAL_UINT32(1 + index, page[i].startTime);
-            TEST_ASSERT_EQUAL_UINT32(100 + index, page[i].volumeMl);
-            TEST_ASSERT_EQUAL_UINT32(42, waterRecordBootId(page[i]));
-            TEST_ASSERT_EQUAL_INT16(2345, page[i].temperatureCentiC);
-            TEST_ASSERT_EQUAL_UINT16(12, page[i].tdsPpm);
-        }
-    }
-    const std::size_t replacements = backend.replacements;
-    TEST_ASSERT_TRUE(store.begin(RecordStartup::MigrateLegacy));
-    TEST_ASSERT_EQUAL_size_t(replacements, backend.replacements);
-    TEST_ASSERT_TRUE(store.append(makeRecord(20000, 1500)));
-    TEST_ASSERT_EQUAL_size_t(2, store.readPage(0, 2, page, 2));
-    TEST_ASSERT_EQUAL_UINT32(20000, page[0].startTime);
-    TEST_ASSERT_EQUAL_UINT32(kOldest, page[1].startTime);
-}
-
-void test_v4_migration_does_not_truncate_before_verification_and_resumes_after_a_committed_truncate() {
-    MigrationFileBackend backend;
-    writeV4Fixture(backend, 500, 420, 0);
-    WaterRecordFileStore firstBoot(backend, "/water.bin", 500);
-    backend.damageNextSegment = true;
-    TEST_ASSERT_FALSE(firstBoot.begin(RecordStartup::MigrateLegacy));
-    TEST_ASSERT_EQUAL_INT64(kWaterRecordHeaderBytes + 420 * sizeof(WaterRecord), backend.fileSize("/water.bin.v4"));
-
-    WaterRecordFileStore secondBoot(backend, "/water.bin", 500);
-    backend.failNextTruncateAfterCommit = true;
-    TEST_ASSERT_FALSE(secondBoot.begin(RecordStartup::MigrateLegacy));
-    TEST_ASSERT_EQUAL_INT64(kWaterRecordHeaderBytes + 400 * sizeof(WaterRecord), backend.fileSize("/water.bin.v4"));
-    TEST_ASSERT_FALSE(secondBoot.append(makeRecord(1000, 2000)));
-    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(WaterRecordFileStatus::MigrationPending),
-                            static_cast<std::uint8_t>(secondBoot.status()));
-    TEST_ASSERT_FALSE(backend.exists("/water.bin"));
-
-    WaterRecordFileStore thirdBoot(backend, "/water.bin", 500);
-    TEST_ASSERT_TRUE(thirdBoot.begin(RecordStartup::MigrateLegacy));
-    TEST_ASSERT_EQUAL_size_t(420, thirdBoot.count());
-    WaterRecord page[40]{};
-    TEST_ASSERT_EQUAL_size_t(40, thirdBoot.readPage(0, 40, page, 40));
-    for (std::uint32_t i = 0; i < 40; ++i) {
-        TEST_ASSERT_EQUAL_UINT32(420 - i, page[i].startTime);
-    }
-}
-
-void test_v4_migration_rejects_invalid_headers_without_touching_source() {
-    RecordFileFixture fixture(3);
-    writeV4Fixture(fixture.backend, 3, 3, 0);
-    fixture.backend.overwriteByte("/water.bin", 0, 0);
-    fixture.backend.overwriteByte("/water.bin", kWaterRecordHeaderBytes / 2, 0);
-    const auto before = fixture.backend.files;
-    TEST_ASSERT_FALSE(fixture.store.begin(RecordStartup::ProbeOnly));
-    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(WaterRecordFileStatus::IncompatibleFormat),
-                            static_cast<std::uint8_t>(fixture.store.status()));
-    TEST_ASSERT_FALSE(fixture.store.begin(RecordStartup::MigrateLegacy));
-    TEST_ASSERT_TRUE(before == fixture.backend.files);
-}
-
 void test_ota_probe_defers_empty_store_creation_until_confirmation() {
     RecordFileFixture fixture(3);
     TEST_ASSERT_FALSE(fixture.store.begin(RecordStartup::ProbeOnly));
@@ -637,21 +490,25 @@ void test_ota_probe_defers_empty_store_creation_until_confirmation() {
     TEST_ASSERT_EQUAL_size_t(0, fixture.store.count());
 }
 
-void test_v5_publication_is_the_completion_marker_even_if_shutdown_precedes_cleanup() {
-    MigrationFileBackend backend;
-    writeV4Fixture(backend, 3, 1, 0);
-    backend.failPublicationAfterCommit = true;
-    WaterRecordFileStore firstBoot(backend, "/water.bin", 3);
-    TEST_ASSERT_FALSE(firstBoot.begin(RecordStartup::MigrateLegacy));
-    TEST_ASSERT_TRUE(backend.exists("/water.bin.v4"));
-    const std::size_t replacements = backend.replacements;
+void test_existing_v5_store_opens_without_writing_and_accepts_new_records() {
+    RecordFileFixture fixture(3);
+    fixture.begin();
+    WaterRecord previous = makeRecord(100, 1500);
+    previous.temperatureCentiC = 2345;
+    previous.tdsPpm = 12;
+    TEST_ASSERT_TRUE(fixture.store.append(previous));
+    const auto before = fixture.backend.files;
 
-    WaterRecordFileStore secondBoot(backend, "/water.bin", 3);
-    TEST_ASSERT_TRUE(secondBoot.begin(RecordStartup::MigrateLegacy));
-    TEST_ASSERT_EQUAL_size_t(replacements, backend.replacements);
-    TEST_ASSERT_EQUAL_size_t(1, secondBoot.count());
-    TEST_ASSERT_TRUE(secondBoot.append(makeRecord(2, 200)));
-    TEST_ASSERT_EQUAL_size_t(2, secondBoot.count());
+    WaterRecordFileStore current(fixture.backend, "/water.bin", 3);
+    TEST_ASSERT_TRUE(current.begin(RecordStartup::ProbeOnly));
+    TEST_ASSERT_TRUE(current.begin());
+    TEST_ASSERT_TRUE(before == fixture.backend.files);
+    TEST_ASSERT_TRUE(current.append(makeRecord(200, 800)));
+
+    WaterRecord page[2]{};
+    TEST_ASSERT_EQUAL_size_t(2, current.readPage(0, 2, page, 2));
+    TEST_ASSERT_EQUAL_UINT32(200, page[0].startTime);
+    TEST_ASSERT_EQUAL_MEMORY(&previous, &page[1], sizeof(previous));
 }
 
 int main(int argc, char** argv) {
@@ -683,10 +540,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_file_record_header_failure_rolls_back_runtime_state);
     RUN_TEST(test_file_record_recovers_from_corrupt_primary_header_using_backup);
     RUN_TEST(test_file_record_rewrites_current_boot_relative_times);
-    RUN_TEST(test_v4_migration_preserves_full_ring_with_limited_space_and_only_runs_once);
-    RUN_TEST(test_v4_migration_does_not_truncate_before_verification_and_resumes_after_a_committed_truncate);
-    RUN_TEST(test_v4_migration_rejects_invalid_headers_without_touching_source);
     RUN_TEST(test_ota_probe_defers_empty_store_creation_until_confirmation);
-    RUN_TEST(test_v5_publication_is_the_completion_marker_even_if_shutdown_precedes_cleanup);
+    RUN_TEST(test_existing_v5_store_opens_without_writing_and_accepts_new_records);
     return UNITY_END();
 }

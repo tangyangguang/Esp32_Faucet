@@ -97,34 +97,6 @@ public:
         return true;
     }
 
-    bool replaceBytes(const char* path, const std::uint8_t* data, std::size_t len) override {
-        if (failWrite) {
-            return false;
-        }
-        files[path].assign(data, data + len);
-        return true;
-    }
-
-    bool rename(const char* from, const char* to) override {
-        auto file = files.extract(from);
-        if (file.empty()) {
-            return false;
-        }
-        files.erase(to);
-        file.key() = to;
-        files.insert(std::move(file));
-        return true;
-    }
-
-    bool truncate(const char* path, std::size_t size) override {
-        const auto file = files.find(path);
-        if (file == files.end() || size > file->second.size()) {
-            return false;
-        }
-        file->second.resize(size);
-        return true;
-    }
-
     void overwriteByte(const char* path, std::size_t offset, std::uint8_t value) {
         std::vector<std::uint8_t>& file = files[key(path)];
         if (offset >= file.size()) {

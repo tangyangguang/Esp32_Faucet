@@ -27,9 +27,11 @@ public:
 
 class WaterRecordFileStore : public WaterRecordReader {
 public:
+    enum class StartupMode { CreateIfMissing, ProbeOnly, MigrateLegacy };
+
     WaterRecordFileStore(WaterRecordFileBackend& backend, const char* path, std::size_t capacity);
 
-    bool begin(bool allowLegacyMigration = false);
+    bool begin(StartupMode mode = StartupMode::CreateIfMissing);
     bool append(const WaterRecord& record);
     std::size_t rewriteBootRelativeTimes(std::uint32_t bootId, std::uint32_t bootStartRealSec,
                                          std::size_t newestRecordLimit);
@@ -45,7 +47,7 @@ public:
     WaterRecordFileStatus status() const override;
 
 private:
-    bool migrateLegacyFile(const char* legacyPath, bool alreadyMoved);
+    bool migrateLegacyFile(const char* legacyPath, bool alreadyMoved, bool allowMigration);
     bool initializeNewFile(std::size_t existingBytes);
     bool loadHeader();
     bool saveHeader();

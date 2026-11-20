@@ -127,10 +127,10 @@ WaterRecordFileStore::WaterRecordFileStore(WaterRecordFileBackend& backend, cons
       ready_(false),
       status_(WaterRecordFileStatus::Unavailable) {}
 
-bool WaterRecordFileStore::begin(bool allowLegacyMigration) {
+bool WaterRecordFileStore::begin(StartupMode mode) {
     ready_ = false;
     status_ = WaterRecordFileStatus::Unavailable;
-    if (!validPath(path_) || capacity_ == 0 || capacity_ > UINT32_MAX / sizeof(WaterRecord)) {
+    if (!validPath(path_) || capacity_ == 0 || capacity_ > (UINT32_MAX - kHeaderBytes) / sizeof(WaterRecord)) {
         status_ = !validPath(path_) ? WaterRecordFileStatus::InvalidPath : WaterRecordFileStatus::InvalidCapacity;
         return false;
     }
@@ -159,16 +159,21 @@ bool WaterRecordFileStore::begin(bool allowLegacyMigration) {
         status_ = WaterRecordFileStatus::MigrationPending;
     }
     if (alreadyMoved || metadataSize >= static_cast<std::int64_t>(kHeaderBytes)) {
-        if (!allowLegacyMigration || (alreadyMoved && metadataSize >= 0)) {
+        const bool allowLegacyMigration = mode == StartupMode::MigrateLegacy;
+        if (mode == StartupMode::CreateIfMissing || (alreadyMoved && (!allowLegacyMigration || metadataSize >= 0))) {
             return false;
         }
-        ready_ = migrateLegacyFile(legacyPath, alreadyMoved);
+        ready_ = migrateLegacyFile(legacyPath, alreadyMoved, allowLegacyMigration);
         return ready_;
+    }
+    if (mode == StartupMode::ProbeOnly) {
+        status_ = metadataSize < 0 ? WaterRecordFileStatus::InitializationRequired : WaterRecordFileStatus::Corrupt;
+        return false;
     }
     return initializeNewFile(static_cast<std::size_t>(std::max<std::int64_t>(0, metadataSize)));
 }
 
-bool WaterRecordFileStore::migrateLegacyFile(const char* legacyPath, bool alreadyMoved) {
+bool WaterRecordFileStore::migrateLegacyFile(const char* legacyPath, bool alreadyMoved, bool allowMigration) {
     const char* sourcePath = alreadyMoved ? legacyPath : path_;
     const std::int64_t size = backend_.fileSize(sourcePath);
     RecordHeader headers[2]{};
@@ -186,6 +191,18 @@ bool WaterRecordFileStore::migrateLegacyFile(const char* legacyPath, bool alread
     const std::size_t committedSize = kHeaderBytes + old.count * sizeof(WaterRecord);
     if ((!alreadyMoved && size < static_cast<std::int64_t>(committedSize)) ||
         (size <= static_cast<std::int64_t>(committedSize) && (size - kHeaderBytes) % sizeof(WaterRecord) != 0)) {
+        return false;
+    }
+
+    if (!allowMigration) {
+        // Rollback remains possible until the OTA image is confirmed. Inspect the source only.
+        WaterRecord last{};
+        if (old.count != 0 && !backend_.readAt(sourcePath, committedSize - sizeof(last),
+                                               reinterpret_cast<std::uint8_t*>(&last), sizeof(last))) {
+            status_ = WaterRecordFileStatus::BackendFailure;
+            return false;
+        }
+        status_ = WaterRecordFileStatus::LegacyMigrationRequired;
         return false;
     }
 
@@ -373,7 +390,7 @@ const char* WaterRecordFileStore::storageName() const {
 }
 
 WaterRecordFileStatus WaterRecordFileStore::status() const {
-    if (status_ == WaterRecordFileStatus::MigrationPending) {
+    if (status_ == WaterRecordFileStatus::MigrationPending || status_ == WaterRecordFileStatus::InitializationRequired) {
         return status_;
     }
     if (validPath(path_) && !backend_.exists(path_)) {

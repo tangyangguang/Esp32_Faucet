@@ -115,16 +115,24 @@ std::uint32_t g_maxBaseHandleUs = 0;
 bool g_baseBeginComplete = false;
 bool g_littleFsInitComplete = false;
 bool g_configInitComplete = false;
-bool g_recordStoreInitComplete = false;
+bool g_calibrationStoreInitComplete = false;
 bool g_traceStoreInitComplete = false;
 bool g_runtimeStateInitComplete = false;
 bool g_appControllerInitComplete = false;
 bool g_valveClosedApplied = false;
-bool g_otaMarkValidAttempted = false;
+bool g_otaConfirmationFinished = false;
+bool g_otaStartupPending = false;
+faucet::WaterRecordFileStatus g_recordStoreStartupStatus = faucet::WaterRecordFileStatus::Unavailable;
+bool g_recordMigrationBlocked = false;
 
 void configureBase() {
     Esp32Base::setFirmwareInfo(kFirmwareName, kFirmwareVersion, __DATE__ " " __TIME__);
 
+#if ESP32BASE_ENABLE_FS
+    Esp32BaseStorage::setFormatGuard([](void*) {
+        return !g_otaStartupPending && g_app && g_app->canApplyConfig();
+    });
+#endif
 #if ESP32BASE_ENABLE_WEB
     Esp32BaseWeb::setDefaultAuth(kDefaultWebUser, kDefaultWebPassword);
     Esp32BaseWeb::setDeviceName("首页");
@@ -286,6 +294,18 @@ bool currentPeriodKeys(std::uint32_t nowSeconds, faucet::PeriodKeys& keys) {
     return false;
 }
 
+void initializeWaterRecordStore(faucet::WaterRecordFileStore::StartupMode mode) {
+    const bool ready = g_waterRecordFile.begin(mode);
+    const auto status = ready ? faucet::WaterRecordFileStatus::Ready : g_waterRecordFile.status();
+    g_recordStoreStartupStatus = status;
+    g_recordMigrationBlocked = status == faucet::WaterRecordFileStatus::MigrationPending;
+    if (status == faucet::WaterRecordFileStatus::LegacyMigrationRequired) {
+        ESP32BASE_LOG_I("app", "legacy water records verified; waiting for OTA confirmation");
+    } else if (!ready && status != faucet::WaterRecordFileStatus::InitializationRequired) {
+        ESP32BASE_LOG_E("app", "water record store unavailable status=%u", static_cast<unsigned>(status));
+    }
+}
+
 void initializeApplication() {
     logStartupPhase("app_init_start");
     initializeI2cBus();
@@ -301,12 +321,8 @@ void initializeApplication() {
     logStartupPhase("config_ready");
     g_configInitComplete = true;
     const std::uint32_t nowSeconds = currentSeconds();
-    const bool allowLegacyRecordMigration = !Esp32BaseOta::waitingForMarkValid();
-    const bool waterRecordReady = g_waterRecordFile.begin(allowLegacyRecordMigration);
-    if (!waterRecordReady) {
-        ESP32BASE_LOG_E("app", "water record store unavailable at startup status=%u",
-                        static_cast<unsigned>(g_waterRecordFile.status()));
-    }
+    using RecordStartup = faucet::WaterRecordFileStore::StartupMode;
+    initializeWaterRecordStore(g_otaStartupPending ? RecordStartup::ProbeOnly : RecordStartup::MigrateLegacy);
     const bool meteringSchemesReady = g_meteringSchemes.begin();
     if (!meteringSchemesReady) {
         ESP32BASE_LOG_W("app", "metering scheme store unavailable, using config fallback");
@@ -316,7 +332,7 @@ void initializeApplication() {
     if (!calibrationSessionReady || !calibrationSessionTracesReady) {
         ESP32BASE_LOG_W("app", "guided calibration session storage unavailable");
     }
-    g_recordStoreInitComplete = waterRecordReady && calibrationSessionReady;
+    g_calibrationStoreInitComplete = calibrationSessionReady;
     logStartupPhase("record_store_ready");
     g_pulseTraceRecords = new (std::nothrow) faucet::WaterPulseTrace[kPulseTraceCapacity]{};
     g_pulseTraceBuckets = new (std::nothrow) faucet::WaterPulseTraceBucketSample[kPulseTraceMaxBuckets]{};
@@ -497,9 +513,10 @@ void runApplicationTick() {
 
     if (g_rebuildRecordStoreAfterFormatFs) {
         g_rebuildRecordStoreAfterFormatFs = false;
-        if (!g_waterRecordFile.begin()) {
-            ESP32BASE_LOG_E("app", "record store rebuild after fs format failed");
-        }
+        initializeWaterRecordStore(faucet::WaterRecordFileStore::StartupMode::CreateIfMissing);
+    }
+    if (g_recordMigrationBlocked) {
+        return;
     }
 
     const std::uint32_t nowMs = millis();
@@ -599,7 +616,7 @@ bool startupHealthReadyForOtaMarkValid() {
     return g_baseBeginComplete &&
            g_littleFsInitComplete &&
            g_configInitComplete &&
-           g_recordStoreInitComplete &&
+           g_calibrationStoreInitComplete &&
            g_traceStoreInitComplete &&
            g_runtimeStateInitComplete &&
            g_appControllerInitComplete &&
@@ -608,25 +625,47 @@ bool startupHealthReadyForOtaMarkValid() {
 
 void maybeMarkOtaValidAfterHealthCheck() {
 #if ESP32BASE_OTA_REQUIRE_MARK_VALID
-    if (g_otaMarkValidAttempted || !Esp32BaseOta::waitingForMarkValid()) {
+    if (!g_otaStartupPending || g_otaConfirmationFinished || !startupHealthReadyForOtaMarkValid()) {
         return;
     }
-    if (!startupHealthReadyForOtaMarkValid()) {
+    constexpr std::size_t kLegacyMigrationFreeBytes = 48U * 1024U;
+    const bool legacyMigrationNeeded = g_recordStoreStartupStatus == faucet::WaterRecordFileStatus::LegacyMigrationRequired;
+    const bool initializationNeeded = g_recordStoreStartupStatus == faucet::WaterRecordFileStatus::InitializationRequired;
+    if (legacyMigrationNeeded) {
+        if (!Esp32BaseWiFi::isConnected()) {
+            return;
+        }
+        if (Esp32BaseFs::freeBytes() < kLegacyMigrationFreeBytes) {
+            ESP32BASE_LOG_E("app", "OTA confirmation deferred: insufficient LittleFS space for record migration");
+            g_otaConfirmationFinished = true;
+            return;
+        }
+    } else if (!initializationNeeded && !g_waterRecordFile.ready()) {
         return;
     }
     ESP32BASE_LOG_I("app", "ota_health_check begin");
-    g_otaMarkValidAttempted = true;
-    if (Esp32BaseOta::markCurrentValid()) {
-        ESP32BASE_LOG_I("app", "ota_mark_valid ok");
-    } else {
+    g_otaConfirmationFinished = true;
+    if (!Esp32BaseOta::markCurrentValid()) {
         ESP32BASE_LOG_E("app", "ota_mark_valid failed");
+        return;
     }
+    ESP32BASE_LOG_I("app", "ota_mark_valid ok");
+    if (legacyMigrationNeeded || initializationNeeded) {
+        // Finish this boot before touching the old file. A rollback timer already running
+        // during confirmation must not race the first write of the migration.
+        ESP32BASE_LOG_I("app", "restarting confirmed OTA image to prepare record storage");
+        ESP.restart();
+        return;
+    }
+    g_app->resetInputs(g_buttons.read(), millis());
+    g_otaStartupPending = false;
 #endif
 }
 }  // namespace
 
 void setup() {
     g_valveHardware.forceSafeState();
+    g_otaStartupPending = Esp32BaseOta::waitingForMarkValid();
     Serial.begin(115200);
     delay(200);
     configureBase();
@@ -653,13 +692,18 @@ void loop() {
     g_lastLoopStartUs = loopStartUs;
 
     const std::uint32_t appTickStartUs = micros();
-    runApplicationTick();
+    if (!g_otaStartupPending) {
+        runApplicationTick();
+    }
     g_maxAppTickUs = std::max(g_maxAppTickUs, faucet::elapsedSince(micros(), appTickStartUs));
 
     const std::uint32_t baseHandleStartUs = micros();
     Esp32Base::handle();
     g_maxBaseHandleUs = std::max(g_maxBaseHandleUs, faucet::elapsedSince(micros(), baseHandleStartUs));
-    rewriteBootRelativeTimesWhenIdle();
-    maybeMarkOtaValidAfterHealthCheck();
+    if (g_otaStartupPending) {
+        maybeMarkOtaValidAfterHealthCheck();
+    } else if (!g_recordMigrationBlocked) {
+        rewriteBootRelativeTimesWhenIdle();
+    }
     delay(1);
 }

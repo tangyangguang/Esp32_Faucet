@@ -69,6 +69,7 @@ enum class WaterRecordFileStatus : std::uint8_t {
     BackendFailure = 5,
     Corrupt = 6,
     IncompatibleFormat = 7,
+    MigrationPending = 8,
 };
 
 class WaterRecordReader {

@@ -101,7 +101,7 @@ Esp32BaseWeb::Handler handlerFor(const FaucetWebRoute& route) {
         case FaucetWebHandler::CalibrationPage:
             return handleCalibrationPage;
         case FaucetWebHandler::AppCss:
-            return handleAppCss;
+            return nullptr;
         case FaucetWebHandler::CalibrationPost:
             return handleCalibrationPost;
         case FaucetWebHandler::FlowCalibrationPage:

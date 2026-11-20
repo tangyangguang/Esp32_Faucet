@@ -375,45 +375,23 @@ void test_home_page_hides_sensor_calibration_state() {
     TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "function faucetSensorTds"));
 }
 
-void test_app_css_covers_current_page_layout_classes() {
+void test_app_css_is_an_authenticated_gzip_asset() {
     WebFixture fixture;
     registerRoutes();
     beginWebGet("/faucet/app.css");
-
+    Esp32BaseWeb::nativeTestSetAuthenticated(false);
     TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch("/faucet/app.css", Esp32BaseWeb::METHOD_GET));
+    TEST_ASSERT_EQUAL(401, Esp32BaseWeb::nativeTestResponse().code);
 
-    const std::string& body = Esp32BaseWeb::nativeTestResponse().body;
-    TEST_ASSERT_EQUAL(200, Esp32BaseWeb::nativeTestResponse().code);
-    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "--bg:#fbfcfb"));
-    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "body{max-width:1120px"));
-    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), ".machine-status-strip{display:flex;align-items:center;gap:6px;flex-wrap:nowrap}"));
-    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), ".home-section-title{margin:20px 0 10px;font-weight:600}"));
-    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), ".machine-status-note{color:#879198;font-size:10px;font-weight:400;line-height:1;white-space:nowrap}"));
-    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), ".today-total-main{display:block;color:var(--text);font-size:24px;line-height:1.05;font-weight:600}"));
-    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), ".filter-cards{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px"));
-    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), ".filter-head strong{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:15px;"));
-    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "td{font-weight:400}"));
-    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), "th{background:#f8faf9;color:var(--muted);font-weight:500}"));
-    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), ".next-preset-control"));
-    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), ".machine-status-strip"));
-    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), ".today-total-meta"));
-    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), ".filter-head"));
-    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), ".calibration-session-badges"));
-    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), ".machine-task-card{display:flex"));
-    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), ".tds-calibration-summary>div"));
-    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), ".calibration-edit-modal{display:none"));
-    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), ".calibration-edit-modal.is-open{display:flex}"));
-    TEST_ASSERT_NULL(std::strstr(body.c_str(), ".sample-calibration-edit-row"));
-    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), ".temperature-calibration-summary>div"));
-    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), ".active-metering-metrics"));
-    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), ".metering-metric{min-width:0"));
-    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), ".distribution-head"));
-    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), ".count-line"));
-    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), ".chart-unit"));
-    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), ".calibration-session-panel .status-pill"));
-    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), ".calibration-kpi-main"));
-    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), ".calibration-slot-table th,.metering-scheme-table th{font-weight:500}"));
-    TEST_ASSERT_NOT_NULL(std::strstr(body.c_str(), ".filter-life-details"));
+    beginWebGet("/faucet/app.css");
+    TEST_ASSERT_TRUE(Esp32BaseWeb::nativeTestDispatch("/faucet/app.css", Esp32BaseWeb::METHOD_GET));
+    const auto& response = Esp32BaseWeb::nativeTestResponse();
+    TEST_ASSERT_EQUAL(200, response.code);
+    TEST_ASSERT_EQUAL_STRING("text/css; charset=utf-8", response.contentType.c_str());
+    TEST_ASSERT_EQUAL_STRING("gzip", Esp32BaseWeb::nativeTestResponseHeader("Content-Encoding"));
+    TEST_ASSERT_EQUAL_STRING("Accept-Encoding", Esp32BaseWeb::nativeTestResponseHeader("Vary"));
+    TEST_ASSERT_EQUAL_size_t(sizeof(kFaucetCss), response.body.size());
+    TEST_ASSERT_EQUAL_MEMORY(kFaucetCss, response.body.data(), sizeof(kFaucetCss));
 }
 
 void test_filter_page_renders_replacement_date_and_life_details() {
@@ -1472,7 +1450,7 @@ int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_home_page_initial_render_does_not_read_record_pages);
     RUN_TEST(test_home_page_hides_sensor_calibration_state);
-    RUN_TEST(test_app_css_covers_current_page_layout_classes);
+    RUN_TEST(test_app_css_is_an_authenticated_gzip_asset);
     RUN_TEST(test_filter_page_renders_replacement_date_and_life_details);
     RUN_TEST(test_stats_page_renders_daily_charts_and_usage_panels);
     RUN_TEST(test_after_format_fs_notification_resets_runtime_statistics);

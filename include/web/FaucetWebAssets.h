@@ -2,7 +2,7 @@
 
 namespace faucet {
 
-void sendAppCss();
+bool registerAppCss(const char* path);
 void sendAppStylesheetLink();
 void sendCalibrationPageScript();
 void sendHomeAutoRefreshScript();

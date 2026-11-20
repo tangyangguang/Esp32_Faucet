@@ -7,12 +7,23 @@
 #include <LittleFS.h>
 
 #include <algorithm>
+#include <cstdio>
+#include <fcntl.h>
 #include <limits>
+#include <unistd.h>
 
 namespace faucet {
 namespace {
 
 constexpr std::size_t kCreateSizedDirectChunk = 512;
+
+bool littleFsVfsPath(const char* path, char (&mountedPath)[112]) {
+    if (!path || path[0] != '/') {
+        return false;
+    }
+    const int length = std::snprintf(mountedPath, sizeof(mountedPath), "/littlefs%s", path);
+    return length > 0 && static_cast<std::size_t>(length) < sizeof(mountedPath);
+}
 
 bool createSizedDirectly(const char* path, std::size_t size) {
     if (!path) {
@@ -90,6 +101,40 @@ bool Esp32BaseWaterRecordBackend::writeAt(const char* path, std::size_t offset, 
 
 bool Esp32BaseWaterRecordBackend::removeFile(const char* path) {
     return Esp32BaseFs::removeFile(path);
+}
+
+bool Esp32BaseWaterRecordBackend::replaceBytes(const char* path, const std::uint8_t* data, std::size_t len) {
+    char mountedPath[112];
+    if (!littleFsVfsPath(path, mountedPath)) {
+        return false;
+    }
+    const int fd = ::open(mountedPath, O_WRONLY | O_CREAT | O_TRUNC, 0666);
+    if (fd < 0) {
+        return false;
+    }
+    const bool synced = ::write(fd, data, len) == static_cast<ssize_t>(len) && ::fsync(fd) == 0;
+    const bool closed = ::close(fd) == 0;
+    return synced && closed;
+}
+
+bool Esp32BaseWaterRecordBackend::rename(const char* from, const char* to) {
+    return Esp32BaseFs::rename(from, to);
+}
+
+bool Esp32BaseWaterRecordBackend::truncate(const char* path, std::size_t size) {
+    // Esp32Base mounts the Arduino LittleFS instance at its default VFS path.
+    char mountedPath[112];
+    if (!littleFsVfsPath(path, mountedPath)) {
+        return false;
+    }
+    const int fd = ::open(mountedPath, O_WRONLY);
+    if (fd < 0) {
+        return false;
+    }
+    const bool synced = ::ftruncate(fd, size) == 0 && ::fsync(fd) == 0;
+    const bool closed = ::close(fd) == 0;
+    delay(1);
+    return synced && closed && Esp32BaseFs::fileSize(path) == static_cast<std::int64_t>(size);
 }
 
 }  // namespace faucet

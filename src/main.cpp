@@ -301,7 +301,12 @@ void initializeApplication() {
     logStartupPhase("config_ready");
     g_configInitComplete = true;
     const std::uint32_t nowSeconds = currentSeconds();
-    const bool waterRecordReady = g_waterRecordFile.begin();
+    const bool allowLegacyRecordMigration = !Esp32BaseOta::waitingForMarkValid();
+    const bool waterRecordReady = g_waterRecordFile.begin(allowLegacyRecordMigration);
+    if (!waterRecordReady) {
+        ESP32BASE_LOG_E("app", "water record store unavailable at startup status=%u",
+                        static_cast<unsigned>(g_waterRecordFile.status()));
+    }
     const bool meteringSchemesReady = g_meteringSchemes.begin();
     if (!meteringSchemesReady) {
         ESP32BASE_LOG_W("app", "metering scheme store unavailable, using config fallback");

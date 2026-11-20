@@ -68,6 +68,16 @@ python3 ../Esp32Base/scripts/esp32base_serial_recover_ota.py -d . -e esp32dev --
 
 执行前关闭 `pio device monitor` 或其他串口监视器；如设备无法自动进入下载模式，按住 `BOOT` 开始命令后松开，必要时再按一次 `EN/RST`。
 
+### 保留旧设备历史的首次 v5 升级
+
+从 v4 旧记录格式升级时，使用串口给两个应用槽刷入同一份新固件，并清除 OTA 选择记录。已有分区布局无需重写。以下命令保留原 LittleFS、NVS、Wi-Fi 和设备设置。
+
+```sh
+python3 ../../foundation/Esp32Base/scripts/esp32base_serial_recover_ota.py -d . -e esp32dev --port <端口> --no-bootloader --no-partitions --no-boot-app0
+```
+
+升级时跳过 `uploadfs`、整片擦除和 LittleFS 格式化。启动后固件自动转换历史。看到待机界面后，在 Web 记录页确认最近一笔旧记录，再接一次水并确认新记录。若转换中断，保留文件系统并重新启动新版固件。
+
 用户日常调试可使用 Esp32Base 快速 Web OTA：
 
 ```sh

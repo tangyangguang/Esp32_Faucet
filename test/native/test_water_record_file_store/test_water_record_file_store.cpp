@@ -37,6 +37,29 @@ struct RecordFileFixture {
     }
 };
 
+struct InterruptedFileBackend : MemoryFileBackend {
+    bool shortAppendOnce = false;
+    bool loseHeaderResultOnce = false;
+
+    bool appendBytes(const char* path, const std::uint8_t* data, std::size_t size) override {
+        if (shortAppendOnce) {
+            shortAppendOnce = false;
+            MemoryFileBackend::appendBytes(path, data, size / 2);
+            return false;
+        }
+        return MemoryFileBackend::appendBytes(path, data, size);
+    }
+
+    bool writeAt(const char* path, std::size_t offset, const std::uint8_t* data, std::size_t size) override {
+        const bool written = MemoryFileBackend::writeAt(path, offset, data, size);
+        if (loseHeaderResultOnce && std::strcmp(path, "/water.bin") == 0) {
+            loseHeaderResultOnce = false;
+            return false;
+        }
+        return written;
+    }
+};
+
 }  // namespace
 
 void test_file_record_initializes_empty_file() {
@@ -242,12 +265,116 @@ void test_file_record_grows_record_file_as_records_are_appended() {
     fixture.begin();
 
     TEST_ASSERT_TRUE(fixture.store.append(makeRecord(100, 1000)));
-    TEST_ASSERT_EQUAL_INT64(static_cast<std::int64_t>(kWaterRecordHeaderBytes + sizeof(WaterRecord)),
-                            fixture.backend.fileSize("/water.bin"));
+    TEST_ASSERT_EQUAL_INT64(sizeof(WaterRecord), fixture.backend.fileSize("/water.bin.0"));
 
     TEST_ASSERT_TRUE(fixture.store.append(makeRecord(200, 2000)));
-    TEST_ASSERT_EQUAL_INT64(static_cast<std::int64_t>(kWaterRecordHeaderBytes + sizeof(WaterRecord) * 2),
-                            fixture.backend.fileSize("/water.bin"));
+    TEST_ASSERT_EQUAL_INT64(kWaterRecordHeaderBytes, fixture.backend.fileSize("/water.bin"));
+    TEST_ASSERT_EQUAL_INT64(2 * sizeof(WaterRecord), fixture.backend.fileSize("/water.bin.0"));
+}
+
+void test_file_record_reads_across_segment_boundary_after_wrap_and_reload() {
+    constexpr std::size_t kCapacity = 15000;
+    constexpr std::uint32_t kAppended = kCapacity + 4;
+    RecordFileFixture fixture(kCapacity);
+    fixture.begin();
+    for (std::uint32_t i = 1; i <= kAppended; ++i) {
+        TEST_ASSERT_TRUE(fixture.store.append(makeRecord(i, i)));
+    }
+    TEST_ASSERT_EQUAL_size_t(77, fixture.backend.files.size());
+    TEST_ASSERT_EQUAL_INT64(8000, fixture.backend.fileSize("/water.bin.0"));
+    TEST_ASSERT_EQUAL_INT64(2 * sizeof(WaterRecord), fixture.backend.fileSize("/water.bin.75"));
+
+    WaterRecordFileStore reopened(fixture.backend, "/water.bin", kCapacity);
+    TEST_ASSERT_TRUE(reopened.begin());
+    TEST_ASSERT_EQUAL_size_t(kCapacity, reopened.count());
+    fixture.backend.readCalls = 0;
+    WaterRecord page[10]{};
+    TEST_ASSERT_EQUAL_size_t(10, reopened.readPage(0, 10, page, 10));
+    for (std::uint32_t i = 0; i < 10; ++i) {
+        TEST_ASSERT_EQUAL_UINT32(kAppended - i, page[i].startTime);
+    }
+    TEST_ASSERT_EQUAL_size_t(3, fixture.backend.readCalls);
+}
+
+void test_file_record_interrupted_full_ring_write_keeps_the_backup_view_intact() {
+    RecordFileFixture fixture(3);
+    fixture.begin();
+    for (std::uint32_t i = 1; i <= 5; ++i) {
+        TEST_ASSERT_TRUE(fixture.store.append(makeRecord(i, i)));
+    }
+    TEST_ASSERT_TRUE(fixture.store.append(makeRecord(6, 6)));
+    // Fail the metadata write after overwriting the spare data slot.
+    fixture.backend.failHeaderWriteOnce = true;
+    TEST_ASSERT_FALSE(fixture.store.append(makeRecord(7, 7)));
+    fixture.backend.overwriteByte("/water.bin", kWaterRecordHeaderBytes / 2, 0);
+
+    WaterRecordFileStore reopened(fixture.backend, "/water.bin", 3);
+    TEST_ASSERT_TRUE(reopened.begin());
+    WaterRecord page[3]{};
+    TEST_ASSERT_EQUAL_size_t(3, reopened.readPage(0, 3, page, 3));
+    TEST_ASSERT_EQUAL_UINT32(5, page[0].startTime);
+    TEST_ASSERT_EQUAL_UINT32(4, page[1].startTime);
+    TEST_ASSERT_EQUAL_UINT32(3, page[2].startTime);
+}
+
+void test_file_record_reloads_index_after_uncertain_commit() {
+    InterruptedFileBackend backend;
+    WaterRecordFileStore store(backend, "/water.bin", 3);
+    TEST_ASSERT_TRUE(store.begin());
+    backend.loseHeaderResultOnce = true;
+    TEST_ASSERT_FALSE(store.append(makeRecord(10, 10)));
+    TEST_ASSERT_TRUE(store.append(makeRecord(20, 20)));
+
+    WaterRecord page[2]{};
+    TEST_ASSERT_EQUAL_size_t(2, store.readPage(0, 2, page, 2));
+    TEST_ASSERT_EQUAL_UINT32(20, page[0].startTime);
+    TEST_ASSERT_EQUAL_UINT32(10, page[1].startTime);
+}
+
+void test_file_record_retries_a_short_append_with_new_record_bytes() {
+    InterruptedFileBackend backend;
+    backend.writeAtExtends = false;
+    WaterRecordFileStore store(backend, "/water.bin", 3);
+    TEST_ASSERT_TRUE(store.begin());
+    TEST_ASSERT_TRUE(store.append(makeRecord(10, 10)));
+    backend.shortAppendOnce = true;
+    TEST_ASSERT_FALSE(store.append(makeRecord(20, 20)));
+    TEST_ASSERT_TRUE(store.append(makeRecord(30, 30)));
+
+    WaterRecord page[2]{};
+    TEST_ASSERT_EQUAL_size_t(2, store.readPage(0, 2, page, 2));
+    TEST_ASSERT_EQUAL_UINT32(30, page[0].startTime);
+    TEST_ASSERT_EQUAL_UINT32(10, page[1].startTime);
+}
+
+void test_file_record_recovers_initial_metadata_short_write() {
+    InterruptedFileBackend backend;
+    backend.shortAppendOnce = true;
+    WaterRecordFileStore store(backend, "/water.bin", 3);
+    TEST_ASSERT_FALSE(store.begin());
+    TEST_ASSERT_TRUE(store.begin());
+    TEST_ASSERT_EQUAL_INT64(kWaterRecordHeaderBytes, backend.fileSize("/water.bin"));
+    TEST_ASSERT_EQUAL_size_t(0, store.count());
+}
+
+void test_file_record_preserves_previous_view_if_first_write_after_clear_fails() {
+    RecordFileFixture fixture(3);
+    fixture.begin();
+    for (std::uint32_t i = 1; i <= 3; ++i) {
+        TEST_ASSERT_TRUE(fixture.store.append(makeRecord(i, i)));
+    }
+    TEST_ASSERT_TRUE(fixture.store.clear());
+    fixture.backend.failHeaderWriteOnce = true;
+    TEST_ASSERT_FALSE(fixture.store.append(makeRecord(4, 4)));
+    fixture.backend.overwriteByte("/water.bin", kWaterRecordHeaderBytes / 2, 0);
+
+    WaterRecordFileStore reopened(fixture.backend, "/water.bin", 3);
+    TEST_ASSERT_TRUE(reopened.begin());
+    WaterRecord page[3]{};
+    TEST_ASSERT_EQUAL_size_t(3, reopened.readPage(0, 3, page, 3));
+    TEST_ASSERT_EQUAL_UINT32(3, page[0].startTime);
+    TEST_ASSERT_EQUAL_UINT32(2, page[1].startTime);
+    TEST_ASSERT_EQUAL_UINT32(1, page[2].startTime);
 }
 
 void test_file_record_reports_backend_failures() {
@@ -338,7 +465,11 @@ void test_file_record_rewrites_current_boot_relative_times() {
     TEST_ASSERT_TRUE(fixture.store.append(current));
     TEST_ASSERT_TRUE(fixture.store.append(old));
 
-    TEST_ASSERT_EQUAL_size_t(1, fixture.store.rewriteBootRelativeTimes(12, 815500000));
+    fixture.backend.readCalls = 0;
+    TEST_ASSERT_EQUAL_size_t(0, fixture.store.rewriteBootRelativeTimes(12, 815500000, 0));
+    TEST_ASSERT_EQUAL_size_t(0, fixture.backend.readCalls);
+    TEST_ASSERT_EQUAL_size_t(0, fixture.store.rewriteBootRelativeTimes(12, 815500000, 1));
+    TEST_ASSERT_EQUAL_size_t(1, fixture.store.rewriteBootRelativeTimes(12, 815500000, 2));
     WaterRecord page[2]{};
     TEST_ASSERT_EQUAL_size_t(2, fixture.store.readPage(0, 2, page, 2));
     TEST_ASSERT_EQUAL_UINT32(31, page[0].startTime);
@@ -364,6 +495,12 @@ int main(int argc, char** argv) {
     RUN_TEST(test_file_record_clear_keeps_file_ready);
     RUN_TEST(test_file_record_reports_zero_after_external_remove_and_recovers_on_append);
     RUN_TEST(test_file_record_grows_record_file_as_records_are_appended);
+    RUN_TEST(test_file_record_reads_across_segment_boundary_after_wrap_and_reload);
+    RUN_TEST(test_file_record_interrupted_full_ring_write_keeps_the_backup_view_intact);
+    RUN_TEST(test_file_record_reloads_index_after_uncertain_commit);
+    RUN_TEST(test_file_record_retries_a_short_append_with_new_record_bytes);
+    RUN_TEST(test_file_record_recovers_initial_metadata_short_write);
+    RUN_TEST(test_file_record_preserves_previous_view_if_first_write_after_clear_fails);
     RUN_TEST(test_file_record_reports_backend_failures);
     RUN_TEST(test_file_record_append_failure_keeps_runtime_state);
     RUN_TEST(test_file_record_append_failure_marks_store_unready_for_reader_fallback);

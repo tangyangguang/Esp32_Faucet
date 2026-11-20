@@ -28,7 +28,8 @@ public:
 
     bool begin();
     bool append(const WaterRecord& record);
-    std::size_t rewriteBootRelativeTimes(std::uint32_t bootId, std::uint32_t bootStartRealSec);
+    std::size_t rewriteBootRelativeTimes(std::uint32_t bootId, std::uint32_t bootStartRealSec,
+                                         std::size_t newestRecordLimit);
     std::size_t readPage(std::size_t pageIndex,
                          std::uint16_t pageSize,
                          WaterRecord* output,
@@ -41,15 +42,14 @@ public:
     WaterRecordFileStatus status() const override;
 
 private:
-    bool initializeNewFile();
+    bool initializeNewFile(std::size_t existingBytes);
     bool loadHeader();
     bool saveHeader();
     bool appendRecord(std::size_t index, const WaterRecord& record);
     bool readRecordSpan(std::size_t firstIndex, WaterRecord* output, std::size_t count) const;
-    std::size_t fileSizeBytes() const;
-    std::size_t backupHeaderOffset() const;
+    bool hasRecords(std::size_t oldestIndex, std::size_t count) const;
     std::size_t physicalIndexFromNewestOffset(std::size_t offset) const;
-    std::size_t recordOffset(std::size_t index) const;
+    std::size_t slotCount() const;
 
     WaterRecordFileBackend& backend_;
     const char* path_;

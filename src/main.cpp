@@ -56,11 +56,18 @@ public:
     explicit FileRecordWriter(faucet::WaterRecordFileStore& fileStore) : fileStore_(fileStore) {}
 
     bool append(const faucet::WaterRecord& record) override {
+        // Count attempts because an inconclusive write can still have committed.
+        if (recordsAttempted_ < kWaterRecordCapacity) {
+            ++recordsAttempted_;
+        }
         return fileStore_.append(record);
     }
 
+    std::size_t recordsAttempted() const { return recordsAttempted_; }
+
 private:
     faucet::WaterRecordFileStore& fileStore_;
+    std::size_t recordsAttempted_ = 0;
 };
 
 faucet::Esp32BaseConfigBackend g_configBackend;
@@ -279,8 +286,6 @@ bool currentPeriodKeys(std::uint32_t nowSeconds, faucet::PeriodKeys& keys) {
     return false;
 }
 
-void handleTimeSynced(const Esp32BaseNtp::TimeSnapshot& time);
-
 void initializeApplication() {
     logStartupPhase("app_init_start");
     initializeI2cBus();
@@ -395,9 +400,6 @@ void initializeApplication() {
     faucet::setFaucetAppConfigContext(
         faucet::FaucetAppConfigContext{
             &g_config, &g_configStore, g_app, applyImmediateRuntimeSettings, applyRuntimeSettings});
-#if ESP32BASE_ENABLE_NTP
-    Esp32BaseNtp::onTimeSynced(handleTimeSynced);
-#endif
     logStartupPhase("context_ready");
 
     g_buttons.begin();
@@ -430,9 +432,13 @@ void initializeApplication() {
                     g_waterRecordFile.ready() ? "file" : "unavailable");
 }
 
-void handleTimeSynced(const Esp32BaseNtp::TimeSnapshot& time) {
+void rewriteBootRelativeTimesWhenIdle() {
 #if ESP32BASE_ENABLE_NTP
-    if (!time.synced || g_bootRelativeTimesRewritten || time.bootId == 0) {
+    if (g_bootRelativeTimesRewritten || !g_app || !g_app->canApplyConfig()) {
+        return;
+    }
+    const Esp32BaseNtp::TimeSnapshot time = Esp32BaseNtp::snapshot();
+    if (!time.synced || time.bootId == 0) {
         return;
     }
     std::uint32_t bootStartEpochSec = 0;
@@ -440,7 +446,8 @@ void handleTimeSynced(const Esp32BaseNtp::TimeSnapshot& time) {
         return;
     }
     const std::uint32_t bootStartRealSec = localSecondsFromUnix(bootStartEpochSec);
-    const std::size_t recordCount = g_waterRecordFile.rewriteBootRelativeTimes(time.bootId, bootStartRealSec);
+    const std::size_t recordCount =
+        g_waterRecordFile.rewriteBootRelativeTimes(time.bootId, bootStartRealSec, g_recordWriter.recordsAttempted());
     bool filtersChanged = false;
     if (g_filters) {
         for (std::size_t i = 0; i < faucet::kFilterCount; ++i) {
@@ -473,8 +480,6 @@ void handleTimeSynced(const Esp32BaseNtp::TimeSnapshot& time) {
                         filtersChanged ? "yes" : "no");
     }
     g_bootRelativeTimesRewritten = true;
-#else
-    (void)time;
 #endif
 }
 
@@ -649,6 +654,7 @@ void loop() {
     const std::uint32_t baseHandleStartUs = micros();
     Esp32Base::handle();
     g_maxBaseHandleUs = std::max(g_maxBaseHandleUs, faucet::elapsedSince(micros(), baseHandleStartUs));
+    rewriteBootRelativeTimesWhenIdle();
     maybeMarkOtaValidAfterHealthCheck();
     delay(1);
 }

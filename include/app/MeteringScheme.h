@@ -81,6 +81,8 @@ struct MeteringTargetEstimate {
 
 MeteringParameters defaultMeteringParameters();
 bool validMeteringSchemeParameters(const MeteringParameters& params);
+bool canApplyMeteringCandidate(const MeteringSchemeCandidate& candidate);
+std::uint32_t volumeMlForPulses(const MeteringParameters& params, std::uint32_t pulseCount);
 std::uint32_t estimatePulsesForVolumeMl(const MeteringParameters& params, std::uint32_t targetMl);
 std::uint32_t estimateDurationMsForVolumeMl(const MeteringParameters& params, std::uint32_t targetMl);
 std::uint32_t estimateVolumeMlForDurationMs(const MeteringParameters& params, std::uint32_t durationMs);

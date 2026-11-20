@@ -111,6 +111,26 @@ void test_current_flow_survives_micros_wrap() {
     TEST_ASSERT_EQUAL_UINT32(60, snapshot.instantFlowMlPerMin);
 }
 
+void test_window_counts_high_density_across_micros_wrap() {
+    FlowMeter meter(MeteringParameters{0, 0, 5000});
+    constexpr std::uint32_t start = 0xFFF00000U;
+    for (std::uint32_t i = 0; i < 1500; ++i) {
+        TEST_ASSERT_TRUE(meter.onPulse(start + i * 2000U));
+    }
+    const FlowSnapshot result = meter.snapshot(start + 1499U * 2000U);
+    TEST_ASSERT_EQUAL_UINT32(1500, result.pulseCount);
+    TEST_ASSERT_EQUAL_UINT32(300, result.volumeMl);
+    TEST_ASSERT_EQUAL_UINT32(6000, result.instantFlowMlPerMin);
+    TEST_ASSERT_UINT32_WITHIN(30, 6000, result.windowFlowMlPerMin);
+}
+
+void test_instant_flow_accepts_zero_timestamp() {
+    FlowMeter meter(MeteringParameters{0, 0, 1000});
+    TEST_ASSERT_TRUE(meter.onPulse(0));
+    TEST_ASSERT_TRUE(meter.onPulse(10000));
+    TEST_ASSERT_EQUAL_UINT32(6000, meter.snapshot(10000).instantFlowMlPerMin);
+}
+
 void test_current_flow_expires_when_no_recent_pulse() {
     FlowMeter meter(MeteringParameters{0, 0, 1000});
 
@@ -247,6 +267,8 @@ int main(int argc, char** argv) {
     RUN_TEST(test_pulse_exactly_at_filter_boundary_is_accepted);
     RUN_TEST(test_current_flow_uses_recent_pulse_interval);
     RUN_TEST(test_current_flow_survives_micros_wrap);
+    RUN_TEST(test_window_counts_high_density_across_micros_wrap);
+    RUN_TEST(test_instant_flow_accepts_zero_timestamp);
     RUN_TEST(test_current_flow_expires_when_no_recent_pulse);
     RUN_TEST(test_window_flow_uses_recent_two_second_pulse_count);
     RUN_TEST(test_window_flow_slides_out_old_pulses);

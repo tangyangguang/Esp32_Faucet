@@ -2,7 +2,9 @@
 
 #include "app/WaterPulseTraceAnalysis.h"
 #include "app/WaterPulseTraceStore.h"
+#include "app/MeteringScheme.h"
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <initializer_list>
@@ -499,6 +501,29 @@ void test_segmented_calibration_still_requires_two_samples() {
                             static_cast<unsigned>(result.rejectReason));
 }
 
+void test_segmented_calibration_detects_relative_outlier_when_absolute_error_is_smaller() {
+    const SegmentedCalibrationSample samples[] = {
+        {430, 100, 0, 100, 0, 10}, {1400, 300, 0, 300, 0, 10}, {2480, 500, 0, 500, 0, 10},
+    };
+    SegmentedCalibrationResult result{};
+    TEST_ASSERT_TRUE(computeSegmentedCalibration(samples, 3, result));
+    TEST_ASSERT_EQUAL_UINT16(1, result.excludedSampleCount);
+    TEST_ASSERT_EQUAL_UINT32(1400, result.minActualMl);
+    const MeteringParameters params{result.startupPulseCount, result.startupVolumeMl, result.stablePulsePerLiter,
+                                   result.startupDurationMs, result.stableFlowMlPerMin};
+    std::uint32_t maxAbsolute = 0;
+    std::uint32_t maxRelative = 0;
+    for (std::size_t i = 1; i < 3; ++i) {
+        const std::uint32_t estimated = volumeMlForPulses(params, samples[i].totalPulses);
+        const std::uint32_t actual = samples[i].actualMl;
+        const std::uint32_t error = estimated > actual ? estimated - actual : actual - estimated;
+        maxAbsolute = std::max(maxAbsolute, error);
+        maxRelative = std::max(maxRelative, (error * 1000U + actual - 1U) / actual);
+    }
+    TEST_ASSERT_EQUAL_UINT32(maxAbsolute, result.maxErrorMl);
+    TEST_ASSERT_EQUAL_UINT32(maxRelative, result.maxRelativeErrorTenthPercent);
+}
+
 void test_segmented_calibration_removes_single_outlier_before_final_fit() {
     SegmentedCalibrationSample samples[3]{};
     samples[0].actualMl = 1500;
@@ -582,6 +607,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_segmented_calibration_rejects_error_above_configured_limits);
     RUN_TEST(test_segmented_calibration_warns_when_volume_span_is_small);
     RUN_TEST(test_segmented_calibration_still_requires_two_samples);
+    RUN_TEST(test_segmented_calibration_detects_relative_outlier_when_absolute_error_is_smaller);
     RUN_TEST(test_segmented_calibration_removes_single_outlier_before_final_fit);
     RUN_TEST(test_trace_analysis_options_change_stable_window);
     RUN_TEST(test_trace_store_updates_actual_ml_by_record);

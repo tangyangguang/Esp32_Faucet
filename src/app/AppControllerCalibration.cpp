@@ -534,8 +534,7 @@ bool AppController::applyGeneratedCalibrationForWeb(std::uint32_t nowSeconds) {
     if (!statusAllowsApply) {
         return false;
     }
-    if (!calibrationCandidate_.ready ||
-        calibrationCandidate_.sourceType != MeteringSchemeSource::CalibrationSession) {
+    if (!canApplyMeteringCandidate(calibrationCandidate_)) {
         return false;
     }
     std::uint32_t newId = 0;
@@ -752,7 +751,7 @@ bool AppController::beginCalibrationLocalRun(std::uint32_t nowMs,
     if ((calibrationSession_.status != CalibrationSessionStatus::WaitingLocalRun &&
          calibrationSession_.status != CalibrationSessionStatus::ReadyToGenerate &&
          calibrationSession_.status != CalibrationSessionStatus::Generated) ||
-        water_.snapshot().state != WaterState::Idle || !calibrationCanStartAttempt(calibrationSession_)) {
+        !water_.canApplyConfig() || !calibrationCanStartAttempt(calibrationSession_)) {
         return false;
     }
     if (!water_.startUntargeted(nowMs)) {
@@ -808,6 +807,14 @@ void AppController::persistCalibrationPendingAttempt(const WaterRecord& record, 
     attempt.record = record;
     attempt.targetHintMl = record.targetValue;
     attempt.status = CalibrationAttemptStatus::PendingActual;
+
+    if (!waterResultAllowsCalibration(record.result)) {
+        appendCalibrationAttempt(calibrationSession_, attempt);
+        rejectCalibrationAttempt(calibrationSession_, calibrationSession_.attempts[attempt.attemptIndex],
+                                 CalibrationInvalidReason::ErrorResult, nowSeconds);
+        saveCalibrationSession();
+        return;
+    }
 
     if (slot >= kCalibrationSessionTraceSlots) {
         attempt.status = CalibrationAttemptStatus::Invalid;

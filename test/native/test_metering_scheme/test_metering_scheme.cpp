@@ -154,6 +154,25 @@ void test_metering_estimate_allows_startup_pulse_offset_without_startup_volume()
     TEST_ASSERT_EQUAL_UINT32(1000, estimateVolumeMlForDurationMs(params, 36579));
 }
 
+void test_calibration_candidate_requires_both_error_limits_and_sample_span() {
+    MeteringSchemeCandidate candidate{};
+    candidate.ready = true;
+    candidate.sampleCount = 2;
+    candidate.minActualMl = 1000;
+    candidate.maxActualMl = 1500;
+    candidate.maxErrorMl = 100;
+    candidate.maxErrorTenthPercent = 50;
+    TEST_ASSERT_TRUE(canApplyMeteringCandidate(candidate));
+    candidate.maxErrorTenthPercent = 51;
+    TEST_ASSERT_FALSE(canApplyMeteringCandidate(candidate));
+    candidate.maxErrorTenthPercent = 50;
+    candidate.maxErrorMl = 101;
+    TEST_ASSERT_FALSE(canApplyMeteringCandidate(candidate));
+    candidate.maxErrorMl = 100;
+    candidate.maxActualMl = 1499;
+    TEST_ASSERT_FALSE(canApplyMeteringCandidate(candidate));
+}
+
 int main(int argc, char** argv) {
     (void)argc;
     (void)argv;
@@ -166,5 +185,6 @@ int main(int argc, char** argv) {
     RUN_TEST(test_metering_estimate_uses_segmented_parameters_for_target_volume);
     RUN_TEST(test_metering_estimate_handles_no_startup_segment);
     RUN_TEST(test_metering_estimate_allows_startup_pulse_offset_without_startup_volume);
+    RUN_TEST(test_calibration_candidate_requires_both_error_limits_and_sample_span);
     return UNITY_END();
 }

@@ -3,7 +3,7 @@
 #include "app/TimeUtils.h"
 
 #include <algorithm>
-#include <cmath>
+#include <iterator>
 #include <limits>
 
 namespace faucet {
@@ -29,23 +29,27 @@ FlowMeter::FlowMeter(MeteringParameters params, std::uint32_t pulseFilterUs)
       filteredPulses_(0),
       lastPulseUs_(0),
       previousPulseUs_(0),
-      recentPulseUs_{},
-      recentPulseStart_(0),
-      recentPulseCount_(0),
+      pulseBuckets_{},
+      bucketStartUs_(0),
+      bucketIndex_(0),
       displayFlowMlPerMin_(0),
       displayFlowReady_(false),
-      hasPulse_(false) {}
+      hasPulse_(false),
+      hasPreviousPulse_(false) {}
 
 void FlowMeter::reset() {
     pulseCount_ = 0;
     filteredPulses_ = 0;
-    lastPulseUs_ = 0;
-    previousPulseUs_ = 0;
-    recentPulseStart_ = 0;
-    recentPulseCount_ = 0;
+    clearWindow();
+}
+
+void FlowMeter::clearWindow() {
+    std::fill(std::begin(pulseBuckets_), std::end(pulseBuckets_), 0);
+    bucketIndex_ = 0;
     displayFlowMlPerMin_ = 0;
     displayFlowReady_ = false;
     hasPulse_ = false;
+    hasPreviousPulse_ = false;
 }
 
 bool FlowMeter::setMeteringParameters(MeteringParameters params) {
@@ -62,28 +66,39 @@ void FlowMeter::setPulseFilterUs(std::uint32_t pulseFilterUs) {
 
 bool FlowMeter::onPulse(std::uint32_t nowUs) {
     if (hasPulse_ && elapsedSince(nowUs, lastPulseUs_) < pulseFilterUs_) {
-        ++filteredPulses_;
+        if (filteredPulses_ < UINT32_MAX) {
+            ++filteredPulses_;
+        }
         return false;
     }
-    previousPulseUs_ = hasPulse_ ? lastPulseUs_ : 0;
+    hasPreviousPulse_ = hasPulse_;
+    previousPulseUs_ = lastPulseUs_;
+    if (!hasPulse_) {
+        bucketStartUs_ = nowUs;
+    }
     lastPulseUs_ = nowUs;
     hasPulse_ = true;
     if (pulseCount_ < std::numeric_limits<std::uint32_t>::max()) {
         ++pulseCount_;
     }
-    const std::size_t index = (recentPulseStart_ + recentPulseCount_) % kRecentPulseCapacity;
-    recentPulseUs_[index] = nowUs;
-    if (recentPulseCount_ < kRecentPulseCapacity) {
-        ++recentPulseCount_;
-    } else {
-        recentPulseStart_ = (recentPulseStart_ + 1U) % kRecentPulseCapacity;
+    const std::size_t steps = elapsedSince(nowUs, bucketStartUs_) / kBucketUs;
+    if (steps > 0) {
+        const std::size_t binsToClear = std::min(steps, kBucketCount);
+        for (std::size_t i = 0; i < binsToClear; ++i) {
+            bucketIndex_ = (bucketIndex_ + 1) % kBucketCount;
+            pulseBuckets_[bucketIndex_] = 0;
+        }
+        bucketStartUs_ += static_cast<std::uint32_t>(steps) * kBucketUs;
+    }
+    if (pulseBuckets_[bucketIndex_] < UINT32_MAX) {
+        ++pulseBuckets_[bucketIndex_];
     }
     return true;
 }
 
 FlowSnapshot FlowMeter::snapshot(std::uint32_t nowUs) const {
     std::uint32_t instantFlow = 0;
-    if (hasPulse_ && previousPulseUs_ != 0) {
+    if (hasPreviousPulse_) {
         const std::uint32_t interval = elapsedSince(lastPulseUs_, previousPulseUs_);
         const std::uint32_t age = elapsedSince(nowUs, lastPulseUs_);
         if (interval > 0 && age <= 2000000UL) {
@@ -92,26 +107,11 @@ FlowSnapshot FlowMeter::snapshot(std::uint32_t nowUs) const {
     }
     const std::uint32_t realtimeFlow = windowFlow(nowUs);
     const std::uint32_t smoothedFlow = displayFlow(nowUs, realtimeFlow);
-    return FlowSnapshot{pulseCount_, volumeFromPulses(), smoothedFlow, instantFlow, realtimeFlow, smoothedFlow, filteredPulses_};
+    return FlowSnapshot{pulseCount_, volumeMl(), smoothedFlow, instantFlow, realtimeFlow, smoothedFlow, filteredPulses_};
 }
 
-std::uint32_t FlowMeter::volumeFromPulses() const {
-    if (pulseCount_ == 0) {
-        return 0;
-    }
-    if (params_.startupPulseCount > 0 && pulseCount_ <= params_.startupPulseCount) {
-        return static_cast<std::uint32_t>(
-            (static_cast<std::uint64_t>(pulseCount_) * params_.startupVolumeMl + params_.startupPulseCount / 2ULL) /
-            params_.startupPulseCount);
-    }
-    const std::uint32_t stablePulses =
-        pulseCount_ > params_.startupPulseCount ? pulseCount_ - params_.startupPulseCount : pulseCount_;
-    const std::uint64_t stableMl =
-        (static_cast<std::uint64_t>(stablePulses) * 1000ULL + params_.stablePulsePerLiter / 2ULL) /
-        params_.stablePulsePerLiter;
-    const std::uint64_t total = static_cast<std::uint64_t>(params_.startupVolumeMl) + stableMl;
-    return total > std::numeric_limits<std::uint32_t>::max() ? std::numeric_limits<std::uint32_t>::max()
-                                                            : static_cast<std::uint32_t>(total);
+std::uint32_t FlowMeter::volumeMl() const {
+    return volumeMlForPulses(params_, pulseCount_);
 }
 
 std::uint32_t FlowMeter::flowFromInterval(std::uint32_t intervalUs) const {
@@ -145,22 +145,25 @@ std::uint32_t FlowMeter::flowFromPulseWindow(std::uint32_t pulseCount, std::uint
 }
 
 std::uint32_t FlowMeter::recentPulseCount(std::uint32_t nowUs, std::uint32_t windowUs) const {
-    std::uint32_t count = 0;
-    for (std::size_t i = 0; i < recentPulseCount_; ++i) {
-        const std::size_t index = (recentPulseStart_ + i) % kRecentPulseCapacity;
-        if (elapsedSince(nowUs, recentPulseUs_[index]) <= windowUs) {
-            ++count;
-        }
+    const std::uint32_t age = elapsedSince(nowUs, bucketStartUs_);
+    if (age >= windowUs + kBucketUs) {
+        return 0;
     }
-    return count;
+    // Include the bucket intersecting the oldest edge of the window.
+    const std::size_t count = (windowUs + kBucketUs - 1 - age) / kBucketUs + 1;
+    std::uint64_t pulses = 0;
+    std::size_t index = bucketIndex_;
+    for (std::size_t i = 0; i < count; ++i) {
+        pulses += pulseBuckets_[index];
+        index = index == 0 ? kBucketCount - 1 : index - 1;
+    }
+    return static_cast<std::uint32_t>(std::min<std::uint64_t>(pulses, UINT32_MAX));
 }
 
 std::uint32_t FlowMeter::windowFlow(std::uint32_t nowUs) const {
     if (!hasPulse_ || elapsedSince(nowUs, lastPulseUs_) > 3000000UL) {
         return 0;
     }
-    constexpr std::uint32_t kDefaultWindowUs = 2000000UL;
-    constexpr std::uint32_t kLowFlowWindowUs = 3000000UL;
     std::uint32_t pulses = recentPulseCount(nowUs, kDefaultWindowUs);
     std::uint32_t windowUs = kDefaultWindowUs;
     if (pulses < 2U) {

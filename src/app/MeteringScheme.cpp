@@ -1,4 +1,5 @@
 #include "app/MeteringScheme.h"
+#include "app/AppConfig.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -84,6 +85,29 @@ bool validMeteringSchemeParameters(const MeteringParameters& params) {
     }
     return (params.startupPulseCount == 0 && params.startupVolumeMl == 0) ||
            params.startupPulseCount > 0;
+}
+
+bool canApplyMeteringCandidate(const MeteringSchemeCandidate& candidate) {
+    return candidate.ready && candidate.sourceType == MeteringSchemeSource::CalibrationSession &&
+           candidate.sampleCount >= 2 && candidate.maxActualMl >= candidate.minActualMl &&
+           candidate.maxActualMl - candidate.minActualMl >= kMinCalibrationMinVolumeSpanMl &&
+           candidate.maxErrorMl <= kDefaultCalibrationMaxErrorMl &&
+           candidate.maxErrorTenthPercent <= kDefaultCalibrationMaxRelativeErrorTenthPercent;
+}
+
+std::uint32_t volumeMlForPulses(const MeteringParameters& params, std::uint32_t pulseCount) {
+    if (pulseCount == 0 || params.stablePulsePerLiter == 0) {
+        return 0;
+    }
+    if (pulseCount <= params.startupPulseCount) {
+        return static_cast<std::uint32_t>(
+            (static_cast<std::uint64_t>(pulseCount) * params.startupVolumeMl + params.startupPulseCount / 2ULL) /
+            params.startupPulseCount);
+    }
+    const std::uint64_t stableMl =
+        (static_cast<std::uint64_t>(pulseCount - params.startupPulseCount) * 1000ULL + params.stablePulsePerLiter / 2ULL) /
+        params.stablePulsePerLiter;
+    return saturatingU32(params.startupVolumeMl + stableMl);
 }
 
 std::uint32_t estimatePulsesForVolumeMl(const MeteringParameters& params, std::uint32_t targetMl) {

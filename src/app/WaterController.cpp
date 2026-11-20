@@ -29,7 +29,7 @@ WaterController::WaterController(const SystemConfig& config)
       activeMode_(WaterMode::Volume),
       targetValue_(0),
       highFlowStartMs_(0),
-      lastElapsedSec_(0),
+      lastElapsedMs_(0),
       lastError_(WaterResult::Completed),
       lastResult_{} {
     sanitizeConfig(config_);
@@ -50,10 +50,11 @@ WaterSnapshot WaterController::snapshot() const {
         state_ == WaterState::Idle ? selectedPreset_ : activePreset_,
         valveOpen_,
         volumeMl_,
-        lastElapsedSec_,
+        lastElapsedMs_ / 1000U,
         lastError_,
         state_ == WaterState::Idle ? (preset ? modeFromPreset(*preset) : WaterMode::Volume) : activeMode_,
         state_ == WaterState::Idle ? (preset ? preset->value : 0) : targetValue_,
+        lastElapsedMs_,
     };
 }
 
@@ -142,7 +143,7 @@ bool WaterController::requestStart(std::uint32_t nowMs) {
     pausedStartMs_ = 0;
     accumulatedPausedMs_ = 0;
     highFlowStartMs_ = 0;
-    lastElapsedSec_ = 0;
+    lastElapsedMs_ = 0;
     lastError_ = WaterResult::Completed;
     return true;
 }
@@ -160,7 +161,7 @@ bool WaterController::confirmStart(std::uint32_t nowMs) {
     noFlowLastVolumeMl_ = 0;
     noFlowLastActivityMs_ = nowMs;
     highFlowStartMs_ = 0;
-    lastElapsedSec_ = 0;
+    lastElapsedMs_ = 0;
     lastError_ = WaterResult::Completed;
     clearResult();
     return true;
@@ -186,7 +187,7 @@ bool WaterController::startUntargeted(std::uint32_t nowMs) {
     noFlowLastVolumeMl_ = 0;
     noFlowLastActivityMs_ = nowMs;
     highFlowStartMs_ = 0;
-    lastElapsedSec_ = 0;
+    lastElapsedMs_ = 0;
     lastError_ = WaterResult::Completed;
     clearResult();
     return true;
@@ -231,11 +232,18 @@ void WaterController::stop(std::uint32_t nowMs) {
     valveOpen_ = false;
 }
 
+void WaterController::stopForFlowError(std::uint32_t nowMs) {
+    if (state_ == WaterState::Running) {
+        finish(nowMs, WaterResult::FlowError, WaterState::Error);
+    }
+}
+
 bool WaterController::togglePause(std::uint32_t nowMs) {
     if (state_ == WaterState::Running) {
         state_ = WaterState::Paused;
         valveOpen_ = false;
         pausedStartMs_ = nowMs;
+        highFlowStartMs_ = 0;
         return true;
     }
     if (state_ == WaterState::Paused) {
@@ -258,9 +266,9 @@ void WaterController::addVolume(std::uint32_t volumeMl) {
     volumeMl_ = max - volumeMl_ < volumeMl ? max : volumeMl_ + volumeMl;
 }
 
-void WaterController::tick(std::uint32_t nowMs, std::uint32_t currentFlowMlPerMin) {
+void WaterController::tick(std::uint32_t nowMs, std::uint32_t currentFlowMlPerMin, bool newFlowPulse) {
     if (state_ == WaterState::Running || state_ == WaterState::Paused) {
-        lastElapsedSec_ = activeElapsedMs(nowMs) / 1000UL;
+        lastElapsedMs_ = activeElapsedMs(nowMs);
     }
 
     if (state_ == WaterState::Confirm &&
@@ -279,7 +287,7 @@ void WaterController::tick(std::uint32_t nowMs, std::uint32_t currentFlowMlPerMi
     if (state_ != WaterState::Running) {
         return;
     }
-    if (checkSafety(nowMs, currentFlowMlPerMin)) {
+    if (checkSafety(nowMs, currentFlowMlPerMin, newFlowPulse)) {
         return;
     }
     checkTarget(nowMs);
@@ -303,7 +311,7 @@ void WaterController::finish(std::uint32_t nowMs, WaterResult result, WaterState
     lastResult_.durationSec = static_cast<std::uint16_t>(std::min<std::uint32_t>(activeElapsedMs(nowMs) / 1000UL, 65535));
     lastResult_.selectedPreset = activePreset_ < 255 ? static_cast<std::uint8_t>(activePreset_) : 255;
     lastError_ = result;
-    lastElapsedSec_ = activeElapsedMs(nowMs) / 1000UL;
+    lastElapsedMs_ = activeElapsedMs(nowMs);
 
     state_ = nextState;
     valveOpen_ = false;
@@ -319,7 +327,7 @@ std::uint32_t WaterController::activeElapsedMs(std::uint32_t nowMs) const {
     return total > paused ? total - paused : 0;
 }
 
-bool WaterController::checkSafety(std::uint32_t nowMs, std::uint32_t currentFlowMlPerMin) {
+bool WaterController::checkSafety(std::uint32_t nowMs, std::uint32_t currentFlowMlPerMin, bool newFlowPulse) {
     if (activeElapsedMs(nowMs) >= secondsToMillis(config_.maxOutTimeSec) || volumeMl_ >= config_.maxOutVolumeMl) {
         finish(nowMs, WaterResult::SafetyStopped, WaterState::Error);
         return true;
@@ -334,7 +342,7 @@ bool WaterController::checkSafety(std::uint32_t nowMs, std::uint32_t currentFlow
         }
     }
 
-    if (volumeMl_ > noFlowLastVolumeMl_) {
+    if (newFlowPulse || volumeMl_ > noFlowLastVolumeMl_) {
         noFlowLastVolumeMl_ = volumeMl_;
         noFlowLastActivityMs_ = nowMs;
     }

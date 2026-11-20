@@ -27,12 +27,15 @@ void StatisticsStore::reset(const PeriodKeys& keys) {
     record_.lastMonthKey = keys.monthKey;
 }
 
-void StatisticsStore::addWater(std::uint32_t volumeMl, const PeriodKeys& keys) {
+void StatisticsStore::addWater(std::uint32_t volumeMl, const PeriodKeys& keys, bool periodKeysValid) {
+    record_.totalMl = saturatingAdd(record_.totalMl, volumeMl);
+    if (!periodKeysValid) {
+        return;
+    }
     rollPeriods(keys);
     record_.todayMl = saturatingAdd(record_.todayMl, volumeMl);
     record_.weekMl = saturatingAdd(record_.weekMl, volumeMl);
     record_.monthMl = saturatingAdd(record_.monthMl, volumeMl);
-    record_.totalMl = saturatingAdd(record_.totalMl, volumeMl);
 }
 
 void StatisticsStore::rollPeriods(const PeriodKeys& keys) {

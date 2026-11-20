@@ -59,6 +59,9 @@ int main(int argc, char** argv) {
     RUN_TEST(test_app_controller_confirm_and_running_start_volume_stays_zero_until_first_pulse);
     RUN_TEST(test_app_controller_completion_writes_record_statistics_and_filters);
     RUN_TEST(test_app_controller_pushes_closed_valve_output_before_record_persistence);
+    RUN_TEST(test_app_controller_flow_loss_closes_valve_and_rejects_queued_pulses_from_before_resume);
+    RUN_TEST(test_app_controller_does_not_use_pre_open_queue_loss_or_expire_pulses_after_half_micros_range);
+    RUN_TEST(test_app_controller_counted_startup_pulse_prevents_a_false_no_flow_error);
     RUN_TEST(test_app_controller_web_preset_switch_during_run_updates_next_preset_only);
     RUN_TEST(test_app_controller_local_plus_does_not_switch_preset_while_running);
     RUN_TEST(test_app_controller_offline_completion_marks_unknown_time_with_boot_id);
@@ -78,6 +81,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_app_controller_adjusts_time_target_with_configured_step);
     RUN_TEST(test_app_controller_stopped_volume_does_not_clamp_next_confirm_adjustment);
     RUN_TEST(test_app_controller_starting_calibration_from_idle_waits_for_local_run);
+    RUN_TEST(test_app_controller_flow_loss_invalidates_calibration_attempt);
     RUN_TEST(test_app_controller_starting_calibration_while_running_is_rejected);
     RUN_TEST(test_app_controller_starting_calibration_twice_is_rejected);
     RUN_TEST(test_app_controller_flow_calibration_session_does_not_time_out);

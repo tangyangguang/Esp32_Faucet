@@ -25,7 +25,7 @@ void test_app_controller_offline_completion_marks_unknown_time_with_boot_id() {
     TEST_ASSERT_EQUAL_UINT32(1, records.records[0].startTime);
     TEST_ASSERT_EQUAL_UINT32(42, waterRecordBootId(records.records[0]));
     TEST_ASSERT_EQUAL_UINT32(0, statistics.record().todayMl);
-    TEST_ASSERT_EQUAL_UINT32(0, statistics.record().totalMl);
+    TEST_ASSERT_EQUAL_UINT32(1500, statistics.record().totalMl);
     TEST_ASSERT_EQUAL_UINT32(1500, filters.record(0).usedMl);
 }
 
@@ -118,11 +118,12 @@ void test_app_controller_stop_down_closes_valve_and_records_user_stop() {
     pressAndReleaseOk(app, 100);
     pressAndReleaseOk(app, 300);
     for (std::uint32_t i = 0; i < 300; ++i) {
-        app.onFlowPulse(1000000UL + i * 3000UL);
+        app.onFlowPulse(600000UL + i * 3000UL);
     }
     app.tick(input({false, false, false, false}, 1500, 1500000, 1714502400));
 
     app.tick(input({true, false, false, false}, 1600, 1600000, 1714502401));
+    app.onFlowPulse(1605000);
     app.tick(input({true, false, false, false}, 1600 + kButtonDebounceMs, (1600 + kButtonDebounceMs) * 1000UL, 1714502401));
 
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(WaterState::Idle),
@@ -131,7 +132,8 @@ void test_app_controller_stop_down_closes_valve_and_records_user_stop() {
     TEST_ASSERT_EQUAL_size_t(1, records.records.size());
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(WaterResult::StoppedByUser),
                             static_cast<std::uint8_t>(records.records[0].result));
-    TEST_ASSERT_EQUAL_UINT32(300, records.records[0].volumeMl);
+    TEST_ASSERT_EQUAL_UINT32(301, records.records[0].volumeMl);
+    TEST_ASSERT_EQUAL_UINT32(301, records.records[0].pulseCount);
 }
 
 void test_app_controller_normal_output_does_not_collect_ram_pulse_trace() {
@@ -544,7 +546,7 @@ void test_app_controller_snapshot_reports_current_flow_rate() {
     TEST_ASSERT_EQUAL_UINT32(60, app.snapshot().windowFlowMlPerMin);
     TEST_ASSERT_EQUAL_UINT32(60, app.snapshot().instantFlowMlPerMin);
     TEST_ASSERT_EQUAL_UINT32(60, app.snapshot().displayFlowMlPerMin);
-    TEST_ASSERT_EQUAL_UINT32(120, app.snapshot().runAverageFlowMlPerMin);
+    TEST_ASSERT_EQUAL_UINT32(69, app.snapshot().runAverageFlowMlPerMin);
 
     app.tick(input({false, false, false, false}, 5100, 5100000UL, 1714502403));
 

@@ -568,7 +568,7 @@ void sendMeteringQualityWarnings(std::uint16_t sampleCount,
     if (errorHigh) {
         char maxErrorText[24]{};
         formatLiters(maxErrorMl, maxErrorText, sizeof(maxErrorText));
-        sendFmt("<p class='warn'>样本回算最大误差为 %s / %u.%u%%，建议补充样本后再确认。</p>",
+        sendFmt("<p class='warn'>样本回算最大误差为 %s / %u.%u%%，补充样本后才能应用。</p>",
                 maxErrorText,
                 static_cast<unsigned>(maxErrorTenthPercent / 10U),
                 static_cast<unsigned>(maxErrorTenthPercent % 10U));
@@ -705,7 +705,7 @@ void sendFlowCalibrationSessionPanel(const AppSnapshot& snapshot, bool taskActiv
     const bool canApply =
         (snapshot.calibrationStatus == CalibrationSessionStatus::Generated ||
          snapshot.calibrationStatus == CalibrationSessionStatus::Applied) &&
-        hasCandidate && !taskActive;
+        canApplyMeteringCandidate(snapshot.calibrationCandidate) && !taskActive;
     const bool canRegenerate =
         (snapshot.calibrationStatus == CalibrationSessionStatus::WaitingLocalRun ||
          snapshot.calibrationStatus == CalibrationSessionStatus::ReadyToGenerate ||

@@ -24,15 +24,19 @@ public:
                        std::uint32_t pulseFilterUs = kDefaultPulseFilterUs);
 
     void reset();
+    void clearWindow();
     bool setMeteringParameters(MeteringParameters params);
     void setPulseFilterUs(std::uint32_t pulseFilterUs);
     bool onPulse(std::uint32_t nowUs);
+    std::uint32_t volumeMl() const;
     FlowSnapshot snapshot(std::uint32_t nowUs) const;
 
 private:
-    static constexpr std::size_t kRecentPulseCapacity = 512;
+    static constexpr std::uint32_t kBucketUs = 10000;
+    static constexpr std::uint32_t kDefaultWindowUs = 2000000;
+    static constexpr std::uint32_t kLowFlowWindowUs = 3000000;
+    static constexpr std::size_t kBucketCount = kLowFlowWindowUs / kBucketUs + 1;
 
-    std::uint32_t volumeFromPulses() const;
     std::uint32_t flowFromInterval(std::uint32_t intervalUs) const;
     std::uint32_t flowFromPulseWindow(std::uint32_t pulseCount, std::uint32_t windowUs) const;
     std::uint32_t recentPulseCount(std::uint32_t nowUs, std::uint32_t windowUs) const;
@@ -45,12 +49,13 @@ private:
     std::uint32_t filteredPulses_;
     std::uint32_t lastPulseUs_;
     std::uint32_t previousPulseUs_;
-    std::uint32_t recentPulseUs_[kRecentPulseCapacity];
-    std::size_t recentPulseStart_;
-    std::size_t recentPulseCount_;
+    std::uint32_t pulseBuckets_[kBucketCount];
+    std::uint32_t bucketStartUs_;
+    std::size_t bucketIndex_;
     mutable std::uint32_t displayFlowMlPerMin_;
     mutable bool displayFlowReady_;
     bool hasPulse_;
+    bool hasPreviousPulse_;
 };
 
 }  // namespace faucet

@@ -35,6 +35,7 @@ struct WaterSnapshot {
     WaterResult lastResult;
     WaterMode mode;
     std::uint32_t targetValue;
+    std::uint32_t elapsedMs;
 };
 
 class WaterController {
@@ -57,16 +58,17 @@ public:
     bool adjustTarget(std::int32_t delta);
     void cancel(std::uint32_t nowMs);
     void stop(std::uint32_t nowMs);
+    void stopForFlowError(std::uint32_t nowMs);
     bool togglePause(std::uint32_t nowMs);
     void addVolume(std::uint32_t volumeMl);
-    void tick(std::uint32_t nowMs, std::uint32_t currentFlowMlPerMin = 0);
+    void tick(std::uint32_t nowMs, std::uint32_t currentFlowMlPerMin = 0, bool newFlowPulse = false);
 
 private:
     const PresetConfig* selectedPresetConfig() const;
     const PresetConfig* activePresetConfig() const;
     void finish(std::uint32_t nowMs, WaterResult result, WaterState nextState);
     std::uint32_t activeElapsedMs(std::uint32_t nowMs) const;
-    bool checkSafety(std::uint32_t nowMs, std::uint32_t currentFlowMlPerMin);
+    bool checkSafety(std::uint32_t nowMs, std::uint32_t currentFlowMlPerMin, bool newFlowPulse);
     bool checkTarget(std::uint32_t nowMs);
     bool enabledPreset(std::size_t index) const;
 
@@ -85,7 +87,7 @@ private:
     WaterMode activeMode_;
     std::uint32_t targetValue_;
     std::uint32_t highFlowStartMs_;
-    std::uint32_t lastElapsedSec_;
+    std::uint32_t lastElapsedMs_;
     WaterResult lastError_;
     WaterTaskResult lastResult_;
 };

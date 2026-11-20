@@ -408,7 +408,9 @@ void initializeApplication() {
         ESP32BASE_LOG_E("app", "valve PWM initialization failed hz=%lu",
                         static_cast<unsigned long>(g_config.valvePwmFrequencyHz));
     }
-    g_app->setValveOutputSink(applyValveOutput);
+    g_app->setValveOutputSink(applyValveOutput, []() -> faucet::FlowInputSample {
+        return {micros(), g_flowPulses.droppedPulses()};
+    });
     const faucet::ValveOutput startupValve = g_app->snapshot().valve;
     g_valveHardware.apply(startupValve);
     g_valveClosedApplied =
@@ -496,7 +498,6 @@ void runApplicationTick() {
     }
 
     const std::uint32_t nowMs = millis();
-    const std::uint32_t nowUs = micros();
     const faucet::ButtonLevels levels = g_buttons.read();
 
     std::uint32_t pulseUs = 0;
@@ -507,16 +508,7 @@ void runApplicationTick() {
     }
     const std::uint32_t droppedPulses = g_flowPulses.droppedPulses();
     g_app->setFlowDroppedPulses(droppedPulses);
-    if (droppedPulses != g_lastDroppedPulsesLogged &&
-        faucet::elapsedAtLeast(nowMs, g_lastDroppedPulsesLogMs, 5000UL)) {
-        ESP32BASE_LOG_W("app",
-                        "flow pulse buffer dropped pulses: total=%lu delta=%lu",
-                        static_cast<unsigned long>(droppedPulses),
-                        static_cast<unsigned long>(droppedPulses - g_lastDroppedPulsesLogged));
-        g_lastDroppedPulsesLogged = droppedPulses;
-        g_lastDroppedPulsesLogMs = nowMs;
-    }
-
+    const std::uint32_t nowUs = micros();
     const std::uint32_t nowSeconds = currentSeconds();
     faucet::PeriodKeys periodKeys{};
     const bool periodKeysValid = currentPeriodKeys(nowSeconds, periodKeys);
@@ -531,6 +523,15 @@ void runApplicationTick() {
         currentBootId(),
     };
     g_app->tick(input);
+    if (droppedPulses != g_lastDroppedPulsesLogged &&
+        faucet::elapsedAtLeast(nowMs, g_lastDroppedPulsesLogMs, 5000UL)) {
+        ESP32BASE_LOG_W("app",
+                        "flow pulse buffer dropped pulses: total=%lu delta=%lu",
+                        static_cast<unsigned long>(droppedPulses),
+                        static_cast<unsigned long>(droppedPulses - g_lastDroppedPulsesLogged));
+        g_lastDroppedPulsesLogged = droppedPulses;
+        g_lastDroppedPulsesLogMs = nowMs;
+    }
     if (g_app->applyPendingSystemConfigIfSafe()) {
         g_config = g_app->config();
         applyRuntimeSettings(g_config);
@@ -541,7 +542,6 @@ void runApplicationTick() {
     }
 
     const faucet::AppSnapshot snapshot = g_app->snapshot();
-    g_valveHardware.apply(snapshot.valve);
 
     const bool userActivity =
         levels.cancelPressed || levels.okPressed || levels.plusPressed || levels.minusPressed;

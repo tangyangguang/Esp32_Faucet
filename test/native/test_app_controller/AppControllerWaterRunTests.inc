@@ -169,6 +169,98 @@ void test_app_controller_pushes_closed_valve_output_before_record_persistence() 
     TEST_ASSERT_TRUE(gRecordAppendObservedClosedValve);
 }
 
+void test_app_controller_flow_loss_closes_valve_and_rejects_queued_pulses_from_before_resume() {
+    const SystemConfig config = makeDefaultConfig();
+    StatisticsStore statistics;
+    FilterStore filters(config.filters);
+    ObservingRecordWriter records;
+    AppController app(config, statistics, filters, records);
+    applyTestMeteringScheme(app);
+    app.setValveOutputSink([](ValveOutput output) {
+        if (!output.enabled) {
+            gValveSinkSawClosedBeforeRecordAppend = true;
+        }
+    });
+    app.resetInputs({false, false, false, false}, 0);
+    pressAndReleaseOk(app, 100);
+    pressAndReleaseOk(app, 300);
+    app.onFlowPulse(600000);
+    app.onFlowPulse(610000);
+    pressAndReleaseOk(app, 700);
+    TEST_ASSERT_EQUAL_UINT32(2, app.snapshot().water.volumeMl);
+    TEST_ASSERT_EQUAL_UINT32(0, app.snapshot().windowFlowMlPerMin);
+
+    app.onFlowPulse(980000);   // Delivered while paused.
+    app.setFlowDroppedPulses(1);
+    pressAndReleaseOk(app, 1000);
+    TEST_ASSERT_TRUE(app.snapshot().valve.enabled);
+    app.onFlowPulse(1069000);  // Queued before resume, delivered afterwards.
+    app.onFlowPulse(1080000);
+
+    gValveSinkSawClosedBeforeRecordAppend = false;
+    gRecordAppendObservedClosedValve = false;
+    app.tick(input({false, true, false, false}, 1100, 1100000, 1714502400));
+    app.tick(input({false, true, false, false}, 1110, 1110000, 1714502400));
+    app.tick(input({false, false, false, false}, 1160, 1160000, 1714502400));
+    app.setFlowDroppedPulses(2);
+    app.tick(input({false, false, false, false}, 1170, 1170000, 1714502400));
+    TEST_ASSERT_FALSE(app.snapshot().valve.enabled);
+    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(WaterState::Error),
+                            static_cast<std::uint8_t>(app.snapshot().water.state));
+    TEST_ASSERT_TRUE(gRecordAppendObservedClosedValve);
+    TEST_ASSERT_EQUAL_size_t(1, records.records.size());
+    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(WaterResult::FlowError),
+                            static_cast<std::uint8_t>(records.records[0].result));
+    TEST_ASSERT_EQUAL_UINT32(3, records.records[0].pulseCount);
+    TEST_ASSERT_EQUAL_UINT32(3, records.records[0].volumeMl);
+}
+
+void test_app_controller_does_not_use_pre_open_queue_loss_or_expire_pulses_after_half_micros_range() {
+    SystemConfig config = makeDefaultConfig();
+    config.maxOutTimeSec = 7200;
+    StatisticsStore statistics;
+    FilterStore filters(config.filters);
+    MemoryRecordWriter records;
+    AppController app(config, statistics, filters, records);
+    applyTestMeteringScheme(app);
+    app.setValveOutputSink(nullptr, [] { return FlowInputSample{380000, 1}; });
+    app.resetInputs({false, false, false, false}, 0);
+    pressAndReleaseOk(app, 100);
+    pressAndReleaseOk(app, 300);
+
+    app.setFlowDroppedPulses(1);
+    app.onFlowPulse(379000);
+    app.onFlowPulse(381000);
+    app.tick(input({false, false, false, false}, 382, 382000, 1714502400));
+    TEST_ASSERT_TRUE(app.snapshot().valve.enabled);
+    TEST_ASSERT_EQUAL_UINT32(1, app.snapshot().water.volumeMl);
+
+    app.onFlowPulse(2161000000U);
+    app.tick(input({false, false, false, false}, 2161000, 2161000000U, 1714504561));
+    TEST_ASSERT_TRUE(app.snapshot().valve.enabled);
+    TEST_ASSERT_EQUAL_UINT32(2, app.snapshot().water.volumeMl);
+}
+
+void test_app_controller_counted_startup_pulse_prevents_a_false_no_flow_error() {
+    SystemConfig config = makeDefaultConfig();
+    config.noFlowTimeoutSec = 1;
+    StatisticsStore statistics;
+    FilterStore filters(config.filters);
+    MemoryRecordWriter records;
+    AppController app(config, statistics, filters, records);
+    MeteringSchemeRecord scheme = app.activeMeteringScheme();
+    scheme.params = {4, 0, 1000, 1000, 1950};
+    TEST_ASSERT_TRUE(app.applyActiveMeteringScheme(scheme));
+    app.resetInputs({false, false, false, false}, 0);
+    pressAndReleaseOk(app, 100);
+    pressAndReleaseOk(app, 300);
+    app.onFlowPulse(1000000);
+    app.tick(input({false, false, false, false}, 1000, 1000000, 1714502401));
+    app.tick(input({false, false, false, false}, 1400, 1400000, 1714502401));
+    TEST_ASSERT_TRUE(app.snapshot().valve.enabled);
+    TEST_ASSERT_EQUAL_UINT32(0, app.snapshot().water.volumeMl);
+}
+
 void test_app_controller_web_preset_switch_during_run_updates_next_preset_only() {
     SystemConfig config = makeDefaultConfig();
     StatisticsStore statistics;

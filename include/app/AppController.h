@@ -86,6 +86,11 @@ struct AppSnapshot {
 };
 
 using ValveOutputSink = void (*)(ValveOutput output);
+struct FlowInputSample {
+    std::uint32_t timestampUs;
+    std::uint32_t droppedPulses;
+};
+using FlowInputSampler = FlowInputSample (*)();
 
 class AppController {
 public:
@@ -118,7 +123,7 @@ public:
     bool consumeConfigDirty();
     BeepPattern consumeBeepPattern();
     bool stopActiveWatering(std::uint32_t nowMs);
-    void setValveOutputSink(ValveOutputSink sink);
+    void setValveOutputSink(ValveOutputSink sink, FlowInputSampler sampleFlowInput = nullptr);
     void setFlowDroppedPulses(std::uint32_t droppedPulses);
     bool selectNextPresetForWeb();
     bool selectPreviousPresetForWeb();
@@ -193,10 +198,10 @@ private:
     void resetRunFlowState();
     std::uint8_t selectCalibrationSessionTraceSlot() const;
     void persistCalibrationPendingAttempt(const WaterRecord& record, std::uint32_t nowSeconds);
-    void syncFlow(std::uint32_t nowUs);
+    void syncFlow();
     void finishPulseTrace(const WaterRecord& record, WaterPulseTraceState finalState);
     bool canUseTdsCalibration() const;
-    void syncValve(std::uint32_t nowMs);
+    void syncValve(std::uint32_t nowMs, std::uint32_t nowUs = 0);
     void processResult(std::uint32_t startTime,
                        const PeriodKeys& periodKeys,
                        bool periodKeysValid,
@@ -237,6 +242,11 @@ private:
     std::uint32_t activeStartBootId_;
     bool lastValveDesiredOpen_;
     ValveOutputSink valveOutputSink_;
+    FlowInputSampler sampleFlowInput_ = nullptr;
+    std::uint32_t flowInputStartUs_ = 0;
+    std::uint32_t flowDroppedPulsesAtOpen_ = 0;
+    bool waitingForFirstFlowPulse_ = false;
+    bool flowPulseSinceTick_ = false;
     bool persistenceDirty_;
     bool configDirty_;
     BeepPattern pendingBeep_;

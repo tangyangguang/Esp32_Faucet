@@ -72,8 +72,7 @@ bool recordHasUncalibratedTds(const WaterRecord& record) {
 
 void applyTemperatureSummaryToDaily(DailyUsageBucket& daily,
                                     const WaterRecord& record,
-                                    std::int64_t& tempSum,
-                                    std::uint32_t& sampleSum) {
+                                    std::int64_t& tempSum) {
     if (daily.temperatureRecordCount == 0) {
         daily.temperatureMinCentiC = record.temperatureCentiC;
         daily.temperatureMaxCentiC = record.temperatureCentiC;
@@ -81,15 +80,13 @@ void applyTemperatureSummaryToDaily(DailyUsageBucket& daily,
         daily.temperatureMinCentiC = std::min(daily.temperatureMinCentiC, record.temperatureCentiC);
         daily.temperatureMaxCentiC = std::max(daily.temperatureMaxCentiC, record.temperatureCentiC);
     }
-    tempSum += static_cast<std::int64_t>(record.temperatureCentiC) * record.sensorSampleCount;
-    sampleSum += record.sensorSampleCount;
+    tempSum += record.temperatureCentiC;
     incrementCount(daily.temperatureRecordCount);
 }
 
 void applyTdsSummaryToDaily(DailyUsageBucket& daily,
                             const WaterRecord& record,
-                            std::uint64_t& tdsSum,
-                            std::uint32_t& sampleSum) {
+                            std::uint64_t& tdsSum) {
     if (daily.tdsRecordCount == 0) {
         daily.tdsMinPpm = record.tdsPpm;
         daily.tdsMaxPpm = record.tdsPpm;
@@ -97,8 +94,7 @@ void applyTdsSummaryToDaily(DailyUsageBucket& daily,
         daily.tdsMinPpm = std::min(daily.tdsMinPpm, record.tdsPpm);
         daily.tdsMaxPpm = std::max(daily.tdsMaxPpm, record.tdsPpm);
     }
-    tdsSum += static_cast<std::uint64_t>(record.tdsPpm) * record.sensorSampleCount;
-    sampleSum += record.sensorSampleCount;
+    tdsSum += record.tdsPpm;
     incrementCount(daily.tdsRecordCount);
 }
 
@@ -182,7 +178,6 @@ bool aggregateWaterRecordsInto(const WaterRecordReader& reader,
     summary.monthStartDay = hasRealNow ? monthStartDay(summary.todayDay) : 0;
     const std::uint32_t firstDay =
         hasRealNow && summary.todayDay >= dayCount - 1U ? summary.todayDay - (dayCount - 1U) : 0;
-    const std::uint32_t firstNeededDay = summary.monthStartDay < firstDay ? summary.monthStartDay : firstDay;
     for (std::size_t i = 0; i < dayCount; ++i) {
         summary.days[i].dayIndex = firstDay + static_cast<std::uint32_t>(i);
     }
@@ -193,10 +188,8 @@ bool aggregateWaterRecordsInto(const WaterRecordReader& reader,
     constexpr std::uint16_t kAggregationPageSize = kDefaultRecordPageSize;
     std::unique_ptr<std::int64_t[]> dailyTempSums(new (std::nothrow) std::int64_t[kUsageSummaryMaxDays]{});
     std::unique_ptr<std::uint64_t[]> dailyTdsSums(new (std::nothrow) std::uint64_t[kUsageSummaryMaxDays]{});
-    std::unique_ptr<std::uint32_t[]> dailyTempSamples(new (std::nothrow) std::uint32_t[kUsageSummaryMaxDays]{});
-    std::unique_ptr<std::uint32_t[]> dailyTdsSamples(new (std::nothrow) std::uint32_t[kUsageSummaryMaxDays]{});
     std::unique_ptr<WaterRecord[]> records(new (std::nothrow) WaterRecord[kAggregationPageSize]{});
-    if (!dailyTempSums || !dailyTdsSums || !dailyTempSamples || !dailyTdsSamples || !records) {
+    if (!dailyTempSums || !dailyTdsSums || !records) {
         return false;
     }
     const std::size_t total = reader.count();
@@ -206,7 +199,6 @@ bool aggregateWaterRecordsInto(const WaterRecordReader& reader,
         if (count == 0) {
             break;
         }
-        bool pageHasWindowCandidate = !hasRealNow;
         for (std::size_t i = 0; i < count; ++i) {
             const WaterRecord& record = records[i];
             if (!waterRecordHasRealTime(record)) {
@@ -224,9 +216,6 @@ bool aggregateWaterRecordsInto(const WaterRecordReader& reader,
             const std::uint32_t day = record.startTime / 86400UL;
             if (day > summary.todayDay) {
                 continue;
-            }
-            if (day >= firstNeededDay) {
-                pageHasWindowCandidate = true;
             }
             if (day == summary.todayDay) {
                 addSaturating(summary.todayMl, record.volumeMl);
@@ -281,11 +270,10 @@ bool aggregateWaterRecordsInto(const WaterRecordReader& reader,
                     if (temperatureUsable) {
                         applyTemperatureSummaryToDaily(daily,
                                                        record,
-                                                       dailyTempSums[day - firstDay],
-                                                       dailyTempSamples[day - firstDay]);
+                                                       dailyTempSums[day - firstDay]);
                     }
                     if (tdsUsable) {
-                        applyTdsSummaryToDaily(daily, record, dailyTdsSums[day - firstDay], dailyTdsSamples[day - firstDay]);
+                        applyTdsSummaryToDaily(daily, record, dailyTdsSums[day - firstDay]);
                     }
                 } else if (hasUncalibratedTds) {
                     addSaturating(summary.uncalibratedSensorRecordCount, 1);
@@ -295,22 +283,19 @@ bool aggregateWaterRecordsInto(const WaterRecordReader& reader,
                 }
             }
         }
-        if (!pageHasWindowCandidate) {
-            break;
-        }
     }
     for (std::size_t i = 0; i < dayCount; ++i) {
-        const std::uint32_t tempSamples = dailyTempSamples[i];
+        const std::uint32_t tempSamples = summary.days[i].temperatureRecordCount;
         if (tempSamples > 0) {
             summary.days[i].temperatureAvgCentiC =
                 static_cast<std::int16_t>(dailyTempSums[i] / static_cast<std::int64_t>(tempSamples));
         }
-        const std::uint32_t tdsSamples = dailyTdsSamples[i];
+        const std::uint32_t tdsSamples = summary.days[i].tdsRecordCount;
         if (tdsSamples > 0) {
             summary.days[i].tdsAvgPpm = static_cast<std::uint16_t>(dailyTdsSums[i] / tdsSamples);
         }
     }
-    summary.last30DaysDailyAverageMl = (summary.last30DaysMl + 15UL) / 30UL;
+    summary.last30DaysDailyAverageMl = (static_cast<std::uint64_t>(summary.last30DaysMl) + 15UL) / 30UL;
     return true;
 }
 

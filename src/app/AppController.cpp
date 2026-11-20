@@ -150,45 +150,74 @@ void AppController::resetInputs(ButtonLevels levels, std::uint32_t nowMs) {
 }
 
 void AppController::onFlowPulse(std::uint32_t nowUs) {
+    if (!lastValveDesiredOpen_) {
+        return;
+    }
+    if (waitingForFirstFlowPulse_) {
+        if (elapsedSince(nowUs, flowInputStartUs_) >= 0x80000000UL) {
+            return;
+        }
+        // The queue is ordered, so subsequent edges belong to this opening.
+        waitingForFirstFlowPulse_ = false;
+    }
     if (pulseTraces_ && activeTraceId_ != 0) {
         pulseTraces_->appendPulseEdge(activeTraceId_, elapsedSince(nowUs, activeTraceStartUs_));
     }
-    flow_.onPulse(nowUs);
+    if (flow_.onPulse(nowUs)) {
+        flowPulseSinceTick_ = true;
+    }
 }
 
 void AppController::tick(const AppTickInput& input) {
-    if (waterSensors_) {
-        waterSensors_->tick(input.nowMs);
+    const WaterState previousState = water_.snapshot().state;
+    const ButtonEvent event = buttons_.update(input.buttons, input.nowMs);
+    syncFlow();
+    if (previousState == WaterState::Running && flowDroppedPulses_ != flowDroppedPulsesAtOpen_) {
+        water_.stopForFlowError(input.nowMs);
+        syncValve(input.nowMs);
+    } else {
+        handleButtonEvent(event, input.nowMs, input.nowUs, input.nowSeconds, input.timeSynced, input.bootId);
     }
-    ButtonEvent event = buttons_.update(input.buttons, input.nowMs);
-    if (input.timeSynced && waterSensors_) {
-        waterSensors_->expireTdsCalibrationSession(input.nowSeconds);
-    }
-    handleButtonEvent(event, input.nowMs, input.nowUs, input.nowSeconds, input.timeSynced, input.bootId);
     if (localMode_ == LocalUiMode::Result && config_.resultDisplaySec > 0 &&
         elapsedAtLeast(input.nowMs, resultDisplayStartMs_, secondsToMillis(config_.resultDisplaySec))) {
         localMode_ = LocalUiMode::Normal;
     }
 
-    syncFlow(input.nowUs);
-    const FlowSnapshot flow = flow_.snapshot(input.nowUs);
-    const bool wasRunningForSensorRun = water_.snapshot().state == WaterState::Running;
-    currentFlowMlPerMin_ = flow.currentFlowMlPerMin;
-    instantFlowMlPerMin_ = flow.instantFlowMlPerMin;
-    windowFlowMlPerMin_ = flow.windowFlowMlPerMin;
-    displayFlowMlPerMin_ = flow.displayFlowMlPerMin;
-    water_.tick(input.nowMs, flow.windowFlowMlPerMin);
-    if (waterSensors_ && wasRunningForSensorRun) {
-        waterSensors_->sampleRun();
+    const WaterState stateBeforeProtection = water_.snapshot().state;
+    if (stateBeforeProtection == WaterState::Paused && previousState == WaterState::Running) {
+        syncValve(input.nowMs);
+        flow_.clearWindow();
     }
+    const FlowSnapshot flow = flow_.snapshot(input.nowUs);
+    water_.tick(input.nowMs, flow.windowFlowMlPerMin, flowPulseSinceTick_);
+    flowPulseSinceTick_ = false;
+    syncValve(input.nowMs, input.nowUs);
     const WaterSnapshot waterAfterTick = water_.snapshot();
-    runAverageFlowMlPerMin_ =
-        waterAfterTick.elapsedSec == 0
-            ? 0
-            : static_cast<std::uint32_t>(
-                  (static_cast<std::uint64_t>(waterAfterTick.volumeMl) * 60ULL + waterAfterTick.elapsedSec / 2ULL) /
-                  waterAfterTick.elapsedSec);
-    syncValve(input.nowMs);
+    const bool stillRunning = waterAfterTick.state == WaterState::Running;
+    currentFlowMlPerMin_ = stillRunning ? flow.currentFlowMlPerMin : 0;
+    instantFlowMlPerMin_ = stillRunning ? flow.instantFlowMlPerMin : 0;
+    windowFlowMlPerMin_ = stillRunning ? flow.windowFlowMlPerMin : 0;
+    displayFlowMlPerMin_ = stillRunning ? flow.displayFlowMlPerMin : 0;
+    if (waterSensors_) {
+        waterSensors_->tick(input.nowMs);
+        if (input.timeSynced) {
+            waterSensors_->expireTdsCalibrationSession(input.nowSeconds);
+        }
+        if (stateBeforeProtection == WaterState::Running) {
+            if (previousState == WaterState::Running || previousState == WaterState::Paused) {
+                waterSensors_->sampleRun();
+            } else {
+                waterSensors_->beginRun();
+            }
+        }
+    }
+    runAverageFlowMlPerMin_ = 0;
+    if (waterAfterTick.elapsedMs != 0) {
+        const std::uint64_t rate =
+            (static_cast<std::uint64_t>(waterAfterTick.volumeMl) * 60000ULL + waterAfterTick.elapsedMs / 2U) /
+            waterAfterTick.elapsedMs;
+        runAverageFlowMlPerMin_ = static_cast<std::uint32_t>(std::min<std::uint64_t>(UINT32_MAX, rate));
+    }
 
     if (water_.hasResult()) {
         const bool calibrationRunResult =
@@ -302,6 +331,7 @@ BeepPattern AppController::consumeBeepPattern() {
 bool AppController::stopActiveWatering(std::uint32_t nowMs) {
     const WaterState state = water_.snapshot().state;
     if (state == WaterState::Running || state == WaterState::Paused) {
+        syncFlow();
         water_.stop(nowMs);
         syncValve(nowMs);
         pendingBeep_ = BeepPattern::Error;
@@ -310,8 +340,9 @@ bool AppController::stopActiveWatering(std::uint32_t nowMs) {
     return false;
 }
 
-void AppController::setValveOutputSink(ValveOutputSink sink) {
+void AppController::setValveOutputSink(ValveOutputSink sink, FlowInputSampler sampleFlowInput) {
     valveOutputSink_ = sink;
+    sampleFlowInput_ = sampleFlowInput;
 }
 
 void AppController::setFlowDroppedPulses(std::uint32_t droppedPulses) {
@@ -560,20 +591,17 @@ void AppController::resetRunFlowState() {
     windowFlowMlPerMin_ = 0;
     displayFlowMlPerMin_ = 0;
     runAverageFlowMlPerMin_ = 0;
-    if (waterSensors_) {
-        waterSensors_->beginRun();
-    }
 }
 
-void AppController::syncFlow(std::uint32_t nowUs) {
+void AppController::syncFlow() {
     if (water_.snapshot().state != WaterState::Running) {
         return;
     }
 
-    const FlowSnapshot flow = flow_.snapshot(nowUs);
-    if (flow.volumeMl > lastFlowVolumeMl_) {
-        water_.addVolume(flow.volumeMl - lastFlowVolumeMl_);
-        lastFlowVolumeMl_ = flow.volumeMl;
+    const std::uint32_t volumeMl = flow_.volumeMl();
+    if (volumeMl > lastFlowVolumeMl_) {
+        water_.addVolume(volumeMl - lastFlowVolumeMl_);
+        lastFlowVolumeMl_ = volumeMl;
     }
 }
 
@@ -586,7 +614,7 @@ void AppController::finishPulseTrace(const WaterRecord& record, WaterPulseTraceS
     activeTraceStartUs_ = 0;
 }
 
-void AppController::syncValve(std::uint32_t nowMs) {
+void AppController::syncValve(std::uint32_t nowMs, std::uint32_t nowUs) {
     const bool desiredOpen = water_.snapshot().valveOpen;
     if (desiredOpen && !lastValveDesiredOpen_) {
         valve_.open(nowMs);
@@ -594,6 +622,12 @@ void AppController::syncValve(std::uint32_t nowMs) {
         valve_.close();
     }
     valve_.tick(nowMs);
+    if (desiredOpen && !lastValveDesiredOpen_) {
+        const FlowInputSample opening = sampleFlowInput_ ? sampleFlowInput_() : FlowInputSample{nowUs, flowDroppedPulses_};
+        flowInputStartUs_ = opening.timestampUs;
+        flowDroppedPulsesAtOpen_ = opening.droppedPulses;
+        waitingForFirstFlowPulse_ = true;
+    }
     lastValveDesiredOpen_ = desiredOpen;
     if (valveOutputSink_) {
         valveOutputSink_(valve_.output());
@@ -653,9 +687,7 @@ void AppController::processResult(std::uint32_t startTime,
         lastResultRecord_ = record;
         lastResultRecordValid_ = true;
     }
-    if (periodKeysValid) {
-        statistics_.addWater(result.volumeMl, periodKeys);
-    }
+    statistics_.addWater(result.volumeMl, periodKeys, periodKeysValid);
     filters_.addWater(result.volumeMl);
     APP_RESULT_LOG_I("app",
                      "water_runtime_totals_updated period_keys=%s today_ml=%lu total_ml=%lu",

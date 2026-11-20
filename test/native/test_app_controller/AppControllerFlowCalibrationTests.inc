@@ -13,6 +13,33 @@ void test_app_controller_starting_calibration_from_idle_waits_for_local_run() {
     TEST_ASSERT_FALSE(fixture.app->snapshot().water.valveOpen);
 }
 
+void test_app_controller_flow_loss_invalidates_calibration_attempt() {
+    CalibrationAppFixture fixture;
+    fixture.createApp();
+    TEST_ASSERT_TRUE(fixture.app->startCalibrationSessionForWeb(1714502400));
+    fixture.app->resetInputs({false, false, false, false}, 0);
+    pressAndReleaseOk(*fixture.app, 100);
+    fixture.app->onFlowPulse(200000);
+    fixture.app->setFlowDroppedPulses(1);
+    fixture.app->tick(input({false, false, false, false}, 250, 250000, 1714502400));
+    TEST_ASSERT_FALSE(fixture.app->snapshot().valve.enabled);
+    TEST_ASSERT_FALSE(fixture.app->submitCalibrationActualForWeb(1000, 1714502401));
+
+    CalibrationSessionRecord saved{};
+    TEST_ASSERT_TRUE(fixture.sessionStore.load(saved));
+    TEST_ASSERT_EQUAL_UINT8(1, saved.attemptCount);
+    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(CalibrationAttemptStatus::Invalid),
+                            static_cast<std::uint8_t>(saved.attempts[0].status));
+    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(CalibrationInvalidReason::ErrorResult),
+                            static_cast<std::uint8_t>(saved.attempts[0].invalidReason));
+    fixture.app->tick(input({false, false, false, false}, 260, 260000, 1714502400));
+    TEST_ASSERT_FALSE(fixture.app->snapshot().valve.enabled);
+    pressAndReleaseOk(*fixture.app, 300);
+    TEST_ASSERT_TRUE(fixture.app->snapshot().valve.enabled);
+    TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(CalibrationSessionStatus::Running),
+                            static_cast<std::uint8_t>(fixture.app->snapshot().calibrationStatus));
+}
+
 void test_app_controller_starting_calibration_while_running_is_rejected() {
     CalibrationAppFixture fixture;
     fixture.createApp();

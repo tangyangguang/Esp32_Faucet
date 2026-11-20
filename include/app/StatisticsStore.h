@@ -19,7 +19,7 @@ public:
 
     const StatisticsRecord& record() const;
     void reset(const PeriodKeys& keys);
-    void addWater(std::uint32_t volumeMl, const PeriodKeys& keys);
+    void addWater(std::uint32_t volumeMl, const PeriodKeys& keys, bool periodKeysValid = true);
     void rollPeriods(const PeriodKeys& keys);
 
 private:

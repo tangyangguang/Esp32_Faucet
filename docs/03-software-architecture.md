@@ -3,8 +3,8 @@
 ## 当前已确认原则
 
 - 项目基于 Arduino + PlatformIO。
-- ESP32 基础能力统一来自同级目录 `../Esp32Base`，PlatformIO 通过 `symlink://../Esp32Base` 引用。
-- 默认启用 `ESP32BASE_PROFILE_FULL`。
+- ESP32 基础能力来自工作区的 `foundation/Esp32Base`，PlatformIO 通过 `symlink://../../foundation/Esp32Base` 引用。
+- 使用 `ESP32BASE_PROFILE_LOCAL`，并通过 `ESP32BASE_ENABLE_WEB_FS=1` 启用 Web 文件维护和 LittleFS 格式化。格式化成功后，业务通过 `setAfterFormatFsCallback()` 注册的回调重置统计并安排重建出水记录存储。
 - 本项目只实现业务层和业务相关硬件驱动，不复制基础库已有能力。
 - 架构优先简单可靠，不主动拆成复杂多任务系统。
 

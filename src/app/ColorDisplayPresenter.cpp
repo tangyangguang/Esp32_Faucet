@@ -10,6 +10,10 @@
 namespace faucet {
 namespace {
 
+constexpr std::uint32_t kVolumeEstimateWarmupMs = 2000;
+constexpr std::uint32_t kVolumeEstimateIntervalMs = 1000;
+constexpr std::uint32_t kVolumeEstimateToleranceMs = 2000;
+
 template <std::size_t N>
 void copyText(char (&dest)[N], const char* src) {
     std::strncpy(dest, src ? src : "", N - 1);
@@ -58,6 +62,10 @@ std::uint32_t durationMsToDisplaySec(std::uint32_t durationMs) {
         return 0;
     }
     return static_cast<std::uint32_t>((static_cast<std::uint64_t>(durationMs) + 500ULL) / 1000ULL);
+}
+
+std::uint32_t ceilDurationSec(std::uint32_t durationMs) {
+    return durationMs / 1000U + (durationMs % 1000U != 0);
 }
 
 std::uint32_t estimatedDurationSecForVolumeTarget(const AppSnapshot& snapshot) {
@@ -230,6 +238,7 @@ void ColorDisplayPresenter::resetTrends() {
 }
 
 void ColorDisplayPresenter::observe(const AppSnapshot& snapshot) {
+    observeVolumeEstimate(snapshot);
     const WaterState state = snapshot.localMode == LocalUiMode::Calibration ? WaterState::Idle : snapshot.water.state;
     const bool newRun = state == WaterState::Running &&
                         lastWaterState_ != WaterState::Running && lastWaterState_ != WaterState::Paused;
@@ -240,6 +249,54 @@ void ColorDisplayPresenter::observe(const AppSnapshot& snapshot) {
     }
     lastWaterState_ = state;
     observedSequence_ = snapshot.sensors.sampleSequence;
+}
+
+void ColorDisplayPresenter::observeVolumeEstimate(const AppSnapshot& snapshot) {
+    const auto& water = snapshot.water;
+    const auto flow = snapshot.displayFlowMlPerMin;
+    if (snapshot.localMode != LocalUiMode::Normal || water.state != WaterState::Running ||
+        water.mode != WaterMode::Volume || water.volumeMl >= water.targetValue || flow == 0) {
+        nextVolumeEstimateMs_ = 0;
+        volumeFinishEstimateMs_ = 0;
+        volumeEstimateDirection_ = 0;
+        return;
+    }
+
+    // Use active run time so the countdown shares the controller's time base.
+    const auto elapsedMs = water.elapsedMs;
+    if (nextVolumeEstimateMs_ == 0) {
+        nextVolumeEstimateMs_ = elapsedMs + kVolumeEstimateWarmupMs;
+        return;
+    }
+    const bool expired = volumeFinishEstimateMs_ != 0 && elapsedMs >= volumeFinishEstimateMs_;
+    if (!expired && elapsedMs < nextVolumeEstimateMs_) {
+        return;
+    }
+    nextVolumeEstimateMs_ = elapsedMs + kVolumeEstimateIntervalMs;
+
+    const auto remainingMl = water.targetValue - water.volumeMl;
+    const auto candidateMs = elapsedMs + (static_cast<std::uint64_t>(remainingMl) * 60000U + flow - 1U) / flow;
+    if (candidateMs > secondsToMillis(snapshot.maxOutTimeSec)) {
+        volumeFinishEstimateMs_ = 0;
+        volumeEstimateDirection_ = 0;
+        return;
+    }
+    if (volumeFinishEstimateMs_ == 0 || expired) {
+        volumeFinishEstimateMs_ = static_cast<std::uint32_t>(candidateMs);
+        volumeEstimateDirection_ = 0;
+        return;
+    }
+
+    // Ignore small changes and require two consecutive larger changes in the same direction.
+    const auto errorMs = static_cast<std::int64_t>(candidateMs) - volumeFinishEstimateMs_;
+    const std::int64_t toleranceMs = kVolumeEstimateToleranceMs;
+    const std::int8_t direction = errorMs > toleranceMs ? 1 : errorMs < -toleranceMs ? -1 : 0;
+    if (direction != 0 && direction == volumeEstimateDirection_) {
+        volumeFinishEstimateMs_ = static_cast<std::uint32_t>(candidateMs);
+        volumeEstimateDirection_ = 0;
+    } else {
+        volumeEstimateDirection_ = direction;
+    }
 }
 
 void ColorDisplayPresenter::mergeTrendBuckets() {
@@ -391,16 +448,11 @@ void ColorDisplayPresenter::renderWaterPage(ColorDisplayFrame& frame, const AppS
         copyText(frame.status, byVolume ? "约剩" : "剩余");
         if (!byVolume) {
             formatElapsed(frame.timer, sizeof(frame.timer), target > elapsed ? target - elapsed : 0U);
-        } else if (snapshot.displayFlowMlPerMin > 0) {
-            const auto remainingMl = target > volume ? target - volume : 0U;
-            const auto remainingSec =
-                (static_cast<std::uint64_t>(remainingMl) * 60U + snapshot.displayFlowMlPerMin - 1U) /
-                snapshot.displayFlowMlPerMin;
-            if (elapsed + remainingSec <= snapshot.maxOutTimeSec) {
-                formatElapsed(frame.timer, sizeof(frame.timer), static_cast<std::uint32_t>(remainingSec));
-                formatElapsed(goal, sizeof(goal), static_cast<std::uint32_t>(elapsed + remainingSec));
-                std::snprintf(frame.subtitle, sizeof(frame.subtitle), "总计约 %s", goal);
-            }
+        } else if (volumeFinishEstimateMs_ > snapshot.water.elapsedMs) {
+            formatElapsed(frame.timer, sizeof(frame.timer),
+                          ceilDurationSec(volumeFinishEstimateMs_ - snapshot.water.elapsedMs));
+            formatElapsed(goal, sizeof(goal), ceilDurationSec(volumeFinishEstimateMs_));
+            std::snprintf(frame.subtitle, sizeof(frame.subtitle), "总计约 %s", goal);
         }
         if (!frame.timer[0]) {
             copyText(frame.timer, "--");

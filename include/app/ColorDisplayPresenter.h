@@ -101,6 +101,9 @@ private:
 
     std::uint32_t sleepTimeoutMs_;
     std::uint32_t lastWakeMs_;
+    std::uint32_t nextVolumeEstimateMs_ = 0;
+    std::uint32_t volumeFinishEstimateMs_ = 0;
+    std::int8_t volumeEstimateDirection_ = 0;
     WaterState lastWaterState_ = WaterState::Idle;
     std::uint32_t observedSequence_ = 0;
     std::uint32_t secondsPerBucket_ = 1;
@@ -110,6 +113,7 @@ private:
     Range extrema_[kColorDisplaySensorCount]{};
     SensorValue latest_[kColorDisplaySensorCount]{};
 
+    void observeVolumeEstimate(const AppSnapshot& snapshot);
     void resetTrends();
     void mergeTrendBuckets();
     void appendTrend(std::uint32_t elapsedSec, const WaterSensorSnapshot& sensors);

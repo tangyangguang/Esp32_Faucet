@@ -44,6 +44,16 @@ void assertTextEquals(const char* expected, const char* actual) {
     TEST_ASSERT_EQUAL_STRING(expected, actual);
 }
 
+ColorDisplayFrame showVolumeEstimate(ColorDisplayPresenter& presenter, AppSnapshot& snapshot,
+                                    std::uint32_t elapsedMs, std::uint32_t volumeMl, std::uint32_t flowMlPerMin) {
+    snapshot.water.elapsedMs = elapsedMs;
+    snapshot.water.elapsedSec = elapsedMs / 1000U;
+    snapshot.water.volumeMl = volumeMl;
+    snapshot.displayFlowMlPerMin = flowMlPerMin;
+    presenter.observe(snapshot);
+    return presenter.render(snapshot, elapsedMs, true);
+}
+
 }  // namespace
 
 void test_color_display_covers_idle_confirm_running_pause_result_alert_calibration_offline_and_sleep_pages() {
@@ -91,12 +101,15 @@ void test_color_display_covers_idle_confirm_running_pause_result_alert_calibrati
     assertTextEquals("加减", frame.hints[1]);
 
     AppSnapshot runningVolume = makeSnapshot(WaterState::Running, WaterMode::Volume, 1500, 920);
-    runningVolume.water.elapsedSec = 222;
+    runningVolume.water.elapsedSec = 220;
+    runningVolume.water.elapsedMs = 220000;
     runningVolume.displayFlowMlPerMin = 12800;
     runningVolume.instantFlowMlPerMin = 99999;
     runningVolume.sensors.temperatureCentiC = SensorValue{true, 2470};
     runningVolume.sensors.tdsPpm = SensorValue{true, 386};
     presenter.observe(runningVolume);
+    runningVolume.water.elapsedSec = 222;
+    runningVolume.water.elapsedMs = 222000;
     runningVolume.sensors.sampleSequence = 1;
     presenter.observe(runningVolume);
     frame = presenter.render(runningVolume, 1700, true);
@@ -257,7 +270,8 @@ void test_color_display_uses_confirmed_target_and_frozen_result() {
     assertTextEquals("", frame.subtitle);
     volume.displayFlowMlPerMin = 60;
     volume.maxOutTimeSec = 240;
-    frame = presenter.render(volume, 400, true);
+    showVolumeEstimate(presenter, volume, 222000, 920, 60);
+    frame = showVolumeEstimate(presenter, volume, 224000, 920, 60);
     assertTextEquals("--", frame.timer);
     assertTextEquals("", frame.subtitle);
 
@@ -409,6 +423,71 @@ void test_color_display_trends_skip_idle_and_pause_samples_and_reset_at_next_run
     assertTextEquals("---", frame.sensors[1].high);
 }
 
+void test_volume_estimate_counts_down_and_only_corrects_sustained_changes() {
+    ColorDisplayPresenter presenter;
+    auto run = makeSnapshot(WaterState::Running, WaterMode::Volume, 1000);
+
+    assertTextEquals("--", showVolumeEstimate(presenter, run, 0, 0, 0).timer);
+    assertTextEquals("--", showVolumeEstimate(presenter, run, 500, 10, 3000).timer);
+    assertTextEquals("--", showVolumeEstimate(presenter, run, 2499, 110, 3000).timer);
+    auto frame = showVolumeEstimate(presenter, run, 2500, 125, 3000);
+    assertTextEquals("00:18", frame.timer);
+    assertTextEquals("总计约 00:20", frame.subtitle);
+
+    assertTextEquals("00:17", showVolumeEstimate(presenter, run, 3500, 175, 2400).timer);
+    assertTextEquals("00:16", showVolumeEstimate(presenter, run, 4500, 225, 4200).timer);
+    assertTextEquals("00:15", showVolumeEstimate(presenter, run, 5500, 275, 3000).timer);
+    assertTextEquals("00:14", showVolumeEstimate(presenter, run, 6500, 325, 2400).timer);
+    assertTextEquals("00:14", showVolumeEstimate(presenter, run, 6999, 345, 2400).timer);
+    frame = showVolumeEstimate(presenter, run, 7500, 365, 2400);
+    assertTextEquals("00:16", frame.timer);
+    assertTextEquals("总计约 00:24", frame.subtitle);
+
+    assertTextEquals("00:15", showVolumeEstimate(presenter, run, 8500, 425, 3600).timer);
+    frame = showVolumeEstimate(presenter, run, 9500, 485, 3600);
+    assertTextEquals("00:09", frame.timer);
+    assertTextEquals("总计约 00:19", frame.subtitle);
+}
+
+void test_volume_estimate_handles_expiry_pause_no_flow_and_new_runs() {
+    ColorDisplayPresenter presenter;
+    auto run = makeSnapshot(WaterState::Running, WaterMode::Volume, 200);
+
+    showVolumeEstimate(presenter, run, 0, 0, 3000);
+    assertTextEquals("00:02", showVolumeEstimate(presenter, run, 2000, 125, 3000).timer);
+    assertTextEquals("00:01", showVolumeEstimate(presenter, run, 3499, 154, 3000).timer);
+    auto frame = showVolumeEstimate(presenter, run, 3500, 155, 3000);
+    assertTextEquals("00:01", frame.timer);
+    assertTextEquals("总计约 00:05", frame.subtitle);
+
+    run.water.state = WaterState::Paused;
+    frame = showVolumeEstimate(presenter, run, 3500, 155, 3000);
+    assertTextEquals("阀关", frame.status);
+    assertTextEquals("", frame.subtitle);
+    run.water.state = WaterState::Running;
+    assertTextEquals("--", showVolumeEstimate(presenter, run, 3500, 155, 300).timer);
+    assertTextEquals("00:07", showVolumeEstimate(presenter, run, 5500, 165, 300).timer);
+    frame = showVolumeEstimate(presenter, run, 5600, 165, 0);
+    assertTextEquals("--", frame.timer);
+    assertTextEquals("", frame.subtitle);
+    assertTextEquals("--", showVolumeEstimate(presenter, run, 5700, 170, 300).timer);
+
+    run.water.state = WaterState::Idle;
+    run.localMode = LocalUiMode::Result;
+    run.lastDisplayResult = {true, WaterMode::Volume, WaterResult::Completed, 200, 200, 6, 0};
+    frame = showVolumeEstimate(presenter, run, 6000, 200, 0);
+    assertTextEquals("00:06", frame.timer);
+    TEST_ASSERT_EQUAL_UINT16(1000, frame.progressPermille);
+
+    run = makeSnapshot(WaterState::Running, WaterMode::Volume, 200);
+    assertTextEquals("--", showVolumeEstimate(presenter, run, 0, 0, 12000).timer);
+    assertTextEquals("--", showVolumeEstimate(presenter, run, 900, 180, 12000).timer);
+    run.water.state = WaterState::Idle;
+    run.localMode = LocalUiMode::Result;
+    run.lastDisplayResult = {true, WaterMode::Volume, WaterResult::Completed, 200, 200, 1, 0};
+    assertTextEquals("00:01", showVolumeEstimate(presenter, run, 1000, 200, 0).timer);
+}
+
 int main(int argc, char** argv) {
     (void)argc;
     (void)argv;
@@ -420,5 +499,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_color_display_confirm_volume_estimates_duration_from_metering_params_when_snapshot_omits_it);
     RUN_TEST(test_color_display_trends_preserve_full_run_with_gaps_and_freeze_at_result);
     RUN_TEST(test_color_display_trends_skip_idle_and_pause_samples_and_reset_at_next_run);
+    RUN_TEST(test_volume_estimate_counts_down_and_only_corrects_sustained_changes);
+    RUN_TEST(test_volume_estimate_handles_expiry_pause_no_flow_and_new_runs);
     return UNITY_END();
 }
